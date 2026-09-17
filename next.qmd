@@ -1,0 +1,8 @@
+Next, I want to make a few other feature changes: 
+
+- i have lots of legacy code. Let's get rid of that. 
+- cosmos_db should have a 'both' option. If 'both' is used, then it should specifically batch 
+- i wnat to implement stratifications via a 'multiplier' system. essentally the yaml will ahve a section like this, after upload_cohorts, but before cohorts: 
+
+multipliers: 
+    - name: UC
