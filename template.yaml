@@ -4,8 +4,10 @@ cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual.
                          # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
 
 # Initial variables. Dates in format YYYYMMDD
-min_date_key: 19900101
-max_date_key: 20260601
+vars: 
+  min_date_key: 19900101
+  max_date_key: 20260601
+  HospitalICDTable: HospitalICDCodes
 
 # Test Vars
 test_options:
@@ -22,7 +24,7 @@ projaect_folder: "Test Run"     # Folder within QueryGenerator.
 
 
 upload_cohorts:
-  - name: PKTable              # PROJECTS.<project_db>.dbo.PKTable
+  - name: PKTable              # PROJECTS.<project_db>.dbo.(name))
     dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
     file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS'.dbo.project_db)
     push_this_cycle: true      # optional; defaults to true
@@ -31,39 +33,80 @@ upload_cohorts:
     dest_table: HospitalICDCodes
     file_type: csv
     file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
+    scope: global #global or per_group
     push_this_cycle: true
 
-multipliers: # for ecah multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients)
-  - name: IBDType   #For human readability
-    strat: UC       #prefixes to the unique table (ie. CrohnsPatients, CrohnsEDVisits)
-    where:          #filter logic unique to this 
-    strat: Crohns
-    where: 
+multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
+  - name: IBDType
+    levels:
+      - strat: UC
+        where:
+          - "{{ICD_Value | sql_condition('dt.Value')}}"
+        vars:
+          ICD_Value:
+            - K51.%
+      - strat: Crohns
+        where:
+          - "{{ICD_Value | sql_condition('dt.Value')}}"
+        vars:
+          ICD_Value:
+            - K50.%
   - name: Race
-    strat: black   # Cartesian, so this example returns blackCrohnsPatients, blackUCPatients, etc.
-    where: 
-    control: white # optional parameter, gets random pts in criteria x pk_mult
-    whwere: 
-    pk_mult: 4 # for the PK table, it should get 4x as many rows as whatever limit is there. 
+    levels:
+      - strat: black
+        where:
+          - "pk.FirstRace = 'Black or African American'"
+      - strat: white
+        role: control
+        where:
+          - "pk.FirstRace = 'White'"
+        row_mult: 4
+  - name: Race
+    levels: 
+      - strat: black   # Cartesian, so this example returns blackCrohnsPatients, blackUCPatients, etc.
+        where: 
+        control: white # optional parameter, gets random pts in criteria x pk_mult
+        where: 
+        row_mult: 4 # for the PK table, it should get 4x as many rows as whatever limit is there. 
                # If there's no limit, gets 4x as many via a select TOP () function, based on the non-control's total. 
 batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
-  - batch: state # Does all 50 unless only select names are added. Requires State Abbreviation column in PK tables
-    name: LA
-    name: MS
-    name: GA
-    name: NC
-  - batch: sex  # male and female split, requires patientDim.Sex
-    separate_parquets: true #optional to have it save as parquets by split
-  - batch: 2000 # if a number, splits into batches (not sure how to do yet)
+  - name: state
+    column: StateOrProvinceAbbreviation
+    values:
+      - LA
+      - MS
+      - GA
+      - NC
+    separate_parquets: true
+  - name: sex
+    column: sex
+    values:
+      - Female
+      - Male
+    separate_parquets: true
+  - chunk: 2000 # if a number, splits into batches (not sure how to do yet)
 
 cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
-  - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names
-  # 0. Primary Key Table - the core variable that we use to search all other tables - the patient ID, encounter ID, etc. that you are getting info from
-  # Example: "ED Visits for children found to have RSV - PK is the EDVisitKey"
-  - name: PKTable
-    type: PK # MUST be stated here - all others are assumed to be 'fact'
-    pull_this_cycle: false # Defines the later 'DECLARE @Pull...' variables
-    dest_table: PKTable #Optional - if not specified, it just uses the same name as name:
+  - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
+    name: Patients
+    vars: 
+      ICD_Value:  #Knows to use LIKE if has %, IN if not. But may need 'quotes' if sympbols like :,$,% before other text - SQL will misunderstand that. 
+          - K50.%
+          - K51.%
+  - recipe: OtherHospitalizations
+
+
+
+
+  # Make as many cohorts as you need, each is its own table. 
+  # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you're deriving from
+
+  #Example Cohorts - will be ignored, just for the sake of being an example on the template
+example_cohorts: 
+  - name: Patients
+    type: example # PK is generally the index all the others check against. non-PK tables are 'fact'. 'example' means ignore. 
+    pull_this_cycle: false # if true, will become part of the cohort cycle. Sometimes you just want to update some and not others. 
+    dest_table: Patients #Optional - if not specified, it just uses the same name as name:
     columns: #Try to have everything you'll need for any future cohort to find info needed. For instance,
       # If later you need ED visit and vitals info, you likely need ArrivalDateKey, EncounterKey.
       # If it's all in one table it's much easier to pull later data, even if it's not a "primary key"
@@ -72,53 +115,46 @@ cohorts: #Use recipes premade or make your own tables. Multiplied and batched by
         type: # Filled by skill.mg
         nullable: # Filled by skill.mg
       - source: pk.x # repeat as necessary
-      - source: pk.x...
-
+      - source: pk.x
+      - source: dt.x # data from a joined table, which you declare in the 'join:' section. 
     # PK cohort: EdVisitFact + DiagnosisEventFact, no DurationDim, with pediatric age filter via AgeKey and ED primary diagnosis restriction.
     filter:
-      from: # the general collection on Cosmos ('All ED visits').
-        # Always as 'pk' because this is primary key (eg EDVisitFact as pk)
-
-      join: # if joining another table for filtering ('Diagnosis of Crohn's') -
+      from: # the general collection on Cosmos ('All ED visits' is EDVisitFacts, etc. Look at Data Dictionary for what it contains).
+         DiagnosisEventFact as pk
+      join: # You join another table for filtering or for getting other information -
+        - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey" # for filtering by dt.value, dxf.StartDateKey
+        - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey" # for getting more information about patient and adding it to table
+        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey" #sometimes you just need one conversion. AgeKey doesn't give an age, it's a key that needs a translation to Years by DurationDim. 
         # likely INNER JOIN COSMOS.{cosmos_db}.dbo.(someFact) as sf.(CommonKey) = pk.(CommonKey)
         # IF EMPTY MUST USE []
-        DiagnosisEventFact as pk
-
       where:
         # Your filtering logic. Date ranges, "Had RSV," "Diagnosed with IBD", etc.
         # Will likely use your join to do some logic filtering here, as well as variables like date ranges
-        - "pk.EndDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-        - "pk.EndDateKey >= 0"
-        - "pk._IsDeleted = 0"
+        - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+        - "dxf.StartDateKey >= 0"
+        - "dxf._IsDeleted = 0"
+        - "dt._IsDeleted = 0"
+        - "p.IsValid = 1"
+        - "p.IsCurrent = 1"
+        - "p.UseInCosmosAnalytics_X = 1"
+        - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
+        - "dt.Value IN ('{{ICD_Value}}')"
 
-
-  # From here, all other cohorts basically should use this primaryKey table as their start, so we don't have to keep pinging Cosmos.
-  # Ideally, when updating we just run from this list
-
-  # 1. Usually base data related to the PK
-  - name: # Usually the Fact you are pulling from, like "EDVisitFact" or "HospitalAdmissionFact"
+  # You can also make custom ones - example below of things you'd need. 
+  - name: MotherOfPatients #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
     pull_this_cycle: true
-    type: fact
+    type: example
     dest_table: #PROJECTS-local table name. Cosmos will Pre-pend "JVM_" to Cosmos tables to make them unique.
-
+    vars: 
+      PKTable: Mothers # If you want to have this one override the standard PKTable from the cohort
     columns: # Each 'source' below is a column in your table, you'll define the anchor in 'filter' below.
       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
-      - source: ev.x
+      - source: bpf.x
         name:
         type:
         nullable:
-
-
     filter:
-      from: EDVisitFact as ev # the general collection on Cosmos. If it's a Fact table,
-        # if you're probably not doing this but rather using something in your PK
-
+      from: BirthParentFact as bpf # the general collection on Cosmos.
       join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
-        - "INNER JOIN ##JVM_PKTable AS pk ON pk.EncounterKey = ev.EncounterKey" # Joining another table at the key from PKTable and pulling data into a
-
+        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = bpf.EncounterKey" # Joining another table at the key from PKTable and pulling data into a
       where: #Logic for filtering things out ("AgeKey >18," etc.)
-
-
-  # Make as many cohorts as you need, each is its own table
-  # This is not enough to run though gen_scripts - you need to also get the sources' name, nullable, type.
-  # Use the skill.md for this - see README for latest.
