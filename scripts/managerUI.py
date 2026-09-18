@@ -19,6 +19,7 @@ from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+sys.pycache_prefix = str(PROJECT_ROOT / "cleanup" / "python_cache")
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -507,8 +508,8 @@ document.querySelectorAll('[data-target]').forEach(button => {
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a static Telescope manager UI.")
-    parser.add_argument("--template", default=str(makeYaml.default_template_path()))
-    parser.add_argument("--recipes", default=str(makeYaml.default_recipes_path()))
+    parser.add_argument("--template", default="YAMLs/template.yaml")
+    parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
     args = parser.parse_args(argv)
