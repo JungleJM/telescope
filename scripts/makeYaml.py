@@ -1202,6 +1202,17 @@ batching:
             first = res.finished_yaml["cohorts"][0]
             return "batching" in first and len(first["batching"]) == 2, json.dumps(first)
 
+    def case_batching_include_other():
+        recipes_doc = load_yaml_from_text(tiny_recipes())
+        norm = normalize_batching([{"sex": {"values": ["Female"], "include_other": True}}], recipes_doc, CompileResult())
+        first = norm[0]
+        return (
+            first.get("name") == "sex"
+            and first.get("values") == ["Female"]
+            and first.get("include_other") is True
+            and first.get("column") == "Sex"
+        ), json.dumps(first)
+
     def case_cosmos_dual():
         cohorts = [{"name": "Patients", "dest_table": "Patients"}]
         res = CompileResult()
@@ -1239,6 +1250,7 @@ batching:
         TddCase("multipliers.split_metadata", "multipliers", case_multiplier_split_metadata),
         TddCase("batching.chunk_shorthand", "batching", case_batching_chunk),
         TddCase("batching.metadata_visible", "batching", case_batching_metadata),
+        TddCase("batching.include_other_metadata", "batching", case_batching_include_other),
         TddCase("cosmos.dual_suffix", "cosmos", case_cosmos_dual),
         TddCase("cosmos.bad_value", "cosmos", case_cosmos_bad_value),
         TddCase("reports.includes_sections", "reports", case_report),

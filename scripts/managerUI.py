@@ -276,8 +276,10 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
         "warnings": [m.to_dict() for m in result.warnings],
         "analysis": result.analysis,
     }, indent=2), quote=False)
-    recipe_names = [recipe.get("name") for recipe in recipes_doc.get("recipes", []) or [] if recipe.get("name")]
-    batching_names = [recipe.get("name") for recipe in recipes_doc.get("batching_recipes", []) or [] if recipe.get("name")]
+    recipe_defs = [recipe for recipe in recipes_doc.get("recipes", []) or [] if recipe.get("name")]
+    recipe_names = [recipe.get("name") for recipe in recipe_defs]
+    batching_recipes = [recipe for recipe in recipes_doc.get("batching_recipes", []) or [] if recipe.get("name")]
+    batching_names = [recipe.get("name") for recipe in batching_recipes]
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -356,7 +358,6 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
               </label>
               <label>Min Date Key<input id="builderMinDate" type="text"></label>
               <label>Max Date Key<input id="builderMaxDate" type="text"></label>
-              <label>Hospital ICD Table<input id="builderHospitalIcd" type="text"></label>
             </div>
             <div class="toolbar compact">
               <button id="builderNewTemplate">New Blank Template</button>
@@ -383,20 +384,64 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
             <h2>Batching</h2>
             <div class="inline-form">
               <select id="newBatchingRecipe"></select>
-              <input id="newBatchingValue" type="text" placeholder="values or chunk size">
+              <input id="newBatchingValue" type="text" placeholder="value or chunk size" list="batchingValueSuggestions">
               <button id="addBatching">Add Batching</button>
             </div>
+            <datalist id="batchingValueSuggestions"></datalist>
+            <p id="batchingHelp" class="helper-text"></p>
             <div id="batchingEditorRows" class="editor-rows"></div>
           </section>
 
           <section id="builderCohorts" class="builder-section block">
             <h2>Cohorts</h2>
+            <h3>Recipes</h3>
             <div class="inline-form">
               <select id="newCohortRecipe"></select>
               <input id="newCohortName" type="text" placeholder="cohort name">
               <button id="addCohort">Add Recipe</button>
             </div>
             <div id="cohortEditorRows" class="editor-rows"></div>
+            <h3>Custom</h3>
+            <div class="custom-builder">
+              <div id="pkWarning" class="message warn hidden">
+                <div class="message-code">PK warning</div>
+                <div class="message-body">This draft already has a PK cohort. Only one PK cohort should be used.</div>
+              </div>
+              <div class="form-grid">
+                <label>Name<input id="customName" type="text" placeholder="Mothers"></label>
+                <label>Destination<input id="customDestTable" type="text" placeholder="Mothers"></label>
+                <label>Type
+                  <select id="customType">
+                    <option value="fact">fact</option>
+                    <option value="PK">PK</option>
+                  </select>
+                </label>
+                <label class="checkbox-label"><input id="customPullThisCycle" type="checkbox" checked> Pull this cycle</label>
+                <label>From Table<input id="customFromTable" type="text" placeholder="BirthParentFact"></label>
+                <label>AS<input id="customFromAlias" type="text" placeholder="bpf"></label>
+              </div>
+              <div class="subsection-head">
+                <h4>Columns</h4>
+                <button id="addCustomColumn">Add Column</button>
+              </div>
+              <div id="customColumnRows" class="editor-rows"></div>
+              <div class="subsection-head">
+                <h4>Joins</h4>
+                <button id="addCustomJoin">Add Join</button>
+              </div>
+              <div id="customJoinRows" class="editor-rows"></div>
+              <div class="subsection-head">
+                <h4>Where</h4>
+                <button id="addCustomWhere">Add Where</button>
+              </div>
+              <div id="customWhereRows" class="editor-rows"></div>
+              <div class="toolbar compact">
+                <button id="addCustomCohort">Add Custom Cohort</button>
+                <button id="resetCustomCohort">Reset Custom Form</button>
+                <button id="copyCustomRecipe">Copy Custom As Recipe</button>
+                <button id="downloadCustomRecipe">Download Custom Recipe</button>
+              </div>
+            </div>
           </section>
 
           <section id="builderDraft" class="builder-section block">
@@ -470,8 +515,10 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
   </main>
 
   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
+  <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
   <script id="recipeNamesData" type="application/json">{json_payload(recipe_names)}</script>
   <script id="batchingNamesData" type="application/json">{json_payload(batching_names)}</script>
+  <script id="batchingRecipesData" type="application/json">{json_payload(batching_recipes)}</script>
   <script>{JS}</script>
 </body>
 </html>
@@ -559,12 +606,23 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .form-grid.single { grid-template-columns: minmax(220px, 520px); margin-bottom: 12px; }
 .form-grid label, .editor-row label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.checkbox-label { align-content: end; grid-template-columns: max-content 1fr; align-items: center; min-height: 62px; }
 .form-grid input, .form-grid select, .editor-row input, .editor-row select { width: 100%; color: var(--ink); font-weight: 400; }
 .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
 .editor-rows { display: grid; gap: 10px; }
 .editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
 .editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; }
-.editor-row.batch { grid-template-columns: minmax(140px, 1fr) minmax(220px, 2fr) auto; }
+.editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto; }
+.editor-row.custom-column { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
+.editor-row.line-editor { grid-template-columns: minmax(220px, 1fr) auto; }
+.custom-builder { display: grid; gap: 12px; margin-top: 10px; }
+.subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
+.subsection-head h4 { margin: 0; }
+.helper-text { margin: 0 0 12px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 38px; align-items: center; }
+.tag { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); padding: 5px 8px; color: var(--ink); }
+.tag button { border: 0; background: transparent; padding: 0 2px; color: var(--muted); }
+.tag-note { color: var(--muted); font-size: 12px; }
 .danger { color: var(--err); }
 .pipeline { display: grid; gap: 10px; }
 .pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -588,9 +646,12 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
 JS = r"""
 const initialTemplate = JSON.parse(document.getElementById('initialTemplateData').textContent);
+const recipeDefs = JSON.parse(document.getElementById('recipeDefsData').textContent);
 const recipeNames = JSON.parse(document.getElementById('recipeNamesData').textContent);
 const batchingNames = JSON.parse(document.getElementById('batchingNamesData').textContent);
+const batchingRecipes = JSON.parse(document.getElementById('batchingRecipesData').textContent);
 let draftTemplate = clone(initialTemplate);
+let customDraft = blankCustomCohort();
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
@@ -664,13 +725,12 @@ function ensureDraftShape() {
 
 function blankTemplate() {
   return {
-    project_db: '',
+    project_db: 'PROJECTD93A57',
     cosmos_db: 'COSMOS',
     project_folder: 'New Project',
     vars: {
       min_date_key: '',
-      max_date_key: '',
-      HospitalICDTable: 'HospitalICDCodes'
+      max_date_key: ''
     },
     upload_cohorts: [],
     multipliers: [],
@@ -686,9 +746,9 @@ function hydrateBuilder() {
   setValue('builderCosmosDb', draftTemplate.cosmos_db || 'COSMOS');
   setValue('builderMinDate', draftTemplate.vars.min_date_key || '');
   setValue('builderMaxDate', draftTemplate.vars.max_date_key || '');
-  setValue('builderHospitalIcd', draftTemplate.vars.HospitalICDTable || '');
   renderRecipeOptions();
   renderBatchingOptions();
+  renderCustomBuilder();
   renderUploadRows();
   renderBatchingRows();
   renderCohortRows();
@@ -712,28 +772,38 @@ function syncProjectFields() {
   draftTemplate.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
   draftTemplate.vars.min_date_key = getValue('builderMinDate');
   draftTemplate.vars.max_date_key = getValue('builderMaxDate');
-  draftTemplate.vars.HospitalICDTable = getValue('builderHospitalIcd');
   updateDraftYaml();
 }
 
-['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderHospitalIcd'].forEach(id => {
+['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', syncProjectFields);
   if (el) el.addEventListener('change', syncProjectFields);
 });
 
+['customName', 'customDestTable', 'customType', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', syncCustomFields);
+  if (el) el.addEventListener('change', syncCustomFields);
+});
+
 document.getElementById('builderDraftFilename')?.addEventListener('input', updateDraftYaml);
+document.getElementById('newBatchingRecipe')?.addEventListener('change', updateBatchingHelp);
 
 function renderRecipeOptions() {
   const select = document.getElementById('newCohortRecipe');
   if (!select) return;
-  select.innerHTML = recipeNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
+  select.innerHTML = [
+    ...recipeNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`),
+    '<option value="__custom__">Custom</option>'
+  ].join('');
 }
 
 function renderBatchingOptions() {
   const select = document.getElementById('newBatchingRecipe');
   if (!select) return;
   select.innerHTML = batchingNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
+  updateBatchingHelp();
 }
 
 function renderUploadRows() {
@@ -759,10 +829,23 @@ function renderBatchingRows() {
   if (!root) return;
   root.innerHTML = draftTemplate.batching.map((item, index) => {
     const parsed = describeBatching(item);
+    const isChunk = parsed.name === 'chunk';
+    const tags = parsed.values.map((value, valueIndex) => `
+      <span class="tag">${escapeHtml(value)} <button title="Remove value" data-remove-batching-value="${index}" data-value-index="${valueIndex}">x</button></span>
+    `).join('');
     return `
       <div class="editor-row batch">
-        <label>Recipe<input data-batching-field="name" data-index="${index}" value="${escapeAttr(parsed.name)}"></label>
-        <label>Value<input data-batching-field="value" data-index="${index}" value="${escapeAttr(parsed.value)}"></label>
+        <label>Recipe
+          <select data-batching-field="name" data-index="${index}">
+            ${batchingNames.map(name => `<option value="${escapeAttr(name)}" ${name === parsed.name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+          </select>
+        </label>
+        <label>${isChunk ? 'Rows Per Batch' : 'Values'}
+          ${isChunk
+            ? `<input data-batching-field="chunk" data-index="${index}" value="${escapeAttr(parsed.chunk || '')}" placeholder="2000">`
+            : `<div class="tag-list">${tags || '<span class="tag-note">All values. Explicit picks will also create an all-other batch.</span>'}</div>
+               <input data-batching-add-value="${index}" value="" placeholder="type value and press Enter">`}
+        </label>
         <button class="danger" data-remove-batching="${index}">Remove</button>
       </div>
     `;
@@ -774,28 +857,152 @@ function renderCohortRows() {
   if (!root) return;
   root.innerHTML = draftTemplate.cohorts.map((cohort, index) => `
     <div class="editor-row cohort">
-      <label>Recipe<input data-cohort-field="recipe" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort._recipe || cohort.name || '')}"></label>
+      <label>${cohort.recipe ? 'Recipe' : 'Custom'}<input data-cohort-field="${cohort.recipe ? 'recipe' : 'type'}" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort.type || '')}"></label>
       <label>Name<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
       <button class="danger" data-remove-cohort="${index}">Remove</button>
     </div>
   `).join('') || '<div class="empty">No cohorts in draft.</div>';
+  updatePkWarning();
+}
+
+function blankCustomCohort() {
+  return {
+    name: '',
+    dest_table: '',
+    type: 'fact',
+    pull_this_cycle: true,
+    columns: [],
+    filter: {
+      from_table: '',
+      from_alias: '',
+      join: [],
+      where: []
+    }
+  };
+}
+
+function renderCustomBuilder() {
+  setValue('customName', customDraft.name || '');
+  setValue('customDestTable', customDraft.dest_table || '');
+  setValue('customType', customDraft.type || 'fact');
+  const pull = document.getElementById('customPullThisCycle');
+  if (pull) pull.checked = customDraft.pull_this_cycle !== false;
+  setValue('customFromTable', customDraft.filter.from_table || '');
+  setValue('customFromAlias', customDraft.filter.from_alias || '');
+  renderCustomColumnRows();
+  renderCustomLineRows('customJoinRows', 'join', 'join condition');
+  renderCustomLineRows('customWhereRows', 'where', 'where condition');
+  updatePkWarning();
+}
+
+function renderCustomColumnRows() {
+  const root = document.getElementById('customColumnRows');
+  if (!root) return;
+  root.innerHTML = customDraft.columns.map((column, index) => `
+    <div class="editor-row custom-column">
+      <label>Source<input data-custom-column-field="source" data-index="${index}" value="${escapeAttr(column.source || '')}"></label>
+      <label>Name<input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}"></label>
+      <label>Type<input data-custom-column-field="type" data-index="${index}" value="${escapeAttr(column.type || '')}" placeholder="optional"></label>
+      <label>Nullable
+        <select data-custom-column-field="nullable" data-index="${index}">
+          <option value="" ${column.nullable === undefined || column.nullable === '' ? 'selected' : ''}>blank</option>
+          <option value="true" ${column.nullable === true || column.nullable === 'true' ? 'selected' : ''}>true</option>
+          <option value="false" ${column.nullable === false || column.nullable === 'false' ? 'selected' : ''}>false</option>
+        </select>
+      </label>
+      <button class="danger" data-remove-custom-column="${index}">Remove</button>
+    </div>
+  `).join('') || '<div class="empty">No custom columns yet.</div>';
+}
+
+function renderCustomLineRows(rootId, field, placeholder) {
+  const root = document.getElementById(rootId);
+  if (!root) return;
+  root.innerHTML = customDraft.filter[field].map((line, index) => `
+    <div class="editor-row line-editor">
+      <label>${field}<input data-custom-line-field="${field}" data-index="${index}" value="${escapeAttr(line || '')}" placeholder="${escapeAttr(placeholder)}"></label>
+      <button class="danger" data-remove-custom-line="${field}" data-index="${index}">Remove</button>
+    </div>
+  `).join('') || `<div class="empty">No ${escapeHtml(field)} lines yet.</div>`;
+}
+
+function syncCustomFields() {
+  customDraft.name = getValue('customName');
+  customDraft.dest_table = getValue('customDestTable');
+  customDraft.type = getValue('customType') || 'fact';
+  customDraft.pull_this_cycle = !!document.getElementById('customPullThisCycle')?.checked;
+  customDraft.filter.from_table = getValue('customFromTable');
+  customDraft.filter.from_alias = getValue('customFromAlias');
+  updatePkWarning();
+}
+
+function makeCustomCohort() {
+  syncCustomFields();
+  const cohort = {
+    name: customDraft.name || 'CustomCohort',
+    dest_table: customDraft.dest_table || customDraft.name || 'CustomCohort',
+    type: customDraft.type || 'fact',
+    pull_this_cycle: customDraft.pull_this_cycle !== false,
+    columns: customDraft.columns
+      .filter(column => column.source || column.name || column.type || column.nullable !== undefined)
+      .map(cleanColumn),
+    filter: {}
+  };
+  const fromTable = customDraft.filter.from_table;
+  const fromAlias = customDraft.filter.from_alias;
+  if (fromTable) cohort.filter.from = [fromAlias ? `${fromTable} as ${fromAlias}` : fromTable];
+  const joins = customDraft.filter.join.map(line => line.trim()).filter(Boolean);
+  const wheres = customDraft.filter.where.map(line => line.trim()).filter(Boolean);
+  if (joins.length) cohort.filter.join = joins;
+  if (wheres.length) cohort.filter.where = wheres;
+  return cohort;
+}
+
+function cleanColumn(column) {
+  const clean = {};
+  if (column.source) clean.source = column.source;
+  if (column.name) clean.name = column.name;
+  if (column.type) clean.type = column.type;
+  if (column.nullable !== undefined && column.nullable !== '') clean.nullable = column.nullable === true || column.nullable === 'true';
+  return clean;
+}
+
+function updatePkWarning() {
+  const warning = document.getElementById('pkWarning');
+  if (!warning) return;
+  const existingPk = draftTemplate.cohorts.some(cohort => {
+    if (String(cohort.type || '').toLowerCase() === 'pk') return true;
+    const recipe = recipeDefs.find(item => item.name === cohort.recipe);
+    return String(recipe?.type || '').toLowerCase() === 'pk';
+  });
+  const customPk = String(getValue('customType') || customDraft.type || '').toLowerCase() === 'pk';
+  warning.classList.toggle('hidden', !(existingPk && customPk));
+}
+
+function customRecipeText() {
+  const cohort = makeCustomCohort();
+  const recipeName = cohort.name || 'CustomRecipe';
+  const recipe = clone(cohort);
+  recipe.name = recipeName;
+  delete recipe.recipe;
+  return toYaml({ recipes: [recipe] });
 }
 
 function describeBatching(item) {
-  if (typeof item === 'number') return { name: 'chunk', value: String(item) };
-  if (typeof item === 'string') return { name: item, value: '' };
+  if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [] };
+  if (typeof item === 'string') return { name: item, chunk: '', values: [] };
   if (item && typeof item === 'object') {
-    if ('chunk' in item) return { name: 'chunk', value: String(item.chunk) };
-    if (item.name) return { name: item.name, value: Array.isArray(item.values) ? item.values.join(', ') : (item.rows_per_batch || '') };
+    if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [] };
+    if (item.name) return { name: item.name, chunk: String(item.rows_per_batch || ''), values: Array.isArray(item.values) ? item.values : [] };
     const keys = Object.keys(item);
     if (keys.length === 1) {
       const name = keys[0];
       const value = item[name];
-      if (value && typeof value === 'object') return { name, value: Array.isArray(value.values) ? value.values.join(', ') : (value.rows_per_batch || '') };
-      return { name, value: value == null ? '' : String(value) };
+      if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [] };
+      return { name, chunk: '', values: value == null ? [] : [String(value)] };
     }
   }
-  return { name: '', value: '' };
+  return { name: '', chunk: '', values: [] };
 }
 
 function batchingFromFields(name, value) {
@@ -803,10 +1010,27 @@ function batchingFromFields(name, value) {
     const parsed = parseInt(value || '0', 10);
     return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
   }
-  if (value) {
-    return { [name]: { values: value.split(',').map(v => v.trim()).filter(Boolean) } };
+  const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
+  if (values.length) {
+    return { [name]: { values, include_other: true } };
   }
   return name;
+}
+
+function updateBatchingHelp() {
+  const name = getValue('newBatchingRecipe');
+  const help = document.getElementById('batchingHelp');
+  const list = document.getElementById('batchingValueSuggestions');
+  const recipe = batchingRecipes.find(item => item.name === name) || {};
+  if (help) {
+    help.textContent = name === 'chunk'
+      ? 'Enter the number of PK rows per batch.'
+      : `Leave blank to batch by all ${name || 'selected'} values. If selecting specific values, all other values will be batched together.`;
+  }
+  if (list) {
+    const values = Array.isArray(recipe.values) ? recipe.values : [];
+    list.innerHTML = values.map(value => `<option value="${escapeAttr(value)}"></option>`).join('');
+  }
 }
 
 document.getElementById('addUpload')?.addEventListener('click', () => {
@@ -842,10 +1066,63 @@ document.getElementById('addCohort')?.addEventListener('click', () => {
   ensureDraftShape();
   const recipe = getValue('newCohortRecipe');
   if (!recipe) return;
+  if (recipe === '__custom__') {
+    document.getElementById('customName')?.focus();
+    return;
+  }
   draftTemplate.cohorts.push({ recipe, name: getValue('newCohortName') || recipe });
   setValue('newCohortName', '');
   renderCohortRows();
   updateDraftYaml();
+});
+
+document.getElementById('addCustomColumn')?.addEventListener('click', () => {
+  customDraft.columns.push({ source: '', name: '', type: '', nullable: '' });
+  renderCustomColumnRows();
+});
+
+document.getElementById('addCustomJoin')?.addEventListener('click', () => {
+  customDraft.filter.join.push('');
+  renderCustomLineRows('customJoinRows', 'join', 'join condition');
+});
+
+document.getElementById('addCustomWhere')?.addEventListener('click', () => {
+  customDraft.filter.where.push('');
+  renderCustomLineRows('customWhereRows', 'where', 'where condition');
+});
+
+document.getElementById('addCustomCohort')?.addEventListener('click', () => {
+  ensureDraftShape();
+  draftTemplate.cohorts.push(makeCustomCohort());
+  customDraft = blankCustomCohort();
+  renderCustomBuilder();
+  renderCohortRows();
+  updateDraftYaml();
+});
+
+document.getElementById('resetCustomCohort')?.addEventListener('click', () => {
+  customDraft = blankCustomCohort();
+  renderCustomBuilder();
+});
+
+document.getElementById('copyCustomRecipe')?.addEventListener('click', async () => {
+  const text = customRecipeText();
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    window.prompt('Copy custom recipe YAML:', text);
+  }
+});
+
+document.getElementById('downloadCustomRecipe')?.addEventListener('click', () => {
+  const text = customRecipeText();
+  const blob = new Blob([text], { type: 'text/yaml' });
+  const a = document.createElement('a');
+  const name = cleanDownloadName(`recipe_${makeCustomCohort().name || 'custom'}.yaml`);
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 
 document.addEventListener('input', event => {
@@ -857,13 +1134,25 @@ document.addEventListener('input', event => {
   }
   if (target.dataset.batchingField) {
     const parsed = describeBatching(draftTemplate.batching[index]);
-    parsed[target.dataset.batchingField] = target.value;
-    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.value);
+    if (target.dataset.batchingField === 'name') {
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
+      renderBatchingRows();
+    } else {
+      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
+    }
     updateDraftYaml();
   }
   if (target.dataset.cohortField) {
     draftTemplate.cohorts[index][target.dataset.cohortField] = target.value;
     updateDraftYaml();
+  }
+  if (target.dataset.customColumnField) {
+    const column = customDraft.columns[index];
+    const field = target.dataset.customColumnField;
+    column[field] = target.value;
+  }
+  if (target.dataset.customLineField) {
+    customDraft.filter[target.dataset.customLineField][index] = target.value;
   }
 });
 
@@ -873,6 +1162,21 @@ document.addEventListener('change', event => {
   if (target.dataset.uploadField) {
     draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
     updateDraftYaml();
+  }
+  if (target.dataset.batchingField) {
+    const parsed = describeBatching(draftTemplate.batching[index]);
+    if (target.dataset.batchingField === 'name') {
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
+      renderBatchingRows();
+    } else {
+      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
+    }
+    updateDraftYaml();
+  }
+  if (target.dataset.customColumnField) {
+    const column = customDraft.columns[index];
+    const field = target.dataset.customColumnField;
+    column[field] = target.value;
   }
 });
 
@@ -888,9 +1192,41 @@ document.addEventListener('click', event => {
     renderBatchingRows();
     updateDraftYaml();
   }
+  if (target.dataset.removeBatchingValue) {
+    const index = Number(target.dataset.removeBatchingValue);
+    const valueIndex = Number(target.dataset.valueIndex);
+    const parsed = describeBatching(draftTemplate.batching[index]);
+    parsed.values.splice(valueIndex, 1);
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
+    renderBatchingRows();
+    updateDraftYaml();
+  }
   if (target.dataset.removeCohort) {
     draftTemplate.cohorts.splice(Number(target.dataset.removeCohort), 1);
     renderCohortRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.removeCustomColumn) {
+    customDraft.columns.splice(Number(target.dataset.removeCustomColumn), 1);
+    renderCustomColumnRows();
+  }
+  if (target.dataset.removeCustomLine) {
+    customDraft.filter[target.dataset.removeCustomLine].splice(Number(target.dataset.index), 1);
+    renderCustomLineRows(target.dataset.removeCustomLine === 'join' ? 'customJoinRows' : 'customWhereRows', target.dataset.removeCustomLine, `${target.dataset.removeCustomLine} condition`);
+  }
+});
+
+document.addEventListener('keydown', event => {
+  const target = event.target;
+  if (target.dataset.batchingAddValue && event.key === 'Enter') {
+    event.preventDefault();
+    const value = target.value.trim();
+    if (!value) return;
+    const index = Number(target.dataset.batchingAddValue);
+    const parsed = describeBatching(draftTemplate.batching[index]);
+    if (!parsed.values.includes(value)) parsed.values.push(value);
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
+    renderBatchingRows();
     updateDraftYaml();
   }
 });
