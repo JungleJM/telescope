@@ -1,0 +1,2133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telescope YAML Manager</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #20242a;
+  --muted: #69717d;
+  --line: #d9dee5;
+  --accent: #256f8f;
+  --ok: #26734d;
+  --warn: #9a6200;
+  --err: #a13737;
+  --chip: #eef2f5;
+}
+body.dark {
+  color-scheme: dark;
+  --bg: #16181b;
+  --panel: #20242a;
+  --ink: #edf0f3;
+  --muted: #a7b0bb;
+  --line: #343a42;
+  --accent: #6fb1cf;
+  --ok: #74c69d;
+  --warn: #e4b363;
+  --err: #ff8a8a;
+  --chip: #2b3138;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 4; }
+h1 { margin: 0; font-size: 22px; }
+h2 { margin: 0 0 14px; font-size: 18px; }
+h3 { margin: 0 0 12px; font-size: 15px; }
+h4 { margin: 12px 0 8px; font-size: 13px; }
+p { color: var(--muted); margin: 4px 0 0; }
+button, input { font: inherit; }
+button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 11px; border-radius: 7px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+main { padding: 22px; max-width: 1500px; margin: 0 auto; }
+.summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.metric span { display: block; color: var(--muted); font-size: 12px; }
+.metric strong { display: block; font-size: 24px; margin-top: 6px; }
+.metric.ok strong { color: var(--ok); }
+.metric.error strong { color: var(--err); }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+.panel { display: none; }
+.panel.active { display: block; }
+.grid { display: grid; gap: 14px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.block, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 15px; margin-bottom: 12px; }
+.card summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; font-weight: 700; }
+.badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 8px; background: var(--chip); color: var(--ink); font-size: 12px; font-weight: 600; }
+.badge.ok, .badge.pk { color: var(--ok); }
+.badge.error { color: var(--err); }
+.message { border-left: 4px solid var(--line); padding: 10px 12px; background: var(--chip); border-radius: 6px; margin-bottom: 9px; }
+.message.error { border-left-color: var(--err); }
+.message.warn { border-left-color: var(--warn); }
+.message-code { font-weight: 800; font-size: 13px; }
+.message-context, .muted { color: var(--muted); font-size: 12px; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+ul { padding-left: 18px; margin: 8px 0; }
+pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1px solid var(--line); border-radius: 7px; padding: 12px; max-height: 520px; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.toolbar input { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); }
+.pipeline { display: grid; gap: 10px; }
+.pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.pipeline-step span { display: grid; place-items: center; height: 26px; width: 26px; border-radius: 50%; background: var(--chip); }
+.pipeline-step.pass em { color: var(--ok); }
+.pipeline-step.fail em { color: var(--err); }
+.graph-layout { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 18px; }
+.node-list { display: grid; gap: 8px; }
+.node { border: 1px solid var(--line); background: var(--chip); border-radius: 8px; padding: 10px; font-weight: 650; }
+.edge-list { margin-top: 0; }
+.linklike { border: 0; background: transparent; padding: 0; color: var(--accent); text-decoration: underline; }
+.empty { color: var(--muted); padding: 8px 0; }
+.hidden { display: none; }
+@media (max-width: 900px) {
+  .summary, .grid.two, .grid.three, .graph-layout { grid-template-columns: 1fr; }
+  header { position: static; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Telescope YAML Manager</h1>
+      <p>YAMLs/template.yaml | YAMLs/recipes.yaml</p>
+    </div>
+    <button id="themeToggle" title="Toggle dark mode">Theme</button>
+  </header>
+
+  <main>
+    
+      <div class="summary">
+        <div class="metric error"><span>Status</span><strong>Blocked</strong></div>
+        <div class="metric"><span>Errors</span><strong>1</strong></div>
+        <div class="metric"><span>Warnings</span><strong>1</strong></div>
+        <div class="metric"><span>Cohorts</span><strong>8</strong></div>
+        <div class="metric"><span>Uploads</span><strong>2</strong></div>
+      </div>
+    
+
+    <nav class="tabs" aria-label="Dashboard sections">
+      <button class="tab active" data-tab="validation">Validation</button>
+      <button class="tab" data-tab="pipeline">Pipeline</button>
+      <button class="tab" data-tab="cohorts">Cohorts</button>
+      <button class="tab" data-tab="uploads">Uploads</button>
+      <button class="tab" data-tab="recipes">Recipes</button>
+      <button class="tab" data-tab="graph">Graph</button>
+      <button class="tab" data-tab="yaml">YAML</button>
+    </nav>
+
+    <section id="validation" class="panel active">
+      <div class="grid two">
+        <section class="block">
+          <h2>Errors</h2>
+          
+            <div class="message error">
+              <div class="message-code">missing_upload_file</div>
+              <div class="message-body">Upload file not found: YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv</div>
+              <div class="message-context">HospitalICDCodes</div>
+            </div>
+            
+        </section>
+        <section class="block">
+          <h2>Warnings</h2>
+          
+            <div class="message warn">
+              <div class="message-code">upload_schema_unknown</div>
+              <div class="message-body">Upload `PKTable` has no locally discoverable schema.</div>
+              <div class="message-context">PKTable</div>
+            </div>
+            
+        </section>
+      </div>
+    </section>
+
+    <section id="pipeline" class="panel">
+      <section class="block">
+        <h2>Compiler Pipeline</h2>
+        <div class="pipeline"><div class="pipeline-step pass"><span>1</span><strong>Load YAML</strong><em>pass</em></div><div class="pipeline-step pass"><span>2</span><strong>Import Recipes</strong><em>pass</em></div><div class="pipeline-step pass"><span>3</span><strong>Infer Variables</strong><em>pass</em></div><div class="pipeline-step fail"><span>4</span><strong>Validate Uploads</strong><em>blocked</em></div><div class="pipeline-step pass"><span>5</span><strong>Validate Columns</strong><em>pass</em></div><div class="pipeline-step fail"><span>6</span><strong>Render Output</strong><em>blocked</em></div><div class="pipeline-step fail"><span>7</span><strong>Ready For VM</strong><em>blocked</em></div></div>
+      </section>
+    </section>
+
+    <section id="cohorts" class="panel">
+      <div class="toolbar">
+        <input id="cohortSearch" type="search" placeholder="Filter cohorts">
+        <button data-expand="cohorts">Expand All</button>
+        <button data-collapse="cohorts">Collapse All</button>
+      </div>
+      <div id="cohortCards">
+            <details class="card cohort-card" id="cohort-ucblackpatients">
+              <summary>
+                <span>UCblackPatients</span>
+                <span><span class="badge pk">PK</span> <span class="badge neutral">UCblackPatients</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>- multiplier: Race
+  strat: black
+  applies_to: PKTable
+  column: FirstRace
+  values:
+    - &quot;Black %&quot;
+  condition: &quot;pk.FirstRace LIKE &#x27;Black %&#x27;&quot;</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-ucblackotherhospitalizations">
+              <summary>
+                <span>UCblackOtherHospitalizations</span>
+                <span><span class="badge neutral">fact</span> <span class="badge neutral">UCblackOtherHospitalizations</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>None</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-ucwhitepatients">
+              <summary>
+                <span>UCwhitePatients</span>
+                <span><span class="badge pk">PK</span> <span class="badge neutral">UCwhitePatients</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>- multiplier: Race
+  strat: white
+  applies_to: PKTable
+  role: control
+  row_mult: 4
+  column: FirstRace
+  values:
+    - &quot;White %&quot;
+  condition: &quot;pk.FirstRace LIKE &#x27;White %&#x27;&quot;</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-ucwhiteotherhospitalizations">
+              <summary>
+                <span>UCwhiteOtherHospitalizations</span>
+                <span><span class="badge neutral">fact</span> <span class="badge neutral">UCwhiteOtherHospitalizations</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>None</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-crohnsblackpatients">
+              <summary>
+                <span>CrohnsblackPatients</span>
+                <span><span class="badge pk">PK</span> <span class="badge neutral">CrohnsblackPatients</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>- multiplier: Race
+  strat: black
+  applies_to: PKTable
+  column: FirstRace
+  values:
+    - &quot;Black %&quot;
+  condition: &quot;pk.FirstRace LIKE &#x27;Black %&#x27;&quot;</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-crohnsblackotherhospitalizations">
+              <summary>
+                <span>CrohnsblackOtherHospitalizations</span>
+                <span><span class="badge neutral">fact</span> <span class="badge neutral">CrohnsblackOtherHospitalizations</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>None</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-crohnswhitepatients">
+              <summary>
+                <span>CrohnswhitePatients</span>
+                <span><span class="badge pk">PK</span> <span class="badge neutral">CrohnswhitePatients</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>- multiplier: Race
+  strat: white
+  applies_to: PKTable
+  role: control
+  row_mult: 4
+  column: FirstRace
+  values:
+    - &quot;White %&quot;
+  condition: &quot;pk.FirstRace LIKE &#x27;White %&#x27;&quot;</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            
+
+            <details class="card cohort-card" id="cohort-crohnswhiteotherhospitalizations">
+              <summary>
+                <span>CrohnswhiteOtherHospitalizations</span>
+                <span><span class="badge neutral">fact</span> <span class="badge neutral">CrohnswhiteOtherHospitalizations</span></span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Required Variables</h4>
+                  <ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                </section>
+              </div>
+              <section>
+                <h4>Input Table Contracts</h4>
+                <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Split After Build</h4>
+                <pre>None</pre>
+              </section>
+              <section>
+                <h4>Batching</h4>
+                <pre>None</pre>
+              </section>
+            </details>
+            </div>
+    </section>
+
+    <section id="uploads" class="panel">
+      <section class="block">
+        <h2>Upload Cohorts</h2>
+        
+            <details class="card" open>
+              <summary>
+                <span>PKTable</span>
+                <span class="badge ok">registered</span>
+              </summary>
+              <dl>
+                <dt>Destination</dt><dd>PKTable</dd>
+                <dt>Type</dt><dd>dbtable</dd>
+                <dt>Scope</dt><dd>global</dd>
+                <dt>Push This Cycle</dt><dd>True</dd>
+                <dt>File</dt><dd></dd>
+              </dl>
+            </details>
+            
+
+            <details class="card" open>
+              <summary>
+                <span>HospitalICDCodes</span>
+                <span class="badge error">error</span>
+              </summary>
+              <dl>
+                <dt>Destination</dt><dd>HospitalICDCodes</dd>
+                <dt>Type</dt><dd>csv</dd>
+                <dt>Scope</dt><dd>global</dd>
+                <dt>Push This Cycle</dt><dd>True</dd>
+                <dt>File</dt><dd>yamls/IBD/ED and Surgery/ICD-hosp.csv</dd>
+              </dl>
+            </details>
+            
+      </section>
+    </section>
+
+    <section id="recipes" class="panel">
+      <section class="block">
+        <h2>Recipes</h2>
+        
+            <details class="card">
+              <summary>
+                <span>PatientWithDx</span>
+                <span class="badge pk">PK</span>
+              </summary>
+              <p>First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)</p>
+              <div class="grid three">
+                <section><h4>Required Variables</h4><ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul></section>
+                <section><h4>Table Inputs</h4><div class="empty">None</div></section>
+              </div>
+            </details>
+            
+
+            <details class="card">
+              <summary>
+                <span>IndexDiagnosis</span>
+                <span class="badge neutral">fact</span>
+              </summary>
+              <p>Patient&#x27;s first time diagnoses with the condition, with date, age at diagnosis, event data</p>
+              <div class="grid three">
+                <section><h4>Required Variables</h4><ul><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class='muted'>+ 4 more</li></ul></section>
+                <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>DiagnosisEventKey</li><li>PatientDurableKey</li></ul></section>
+              </div>
+            </details>
+            
+
+            <details class="card">
+              <summary>
+                <span>OtherDiagnoses</span>
+                <span class="badge neutral">fact</span>
+              </summary>
+              <p>Patient&#x27;s diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions</p>
+              <div class="grid three">
+                <section><h4>Required Variables</h4><ul><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class='muted'>+ 4 more</li></ul></section>
+                <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>DiagnosisEventKey</li><li>PatientDurableKey</li></ul></section>
+              </div>
+            </details>
+            
+
+            <details class="card">
+              <summary>
+                <span>OtherHospitalizations</span>
+                <span class="badge neutral">fact</span>
+              </summary>
+              <p></p>
+              <div class="grid three">
+                <section><h4>Required Variables</h4><ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul></section>
+                <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable as ih</h4><ul><li>DiagnosisCode</li></ul></section>
+              </div>
+            </details>
+            
+      </section>
+    </section>
+
+    <section id="graph" class="panel">
+      <section class="block">
+        <h2>Dependency Graph</h2>
+        
+      <div class="graph-layout">
+        <div class="node-list"><div class="node" data-node="UCblackPatients">UCblackPatients</div><div class="node" data-node="UCblackOtherHospitalizations">UCblackOtherHospitalizations</div><div class="node" data-node="UCwhitePatients">UCwhitePatients</div><div class="node" data-node="UCwhiteOtherHospitalizations">UCwhiteOtherHospitalizations</div><div class="node" data-node="CrohnsblackPatients">CrohnsblackPatients</div><div class="node" data-node="CrohnsblackOtherHospitalizations">CrohnsblackOtherHospitalizations</div><div class="node" data-node="CrohnswhitePatients">CrohnswhitePatients</div><div class="node" data-node="CrohnswhiteOtherHospitalizations">CrohnswhiteOtherHospitalizations</div><div class="node" data-node="PKTable">PKTable</div><div class="node" data-node="HospitalICDTable">HospitalICDTable</div></div>
+        <div>
+          <h3>Dependencies</h3>
+          <ul class="edge-list"><li><button class="linklike" data-target="UCblackOtherHospitalizations">PKTable -> UCblackOtherHospitalizations</button> <span class="muted">(PKTable)</span></li><li><button class="linklike" data-target="UCblackOtherHospitalizations">HospitalICDTable -> UCblackOtherHospitalizations</button> <span class="muted">(HospitalICDTable)</span></li><li><button class="linklike" data-target="UCwhiteOtherHospitalizations">PKTable -> UCwhiteOtherHospitalizations</button> <span class="muted">(PKTable)</span></li><li><button class="linklike" data-target="UCwhiteOtherHospitalizations">HospitalICDTable -> UCwhiteOtherHospitalizations</button> <span class="muted">(HospitalICDTable)</span></li><li><button class="linklike" data-target="CrohnsblackOtherHospitalizations">PKTable -> CrohnsblackOtherHospitalizations</button> <span class="muted">(PKTable)</span></li><li><button class="linklike" data-target="CrohnsblackOtherHospitalizations">HospitalICDTable -> CrohnsblackOtherHospitalizations</button> <span class="muted">(HospitalICDTable)</span></li><li><button class="linklike" data-target="CrohnswhiteOtherHospitalizations">PKTable -> CrohnswhiteOtherHospitalizations</button> <span class="muted">(PKTable)</span></li><li><button class="linklike" data-target="CrohnswhiteOtherHospitalizations">HospitalICDTable -> CrohnswhiteOtherHospitalizations</button> <span class="muted">(HospitalICDTable)</span></li></ul>
+        </div>
+      </div>
+    
+      </section>
+    </section>
+
+    <section id="yaml" class="panel">
+      <div class="grid two">
+        <section class="block">
+          <h2>Source YAML</h2>
+          <pre># Cosmos variables
+project_db: PROJECTD33A929  #Must Start with &#x27;PROJECTD...&#x27;
+cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
+                         # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
+
+# Initial variables. Dates in format YYYYMMDD
+vars: 
+  min_date_key: 19900101
+  max_date_key: 20260601
+  HospitalICDTable: HospitalICDCodes
+
+# Test Vars
+test_options:
+  smallset: false              # If true, will just make a table up to &#x27;stop_at&#x27; number of rows for the PKTable
+  stop_at_for_pk_table: 10     # limits to SELECT TOP(value)
+  stop_at_for_non_pk_tables: 0 # 0 or blank means &#x27;don&#x27;t stop_at&#x27;
+  random_pk_sample: false      # For controls in multiplier will always be random
+  printout_md: true            # Can print out a Markdown of the run and its results (rows, time, etc). in the r_dump root
+
+
+# Data Science Variables.
+# Generates R scripts to run in R Studio to make Parquet files of what you just pulled
+project_folder: &quot;Test Run&quot;     # Folder within QueryGenerator. 
+
+
+upload_cohorts:
+  - name: PKTable              # PROJECTS.&lt;project_db&gt;.dbo.(name))
+    dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
+    file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS&#x27;.dbo.project_db)
+    push_this_cycle: true      # optional; defaults to true
+
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: &quot;yamls/IBD/ED and Surgery/ICD-hosp.csv&quot;
+    scope: global #global or per_group
+    push_this_cycle: true
+
+multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it&#x27;s BlackCrohns, WhiteUC, etc.
+  - name: IBDType
+    stage: during_build
+    levels:
+      - strat: UC
+        vars:
+          ICD_Value:
+            - K51.%
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - K50.%
+  - name: Race
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: black
+        column: FirstRace
+        values:
+          - &quot;Black %&quot;
+      - strat: white
+        role: control
+        column: FirstRace
+        values:
+          - &quot;White %&quot;
+        row_mult: 4
+batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
+  - name: state
+    column: StateOrProvinceAbbreviation
+    values:
+      - LA
+      - MS
+      - GA
+      - NC
+    separate_parquets: true
+  - name: sex
+    column: Sex
+    values:
+      - Female
+      - Male
+    separate_parquets: true
+  - chunk: 2000 # if a number, splits into batches (not sure how to do yet)
+
+cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
+  - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
+    name: Patients
+  - recipe: OtherHospitalizations
+
+
+
+
+  # Make as many cohorts as you need, each is its own table. 
+  # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you&#x27;re deriving from
+
+  #Example Cohorts - will be ignored, just for the sake of being an example on the template
+example_cohorts: 
+  - name: Patients
+    type: example # PK is generally the index all the others check against. non-PK tables are &#x27;fact&#x27;. &#x27;example&#x27; means ignore. 
+    pull_this_cycle: false # if true, will become part of the cohort cycle. Sometimes you just want to update some and not others. 
+    dest_table: Patients #Optional - if not specified, it just uses the same name as name:
+    columns: #Try to have everything you&#x27;ll need for any future cohort to find info needed. For instance,
+      # If later you need ED visit and vitals info, you likely need ArrivalDateKey, EncounterKey.
+      # If it&#x27;s all in one table it&#x27;s much easier to pull later data, even if it&#x27;s not a &quot;primary key&quot;
+      - source: pk.x
+        name: # Name in the output table. If you leave alone, skill.md will fill with same name as (column)
+        type: # Filled by skill.mg
+        nullable: # Filled by skill.mg
+      - source: pk.x # repeat as necessary
+      - source: pk.x
+      - source: dt.x # data from a joined table, which you declare in the &#x27;join:&#x27; section. 
+    # PK cohort: EdVisitFact + DiagnosisEventFact, no DurationDim, with pediatric age filter via AgeKey and ED primary diagnosis restriction.
+    filter:
+      from: # the general collection on Cosmos (&#x27;All ED visits&#x27; is EDVisitFacts, etc. Look at Data Dictionary for what it contains).
+         DiagnosisEventFact as pk
+      join: # You join another table for filtering or for getting other information -
+        - &quot;INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey&quot; # for filtering by dt.value, dxf.StartDateKey
+        - &quot;INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey&quot; # for getting more information about patient and adding it to table
+        - &quot;INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey&quot; # Sometimes you just need one conversion. AgeKey doesn&#x27;t give an age, it&#x27;s a key that needs a translation to Years by DurationDim.
+        # likely INNER JOIN COSMOS.{cosmos_db}.dbo.(someFact) as sf.(CommonKey) = pk.(CommonKey)
+        # IF EMPTY MUST USE []
+      where:
+        # Your filtering logic. Date ranges, &quot;Had RSV,&quot; &quot;Diagnosed with IBD&quot;, etc.
+        # Will likely use your join to do some logic filtering here, as well as variables like date ranges
+        - &quot;dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - &quot;dxf.StartDateKey &gt;= 0&quot;
+        - &quot;dxf._IsDeleted = 0&quot;
+        - &quot;dt._IsDeleted = 0&quot;
+        - &quot;p.IsValid = 1&quot;
+        - &quot;p.IsCurrent = 1&quot;
+        - &quot;p.UseInCosmosAnalytics_X = 1&quot;
+        - &quot;dt.Type IN (&#x27;ICD-10-AM&#x27;,&#x27;ICD-10-CA&#x27;,&#x27;ICD-10-CM&#x27;, &#x27;ICD-9 CM&#x27;)&quot;
+        - &quot;{{sql_condition(&#x27;dt.Value&#x27;, ICD_Value)}}&quot;
+
+  # You can also make custom ones - example below of things you&#x27;d need. 
+  - name: MotherOfPatients #Flavor of what you want to pull - for instance, if it&#x27;s a baby and you also want the mother&#x27;s record
+    pull_this_cycle: true
+    type: example
+    dest_table: #PROJECTS-local table name. Cosmos will Pre-pend &quot;JVM_&quot; to Cosmos tables to make them unique.
+    vars: 
+      PKTable: Mothers # If you want to have this one override the standard PKTable from the cohort
+    columns: # Each &#x27;source&#x27; below is a column in your table, you&#x27;ll define the anchor in &#x27;filter&#x27; below.
+      # Example: &quot;Patients&quot; could be &#x27;p&#x27;, so &#x27;p.AgeKey&#x27; would be the agekey var for that patient
+      - source: bpf.x
+        name:
+        type:
+        nullable:
+    filter:
+      from: BirthParentFact as bpf # the general collection on Cosmos.
+      join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
+        - &quot;INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = bpf.EncounterKey&quot; # Joining another table at the key from PKTable and pulling data into a
+      where: #Logic for filtering things out (&quot;AgeKey &gt;18,&quot; etc.)
+</pre>
+        </section>
+        <section class="block">
+          <h2>Finished YAML Preview</h2>
+          <pre>project_db: PROJECTD33A929
+cosmos_db: Dual
+vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+  HospitalICDTable: HospitalICDCodes
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  stop_at_for_non_pk_tables: 0
+  random_pk_sample: false
+  printout_md: true
+project_folder: Test Run
+upload_cohorts:
+  - name: PKTable
+    dest_table: PKTable
+    file_type: dbtable
+    push_this_cycle: true
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: yamls/IBD/ED and Surgery/ICD-hosp.csv
+    scope: global
+    push_this_cycle: true
+multipliers:
+  - name: IBDType
+    stage: during_build
+    levels:
+      - strat: UC
+        vars:
+          ICD_Value:
+            - &quot;K51.%&quot;
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - &quot;K50.%&quot;
+  - name: Race
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: black
+        column: FirstRace
+        values:
+          - &quot;Black %&quot;
+      - strat: white
+        role: control
+        column: FirstRace
+        values:
+          - &quot;White %&quot;
+        row_mult: 4
+batching:
+  - name: state
+    column: StateOrProvinceAbbreviation
+    values:
+      - LA
+      - MS
+      - GA
+      - NC
+    separate_parquets: true
+  - name: sex
+    column: Sex
+    values:
+      - Female
+      - Male
+    separate_parquets: true
+  - chunk: 2000
+cohorts:
+  - name: UCblackPatients
+    description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+    type: PK
+    pull_this_cycle: true
+    dest_table: UCblackPatients
+    dedup_keys:
+      -
+        - PatientDurableKey
+    dedup_order_by:
+      - IndexDate
+    columns:
+      - source: dxf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.Sex
+        name: Sex
+        type: VARCHAR(50)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+      - source: dur.Years
+        name: AgeAtIndexDiagnosis
+        type: BIGINT
+        nullable: true
+      - source: p.BirthDate
+        name: BirthDate
+        type: DATE
+        nullable: true
+      - source: p.StateOrProvince
+        name: StateOrProvince
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        type: VARCHAR(300)
+        nullable: false
+      - source: p.Country
+        name: Country
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dxf.StartDateKey
+        name: IndexDate
+        type: INT
+        nullable: true
+      - source: dxf.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+      - source: dxf.EncounterKey
+        name: IndexEncounter
+        type: BIGINT
+        nullable: false
+      - source: p.DurableKey
+        name: DurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.FirstRace
+        name: FirstRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SecondRace
+        name: SecondRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.ThirdRace
+        name: ThirdRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FourthRace
+        name: FourthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FifthRace
+        name: FifthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviOverallPctlRankByZip2020_X
+        name: SviOverallPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviSocioeconomicPctlRankByZip2020_X
+        name: SviSocioeconomicPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+    filter:
+      from:
+        - DiagnosisEventFact as dxf
+      join:
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey
+        - INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey
+      where:
+        - &quot;dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf.StartDateKey &gt;= 0
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - p.IsValid = 1
+        - p.IsCurrent = 1
+        - p.UseInCosmosAnalytics_X = 1
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;,&#x27;ICD-10-CA&#x27;,&#x27;ICD-10-CM&#x27;, &#x27;ICD-9 CM&#x27;)
+        - &quot;{{sql_condition(&#x27;dt.Value&#x27;, ICD_Value)}}&quot;
+    vars:
+      ICD_Value:
+        - &quot;K51.%&quot;
+    split_after_build:
+      - multiplier: Race
+        strat: black
+        applies_to: PKTable
+        column: FirstRace
+        values:
+          - &quot;Black %&quot;
+        condition: &quot;pk.FirstRace LIKE &#x27;Black %&#x27;&quot;
+  - name: UCblackOtherHospitalizations
+    type: fact
+    pull_this_cycle: true
+    dest_table: UCblackOtherHospitalizations
+    dedup_keys:
+      -
+        - InpatientEncounterKey
+    columns:
+      - source: haf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        type: BIGINT
+        nullable: false
+      - source: haf.EncounterKey
+        name: InpatientEncounterKey
+        type: BIGINT
+        nullable: false
+      - source: haf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: haf.AdmissionDateKey
+        name: AdmissionDateKey
+        type: INT
+        nullable: false
+      - source: haf.InpatientAdmissionInstant
+        name: InpatientAdmissionInstant
+        type: DATETIME2(7)
+        nullable: false
+      - source: haf.DischargeDateKey
+        name: DischargeDateKey
+        type: INT
+        nullable: true
+      - source: haf.DischargeInstant
+        name: DischargeInstant
+        type: DATETIME2(7)
+        nullable: true
+      - source: haf.DischargeDisposition
+        name: DischargeDisposition
+        type: VARCHAR(300)
+        nullable: true
+      - source: haf.InpatientLengthOfStayInDays
+        name: InpatientLengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.LengthOfStayInDays
+        name: LengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.DaysSincePriorAdmission_X
+        name: DaysSincePriorAdmission_X
+        type: INT
+        nullable: true
+      - source: haf.ReadmissionCausedByKey_X
+        name: ReadmissionCausedByKey_X
+        type: BIGINT
+        nullable: true
+      - source: haf.IsPlannedReadmission_X
+        name: IsPlannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.IsUnplannedReadmission_X
+        name: IsUnplannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.EncounterType
+        name: EncounterType
+        type: NVARCHAR(300)
+        nullable: true
+      - source: haf.FinancialClass
+        name: FinancialClass
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+    filter:
+      from:
+        - HospitalAdmissionFact AS haf
+      join:
+        - &quot;INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey&quot;
+        - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - &quot;INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value&quot;
+      where:
+        - haf._IsDeleted = 0
+        - haf.AdmissionDateKey IS NOT NULL
+        - &quot;haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;, &#x27;ICD-10-CA&#x27;, &#x27;ICD-10-CM&#x27;, &#x27;ICD-9-CM&#x27;)
+    vars:
+      ICD_Value:
+        - &quot;K51.%&quot;
+  - name: UCwhitePatients
+    description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+    type: PK
+    pull_this_cycle: true
+    dest_table: UCwhitePatients
+    dedup_keys:
+      -
+        - PatientDurableKey
+    dedup_order_by:
+      - IndexDate
+    columns:
+      - source: dxf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.Sex
+        name: Sex
+        type: VARCHAR(50)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+      - source: dur.Years
+        name: AgeAtIndexDiagnosis
+        type: BIGINT
+        nullable: true
+      - source: p.BirthDate
+        name: BirthDate
+        type: DATE
+        nullable: true
+      - source: p.StateOrProvince
+        name: StateOrProvince
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        type: VARCHAR(300)
+        nullable: false
+      - source: p.Country
+        name: Country
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dxf.StartDateKey
+        name: IndexDate
+        type: INT
+        nullable: true
+      - source: dxf.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+      - source: dxf.EncounterKey
+        name: IndexEncounter
+        type: BIGINT
+        nullable: false
+      - source: p.DurableKey
+        name: DurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.FirstRace
+        name: FirstRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SecondRace
+        name: SecondRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.ThirdRace
+        name: ThirdRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FourthRace
+        name: FourthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FifthRace
+        name: FifthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviOverallPctlRankByZip2020_X
+        name: SviOverallPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviSocioeconomicPctlRankByZip2020_X
+        name: SviSocioeconomicPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+    filter:
+      from:
+        - DiagnosisEventFact as dxf
+      join:
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey
+        - INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey
+      where:
+        - &quot;dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf.StartDateKey &gt;= 0
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - p.IsValid = 1
+        - p.IsCurrent = 1
+        - p.UseInCosmosAnalytics_X = 1
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;,&#x27;ICD-10-CA&#x27;,&#x27;ICD-10-CM&#x27;, &#x27;ICD-9 CM&#x27;)
+        - &quot;{{sql_condition(&#x27;dt.Value&#x27;, ICD_Value)}}&quot;
+    vars:
+      ICD_Value:
+        - &quot;K51.%&quot;
+    split_after_build:
+      - multiplier: Race
+        strat: white
+        applies_to: PKTable
+        role: control
+        row_mult: 4
+        column: FirstRace
+        values:
+          - &quot;White %&quot;
+        condition: &quot;pk.FirstRace LIKE &#x27;White %&#x27;&quot;
+  - name: UCwhiteOtherHospitalizations
+    type: fact
+    pull_this_cycle: true
+    dest_table: UCwhiteOtherHospitalizations
+    dedup_keys:
+      -
+        - InpatientEncounterKey
+    columns:
+      - source: haf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        type: BIGINT
+        nullable: false
+      - source: haf.EncounterKey
+        name: InpatientEncounterKey
+        type: BIGINT
+        nullable: false
+      - source: haf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: haf.AdmissionDateKey
+        name: AdmissionDateKey
+        type: INT
+        nullable: false
+      - source: haf.InpatientAdmissionInstant
+        name: InpatientAdmissionInstant
+        type: DATETIME2(7)
+        nullable: false
+      - source: haf.DischargeDateKey
+        name: DischargeDateKey
+        type: INT
+        nullable: true
+      - source: haf.DischargeInstant
+        name: DischargeInstant
+        type: DATETIME2(7)
+        nullable: true
+      - source: haf.DischargeDisposition
+        name: DischargeDisposition
+        type: VARCHAR(300)
+        nullable: true
+      - source: haf.InpatientLengthOfStayInDays
+        name: InpatientLengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.LengthOfStayInDays
+        name: LengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.DaysSincePriorAdmission_X
+        name: DaysSincePriorAdmission_X
+        type: INT
+        nullable: true
+      - source: haf.ReadmissionCausedByKey_X
+        name: ReadmissionCausedByKey_X
+        type: BIGINT
+        nullable: true
+      - source: haf.IsPlannedReadmission_X
+        name: IsPlannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.IsUnplannedReadmission_X
+        name: IsUnplannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.EncounterType
+        name: EncounterType
+        type: NVARCHAR(300)
+        nullable: true
+      - source: haf.FinancialClass
+        name: FinancialClass
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+    filter:
+      from:
+        - HospitalAdmissionFact AS haf
+      join:
+        - &quot;INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey&quot;
+        - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - &quot;INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value&quot;
+      where:
+        - haf._IsDeleted = 0
+        - haf.AdmissionDateKey IS NOT NULL
+        - &quot;haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;, &#x27;ICD-10-CA&#x27;, &#x27;ICD-10-CM&#x27;, &#x27;ICD-9-CM&#x27;)
+    vars:
+      ICD_Value:
+        - &quot;K51.%&quot;
+  - name: CrohnsblackPatients
+    description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+    type: PK
+    pull_this_cycle: true
+    dest_table: CrohnsblackPatients
+    dedup_keys:
+      -
+        - PatientDurableKey
+    dedup_order_by:
+      - IndexDate
+    columns:
+      - source: dxf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.Sex
+        name: Sex
+        type: VARCHAR(50)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+      - source: dur.Years
+        name: AgeAtIndexDiagnosis
+        type: BIGINT
+        nullable: true
+      - source: p.BirthDate
+        name: BirthDate
+        type: DATE
+        nullable: true
+      - source: p.StateOrProvince
+        name: StateOrProvince
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        type: VARCHAR(300)
+        nullable: false
+      - source: p.Country
+        name: Country
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dxf.StartDateKey
+        name: IndexDate
+        type: INT
+        nullable: true
+      - source: dxf.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+      - source: dxf.EncounterKey
+        name: IndexEncounter
+        type: BIGINT
+        nullable: false
+      - source: p.DurableKey
+        name: DurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.FirstRace
+        name: FirstRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SecondRace
+        name: SecondRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.ThirdRace
+        name: ThirdRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FourthRace
+        name: FourthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FifthRace
+        name: FifthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviOverallPctlRankByZip2020_X
+        name: SviOverallPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviSocioeconomicPctlRankByZip2020_X
+        name: SviSocioeconomicPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+    filter:
+      from:
+        - DiagnosisEventFact as dxf
+      join:
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey
+        - INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey
+      where:
+        - &quot;dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf.StartDateKey &gt;= 0
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - p.IsValid = 1
+        - p.IsCurrent = 1
+        - p.UseInCosmosAnalytics_X = 1
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;,&#x27;ICD-10-CA&#x27;,&#x27;ICD-10-CM&#x27;, &#x27;ICD-9 CM&#x27;)
+        - &quot;{{sql_condition(&#x27;dt.Value&#x27;, ICD_Value)}}&quot;
+    vars:
+      ICD_Value:
+        - &quot;K50.%&quot;
+    split_after_build:
+      - multiplier: Race
+        strat: black
+        applies_to: PKTable
+        column: FirstRace
+        values:
+          - &quot;Black %&quot;
+        condition: &quot;pk.FirstRace LIKE &#x27;Black %&#x27;&quot;
+  - name: CrohnsblackOtherHospitalizations
+    type: fact
+    pull_this_cycle: true
+    dest_table: CrohnsblackOtherHospitalizations
+    dedup_keys:
+      -
+        - InpatientEncounterKey
+    columns:
+      - source: haf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        type: BIGINT
+        nullable: false
+      - source: haf.EncounterKey
+        name: InpatientEncounterKey
+        type: BIGINT
+        nullable: false
+      - source: haf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: haf.AdmissionDateKey
+        name: AdmissionDateKey
+        type: INT
+        nullable: false
+      - source: haf.InpatientAdmissionInstant
+        name: InpatientAdmissionInstant
+        type: DATETIME2(7)
+        nullable: false
+      - source: haf.DischargeDateKey
+        name: DischargeDateKey
+        type: INT
+        nullable: true
+      - source: haf.DischargeInstant
+        name: DischargeInstant
+        type: DATETIME2(7)
+        nullable: true
+      - source: haf.DischargeDisposition
+        name: DischargeDisposition
+        type: VARCHAR(300)
+        nullable: true
+      - source: haf.InpatientLengthOfStayInDays
+        name: InpatientLengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.LengthOfStayInDays
+        name: LengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.DaysSincePriorAdmission_X
+        name: DaysSincePriorAdmission_X
+        type: INT
+        nullable: true
+      - source: haf.ReadmissionCausedByKey_X
+        name: ReadmissionCausedByKey_X
+        type: BIGINT
+        nullable: true
+      - source: haf.IsPlannedReadmission_X
+        name: IsPlannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.IsUnplannedReadmission_X
+        name: IsUnplannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.EncounterType
+        name: EncounterType
+        type: NVARCHAR(300)
+        nullable: true
+      - source: haf.FinancialClass
+        name: FinancialClass
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+    filter:
+      from:
+        - HospitalAdmissionFact AS haf
+      join:
+        - &quot;INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey&quot;
+        - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - &quot;INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value&quot;
+      where:
+        - haf._IsDeleted = 0
+        - haf.AdmissionDateKey IS NOT NULL
+        - &quot;haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;, &#x27;ICD-10-CA&#x27;, &#x27;ICD-10-CM&#x27;, &#x27;ICD-9-CM&#x27;)
+    vars:
+      ICD_Value:
+        - &quot;K50.%&quot;
+  - name: CrohnswhitePatients
+    description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+    type: PK
+    pull_this_cycle: true
+    dest_table: CrohnswhitePatients
+    dedup_keys:
+      -
+        - PatientDurableKey
+    dedup_order_by:
+      - IndexDate
+    columns:
+      - source: dxf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.Sex
+        name: Sex
+        type: VARCHAR(50)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+      - source: dur.Years
+        name: AgeAtIndexDiagnosis
+        type: BIGINT
+        nullable: true
+      - source: p.BirthDate
+        name: BirthDate
+        type: DATE
+        nullable: true
+      - source: p.StateOrProvince
+        name: StateOrProvince
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        type: VARCHAR(300)
+        nullable: false
+      - source: p.Country
+        name: Country
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dxf.StartDateKey
+        name: IndexDate
+        type: INT
+        nullable: true
+      - source: dxf.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+      - source: dxf.EncounterKey
+        name: IndexEncounter
+        type: BIGINT
+        nullable: false
+      - source: p.DurableKey
+        name: DurableKey
+        type: BIGINT
+        nullable: false
+      - source: p.FirstRace
+        name: FirstRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SecondRace
+        name: SecondRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.ThirdRace
+        name: ThirdRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FourthRace
+        name: FourthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.FifthRace
+        name: FifthRace
+        type: VARCHAR(100)
+        nullable: true
+      - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviOverallPctlRankByZip2020_X
+        name: SviOverallPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+      - source: p.SviSocioeconomicPctlRankByZip2020_X
+        name: SviSocioeconomicPctlRankByZip2020_X
+        type: FLOAT
+        nullable: true
+    filter:
+      from:
+        - DiagnosisEventFact as dxf
+      join:
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey
+        - INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey
+      where:
+        - &quot;dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf.StartDateKey &gt;= 0
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - p.IsValid = 1
+        - p.IsCurrent = 1
+        - p.UseInCosmosAnalytics_X = 1
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;,&#x27;ICD-10-CA&#x27;,&#x27;ICD-10-CM&#x27;, &#x27;ICD-9 CM&#x27;)
+        - &quot;{{sql_condition(&#x27;dt.Value&#x27;, ICD_Value)}}&quot;
+    vars:
+      ICD_Value:
+        - &quot;K50.%&quot;
+    split_after_build:
+      - multiplier: Race
+        strat: white
+        applies_to: PKTable
+        role: control
+        row_mult: 4
+        column: FirstRace
+        values:
+          - &quot;White %&quot;
+        condition: &quot;pk.FirstRace LIKE &#x27;White %&#x27;&quot;
+  - name: CrohnswhiteOtherHospitalizations
+    type: fact
+    pull_this_cycle: true
+    dest_table: CrohnswhiteOtherHospitalizations
+    dedup_keys:
+      -
+        - InpatientEncounterKey
+    columns:
+      - source: haf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        type: BIGINT
+        nullable: false
+      - source: haf.EncounterKey
+        name: InpatientEncounterKey
+        type: BIGINT
+        nullable: false
+      - source: haf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: haf.AdmissionDateKey
+        name: AdmissionDateKey
+        type: INT
+        nullable: false
+      - source: haf.InpatientAdmissionInstant
+        name: InpatientAdmissionInstant
+        type: DATETIME2(7)
+        nullable: false
+      - source: haf.DischargeDateKey
+        name: DischargeDateKey
+        type: INT
+        nullable: true
+      - source: haf.DischargeInstant
+        name: DischargeInstant
+        type: DATETIME2(7)
+        nullable: true
+      - source: haf.DischargeDisposition
+        name: DischargeDisposition
+        type: VARCHAR(300)
+        nullable: true
+      - source: haf.InpatientLengthOfStayInDays
+        name: InpatientLengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.LengthOfStayInDays
+        name: LengthOfStayInDays
+        type: INT
+        nullable: true
+      - source: haf.DaysSincePriorAdmission_X
+        name: DaysSincePriorAdmission_X
+        type: INT
+        nullable: true
+      - source: haf.ReadmissionCausedByKey_X
+        name: ReadmissionCausedByKey_X
+        type: BIGINT
+        nullable: true
+      - source: haf.IsPlannedReadmission_X
+        name: IsPlannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.IsUnplannedReadmission_X
+        name: IsUnplannedReadmission_X
+        type: BIT
+        nullable: true
+      - source: haf.EncounterType
+        name: EncounterType
+        type: NVARCHAR(300)
+        nullable: true
+      - source: haf.FinancialClass
+        name: FinancialClass
+        type: VARCHAR(100)
+        nullable: true
+      - source: dt.Value
+        name: ICDCode
+        type: VARCHAR(400)
+        nullable: true
+      - source: dt.NameAndCode
+        name: ICDName
+        type: VARCHAR(400)
+        nullable: true
+    filter:
+      from:
+        - HospitalAdmissionFact AS haf
+      join:
+        - &quot;INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey&quot;
+        - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey
+        - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey
+        - &quot;INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value&quot;
+      where:
+        - haf._IsDeleted = 0
+        - haf.AdmissionDateKey IS NOT NULL
+        - &quot;haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}&quot;
+        - dxf._IsDeleted = 0
+        - dt._IsDeleted = 0
+        - dt.Type IN (&#x27;ICD-10-AM&#x27;, &#x27;ICD-10-CA&#x27;, &#x27;ICD-10-CM&#x27;, &#x27;ICD-9-CM&#x27;)
+    vars:
+      ICD_Value:
+        - &quot;K50.%&quot;</pre>
+        </section>
+      </div>
+      <section class="block">
+        <h2>Analysis JSON</h2>
+        <pre>{
+  "errors": [
+    {
+      "level": "ERROR",
+      "code": "missing_upload_file",
+      "message": "Upload file not found: YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv",
+      "context": "HospitalICDCodes"
+    }
+  ],
+  "warnings": [
+    {
+      "level": "WARN",
+      "code": "upload_schema_unknown",
+      "message": "Upload `PKTable` has no locally discoverable schema.",
+      "context": "PKTable"
+    }
+  ],
+  "analysis": {
+    "required_vars": {
+      "UCblackPatients": {
+        "min_date_key": [
+          "filter.where[0]"
+        ],
+        "max_date_key": [
+          "filter.where[0]"
+        ],
+        "ICD_Value": [
+          "filter.where[8]"
+        ]
+      },
+      "UCblackOtherHospitalizations": {
+        "PKTable": [
+          "filter.join[0]"
+        ],
+        "HospitalICDTable": [
+          "filter.join[3]"
+        ],
+        "min_date_key": [
+          "filter.where[2]"
+        ],
+        "max_date_key": [
+          "filter.where[2]"
+        ]
+      },
+      "UCwhitePatients": {
+        "min_date_key": [
+          "filter.where[0]"
+        ],
+        "max_date_key": [
+          "filter.where[0]"
+        ],
+        "ICD_Value": [
+          "filter.where[8]"
+        ]
+      },
+      "UCwhiteOtherHospitalizations": {
+        "PKTable": [
+          "filter.join[0]"
+        ],
+        "HospitalICDTable": [
+          "filter.join[3]"
+        ],
+        "min_date_key": [
+          "filter.where[2]"
+        ],
+        "max_date_key": [
+          "filter.where[2]"
+        ]
+      },
+      "CrohnsblackPatients": {
+        "min_date_key": [
+          "filter.where[0]"
+        ],
+        "max_date_key": [
+          "filter.where[0]"
+        ],
+        "ICD_Value": [
+          "filter.where[8]"
+        ]
+      },
+      "CrohnsblackOtherHospitalizations": {
+        "PKTable": [
+          "filter.join[0]"
+        ],
+        "HospitalICDTable": [
+          "filter.join[3]"
+        ],
+        "min_date_key": [
+          "filter.where[2]"
+        ],
+        "max_date_key": [
+          "filter.where[2]"
+        ]
+      },
+      "CrohnswhitePatients": {
+        "min_date_key": [
+          "filter.where[0]"
+        ],
+        "max_date_key": [
+          "filter.where[0]"
+        ],
+        "ICD_Value": [
+          "filter.where[8]"
+        ]
+      },
+      "CrohnswhiteOtherHospitalizations": {
+        "PKTable": [
+          "filter.join[0]"
+        ],
+        "HospitalICDTable": [
+          "filter.join[3]"
+        ],
+        "min_date_key": [
+          "filter.where[2]"
+        ],
+        "max_date_key": [
+          "filter.where[2]"
+        ]
+      }
+    },
+    "table_inputs": {
+      "UCblackPatients": {},
+      "UCblackOtherHospitalizations": {
+        "PKTable": {
+          "alias": "pk",
+          "paths": [
+            "filter.join[0]"
+          ],
+          "required_columns": [
+            "PatientDurableKey"
+          ]
+        },
+        "HospitalICDTable": {
+          "alias": "ih",
+          "paths": [
+            "filter.join[3]"
+          ],
+          "required_columns": [
+            "DiagnosisCode"
+          ]
+        }
+      },
+      "UCwhitePatients": {},
+      "UCwhiteOtherHospitalizations": {
+        "PKTable": {
+          "alias": "pk",
+          "paths": [
+            "filter.join[0]"
+          ],
+          "required_columns": [
+            "PatientDurableKey"
+          ]
+        },
+        "HospitalICDTable": {
+          "alias": "ih",
+          "paths": [
+            "filter.join[3]"
+          ],
+          "required_columns": [
+            "DiagnosisCode"
+          ]
+        }
+      },
+      "CrohnsblackPatients": {},
+      "CrohnsblackOtherHospitalizations": {
+        "PKTable": {
+          "alias": "pk",
+          "paths": [
+            "filter.join[0]"
+          ],
+          "required_columns": [
+            "PatientDurableKey"
+          ]
+        },
+        "HospitalICDTable": {
+          "alias": "ih",
+          "paths": [
+            "filter.join[3]"
+          ],
+          "required_columns": [
+            "DiagnosisCode"
+          ]
+        }
+      },
+      "CrohnswhitePatients": {},
+      "CrohnswhiteOtherHospitalizations": {
+        "PKTable": {
+          "alias": "pk",
+          "paths": [
+            "filter.join[0]"
+          ],
+          "required_columns": [
+            "PatientDurableKey"
+          ]
+        },
+        "HospitalICDTable": {
+          "alias": "ih",
+          "paths": [
+            "filter.join[3]"
+          ],
+          "required_columns": [
+            "DiagnosisCode"
+          ]
+        }
+      }
+    },
+    "required_table_columns": {
+      "UCblackPatients": {},
+      "UCblackOtherHospitalizations": {
+        "PKTable": [
+          "PatientDurableKey"
+        ],
+        "HospitalICDTable": [
+          "DiagnosisCode"
+        ]
+      },
+      "UCwhitePatients": {},
+      "UCwhiteOtherHospitalizations": {
+        "PKTable": [
+          "PatientDurableKey"
+        ],
+        "HospitalICDTable": [
+          "DiagnosisCode"
+        ]
+      },
+      "CrohnsblackPatients": {},
+      "CrohnsblackOtherHospitalizations": {
+        "PKTable": [
+          "PatientDurableKey"
+        ],
+        "HospitalICDTable": [
+          "DiagnosisCode"
+        ]
+      },
+      "CrohnswhitePatients": {},
+      "CrohnswhiteOtherHospitalizations": {
+        "PKTable": [
+          "PatientDurableKey"
+        ],
+        "HospitalICDTable": [
+          "DiagnosisCode"
+        ]
+      }
+    },
+    "output_columns": {
+      "UCblackPatients": [
+        "PatientDurableKey",
+        "Sex",
+        "ICDName",
+        "AgeAtIndexDiagnosis",
+        "BirthDate",
+        "StateOrProvince",
+        "StateOrProvinceAbbreviation",
+        "Country",
+        "ICDCode",
+        "IndexDate",
+        "DiagnosisEventKey",
+        "IndexEncounter",
+        "DurableKey",
+        "FirstRace",
+        "SecondRace",
+        "ThirdRace",
+        "FourthRace",
+        "FifthRace",
+        "SviRacialEthnicMinorityStatusPctlRankByZip2020_X",
+        "SviOverallPctlRankByZip2020_X",
+        "SviSocioeconomicPctlRankByZip2020_X"
+      ],
+      "UCblackOtherHospitalizations": [
+        "HospitalAdmissionKey",
+        "InpatientEncounterKey",
+        "PatientDurableKey",
+        "AdmissionDateKey",
+        "InpatientAdmissionInstant",
+        "DischargeDateKey",
+        "DischargeInstant",
+        "DischargeDisposition",
+        "InpatientLengthOfStayInDays",
+        "LengthOfStayInDays",
+        "DaysSincePriorAdmission_X",
+        "ReadmissionCausedByKey_X",
+        "IsPlannedReadmission_X",
+        "IsUnplannedReadmission_X",
+        "EncounterType",
+        "FinancialClass",
+        "ICDCode",
+        "ICDName"
+      ],
+      "UCwhitePatients": [
+        "PatientDurableKey",
+        "Sex",
+        "ICDName",
+        "AgeAtIndexDiagnosis",
+        "BirthDate",
+        "StateOrProvince",
+        "StateOrProvinceAbbreviation",
+        "Country",
+        "ICDCode",
+        "IndexDate",
+        "DiagnosisEventKey",
+        "IndexEncounter",
+        "DurableKey",
+        "FirstRace",
+        "SecondRace",
+        "ThirdRace",
+        "FourthRace",
+        "FifthRace",
+        "SviRacialEthnicMinorityStatusPctlRankByZip2020_X",
+        "SviOverallPctlRankByZip2020_X",
+        "SviSocioeconomicPctlRankByZip2020_X"
+      ],
+      "UCwhiteOtherHospitalizations": [
+        "HospitalAdmissionKey",
+        "InpatientEncounterKey",
+        "PatientDurableKey",
+        "AdmissionDateKey",
+        "InpatientAdmissionInstant",
+        "DischargeDateKey",
+        "DischargeInstant",
+        "DischargeDisposition",
+        "InpatientLengthOfStayInDays",
+        "LengthOfStayInDays",
+        "DaysSincePriorAdmission_X",
+        "ReadmissionCausedByKey_X",
+        "IsPlannedReadmission_X",
+        "IsUnplannedReadmission_X",
+        "EncounterType",
+        "FinancialClass",
+        "ICDCode",
+        "ICDName"
+      ],
+      "CrohnsblackPatients": [
+        "PatientDurableKey",
+        "Sex",
+        "ICDName",
+        "AgeAtIndexDiagnosis",
+        "BirthDate",
+        "StateOrProvince",
+        "StateOrProvinceAbbreviation",
+        "Country",
+        "ICDCode",
+        "IndexDate",
+        "DiagnosisEventKey",
+        "IndexEncounter",
+        "DurableKey",
+        "FirstRace",
+        "SecondRace",
+        "ThirdRace",
+        "FourthRace",
+        "FifthRace",
+        "SviRacialEthnicMinorityStatusPctlRankByZip2020_X",
+        "SviOverallPctlRankByZip2020_X",
+        "SviSocioeconomicPctlRankByZip2020_X"
+      ],
+      "CrohnsblackOtherHospitalizations": [
+        "HospitalAdmissionKey",
+        "InpatientEncounterKey",
+        "PatientDurableKey",
+        "AdmissionDateKey",
+        "InpatientAdmissionInstant",
+        "DischargeDateKey",
+        "DischargeInstant",
+        "DischargeDisposition",
+        "InpatientLengthOfStayInDays",
+        "LengthOfStayInDays",
+        "DaysSincePriorAdmission_X",
+        "ReadmissionCausedByKey_X",
+        "IsPlannedReadmission_X",
+        "IsUnplannedReadmission_X",
+        "EncounterType",
+        "FinancialClass",
+        "ICDCode",
+        "ICDName"
+      ],
+      "CrohnswhitePatients": [
+        "PatientDurableKey",
+        "Sex",
+        "ICDName",
+        "AgeAtIndexDiagnosis",
+        "BirthDate",
+        "StateOrProvince",
+        "StateOrProvinceAbbreviation",
+        "Country",
+        "ICDCode",
+        "IndexDate",
+        "DiagnosisEventKey",
+        "IndexEncounter",
+        "DurableKey",
+        "FirstRace",
+        "SecondRace",
+        "ThirdRace",
+        "FourthRace",
+        "FifthRace",
+        "SviRacialEthnicMinorityStatusPctlRankByZip2020_X",
+        "SviOverallPctlRankByZip2020_X",
+        "SviSocioeconomicPctlRankByZip2020_X"
+      ],
+      "CrohnswhiteOtherHospitalizations": [
+        "HospitalAdmissionKey",
+        "InpatientEncounterKey",
+        "PatientDurableKey",
+        "AdmissionDateKey",
+        "InpatientAdmissionInstant",
+        "DischargeDateKey",
+        "DischargeInstant",
+        "DischargeDisposition",
+        "InpatientLengthOfStayInDays",
+        "LengthOfStayInDays",
+        "DaysSincePriorAdmission_X",
+        "ReadmissionCausedByKey_X",
+        "IsPlannedReadmission_X",
+        "IsUnplannedReadmission_X",
+        "EncounterType",
+        "FinancialClass",
+        "ICDCode",
+        "ICDName"
+      ]
+    }
+  }
+}</pre>
+      </section>
+    </section>
+  </main>
+
+  <script>
+document.querySelectorAll('.tab').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById(button.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+});
+
+document.querySelectorAll('[data-expand]').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll(`#${button.dataset.expand} details`).forEach(d => d.open = true);
+  });
+});
+
+document.querySelectorAll('[data-collapse]').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll(`#${button.dataset.collapse} details`).forEach(d => d.open = false);
+  });
+});
+
+const cohortSearch = document.getElementById('cohortSearch');
+if (cohortSearch) {
+  cohortSearch.addEventListener('input', () => {
+    const q = cohortSearch.value.toLowerCase();
+    document.querySelectorAll('.cohort-card').forEach(card => {
+      card.classList.toggle('hidden', !card.innerText.toLowerCase().includes(q));
+    });
+  });
+}
+
+document.querySelectorAll('[data-target]').forEach(button => {
+  button.addEventListener('click', () => {
+    const id = 'cohort-' + button.dataset.target.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+    const target = document.getElementById(id);
+    if (!target) return;
+    document.querySelector('[data-tab="cohorts"]').click();
+    target.open = true;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>
+</body>
+</html>
