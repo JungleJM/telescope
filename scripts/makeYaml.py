@@ -159,8 +159,18 @@ def _simple_yaml_dump(data: Any, indent: int = 0) -> str:
         lines = []
         for item in data:
             if isinstance(item, dict):
-                lines.append(f"{pad}-")
-                lines.append(_simple_yaml_dump(item, indent + 2).rstrip())
+                if not item:
+                    lines.append(f"{pad}- {{}}")
+                    continue
+                first = True
+                for key, value in item.items():
+                    bullet = "- " if first else "  "
+                    if isinstance(value, (dict, list)):
+                        lines.append(f"{pad}{bullet}{key}:")
+                        lines.append(_simple_yaml_dump(value, indent + 4).rstrip())
+                    else:
+                        lines.append(f"{pad}{bullet}{key}: {_format_scalar(value)}")
+                    first = False
             elif isinstance(item, list):
                 lines.append(f"{pad}-")
                 lines.append(_simple_yaml_dump(item, indent + 2).rstrip())
@@ -801,6 +811,12 @@ def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], resul
     return cohorts
 
 
+def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
+    value = str(template.get("cosmos_db", "COSMOS")).lower()
+    if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
+        result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.", "cosmos_db")
+
+
 def with_cosmos_suffix(cohort: dict[str, Any], suffix: str, cosmos_db: str) -> dict[str, Any]:
     new = copy.deepcopy(cohort)
     new["name"] = f"{new.get('name')}{suffix}"
@@ -869,9 +885,13 @@ def compile_yaml(
     cohorts = expand_multipliers(template, cohorts, result)
     analysis = analyze_cohorts(cohorts)
     cohorts = validate_and_resolve(template, recipes_doc, cohorts, analysis, result, template_path.parent)
-    rendered_cohorts = render_cohorts(cohorts, result)
-    rendered_cohorts = expand_batching(template, recipes_doc, rendered_cohorts, result)
-    rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
+    validate_cosmos(template, result)
+    if result.errors:
+        rendered_cohorts = [{k: v for k, v in cohort.items() if not k.startswith("_")} for cohort in cohorts]
+    else:
+        rendered_cohorts = render_cohorts(cohorts, result)
+        rendered_cohorts = expand_batching(template, recipes_doc, rendered_cohorts, result)
+        rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
     finished = copy.deepcopy(template)
     finished["cohorts"] = rendered_cohorts
@@ -1187,6 +1207,11 @@ batching:
         names = [c["dest_table"] for c in out]
         return names == ["Patients", "Patients_sp"], str(names)
 
+    def case_cosmos_bad_value():
+        res = CompileResult()
+        validate_cosmos({"cosmos_db": "Mars"}, res)
+        return has_error(res, "bad_cosmos_db"), summarize_result(res)
+
     def case_report():
         res = CompileResult()
         res.error("x", "bad")
@@ -1213,6 +1238,7 @@ batching:
         TddCase("batching.chunk_shorthand", "batching", case_batching_chunk),
         TddCase("batching.metadata_visible", "batching", case_batching_metadata),
         TddCase("cosmos.dual_suffix", "cosmos", case_cosmos_dual),
+        TddCase("cosmos.bad_value", "cosmos", case_cosmos_bad_value),
         TddCase("reports.includes_sections", "reports", case_report),
     ]
 

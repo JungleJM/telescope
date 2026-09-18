@@ -1,0 +1,47 @@
+# Intentionally invalid: this one template should exercise one of each major
+# error class the manager is expected to catch.
+project_db: PROJECTD33A929
+cosmos_db: Mars
+project_folder: "Manager Problem Suite"
+
+vars:
+  min_date_key: 20200101
+  HospitalICDTable: MissingHospitalCodes
+
+upload_cohorts:
+  - name: MissingHospitalCodes
+    dest_table: MissingHospitalCodes
+    file_type: csv
+    file_loc: "fixtures/does_not_exist.csv"
+    push_this_cycle: true
+
+multipliers:
+  - name: BadStage
+    stage: mystery_stage
+    levels:
+      - strat: badstage
+  - name: BadSplit
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: missingsplit
+        column: MissingRace
+        values:
+          - Any %
+
+batching:
+  - name: bad_batch_column
+    column: MissingBatchColumn
+    values:
+      - A
+
+cohorts:
+  - recipe: MissingRecipe
+    name: MissingRecipeCohort
+  - recipe: PatientWithDx
+    name: Patients
+    vars:
+      ICD_Value:
+        - K50.%
+  - recipe: OtherHospitalizations
+

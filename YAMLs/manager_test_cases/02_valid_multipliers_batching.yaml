@@ -1,0 +1,54 @@
+project_db: PROJECTD33A929
+cosmos_db: Dual
+project_folder: "Manager Valid Multipliers"
+
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+  HospitalICDTable: HospitalICDCodes
+
+upload_cohorts:
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: "fixtures/hospital_icd_codes.csv"
+    push_this_cycle: true
+
+multipliers:
+  - name: IBDType
+    stage: during_build
+    levels:
+      - strat: UC
+        vars:
+          ICD_Value:
+            - K51.%
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - K50.%
+  - name: Race
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: black
+        column: FirstRace
+        values:
+          - Black %
+      - strat: white
+        role: control
+        row_mult: 4
+        column: FirstRace
+        values:
+          - White %
+
+batching:
+  - state:
+      values: [LA, MS]
+  - sex
+  - chunk: 2000
+
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients
+  - recipe: OtherHospitalizations
+

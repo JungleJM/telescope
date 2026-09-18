@@ -1,0 +1,44 @@
+project_db: PROJECTD33A929
+cosmos_db: COSMOS
+project_folder: "Manager Mixed Column Errors"
+
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+  HospitalICDTable: HospitalICDCodes
+
+upload_cohorts:
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: "fixtures/bad_hospital_icd_codes.csv"
+    push_this_cycle: true
+
+multipliers:
+  - name: IBDType
+    stage: during_build
+    levels:
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - K50.%
+  - name: BadSplit
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: missingrace
+        column: MissingRace
+        values:
+          - Something %
+
+batching:
+  - name: bad_batch_column
+    column: MissingBatchColumn
+    values:
+      - A
+
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients
+  - recipe: OtherHospitalizations
+

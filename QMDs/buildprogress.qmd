@@ -134,7 +134,7 @@ Notes:
 Latest TDD run:
 
 ```text
-17 passed, 0 failed
+18 passed, 0 failed
 ```
 
 Real-template validation currently reports:
@@ -145,3 +145,25 @@ WARN upload_schema_unknown: PKTable has no locally discoverable schema
 ```
 
 This is expected for the current local checkout unless the upload CSV is added or the path is changed.
+
+## Fixture Test Suite
+
+Added `YAMLs/manager_test_cases/` with six template-level fixtures:
+
+- `00_problem_suite.yaml`: intentionally invalid, with one representative case from each major validation family.
+- `01_valid_basic.yaml`: valid basic recipe import/render/write.
+- `02_valid_multipliers_batching.yaml`: valid multipliers, batching metadata, and Dual expansion.
+- `03_warning_underscore_like.yaml`: valid output with the expected `_` in `LIKE` warning.
+- `04_missing_upload.yaml`: invalid missing upload file.
+- `05_mixed_column_errors.yaml`: invalid upload-column, split-column, and batch-column combination.
+
+Outputs:
+
+- Valid finished YAMLs are written under `YAMLs/manager_test_cases/outputs/`.
+- Every case writes a report under `YAMLs/manager_test_cases/reports/`.
+- The latest CLI result is summarized in `YAMLs/manager_test_cases/test_run_output.md`.
+
+Learnings:
+
+- The first problem-suite run duplicated missing-variable errors because validation and rendering both reported them. The compiler now validates Cosmos early and skips rendering when blocking errors already exist.
+- The local fallback YAML writer originally emitted list-of-mapping items in a clunky shape. It now writes a more human-readable YAML structure. In VM production, `ruamel.yaml` should be used first.
