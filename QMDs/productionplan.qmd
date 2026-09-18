@@ -35,21 +35,31 @@ The VM constraints shape the architecture:
 The portable VM version should use as few files as practical:
 
 ```text
-template.yaml
-recipes.yaml
-makeYaml.py
+scripts/makeYaml.py
+YAMLs/template.yaml
+YAMLs/recipes.yaml
 ```
 
 Optional later files:
 
 ```text
-finished.yaml
+YAMLs/<Project_Name>_Full.yaml
 manager_report.md
 vm_gui.py
 local_gui.py
 ```
 
-The backend should start as one well-organized Python file, `makeYaml.py`, rather than a package spread across many modules.
+The backend should start as one well-organized Python file, `scripts/makeYaml.py`, rather than a package spread across many modules.
+
+The script should be movable. It should resolve default paths relative to its own location:
+
+```text
+scripts/makeYaml.py
+../YAMLs/template.yaml
+../YAMLs/recipes.yaml
+```
+
+All paths should also be configurable with CLI flags.
 
 This is not because one large file is aesthetically ideal. It is because the VM copy-update workflow rewards fewer moving parts.
 
@@ -96,8 +106,8 @@ human-authored YAML
 New flow:
 
 ```text
-template.yaml + recipes.yaml
--> makeYaml.py
+YAMLs/template.yaml + YAMLs/recipes.yaml
+-> scripts/makeYaml.py
 -> finished definitive YAML
 -> existing makeSql-style scripts
 -> server-side SQL
@@ -112,9 +122,18 @@ The first goal is to make `makeYaml.py` produce the same kind of finished YAML t
 
 Prefer DSVM-available packages:
 
-- `pyyaml` for loading/writing YAML.
+- `ruamel.yaml` for loading/writing YAML while preserving comments and readable formatting.
+- `pyyaml` as a fallback if `ruamel.yaml` is unavailable.
 - `jinja2` for rendering manager-side expressions like `sql_condition(...)`.
-- `ruamel.yaml` only if preserving comments or YAML formatting becomes important.
+
+The backend should hide the specific YAML library behind helper functions:
+
+```python
+load_yaml(path)
+dump_yaml(data, path)
+```
+
+This keeps the rest of the manager insulated if the implementation needs to fall back from `ruamel.yaml` to `pyyaml`.
 
 Avoid making the core manager depend on GUI frameworks.
 
@@ -230,16 +249,16 @@ The first production interface should be CLI-only.
 Initial command:
 
 ```bash
-python makeYaml.py template.yaml recipes.yaml --out finished.yaml
+python scripts/makeYaml.py --template YAMLs/template.yaml --recipes YAMLs/recipes.yaml
 ```
 
 Useful future commands:
 
 ```bash
-python makeYaml.py validate template.yaml recipes.yaml
-python makeYaml.py build template.yaml recipes.yaml --out finished.yaml
-python makeYaml.py inspect-recipes recipes.yaml
-python makeYaml.py report template.yaml recipes.yaml --out manager_report.md
+python scripts/makeYaml.py --validate --template YAMLs/template.yaml
+python scripts/makeYaml.py --template YAMLs/MyProject.yaml --out YAMLs/MyProject_Full.yaml
+python scripts/makeYaml.py --inspect-recipes
+python scripts/makeYaml.py --report --template YAMLs/template.yaml --report-out manager_report.md
 ```
 
 The CLI should:
@@ -248,6 +267,40 @@ The CLI should:
 - Print warnings clearly.
 - Exit nonzero on errors.
 - Write the finished YAML only when validation passes, unless explicitly forced.
+- Provide a built-in TDD/self-test mode that travels with `makeYaml.py`.
+- Never overwrite the pre-YAML template in place.
+- Default output names from `project_folder` plus a configurable suffix.
+
+Default output naming:
+
+```text
+project_folder: "Test Run"
+OUTPUT_SUFFIX = "_Full"
+-> YAMLs/Test_Run_Full.yaml
+```
+
+The CLI should allow overriding output location and suffix:
+
+```bash
+python scripts/makeYaml.py --template YAMLs/template.yaml --suffix _Full
+python scripts/makeYaml.py --template YAMLs/template.yaml --out YAMLs/custom_output.yaml
+```
+
+TDD command:
+
+```bash
+python scripts/makeYaml.py --tdd
+```
+
+Optional focused TDD commands:
+
+```bash
+python scripts/makeYaml.py --tdd loading
+python scripts/makeYaml.py --tdd inference
+python scripts/makeYaml.py --tdd rendering
+python scripts/makeYaml.py --tdd multipliers
+python scripts/makeYaml.py --tdd batching
+```
 
 ## GUI Goals
 
@@ -279,8 +332,8 @@ Goal: load YAML, import recipes, write a finished YAML without multipliers/batch
 
 Features:
 
-- Load `template.yaml`.
-- Load `recipes.yaml`.
+- Load `YAMLs/template.yaml` by default, with CLI override support.
+- Load `YAMLs/recipes.yaml` by default, with CLI override support.
 - Read `batching_recipes` without using them yet.
 - Import recipe cohorts.
 - Overlay cohort-specific fields.
@@ -288,6 +341,15 @@ Features:
 - Normalize top-level `vars`.
 - Write a finished YAML.
 - Return structured result with errors/warnings.
+
+TDD checks:
+
+- Pass: load valid template YAML.
+- Pass: load valid recipes YAML.
+- Fail: malformed YAML reports a useful error.
+- Pass: import a recipe into a concrete cohort.
+- Pass: cohort-specific fields override recipe defaults.
+- Pass: `dest_table` defaults to cohort `name`.
 
 ### Phase 2: Inference And Validation
 
@@ -306,6 +368,20 @@ Features:
 - Validate CSV upload headers where possible.
 - Emit warnings for unused vars and compatibility fields.
 
+TDD checks:
+
+- Pass: infer `{{min_date_key}}`, `{{max_date_key}}`, and `{{PKTable}}`.
+- Pass: infer `PKTable` from a single `type: PK` cohort.
+- Pass: explicit `vars.PKTable` overrides auto-detected `PKTable`.
+- Fail: missing required variable is reported.
+- Fail: multiple PK cohorts prevent `PKTable` inference.
+- Fail: no PK cohort prevents `PKTable` inference when required.
+- Pass: infer input table columns from `##JVM_{{PKTable}} AS pk` and `pk.ColumnName`.
+- Fail: input table missing a required column.
+- Pass: referenced CSV upload exists and has required columns.
+- Fail: referenced upload file is missing.
+- Fail: referenced CSV upload lacks a required column.
+
 ### Phase 3: Manager-Side Rendering
 
 Goal: support user-friendly expressions before VM handoff.
@@ -318,6 +394,16 @@ Features:
 - Warn on `_` in `LIKE` values.
 - Render final YAML with plain SQL-like strings only.
 - Ensure the VM never needs to understand manager helper expressions.
+
+TDD checks:
+
+- Pass: scalar value renders as `=`.
+- Pass: list without wildcards renders as `IN`.
+- Pass: single wildcard value renders as `LIKE`.
+- Pass: multiple wildcard values render as `LIKE ... OR LIKE ...`.
+- Warn: `_` appears in a value rendered with `LIKE`.
+- Fail: `sql_condition` references a missing variable.
+- Pass: final YAML contains rendered SQL text, not `sql_condition(...)`.
 
 ### Phase 4: Multipliers
 
@@ -335,6 +421,16 @@ Features:
 - Validate split columns against the target table output schema.
 - Preserve control metadata such as `role: control` and `row_mult`.
 
+TDD checks:
+
+- Pass: `during_build` multiplier applies level vars before rendering.
+- Pass: `split_after_build` multiplier uses `applies_to`, `column`, and `values`.
+- Pass: split values use the same `IN` versus `LIKE` inference as `sql_condition`.
+- Fail: `split_after_build` references a missing target column.
+- Pass: multiplier levels combine as a Cartesian product.
+- Pass: each expanded group gets its own resolved `PKTable`.
+- Pass: control metadata is preserved in the expanded output.
+
 ### Phase 5: Batching
 
 Goal: split expanded groups by PK batches.
@@ -350,6 +446,17 @@ Features:
 - Validate batching columns against PK output schema.
 - Generate predictable batch suffixes.
 
+TDD checks:
+
+- Pass: load `batching_recipes`.
+- Pass: `state` preset resolves to `StateOrProvinceAbbreviation`.
+- Pass: `sex` preset resolves to `Sex`.
+- Pass: `chunk: 2000` resolves to row chunk batching.
+- Pass: numeric shorthand `- 2000` resolves to row chunk batching.
+- Pass: multiple batching rules compose in order.
+- Fail: batching preset requires a PK column that is missing.
+- Pass: downstream fact cohorts use the batch-specific PK table.
+
 ### Phase 6: Cosmos/Dual Expansion
 
 Goal: model COSMOS, SneakPeek, and Dual behavior.
@@ -364,6 +471,14 @@ Features:
 - Generate `_sp` or other agreed suffixes consistently.
 - Ensure SneakPeek and non-SneakPeek runs do not collide in table names.
 
+TDD checks:
+
+- Pass: `COSMOS` produces only standard Cosmos groups.
+- Pass: `COSMOS_SneakPeek` produces only SneakPeek groups.
+- Pass: `Dual`/`both` produces standard and SneakPeek groups.
+- Pass: SneakPeek groups get the agreed suffix.
+- Fail: unsupported `cosmos_db` value reports a useful error.
+
 ### Phase 7: Reports And Debuggability
 
 Goal: make the manager easy to trust.
@@ -377,6 +492,14 @@ Features:
 - Required column compatibility table.
 - Warning summary.
 - Final YAML preview location.
+
+TDD checks:
+
+- Pass: report includes errors.
+- Pass: report includes warnings.
+- Pass: report includes upload validation summary.
+- Pass: report includes required column compatibility summary.
+- Pass: report includes expanded cohort names.
 
 ### Phase 8: Interfaces
 
@@ -397,20 +520,73 @@ VM-compatible interface:
 
 ## Testing Strategy
 
-Keep tests close to the manager but do not require a complex test framework at first.
+Keep tests close to the manager and make them available in the VM without extra files or frameworks.
 
-Recommended early approach:
+The first testing system should be an embedded TDD harness inside `makeYaml.py`.
 
-- Add a `--self-test` CLI mode.
+Required command:
+
+```bash
+python scripts/makeYaml.py --tdd
+```
+
+The TDD run should:
+
 - Use small embedded YAML examples.
-- Check expected errors/warnings.
-- Check expected rendered SQL conditions.
-- Check expected inferred columns.
+- Avoid any database connection.
+- Avoid internet access.
+- Avoid requiring a separate `tests/` directory.
+- Print `PASS`, `FAIL`, and `WARN` lines.
+- Show expected versus actual output for failures.
+- Exit nonzero if any test fails.
+
+Example output:
+
+```text
+TDD Results
+
+PASS  loading.valid_template
+PASS  recipes.import_recipe
+PASS  inference.required_vars
+PASS  validation.missing_var_error
+PASS  rendering.sql_condition_in
+PASS  rendering.sql_condition_like
+WARN  rendering.like_underscore_warning
+FAIL  multipliers.split_missing_column
+
+Summary: 7 passed, 1 warned as expected, 1 failed
+```
+
+Each new feature should include:
+
+- One happy-path test.
+- One failure-path test.
+- One warning-path test when warnings are part of the feature.
+
+Recommended test groups:
+
+- `loading`
+- `recipes`
+- `inference`
+- `validation`
+- `uploads`
+- `rendering`
+- `multipliers`
+- `batching`
+- `cosmos`
+- `reports`
+
+The embedded tests should exercise the public API where possible, especially `compile_yaml(...)` and `validate_yaml(...)`, instead of reaching deeply into private helper functions.
+
+This keeps the tests aligned with real user behavior and future GUI behavior.
 
 Potential later approach:
 
 - Add `tests/` locally on the Mac.
-- Keep VM deployment focused on `makeYaml.py`, `template.yaml`, and `recipes.yaml`.
+- Add `pytest` tests for faster local iteration.
+- Keep VM deployment focused on `scripts/makeYaml.py`, `YAMLs/template.yaml`, and `YAMLs/recipes.yaml`.
+
+The local `tests/` folder should be optional. The VM-safe `--tdd` harness remains the portable baseline.
 
 ## Copy-Update Workflow
 
@@ -419,9 +595,9 @@ Because the VM cannot pull from git, updates should be easy to transfer.
 Preferred VM update set:
 
 ```text
-makeYaml.py
-recipes.yaml
-template.yaml
+scripts/makeYaml.py
+YAMLs/recipes.yaml
+YAMLs/template.yaml
 ```
 
 Optional:
@@ -450,7 +626,7 @@ It should first make the common path safe, understandable, and repeatable.
 
 The first useful version is successful when it can:
 
-- Read `template.yaml` and `recipes.yaml`.
+- Read `YAMLs/template.yaml` and `YAMLs/recipes.yaml`.
 - Import recipes.
 - Infer variables and table requirements.
 - Validate uploads and required columns.

@@ -20,7 +20,7 @@ test_options:
 
 # Data Science Variables.
 # Generates R scripts to run in R Studio to make Parquet files of what you just pulled
-projaect_folder: "Test Run"     # Folder within QueryGenerator. 
+project_folder: "Test Run"     # Folder within QueryGenerator. 
 
 
 upload_cohorts:
@@ -38,37 +38,30 @@ upload_cohorts:
 
 multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
   - name: IBDType
+    stage: during_build
     levels:
       - strat: UC
-        where:
-          - "{{ICD_Value | sql_condition('dt.Value')}}"
         vars:
           ICD_Value:
             - K51.%
       - strat: Crohns
-        where:
-          - "{{ICD_Value | sql_condition('dt.Value')}}"
         vars:
           ICD_Value:
             - K50.%
   - name: Race
+    stage: split_after_build
+    applies_to: PKTable
     levels:
       - strat: black
-        where:
-          - "pk.FirstRace = 'Black or African American'"
+        column: FirstRace
+        values:
+          - "Black %"
       - strat: white
         role: control
-        where:
-          - "pk.FirstRace = 'White'"
+        column: FirstRace
+        values:
+          - "White %"
         row_mult: 4
-  - name: Race
-    levels: 
-      - strat: black   # Cartesian, so this example returns blackCrohnsPatients, blackUCPatients, etc.
-        where: 
-        control: white # optional parameter, gets random pts in criteria x pk_mult
-        where: 
-        row_mult: 4 # for the PK table, it should get 4x as many rows as whatever limit is there. 
-               # If there's no limit, gets 4x as many via a select TOP () function, based on the non-control's total. 
 batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
   - name: state
     column: StateOrProvinceAbbreviation
@@ -79,7 +72,7 @@ batching:  # splits by value in PK Tables, or by number. Suffixes title with spl
       - NC
     separate_parquets: true
   - name: sex
-    column: sex
+    column: Sex
     values:
       - Female
       - Male
@@ -89,10 +82,6 @@ batching:  # splits by value in PK Tables, or by number. Suffixes title with spl
 cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
     name: Patients
-    vars: 
-      ICD_Value:  #Knows to use LIKE if has %, IN if not. But may need 'quotes' if sympbols like :,$,% before other text - SQL will misunderstand that. 
-          - K50.%
-          - K51.%
   - recipe: OtherHospitalizations
 
 
@@ -124,7 +113,7 @@ example_cohorts:
       join: # You join another table for filtering or for getting other information -
         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey" # for filtering by dt.value, dxf.StartDateKey
         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey" # for getting more information about patient and adding it to table
-        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey" #sometimes you just need one conversion. AgeKey doesn't give an age, it's a key that needs a translation to Years by DurationDim. 
+        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey" # Sometimes you just need one conversion. AgeKey doesn't give an age, it's a key that needs a translation to Years by DurationDim.
         # likely INNER JOIN COSMOS.{cosmos_db}.dbo.(someFact) as sf.(CommonKey) = pk.(CommonKey)
         # IF EMPTY MUST USE []
       where:
@@ -138,7 +127,7 @@ example_cohorts:
         - "p.IsCurrent = 1"
         - "p.UseInCosmosAnalytics_X = 1"
         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
-        - "dt.Value IN ('{{ICD_Value}}')"
+        - "{{sql_condition('dt.Value', ICD_Value)}}"
 
   # You can also make custom ones - example below of things you'd need. 
   - name: MotherOfPatients #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
