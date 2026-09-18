@@ -7,19 +7,6 @@
   <title>Telescope YAML Manager</title>
   <style>
 :root {
-  color-scheme: light;
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --ink: #20242a;
-  --muted: #69717d;
-  --line: #d9dee5;
-  --accent: #256f8f;
-  --ok: #26734d;
-  --warn: #9a6200;
-  --err: #a13737;
-  --chip: #eef2f5;
-}
-body.dark {
   color-scheme: dark;
   --bg: #16181b;
   --panel: #20242a;
@@ -31,6 +18,19 @@ body.dark {
   --warn: #e4b363;
   --err: #ff8a8a;
   --chip: #2b3138;
+}
+body.light {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #20242a;
+  --muted: #69717d;
+  --line: #d9dee5;
+  --accent: #256f8f;
+  --ok: #26734d;
+  --warn: #9a6200;
+  --err: #a13737;
+  --chip: #eef2f5;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -46,6 +46,9 @@ button:hover { border-color: var(--accent); }
 input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
+.path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
+.path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.path-form input { width: 100%; }
 .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
 .metric span { display: block; color: var(--muted); font-size: 12px; }
@@ -103,6 +106,19 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .tag { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); padding: 5px 8px; color: var(--ink); }
 .tag button { border: 0; background: transparent; padding: 0 2px; color: var(--muted); }
 .tag-note { color: var(--muted); font-size: 12px; }
+.summary-connections { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.connection-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
+.connection-chip { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 999px; padding: 3px 7px; background: color-mix(in srgb, currentColor 16%, transparent); color: var(--accent); }
+.connection-detail { border-left: 4px solid currentColor; background: var(--chip); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.column-ref { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: -1px; }
+.c0 { color: #6fb1cf; }
+.c1 { color: #74c69d; }
+.c2 { color: #e4b363; }
+.c3 { color: #ff8a8a; }
+.c4 { color: #b99cff; }
+.c5 { color: #7bdff2; }
+.c6 { color: #f7a072; }
+.c7 { color: #b8d8ba; }
 .danger { color: var(--err); }
 .pipeline { display: grid; gap: 10px; }
 .pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -117,17 +133,17 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .empty { color: var(--muted); padding: 8px 0; }
 .hidden { display: none; }
 @media (max-width: 900px) {
-  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
+  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch, .path-form { grid-template-columns: 1fr; }
   header { position: static; align-items: flex-start; }
   .builder-nav { position: static; }
 }
 </style>
 </head>
-<body>
+<body class="dark">
   <header>
     <div>
       <h1>Telescope YAML Manager</h1>
-      <p>YAMLs/template.yaml | YAMLs/recipes.yaml</p>
+      <p>Recipes: /Users/jmath/Documents/code/telescope/YAMLs/recipes.yaml</p>
     </div>
     <div class="header-actions">
       <button id="refreshPage" title="Reload dashboard">Refresh</button>
@@ -139,7 +155,12 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
     <section class="block">
       <h2>Dashboard File</h2>
       <p>Refresh reloads this generated dashboard file.</p>
-      <p>To analyze a different template, rerun <code>scripts/managerUI.py --template path/to/template.yaml --open</code>.</p>
+      <form id="templatePathForm" class="path-form" method="get" action="/">
+        <label>Template YAML<input id="templatePathInput" name="template" type="text" value="/Users/jmath/Documents/code/telescope/YAMLs/template.yaml"></label>
+        <input name="recipes" type="hidden" value="/Users/jmath/Documents/code/telescope/YAMLs/recipes.yaml">
+        <button type="submit">Refresh</button>
+      </form>
+      <p class="muted">When opened from the local manager server, Refresh recompiles against this template path. Static file mode can only reload the generated page.</p>
     </section>
 
     
@@ -170,7 +191,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
           
             <div class="message error">
               <div class="message-code">missing_upload_file</div>
-              <div class="message-body">Upload file not found: YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv</div>
+              <div class="message-body">Upload file not found: /Users/jmath/Documents/code/telescope/YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv</div>
               <div class="message-context">HospitalICDCodes</div>
             </div>
             
@@ -329,7 +350,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
       <div id="cohortCards">
             <details class="card cohort-card" id="cohort-ucblackpatients">
               <summary>
-                <span>UCblackPatients</span>
+                <span>
+                  <strong>UCblackPatients</strong>
+                  <span class="summary-connections">Connections: <span class="connection-chips"><span class="connection-chip c0">UCblackOtherHospitalizations: PatientDurableKey</span></span></span>
+                </span>
                 <span><span class="badge pk">PK</span> <span class="badge neutral">UCblackPatients</span></span>
               </summary>
               <div class="grid two">
@@ -339,12 +363,22 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                  <ul><li><span class="column-ref c0" title="Referenced by UCblackOtherHospitalizations via PKTable"></span>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class="extra-item hidden">DurableKey</li><li class="extra-item hidden">FirstRace</li><li class="extra-item hidden">SecondRace</li><li class="extra-item hidden">ThirdRace</li><li class="extra-item hidden">FourthRace</li><li class="extra-item hidden">FifthRace</li><li class="extra-item hidden">SviRacialEthnicMinorityStatusPctlRankByZip2020_X</li><li class="extra-item hidden">SviOverallPctlRankByZip2020_X</li><li class="extra-item hidden">SviSocioeconomicPctlRankByZip2020_X</li><li><button class="linklike" data-show-more-list>+ 9 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                
+            <div class="connection-detail c0">
+              <strong>UCblackOtherHospitalizations</strong>
+              <span class="muted">via PKTable</span>
+              <ul><li>PatientDurableKey</li></ul>
+            </div>
+            
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -365,7 +399,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-ucblackotherhospitalizations">
               <summary>
-                <span>UCblackOtherHospitalizations</span>
+                <span>
+                  <strong>UCblackOtherHospitalizations</strong>
+                  <span class="summary-connections">Connections: <span class="muted">None detected</span></span>
+                </span>
                 <span><span class="badge neutral">fact</span> <span class="badge neutral">UCblackOtherHospitalizations</span></span>
               </summary>
               <div class="grid two">
@@ -375,12 +412,16 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class="extra-item hidden">IsPlannedReadmission_X</li><li class="extra-item hidden">IsUnplannedReadmission_X</li><li class="extra-item hidden">EncounterType</li><li class="extra-item hidden">FinancialClass</li><li class="extra-item hidden">ICDCode</li><li class="extra-item hidden">ICDName</li><li><button class="linklike" data-show-more-list>+ 6 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                <div class="empty">None</div>
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -395,7 +436,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-ucwhitepatients">
               <summary>
-                <span>UCwhitePatients</span>
+                <span>
+                  <strong>UCwhitePatients</strong>
+                  <span class="summary-connections">Connections: <span class="connection-chips"><span class="connection-chip c2">UCwhiteOtherHospitalizations: PatientDurableKey</span></span></span>
+                </span>
                 <span><span class="badge pk">PK</span> <span class="badge neutral">UCwhitePatients</span></span>
               </summary>
               <div class="grid two">
@@ -405,12 +449,22 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                  <ul><li><span class="column-ref c2" title="Referenced by UCwhiteOtherHospitalizations via PKTable"></span>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class="extra-item hidden">DurableKey</li><li class="extra-item hidden">FirstRace</li><li class="extra-item hidden">SecondRace</li><li class="extra-item hidden">ThirdRace</li><li class="extra-item hidden">FourthRace</li><li class="extra-item hidden">FifthRace</li><li class="extra-item hidden">SviRacialEthnicMinorityStatusPctlRankByZip2020_X</li><li class="extra-item hidden">SviOverallPctlRankByZip2020_X</li><li class="extra-item hidden">SviSocioeconomicPctlRankByZip2020_X</li><li><button class="linklike" data-show-more-list>+ 9 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                
+            <div class="connection-detail c2">
+              <strong>UCwhiteOtherHospitalizations</strong>
+              <span class="muted">via PKTable</span>
+              <ul><li>PatientDurableKey</li></ul>
+            </div>
+            
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -433,7 +487,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-ucwhiteotherhospitalizations">
               <summary>
-                <span>UCwhiteOtherHospitalizations</span>
+                <span>
+                  <strong>UCwhiteOtherHospitalizations</strong>
+                  <span class="summary-connections">Connections: <span class="muted">None detected</span></span>
+                </span>
                 <span><span class="badge neutral">fact</span> <span class="badge neutral">UCwhiteOtherHospitalizations</span></span>
               </summary>
               <div class="grid two">
@@ -443,12 +500,16 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class="extra-item hidden">IsPlannedReadmission_X</li><li class="extra-item hidden">IsUnplannedReadmission_X</li><li class="extra-item hidden">EncounterType</li><li class="extra-item hidden">FinancialClass</li><li class="extra-item hidden">ICDCode</li><li class="extra-item hidden">ICDName</li><li><button class="linklike" data-show-more-list>+ 6 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                <div class="empty">None</div>
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -463,7 +524,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-crohnsblackpatients">
               <summary>
-                <span>CrohnsblackPatients</span>
+                <span>
+                  <strong>CrohnsblackPatients</strong>
+                  <span class="summary-connections">Connections: <span class="connection-chips"><span class="connection-chip c4">CrohnsblackOtherHospitalizations: PatientDurableKey</span></span></span>
+                </span>
                 <span><span class="badge pk">PK</span> <span class="badge neutral">CrohnsblackPatients</span></span>
               </summary>
               <div class="grid two">
@@ -473,12 +537,22 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                  <ul><li><span class="column-ref c4" title="Referenced by CrohnsblackOtherHospitalizations via PKTable"></span>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class="extra-item hidden">DurableKey</li><li class="extra-item hidden">FirstRace</li><li class="extra-item hidden">SecondRace</li><li class="extra-item hidden">ThirdRace</li><li class="extra-item hidden">FourthRace</li><li class="extra-item hidden">FifthRace</li><li class="extra-item hidden">SviRacialEthnicMinorityStatusPctlRankByZip2020_X</li><li class="extra-item hidden">SviOverallPctlRankByZip2020_X</li><li class="extra-item hidden">SviSocioeconomicPctlRankByZip2020_X</li><li><button class="linklike" data-show-more-list>+ 9 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                
+            <div class="connection-detail c4">
+              <strong>CrohnsblackOtherHospitalizations</strong>
+              <span class="muted">via PKTable</span>
+              <ul><li>PatientDurableKey</li></ul>
+            </div>
+            
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -499,7 +573,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-crohnsblackotherhospitalizations">
               <summary>
-                <span>CrohnsblackOtherHospitalizations</span>
+                <span>
+                  <strong>CrohnsblackOtherHospitalizations</strong>
+                  <span class="summary-connections">Connections: <span class="muted">None detected</span></span>
+                </span>
                 <span><span class="badge neutral">fact</span> <span class="badge neutral">CrohnsblackOtherHospitalizations</span></span>
               </summary>
               <div class="grid two">
@@ -509,12 +586,16 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class="extra-item hidden">IsPlannedReadmission_X</li><li class="extra-item hidden">IsUnplannedReadmission_X</li><li class="extra-item hidden">EncounterType</li><li class="extra-item hidden">FinancialClass</li><li class="extra-item hidden">ICDCode</li><li class="extra-item hidden">ICDName</li><li><button class="linklike" data-show-more-list>+ 6 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                <div class="empty">None</div>
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -529,7 +610,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-crohnswhitepatients">
               <summary>
-                <span>CrohnswhitePatients</span>
+                <span>
+                  <strong>CrohnswhitePatients</strong>
+                  <span class="summary-connections">Connections: <span class="connection-chips"><span class="connection-chip c6">CrohnswhiteOtherHospitalizations: PatientDurableKey</span></span></span>
+                </span>
                 <span><span class="badge pk">PK</span> <span class="badge neutral">CrohnswhitePatients</span></span>
               </summary>
               <div class="grid two">
@@ -539,12 +623,22 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul>
+                  <ul><li><span class="column-ref c6" title="Referenced by CrohnswhiteOtherHospitalizations via PKTable"></span>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class="extra-item hidden">DurableKey</li><li class="extra-item hidden">FirstRace</li><li class="extra-item hidden">SecondRace</li><li class="extra-item hidden">ThirdRace</li><li class="extra-item hidden">FourthRace</li><li class="extra-item hidden">FifthRace</li><li class="extra-item hidden">SviRacialEthnicMinorityStatusPctlRankByZip2020_X</li><li class="extra-item hidden">SviOverallPctlRankByZip2020_X</li><li class="extra-item hidden">SviSocioeconomicPctlRankByZip2020_X</li><li><button class="linklike" data-show-more-list>+ 9 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <div class="empty">None</div>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                
+            <div class="connection-detail c6">
+              <strong>CrohnswhiteOtherHospitalizations</strong>
+              <span class="muted">via PKTable</span>
+              <ul><li>PatientDurableKey</li></ul>
+            </div>
+            
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -567,7 +661,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
             <details class="card cohort-card" id="cohort-crohnswhiteotherhospitalizations">
               <summary>
-                <span>CrohnswhiteOtherHospitalizations</span>
+                <span>
+                  <strong>CrohnswhiteOtherHospitalizations</strong>
+                  <span class="summary-connections">Connections: <span class="muted">None detected</span></span>
+                </span>
                 <span><span class="badge neutral">fact</span> <span class="badge neutral">CrohnswhiteOtherHospitalizations</span></span>
               </summary>
               <div class="grid two">
@@ -577,12 +674,16 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul>
+                  <ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class="extra-item hidden">IsPlannedReadmission_X</li><li class="extra-item hidden">IsUnplannedReadmission_X</li><li class="extra-item hidden">EncounterType</li><li class="extra-item hidden">FinancialClass</li><li class="extra-item hidden">ICDCode</li><li class="extra-item hidden">ICDName</li><li><button class="linklike" data-show-more-list>+ 6 more</button></li></ul>
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 <h4>PKTable</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable</h4><ul><li>DiagnosisCode</li></ul>
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                <div class="empty">None</div>
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -644,7 +745,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
               <p>First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)</p>
               <div class="grid three">
                 <section><h4>Required Variables</h4><ul><li>ICD_Value</li><li>max_date_key</li><li>min_date_key</li></ul></section>
-                <section><h4>Output Columns</h4><ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class='muted'>+ 9 more</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>PatientDurableKey</li><li>Sex</li><li>ICDName</li><li>AgeAtIndexDiagnosis</li><li>BirthDate</li><li>StateOrProvince</li><li>StateOrProvinceAbbreviation</li><li>Country</li><li>ICDCode</li><li>IndexDate</li><li>DiagnosisEventKey</li><li>IndexEncounter</li><li class="extra-item hidden">DurableKey</li><li class="extra-item hidden">FirstRace</li><li class="extra-item hidden">SecondRace</li><li class="extra-item hidden">ThirdRace</li><li class="extra-item hidden">FourthRace</li><li class="extra-item hidden">FifthRace</li><li class="extra-item hidden">SviRacialEthnicMinorityStatusPctlRankByZip2020_X</li><li class="extra-item hidden">SviOverallPctlRankByZip2020_X</li><li class="extra-item hidden">SviSocioeconomicPctlRankByZip2020_X</li><li><button class="linklike" data-show-more-list>+ 9 more</button></li></ul></section>
                 <section><h4>Table Inputs</h4><div class="empty">None</div></section>
               </div>
             </details>
@@ -658,7 +759,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
               <p>Patient&#x27;s first time diagnoses with the condition, with date, age at diagnosis, event data</p>
               <div class="grid three">
                 <section><h4>Required Variables</h4><ul><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
-                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class='muted'>+ 4 more</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class="extra-item hidden">EndDateKey</li><li class="extra-item hidden">PatientDurableKey</li><li class="extra-item hidden">DiagnosisKey</li><li class="extra-item hidden">EncounterKey</li><li><button class="linklike" data-show-more-list>+ 4 more</button></li></ul></section>
                 <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>DiagnosisEventKey</li><li>PatientDurableKey</li></ul></section>
               </div>
             </details>
@@ -672,7 +773,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
               <p>Patient&#x27;s diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions</p>
               <div class="grid three">
                 <section><h4>Required Variables</h4><ul><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
-                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class='muted'>+ 4 more</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>DiagnosisEventKey</li><li>BillingCodeType</li><li>BillingCodeValue</li><li>NameAndCode</li><li>AgeAtDiagnosis</li><li>IsPrimary</li><li>IsReferenceBillingCode</li><li>TypeOfDx</li><li>TerminologyConcept</li><li>TerminologyName</li><li>Status</li><li>StartDateKey</li><li class="extra-item hidden">EndDateKey</li><li class="extra-item hidden">PatientDurableKey</li><li class="extra-item hidden">DiagnosisKey</li><li class="extra-item hidden">EncounterKey</li><li><button class="linklike" data-show-more-list>+ 4 more</button></li></ul></section>
                 <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>DiagnosisEventKey</li><li>PatientDurableKey</li></ul></section>
               </div>
             </details>
@@ -686,7 +787,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
               <p></p>
               <div class="grid three">
                 <section><h4>Required Variables</h4><ul><li>HospitalICDTable</li><li>PKTable</li><li>max_date_key</li><li>min_date_key</li></ul></section>
-                <section><h4>Output Columns</h4><ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class='muted'>+ 6 more</li></ul></section>
+                <section><h4>Output Columns</h4><ul><li>HospitalAdmissionKey</li><li>InpatientEncounterKey</li><li>PatientDurableKey</li><li>AdmissionDateKey</li><li>InpatientAdmissionInstant</li><li>DischargeDateKey</li><li>DischargeInstant</li><li>DischargeDisposition</li><li>InpatientLengthOfStayInDays</li><li>LengthOfStayInDays</li><li>DaysSincePriorAdmission_X</li><li>ReadmissionCausedByKey_X</li><li class="extra-item hidden">IsPlannedReadmission_X</li><li class="extra-item hidden">IsUnplannedReadmission_X</li><li class="extra-item hidden">EncounterType</li><li class="extra-item hidden">FinancialClass</li><li class="extra-item hidden">ICDCode</li><li class="extra-item hidden">ICDName</li><li><button class="linklike" data-show-more-list>+ 6 more</button></li></ul></section>
                 <section><h4>Table Inputs</h4><h4>PKTable as pk</h4><ul><li>PatientDurableKey</li></ul><h4>HospitalICDTable as ih</h4><ul><li>DiagnosisCode</li></ul></section>
               </div>
             </details>
@@ -1830,7 +1931,7 @@ cohorts:
     {
       "level": "ERROR",
       "code": "missing_upload_file",
-      "message": "Upload file not found: YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv",
+      "message": "Upload file not found: /Users/jmath/Documents/code/telescope/YAMLs/yamls/IBD/ED and Surgery/ICD-hosp.csv",
       "context": "HospitalICDCodes"
     }
   ],
@@ -2277,11 +2378,20 @@ document.querySelectorAll('.tab').forEach(button => {
 });
 
 document.getElementById('themeToggle').addEventListener('click', () => {
-  document.body.classList.toggle('dark');
+  document.body.classList.toggle('light');
 });
 
 document.getElementById('refreshPage').addEventListener('click', () => {
-  window.location.reload();
+  const form = document.getElementById('templatePathForm');
+  if (form) form.requestSubmit();
+  else window.location.reload();
+});
+
+document.getElementById('templatePathForm')?.addEventListener('submit', event => {
+  if (window.location.protocol === 'file:') {
+    event.preventDefault();
+    window.location.reload();
+  }
 });
 
 document.querySelectorAll('[data-expand]').forEach(button => {
@@ -2315,6 +2425,16 @@ document.querySelectorAll('[data-target]').forEach(button => {
     target.open = true;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+});
+
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (target.dataset.showMoreList !== undefined) {
+    const list = target.closest('ul');
+    if (!list) return;
+    list.querySelectorAll('.extra-item').forEach(item => item.classList.remove('hidden'));
+    target.closest('li')?.remove();
+  }
 });
 
 document.querySelectorAll('.builder-link').forEach(button => {

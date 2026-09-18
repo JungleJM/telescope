@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import html
+import http.server
 import json
 import re
 import sys
+import urllib.parse
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,8 @@ import makeYaml  # noqa: E402
 
 
 DEFAULT_OUT = PROJECT_ROOT / "UI" / "manager_dashboard.html"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
 
 
 def e(value: Any) -> str:
@@ -75,11 +79,95 @@ def value_list(values: list[str], limit: int = 9) -> str:
     if not values:
         return '<span class="muted">None detected</span>'
     shown = values[:limit]
-    extra = len(values) - len(shown)
     body = "".join(f"<li>{e(v)}</li>" for v in shown)
-    if extra:
-        body += f"<li class='muted'>+ {extra} more</li>"
+    extras = values[limit:]
+    if extras:
+        body += "".join(f'<li class="extra-item hidden">{e(v)}</li>' for v in extras)
+        body += f'<li><button class="linklike" data-show-more-list>+ {len(extras)} more</button></li>'
     return f"<ul>{body}</ul>"
+
+
+def build_connections(result: makeYaml.CompileResult) -> dict[str, list[dict[str, Any]]]:
+    cohorts = result.finished_yaml.get("cohorts", []) or []
+    required_cols = (result.analysis or {}).get("required_table_columns", {})
+    connections: dict[str, list[dict[str, Any]]] = {}
+    current_pk_dest = ""
+    color_counter = 0
+    for cohort in cohorts:
+        dest = str(cohort.get("dest_table", cohort.get("name", "")))
+        name = str(cohort.get("name", dest))
+        if str(cohort.get("type", "")).lower() == "pk":
+            current_pk_dest = dest
+        resolved_vars = cohort.get("_resolved_vars", {})
+        for table_var, cols in (required_cols.get(name) or {}).items():
+            target = str(resolved_vars.get(table_var) or table_var)
+            if table_var == "PKTable" and current_pk_dest:
+                target = current_pk_dest
+            connections.setdefault(target, []).append({
+                "target": name,
+                "table_var": table_var,
+                "columns": cols,
+                "color": color_counter % 8,
+            })
+            color_counter += 1
+    return connections
+
+
+def connection_chips(items: list[dict[str, Any]], compact: bool = False) -> str:
+    if not items:
+        return '<span class="muted">None detected</span>'
+    chips = []
+    max_items = 4 if compact else len(items)
+    for item in items[:max_items]:
+        cols = item.get("columns") or []
+        col_text = ", ".join(cols[:3])
+        if len(cols) > 3:
+            col_text += f", +{len(cols) - 3} more"
+        chips.append(
+            f'<span class="connection-chip c{item.get("color", 0)}">'
+            f'{e(item.get("target"))}: {e(col_text or item.get("table_var"))}</span>'
+        )
+    if compact and len(items) > max_items:
+        chips.append('<span class="muted">(click to expand)</span>')
+    return f'<span class="connection-chips">{"".join(chips)}</span>'
+
+
+def connection_details(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return '<div class="empty">None</div>'
+    blocks = []
+    for item in items:
+        blocks.append(
+            f"""
+            <div class="connection-detail c{item.get("color", 0)}">
+              <strong>{e(item.get("target"))}</strong>
+              <span class="muted">via {e(item.get("table_var"))}</span>
+              {value_list(item.get("columns") or [], 12)}
+            </div>
+            """
+        )
+    return "".join(blocks)
+
+
+def column_list(values: list[str], connections: list[dict[str, Any]], limit: int = 12) -> str:
+    if not values:
+        return '<span class="muted">None detected</span>'
+    refs_by_col: dict[str, list[dict[str, Any]]] = {}
+    for item in connections:
+        for col in item.get("columns") or []:
+            refs_by_col.setdefault(str(col), []).append(item)
+    items = []
+    for idx, value in enumerate(values):
+        refs = refs_by_col.get(str(value), [])
+        ref_marks = "".join(
+            f'<span class="column-ref c{ref.get("color", 0)}" title="Referenced by {e(ref.get("target"))} via {e(ref.get("table_var"))}"></span>'
+            for ref in refs
+        )
+        hidden = ' class="extra-item hidden"' if idx >= limit else ""
+        items.append(f"<li{hidden}>{ref_marks}{e(value)}</li>")
+    if len(values) > limit:
+        items.append(f'<li><button class="linklike" data-show-more-list>+ {len(values) - limit} more</button></li>')
+    return f"<ul>{''.join(items)}</ul>"
 
 
 def upload_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> str:
@@ -119,6 +207,7 @@ def cohort_cards(result: makeYaml.CompileResult) -> str:
     required_vars = analysis.get("required_vars", {})
     required_cols = analysis.get("required_table_columns", {})
     outputs = analysis.get("output_columns", {})
+    connections = build_connections(result)
     if not cohorts:
         return '<div class="empty">No cohorts available.</div>'
     cards = []
@@ -132,13 +221,17 @@ def cohort_cards(result: makeYaml.CompileResult) -> str:
         table_bits = []
         for table_var, cols in table_inputs.items():
             table_bits.append(f"<h4>{e(table_var)}</h4>{value_list(cols)}")
+        outgoing = connections.get(str(dest), [])
         split = cohort.get("split_after_build")
         batching = cohort.get("batching")
         cards.append(
             f"""
             <details class="card cohort-card" id="cohort-{slug(str(name))}">
               <summary>
-                <span>{e(name)}</span>
+                <span>
+                  <strong>{e(name)}</strong>
+                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True)}</span>
+                </span>
                 <span>{badge(ctype, kind)} {badge(str(dest), "neutral")}</span>
               </summary>
               <div class="grid two">
@@ -148,12 +241,16 @@ def cohort_cards(result: makeYaml.CompileResult) -> str:
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  {value_list(outputs.get(dest, []), 12)}
+                  {column_list(outputs.get(dest, []), outgoing, 12)}
                 </section>
               </div>
               <section>
-                <h4>Input Table Contracts</h4>
+                <h4>Connections</h4>
                 {''.join(table_bits) if table_bits else '<div class="empty">None</div>'}
+              </section>
+              <section>
+                <h4>Referenced For Tables</h4>
+                {connection_details(outgoing)}
               </section>
               <section>
                 <h4>Split After Build</h4>
@@ -289,11 +386,11 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
   <title>Telescope YAML Manager</title>
   <style>{CSS}</style>
 </head>
-<body>
+<body class="dark">
   <header>
     <div>
       <h1>Telescope YAML Manager</h1>
-      <p>{e(template_path)} | {e(recipes_path)}</p>
+      <p>Recipes: {e(recipes_path)}</p>
     </div>
     <div class="header-actions">
       <button id="refreshPage" title="Reload dashboard">Refresh</button>
@@ -305,7 +402,12 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
     <section class="block">
       <h2>Dashboard File</h2>
       <p>{e(refresh_note)}</p>
-      <p>To analyze a different template, rerun <code>scripts/managerUI.py --template path/to/template.yaml --open</code>.</p>
+      <form id="templatePathForm" class="path-form" method="get" action="/">
+        <label>Template YAML<input id="templatePathInput" name="template" type="text" value="{e(template_path)}"></label>
+        <input name="recipes" type="hidden" value="{e(recipes_path)}">
+        <button type="submit">Refresh</button>
+      </form>
+      <p class="muted">When opened from the local manager server, Refresh recompiles against this template path. Static file mode can only reload the generated page.</p>
     </section>
 
     {summary_cards(template, result)}
@@ -527,19 +629,6 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
 
 CSS = r"""
 :root {
-  color-scheme: light;
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --ink: #20242a;
-  --muted: #69717d;
-  --line: #d9dee5;
-  --accent: #256f8f;
-  --ok: #26734d;
-  --warn: #9a6200;
-  --err: #a13737;
-  --chip: #eef2f5;
-}
-body.dark {
   color-scheme: dark;
   --bg: #16181b;
   --panel: #20242a;
@@ -551,6 +640,19 @@ body.dark {
   --warn: #e4b363;
   --err: #ff8a8a;
   --chip: #2b3138;
+}
+body.light {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #20242a;
+  --muted: #69717d;
+  --line: #d9dee5;
+  --accent: #256f8f;
+  --ok: #26734d;
+  --warn: #9a6200;
+  --err: #a13737;
+  --chip: #eef2f5;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -566,6 +668,9 @@ button:hover { border-color: var(--accent); }
 input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
+.path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
+.path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.path-form input { width: 100%; }
 .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
 .metric span { display: block; color: var(--muted); font-size: 12px; }
@@ -623,6 +728,19 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .tag { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); padding: 5px 8px; color: var(--ink); }
 .tag button { border: 0; background: transparent; padding: 0 2px; color: var(--muted); }
 .tag-note { color: var(--muted); font-size: 12px; }
+.summary-connections { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.connection-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
+.connection-chip { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 999px; padding: 3px 7px; background: color-mix(in srgb, currentColor 16%, transparent); color: var(--accent); }
+.connection-detail { border-left: 4px solid currentColor; background: var(--chip); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.column-ref { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: -1px; }
+.c0 { color: #6fb1cf; }
+.c1 { color: #74c69d; }
+.c2 { color: #e4b363; }
+.c3 { color: #ff8a8a; }
+.c4 { color: #b99cff; }
+.c5 { color: #7bdff2; }
+.c6 { color: #f7a072; }
+.c7 { color: #b8d8ba; }
 .danger { color: var(--err); }
 .pipeline { display: grid; gap: 10px; }
 .pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
@@ -637,7 +755,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .empty { color: var(--muted); padding: 8px 0; }
 .hidden { display: none; }
 @media (max-width: 900px) {
-  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
+  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch, .path-form { grid-template-columns: 1fr; }
   header { position: static; align-items: flex-start; }
   .builder-nav { position: static; }
 }
@@ -667,11 +785,20 @@ document.querySelectorAll('.tab').forEach(button => {
 });
 
 document.getElementById('themeToggle').addEventListener('click', () => {
-  document.body.classList.toggle('dark');
+  document.body.classList.toggle('light');
 });
 
 document.getElementById('refreshPage').addEventListener('click', () => {
-  window.location.reload();
+  const form = document.getElementById('templatePathForm');
+  if (form) form.requestSubmit();
+  else window.location.reload();
+});
+
+document.getElementById('templatePathForm')?.addEventListener('submit', event => {
+  if (window.location.protocol === 'file:') {
+    event.preventDefault();
+    window.location.reload();
+  }
 });
 
 document.querySelectorAll('[data-expand]').forEach(button => {
@@ -705,6 +832,16 @@ document.querySelectorAll('[data-target]').forEach(button => {
     target.open = true;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+});
+
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (target.dataset.showMoreList !== undefined) {
+    const list = target.closest('ul');
+    if (!list) return;
+    list.querySelectorAll('.extra-item').forEach(item => item.classList.remove('hidden'));
+    target.closest('li')?.remove();
+  }
 });
 
 document.querySelectorAll('.builder-link').forEach(button => {
@@ -1341,19 +1478,104 @@ def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int 
     return build_html(template_path, recipes_path, result, auto_refresh), result
 
 
+def resolve_workspace_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
+
+
+def error_html(title: str, message: str) -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{e(title)}</title>
+  <style>{CSS}</style>
+</head>
+<body class="dark">
+  <main>
+    <section class="block">
+      <h1>{e(title)}</h1>
+      <p>{e(message)}</p>
+      <form class="path-form" method="get" action="/">
+        <label>Template YAML<input name="template" type="text" value="YAMLs/template.yaml"></label>
+        <button type="submit">Refresh</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def serve_dashboard(host: str, port: int, template: str, recipes: str, auto_refresh: int, open_browser: bool) -> int:
+    default_template = template
+    default_recipes = recipes
+
+    class DashboardHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path not in ("/", "/dashboard", "/dashboard.html"):
+                self.send_error(404)
+                return
+            params = urllib.parse.parse_qs(parsed.query)
+            template_arg = params.get("template", [default_template])[0] or default_template
+            recipes_arg = params.get("recipes", [default_recipes])[0] or default_recipes
+            template_path = resolve_workspace_path(template_arg)
+            recipes_path = resolve_workspace_path(recipes_arg)
+            try:
+                html_text, _ = render_dashboard(template_path, recipes_path, auto_refresh)
+                status = 200
+            except Exception as exc:  # noqa: BLE001 - surfaced as a dashboard page for local UI use.
+                html_text = error_html("Dashboard Refresh Failed", str(exc))
+                status = 500
+            data = html_text.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            print(f"[managerUI] {self.address_string()} - {format % args}")
+
+    server = http.server.ThreadingHTTPServer((host, port), DashboardHandler)
+    url = f"http://{host}:{port}/?template={urllib.parse.quote(default_template)}&recipes={urllib.parse.quote(default_recipes)}"
+    print(f"Serving Telescope YAML Manager at {url}")
+    print("Stop the manager with Ctrl+C, or the stop button in your editor.")
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped Telescope YAML Manager.")
+    finally:
+        server.server_close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a static Telescope manager UI.")
     parser.add_argument("--template", default="YAMLs/template.yaml")
     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
+    parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
+    parser.add_argument("--static", action="store_true", help="Write a static dashboard file instead of starting the local server when no args are provided.")
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     raw_argv = sys.argv[1:] if argv is None else argv
     open_by_default = not raw_argv
     args = parser.parse_args(raw_argv)
 
-    template_path = Path(args.template)
-    recipes_path = Path(args.recipes)
+    if args.serve or (open_by_default and not args.static):
+        return serve_dashboard(args.host, args.port, args.template, args.recipes, args.auto_refresh, open_browser=not args.static)
+
+    template_path = resolve_workspace_path(args.template)
+    recipes_path = resolve_workspace_path(args.recipes)
 
     out_path = Path(args.out)
     html_text, result = render_dashboard(template_path, recipes_path, args.auto_refresh)
