@@ -255,11 +255,13 @@ def summary_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> s
     """
 
 
-def build_html(template_path: Path, recipes_path: Path, result: makeYaml.CompileResult) -> str:
+def build_html(template_path: Path, recipes_path: Path, result: makeYaml.CompileResult, auto_refresh: int = 0) -> str:
     template = makeYaml.load_yaml(template_path) or {}
     recipes_doc = makeYaml.load_yaml(recipes_path) or {}
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
+    refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
+    refresh_note = f"Auto-refreshing every {auto_refresh} seconds." if auto_refresh > 0 else "Refresh reloads this generated dashboard file."
     data_json = html.escape(json.dumps({
         "errors": [m.to_dict() for m in result.errors],
         "warnings": [m.to_dict() for m in result.warnings],
@@ -270,6 +272,7 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {refresh_meta}
   <title>Telescope YAML Manager</title>
   <style>{CSS}</style>
 </head>
@@ -279,10 +282,19 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
       <h1>Telescope YAML Manager</h1>
       <p>{e(template_path)} | {e(recipes_path)}</p>
     </div>
-    <button id="themeToggle" title="Toggle dark mode">Theme</button>
+    <div class="header-actions">
+      <button id="refreshPage" title="Reload dashboard">Refresh</button>
+      <button id="themeToggle" title="Toggle dark mode">Theme</button>
+    </div>
   </header>
 
   <main>
+    <section class="block">
+      <h2>Dashboard File</h2>
+      <p>{e(refresh_note)}</p>
+      <p>To analyze a different template, rerun <code>scripts/managerUI.py --template path/to/template.yaml --open</code>.</p>
+    </section>
+
     {summary_cards(template, result)}
 
     <nav class="tabs" aria-label="Dashboard sections">
@@ -407,6 +419,7 @@ p { color: var(--muted); margin: 4px 0 0; }
 button, input { font: inherit; }
 button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 11px; border-radius: 7px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
@@ -471,6 +484,10 @@ document.getElementById('themeToggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
 });
 
+document.getElementById('refreshPage').addEventListener('click', () => {
+  window.location.reload();
+});
+
 document.querySelectorAll('[data-expand]').forEach(button => {
   button.addEventListener('click', () => {
     document.querySelectorAll(`#${button.dataset.expand} details`).forEach(d => d.open = true);
@@ -506,19 +523,25 @@ document.querySelectorAll('[data-target]').forEach(button => {
 """
 
 
+def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, makeYaml.CompileResult]:
+    result = makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+    return build_html(template_path, recipes_path, result, auto_refresh), result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a static Telescope manager UI.")
     parser.add_argument("--template", default="YAMLs/template.yaml")
     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
+    parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     args = parser.parse_args(argv)
 
     template_path = Path(args.template)
     recipes_path = Path(args.recipes)
+
     out_path = Path(args.out)
-    result = makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
-    html_text = build_html(template_path, recipes_path, result)
+    html_text, result = render_dashboard(template_path, recipes_path, args.auto_refresh)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html_text, encoding="utf-8")
 

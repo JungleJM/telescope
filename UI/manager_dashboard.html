@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  
   <title>Telescope YAML Manager</title>
   <style>
 :root {
@@ -42,6 +43,7 @@ p { color: var(--muted); margin: 4px 0 0; }
 button, input { font: inherit; }
 button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 11px; border-radius: 7px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
@@ -97,10 +99,19 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
       <h1>Telescope YAML Manager</h1>
       <p>YAMLs/template.yaml | YAMLs/recipes.yaml</p>
     </div>
-    <button id="themeToggle" title="Toggle dark mode">Theme</button>
+    <div class="header-actions">
+      <button id="refreshPage" title="Reload dashboard">Refresh</button>
+      <button id="themeToggle" title="Toggle dark mode">Theme</button>
+    </div>
   </header>
 
   <main>
+    <section class="block">
+      <h2>Dashboard File</h2>
+      <p>Refresh reloads this generated dashboard file.</p>
+      <p>To analyze a different template, rerun <code>scripts/managerUI.py --template path/to/template.yaml --open</code>.</p>
+    </section>
+
     
       <div class="summary">
         <div class="metric error"><span>Status</span><strong>Blocked</strong></div>
@@ -2094,6 +2105,10 @@ document.querySelectorAll('.tab').forEach(button => {
 
 document.getElementById('themeToggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
+});
+
+document.getElementById('refreshPage').addEventListener('click', () => {
+  window.location.reload();
 });
 
 document.querySelectorAll('[data-expand]').forEach(button => {
