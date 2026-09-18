@@ -903,7 +903,9 @@ def compile_yaml(
     if write and result.ok:
         dump_yaml(finished, out_path)
     if report_path:
-        Path(report_path).write_text(build_report(result), encoding="utf-8")
+        report_out = Path(report_path)
+        report_out.parent.mkdir(parents=True, exist_ok=True)
+        report_out.write_text(build_report(result), encoding="utf-8")
     return result
 
 
