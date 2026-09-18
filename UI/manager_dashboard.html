@@ -40,9 +40,10 @@ h2 { margin: 0 0 14px; font-size: 18px; }
 h3 { margin: 0 0 12px; font-size: 15px; }
 h4 { margin: 12px 0 8px; font-size: 13px; }
 p { color: var(--muted); margin: 4px 0 0; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 11px; border-radius: 7px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
+input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
@@ -75,6 +76,22 @@ ul { padding-left: 18px; margin: 8px 0; }
 pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1px solid var(--line); border-radius: 7px; padding: 12px; max-height: 520px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .toolbar input { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); }
+.toolbar.compact { margin-top: 14px; margin-bottom: 0; flex-wrap: wrap; }
+.builder-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
+.builder-nav { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; position: sticky; top: 88px; display: grid; gap: 8px; }
+.builder-link { text-align: left; }
+.builder-link.active { background: var(--accent); border-color: var(--accent); color: white; }
+.builder-section { display: none; }
+.builder-section.active { display: block; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.form-grid label, .editor-row label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.form-grid input, .form-grid select, .editor-row input, .editor-row select { width: 100%; color: var(--ink); font-weight: 400; }
+.inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
+.editor-rows { display: grid; gap: 10px; }
+.editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
+.editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; }
+.editor-row.batch { grid-template-columns: minmax(140px, 1fr) minmax(220px, 2fr) auto; }
+.danger { color: var(--err); }
 .pipeline { display: grid; gap: 10px; }
 .pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 .pipeline-step span { display: grid; place-items: center; height: 26px; width: 26px; border-radius: 50%; background: var(--chip); }
@@ -88,8 +105,9 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .empty { color: var(--muted); padding: 8px 0; }
 .hidden { display: none; }
 @media (max-width: 900px) {
-  .summary, .grid.two, .grid.three, .graph-layout { grid-template-columns: 1fr; }
+  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
   header { position: static; align-items: flex-start; }
+  .builder-nav { position: static; }
 }
 </style>
 </head>
@@ -124,6 +142,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 
     <nav class="tabs" aria-label="Dashboard sections">
       <button class="tab active" data-tab="validation">Validation</button>
+      <button class="tab" data-tab="builder">Builder</button>
       <button class="tab" data-tab="pipeline">Pipeline</button>
       <button class="tab" data-tab="cohorts">Cohorts</button>
       <button class="tab" data-tab="uploads">Uploads</button>
@@ -154,6 +173,85 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
             </div>
             
         </section>
+      </div>
+    </section>
+
+    <section id="builder" class="panel">
+      <div class="builder-layout">
+        <aside class="builder-nav">
+          <button class="builder-link active" data-builder-section="builderProject">Project</button>
+          <button class="builder-link" data-builder-section="builderUploads">Uploads</button>
+          <button class="builder-link" data-builder-section="builderBatching">Batching</button>
+          <button class="builder-link" data-builder-section="builderCohorts">Cohorts</button>
+          <button class="builder-link" data-builder-section="builderDraft">Draft YAML</button>
+        </aside>
+        <div class="builder-main">
+          <section id="builderProject" class="builder-section active block">
+            <h2>Project</h2>
+            <div class="form-grid">
+              <label>Project Folder<input id="builderProjectFolder" type="text"></label>
+              <label>Project DB<input id="builderProjectDb" type="text"></label>
+              <label>Cosmos DB
+                <select id="builderCosmosDb">
+                  <option value="COSMOS">COSMOS</option>
+                  <option value="COSMOS_SneakPeek">COSMOS_SneakPeek</option>
+                  <option value="Dual">Dual</option>
+                </select>
+              </label>
+              <label>Min Date Key<input id="builderMinDate" type="text"></label>
+              <label>Max Date Key<input id="builderMaxDate" type="text"></label>
+              <label>Hospital ICD Table<input id="builderHospitalIcd" type="text"></label>
+            </div>
+            <div class="toolbar compact">
+              <button id="builderNewTemplate">New Blank Template</button>
+              <button id="builderUseCurrent">Reload Current Template</button>
+            </div>
+          </section>
+
+          <section id="builderUploads" class="builder-section block">
+            <h2>Uploads</h2>
+            <div class="inline-form">
+              <select id="newUploadType">
+                <option value="dbtable">dbtable</option>
+                <option value="csv">csv</option>
+                <option value="parquet">parquet</option>
+              </select>
+              <input id="newUploadName" type="text" placeholder="name">
+              <input id="newUploadPath" type="text" placeholder="file_loc or table hint">
+              <button id="addUpload">Add Upload</button>
+            </div>
+            <div id="uploadEditorRows" class="editor-rows"></div>
+          </section>
+
+          <section id="builderBatching" class="builder-section block">
+            <h2>Batching</h2>
+            <div class="inline-form">
+              <select id="newBatchingRecipe"></select>
+              <input id="newBatchingValue" type="text" placeholder="values or chunk size">
+              <button id="addBatching">Add Batching</button>
+            </div>
+            <div id="batchingEditorRows" class="editor-rows"></div>
+          </section>
+
+          <section id="builderCohorts" class="builder-section block">
+            <h2>Cohorts</h2>
+            <div class="inline-form">
+              <select id="newCohortRecipe"></select>
+              <input id="newCohortName" type="text" placeholder="cohort name">
+              <button id="addCohort">Add Recipe</button>
+            </div>
+            <div id="cohortEditorRows" class="editor-rows"></div>
+          </section>
+
+          <section id="builderDraft" class="builder-section block">
+            <h2>Draft YAML</h2>
+            <div class="toolbar compact">
+              <button id="copyDraftYaml">Copy Draft</button>
+              <button id="downloadDraftYaml">Download Draft</button>
+            </div>
+            <pre id="draftYaml"></pre>
+          </section>
+        </div>
       </div>
     </section>
 
@@ -2093,7 +2191,19 @@ cohorts:
     </section>
   </main>
 
+  <script id="initialTemplateData" type="application/json">{"project_db": "PROJECTD33A929", "cosmos_db": "Dual", "vars": {"min_date_key": 19900101, "max_date_key": 20260601, "HospitalICDTable": "HospitalICDCodes"}, "test_options": {"smallset": false, "stop_at_for_pk_table": 10, "stop_at_for_non_pk_tables": 0, "random_pk_sample": false, "printout_md": true}, "project_folder": "Test Run", "upload_cohorts": [{"name": "PKTable", "dest_table": "PKTable", "file_type": "dbtable", "push_this_cycle": true}, {"name": "HospitalICDCodes", "dest_table": "HospitalICDCodes", "file_type": "csv", "file_loc": "yamls/IBD/ED and Surgery/ICD-hosp.csv", "scope": "global", "push_this_cycle": true}], "multipliers": [{"name": "IBDType", "stage": "during_build", "levels": [{"strat": "UC", "vars": {"ICD_Value": ["K51.%"]}}, {"strat": "Crohns", "vars": {"ICD_Value": ["K50.%"]}}]}, {"name": "Race", "stage": "split_after_build", "applies_to": "PKTable", "levels": [{"strat": "black", "column": "FirstRace", "values": ["Black %"]}, {"strat": "white", "role": "control", "column": "FirstRace", "values": ["White %"], "row_mult": 4}]}], "batching": [{"name": "state", "column": "StateOrProvinceAbbreviation", "values": ["LA", "MS", "GA", "NC"], "separate_parquets": true}, {"name": "sex", "column": "Sex", "values": ["Female", "Male"], "separate_parquets": true}, {"chunk": 2000}], "cohorts": [{"recipe": "PatientWithDx", "name": "Patients"}, {"recipe": "OtherHospitalizations"}], "example_cohorts": [{"name": "Patients", "type": "example", "pull_this_cycle": false, "dest_table": "Patients", "columns": [{"source": "pk.x", "name": null, "type": null, "nullable": null}, {"source": "pk.x"}, {"source": "pk.x"}, {"source": "dt.x"}], "filter": {"from": "DiagnosisEventFact as pk", "join": ["INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey", "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey", "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey"], "where": ["dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}", "dxf.StartDateKey \u003e= 0", "dxf._IsDeleted = 0", "dt._IsDeleted = 0", "p.IsValid = 1", "p.IsCurrent = 1", "p.UseInCosmosAnalytics_X = 1", "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')", "{{sql_condition('dt.Value', ICD_Value)}}"]}}, {"name": "MotherOfPatients", "pull_this_cycle": true, "type": "example", "dest_table": null, "vars": {"PKTable": "Mothers"}, "columns": [{"source": "bpf.x", "name": null, "type": null, "nullable": null}], "filter": {"from": "BirthParentFact as bpf", "join": ["INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = bpf.EncounterKey"], "where": null}}]}</script>
+  <script id="recipeNamesData" type="application/json">["PatientWithDx", "IndexDiagnosis", "OtherDiagnoses", "OtherHospitalizations"]</script>
+  <script id="batchingNamesData" type="application/json">["state", "sex", "chunk"]</script>
   <script>
+const initialTemplate = JSON.parse(document.getElementById('initialTemplateData').textContent);
+const recipeNames = JSON.parse(document.getElementById('recipeNamesData').textContent);
+const batchingNames = JSON.parse(document.getElementById('batchingNamesData').textContent);
+let draftTemplate = clone(initialTemplate);
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value || {}));
+}
+
 document.querySelectorAll('.tab').forEach(button => {
   button.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
@@ -2143,6 +2253,347 @@ document.querySelectorAll('[data-target]').forEach(button => {
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
+
+document.querySelectorAll('.builder-link').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.builder-link').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.builder-section').forEach(s => s.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById(button.dataset.builderSection).classList.add('active');
+  });
+});
+
+function ensureDraftShape() {
+  draftTemplate.vars = draftTemplate.vars || {};
+  draftTemplate.upload_cohorts = Array.isArray(draftTemplate.upload_cohorts) ? draftTemplate.upload_cohorts : [];
+  draftTemplate.batching = Array.isArray(draftTemplate.batching) ? draftTemplate.batching : [];
+  draftTemplate.cohorts = Array.isArray(draftTemplate.cohorts) ? draftTemplate.cohorts : [];
+}
+
+function blankTemplate() {
+  return {
+    project_db: '',
+    cosmos_db: 'COSMOS',
+    project_folder: 'New Project',
+    vars: {
+      min_date_key: '',
+      max_date_key: '',
+      HospitalICDTable: 'HospitalICDCodes'
+    },
+    upload_cohorts: [],
+    multipliers: [],
+    batching: [],
+    cohorts: []
+  };
+}
+
+function hydrateBuilder() {
+  ensureDraftShape();
+  setValue('builderProjectFolder', draftTemplate.project_folder || '');
+  setValue('builderProjectDb', draftTemplate.project_db || '');
+  setValue('builderCosmosDb', draftTemplate.cosmos_db || 'COSMOS');
+  setValue('builderMinDate', draftTemplate.vars.min_date_key || '');
+  setValue('builderMaxDate', draftTemplate.vars.max_date_key || '');
+  setValue('builderHospitalIcd', draftTemplate.vars.HospitalICDTable || '');
+  renderRecipeOptions();
+  renderBatchingOptions();
+  renderUploadRows();
+  renderBatchingRows();
+  renderCohortRows();
+  updateDraftYaml();
+}
+
+function setValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+function getValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+function syncProjectFields() {
+  ensureDraftShape();
+  draftTemplate.project_folder = getValue('builderProjectFolder');
+  draftTemplate.project_db = getValue('builderProjectDb');
+  draftTemplate.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
+  draftTemplate.vars.min_date_key = getValue('builderMinDate');
+  draftTemplate.vars.max_date_key = getValue('builderMaxDate');
+  draftTemplate.vars.HospitalICDTable = getValue('builderHospitalIcd');
+  updateDraftYaml();
+}
+
+['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderHospitalIcd'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', syncProjectFields);
+  if (el) el.addEventListener('change', syncProjectFields);
+});
+
+function renderRecipeOptions() {
+  const select = document.getElementById('newCohortRecipe');
+  if (!select) return;
+  select.innerHTML = recipeNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
+}
+
+function renderBatchingOptions() {
+  const select = document.getElementById('newBatchingRecipe');
+  if (!select) return;
+  select.innerHTML = batchingNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
+}
+
+function renderUploadRows() {
+  const root = document.getElementById('uploadEditorRows');
+  if (!root) return;
+  root.innerHTML = draftTemplate.upload_cohorts.map((upload, index) => `
+    <div class="editor-row">
+      <label>Name<input data-upload-field="name" data-index="${index}" value="${escapeAttr(upload.name || '')}"></label>
+      <label>Destination<input data-upload-field="dest_table" data-index="${index}" value="${escapeAttr(upload.dest_table || upload.name || '')}"></label>
+      <label>Type
+        <select data-upload-field="file_type" data-index="${index}">
+          ${['dbtable', 'csv', 'parquet'].map(type => `<option value="${type}" ${type === upload.file_type ? 'selected' : ''}>${type}</option>`).join('')}
+        </select>
+      </label>
+      <label>File/Table<input data-upload-field="file_loc" data-index="${index}" value="${escapeAttr(upload.file_loc || '')}"></label>
+      <button class="danger" data-remove-upload="${index}">Remove</button>
+    </div>
+  `).join('') || '<div class="empty">No uploads in draft.</div>';
+}
+
+function renderBatchingRows() {
+  const root = document.getElementById('batchingEditorRows');
+  if (!root) return;
+  root.innerHTML = draftTemplate.batching.map((item, index) => {
+    const parsed = describeBatching(item);
+    return `
+      <div class="editor-row batch">
+        <label>Recipe<input data-batching-field="name" data-index="${index}" value="${escapeAttr(parsed.name)}"></label>
+        <label>Value<input data-batching-field="value" data-index="${index}" value="${escapeAttr(parsed.value)}"></label>
+        <button class="danger" data-remove-batching="${index}">Remove</button>
+      </div>
+    `;
+  }).join('') || '<div class="empty">No batching rules in draft.</div>';
+}
+
+function renderCohortRows() {
+  const root = document.getElementById('cohortEditorRows');
+  if (!root) return;
+  root.innerHTML = draftTemplate.cohorts.map((cohort, index) => `
+    <div class="editor-row cohort">
+      <label>Recipe<input data-cohort-field="recipe" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort._recipe || cohort.name || '')}"></label>
+      <label>Name<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
+      <button class="danger" data-remove-cohort="${index}">Remove</button>
+    </div>
+  `).join('') || '<div class="empty">No cohorts in draft.</div>';
+}
+
+function describeBatching(item) {
+  if (typeof item === 'number') return { name: 'chunk', value: String(item) };
+  if (typeof item === 'string') return { name: item, value: '' };
+  if (item && typeof item === 'object') {
+    if ('chunk' in item) return { name: 'chunk', value: String(item.chunk) };
+    if (item.name) return { name: item.name, value: Array.isArray(item.values) ? item.values.join(', ') : (item.rows_per_batch || '') };
+    const keys = Object.keys(item);
+    if (keys.length === 1) {
+      const name = keys[0];
+      const value = item[name];
+      if (value && typeof value === 'object') return { name, value: Array.isArray(value.values) ? value.values.join(', ') : (value.rows_per_batch || '') };
+      return { name, value: value == null ? '' : String(value) };
+    }
+  }
+  return { name: '', value: '' };
+}
+
+function batchingFromFields(name, value) {
+  if (name === 'chunk') {
+    const parsed = parseInt(value || '0', 10);
+    return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
+  }
+  if (value) {
+    return { [name]: { values: value.split(',').map(v => v.trim()).filter(Boolean) } };
+  }
+  return name;
+}
+
+document.getElementById('addUpload')?.addEventListener('click', () => {
+  ensureDraftShape();
+  const name = getValue('newUploadName') || `Upload${draftTemplate.upload_cohorts.length + 1}`;
+  const fileType = getValue('newUploadType') || 'csv';
+  const upload = {
+    name,
+    dest_table: name,
+    file_type: fileType,
+    push_this_cycle: true
+  };
+  const fileLoc = getValue('newUploadPath');
+  if (fileLoc) upload.file_loc = fileLoc;
+  draftTemplate.upload_cohorts.push(upload);
+  setValue('newUploadName', '');
+  setValue('newUploadPath', '');
+  renderUploadRows();
+  updateDraftYaml();
+});
+
+document.getElementById('addBatching')?.addEventListener('click', () => {
+  ensureDraftShape();
+  const name = getValue('newBatchingRecipe');
+  if (!name) return;
+  draftTemplate.batching.push(batchingFromFields(name, getValue('newBatchingValue')));
+  setValue('newBatchingValue', '');
+  renderBatchingRows();
+  updateDraftYaml();
+});
+
+document.getElementById('addCohort')?.addEventListener('click', () => {
+  ensureDraftShape();
+  const recipe = getValue('newCohortRecipe');
+  if (!recipe) return;
+  draftTemplate.cohorts.push({ recipe, name: getValue('newCohortName') || recipe });
+  setValue('newCohortName', '');
+  renderCohortRows();
+  updateDraftYaml();
+});
+
+document.addEventListener('input', event => {
+  const target = event.target;
+  const index = Number(target.dataset.index);
+  if (target.dataset.uploadField) {
+    draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
+    updateDraftYaml();
+  }
+  if (target.dataset.batchingField) {
+    const parsed = describeBatching(draftTemplate.batching[index]);
+    parsed[target.dataset.batchingField] = target.value;
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.value);
+    updateDraftYaml();
+  }
+  if (target.dataset.cohortField) {
+    draftTemplate.cohorts[index][target.dataset.cohortField] = target.value;
+    updateDraftYaml();
+  }
+});
+
+document.addEventListener('change', event => {
+  const target = event.target;
+  const index = Number(target.dataset.index);
+  if (target.dataset.uploadField) {
+    draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
+    updateDraftYaml();
+  }
+});
+
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (target.dataset.removeUpload) {
+    draftTemplate.upload_cohorts.splice(Number(target.dataset.removeUpload), 1);
+    renderUploadRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.removeBatching) {
+    draftTemplate.batching.splice(Number(target.dataset.removeBatching), 1);
+    renderBatchingRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.removeCohort) {
+    draftTemplate.cohorts.splice(Number(target.dataset.removeCohort), 1);
+    renderCohortRows();
+    updateDraftYaml();
+  }
+});
+
+document.getElementById('builderNewTemplate')?.addEventListener('click', () => {
+  draftTemplate = blankTemplate();
+  hydrateBuilder();
+});
+
+document.getElementById('builderUseCurrent')?.addEventListener('click', () => {
+  draftTemplate = clone(initialTemplate);
+  hydrateBuilder();
+});
+
+document.getElementById('copyDraftYaml')?.addEventListener('click', async () => {
+  const text = document.getElementById('draftYaml')?.innerText || '';
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    window.prompt('Copy draft YAML:', text);
+  }
+});
+
+document.getElementById('downloadDraftYaml')?.addEventListener('click', () => {
+  const text = document.getElementById('draftYaml')?.innerText || '';
+  const blob = new Blob([text], { type: 'text/yaml' });
+  const a = document.createElement('a');
+  const project = (draftTemplate.project_folder || 'draft').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
+  a.href = URL.createObjectURL(blob);
+  a.download = `${project}.yaml`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+function updateDraftYaml() {
+  ensureDraftShape();
+  const clean = {
+    project_db: draftTemplate.project_db || '',
+    cosmos_db: draftTemplate.cosmos_db || 'COSMOS',
+    project_folder: draftTemplate.project_folder || '',
+    vars: draftTemplate.vars || {},
+    upload_cohorts: draftTemplate.upload_cohorts || [],
+    multipliers: draftTemplate.multipliers || [],
+    batching: draftTemplate.batching || [],
+    cohorts: draftTemplate.cohorts || []
+  };
+  document.getElementById('draftYaml').textContent = toYaml(clean);
+}
+
+function toYaml(value, indent = 0) {
+  const pad = ' '.repeat(indent);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    return value.map(item => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const entries = Object.entries(item);
+        if (entries.length === 0) return `${pad}- {}`;
+        return entries.map(([key, val], idx) => {
+          const prefix = idx === 0 ? `${pad}- ${key}:` : `${pad}  ${key}:`;
+          if (val && typeof val === 'object') return `${prefix}\n${toYaml(val, indent + 4)}`;
+          return `${prefix} ${formatScalar(val)}`;
+        }).join('\n');
+      }
+      if (Array.isArray(item)) return `${pad}-\n${toYaml(item, indent + 2)}`;
+      return `${pad}- ${formatScalar(item)}`;
+    }).join('\n');
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, val]) => val !== undefined);
+    if (entries.length === 0) return '{}';
+    return entries.map(([key, val]) => {
+      if (val && typeof val === 'object') return `${pad}${key}:\n${toYaml(val, indent + 2)}`;
+      return `${pad}${key}: ${formatScalar(val)}`;
+    }).join('\n');
+  }
+  return `${pad}${formatScalar(value)}`;
+}
+
+function formatScalar(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  const text = String(value);
+  if (text === '') return '""';
+  if (/[:#{}\[\]%,]|^\s|\s$/.test(text)) return JSON.stringify(text);
+  return text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+hydrateBuilder();
 </script>
 </body>
 </html>
