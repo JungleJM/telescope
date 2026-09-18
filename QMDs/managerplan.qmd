@@ -618,6 +618,35 @@ The next UI should move from a read-only dashboard toward a form-based template 
 
 The UI should still use the manager backend as the source of truth. The UI edits or builds a draft template, then asks the manager to analyze it. Validation, inferred variables, table contracts, and output previews should come from the manager rather than from separate UI logic.
 
+### Current Prototype State
+
+The first static dashboard prototype exists.
+
+Implemented behavior:
+
+- Running `scripts/managerUI.py` with no arguments generates and opens the dashboard.
+- The dashboard has a `Builder` tab.
+- Project fields, uploads, batching rows, and recipe-based cohorts can be edited in browser memory.
+- The current draft YAML can be copied or downloaded.
+- Download naming is based on `project_folder` by default.
+- The source template is not overwritten.
+
+Current limitation:
+
+- Static browser mode cannot reliably write directly into arbitrary repository folders or create nested folders from a typed path. For now, saving means downloading a file from the browser, then moving it manually if needed.
+
+### Next Feature Set
+
+The next Builder feature set should make the UI closer to the intended authoring workflow while staying static/local.
+
+Goals:
+
+- Clean up the Project tab.
+- Improve batching selection with tags and explicit "all other" behavior.
+- Add a custom cohort/table builder.
+- Add a way to export custom cohorts as recipe snippets.
+- Keep the backend manager as the validation and normalization source of truth.
+
 ### New Template Flow
 
 The UI should have a `New Template` flow that opens a questionnaire-style editor.
@@ -642,6 +671,14 @@ Field types:
 - Dropdowns for limited choices such as `cosmos_db`.
 - Add/remove row controls for repeatable sections such as uploads, batching, and cohorts.
 
+Project tab rules:
+
+- The Project tab should contain project identity and run-wide settings only.
+- `project_db` should default to `PROJECTD93A57` for blank templates.
+- `cosmos_db` should remain a dropdown.
+- Upload-specific variables such as `HospitalICDTable` should not appear in the Project tab.
+- Variables required only by a specific upload, multiplier, or recipe should be surfaced in the relevant editor section or in a future variable review panel.
+
 `cosmos_db` choices:
 
 ```text
@@ -651,6 +688,14 @@ Dual
 ```
 
 The first UI version may write a draft YAML or generate a preview from in-memory state. It should not overwrite source templates unless the user explicitly saves.
+
+Saving behavior:
+
+- The default download name should derive from `project_folder`.
+- If `project_folder` is `Test Run`, the default draft download should be similar to `Test_Run_Full.yaml`.
+- The user should be able to override the download filename.
+- Browser/static mode should download the YAML rather than overwriting `YAMLs/template.yaml`.
+- If direct file writing is added later, it should require an explicit save action and should not overwrite existing files without confirmation.
 
 ### Upload Editor
 
@@ -697,6 +742,11 @@ The UI should:
 - Show a dropdown of available batching presets.
 - Provide a `+` button to add the selected batch rule.
 - Show editable options for that selected batching rule, such as `values` or `chunk`.
+- For value-based batching, support type-and-add selection:
+  - The user starts typing a value.
+  - Matching options can be suggested when known.
+  - Enter or click adds the value as a removable tag.
+  - Each tag has an `x`/remove control.
 
 Example available recipes:
 
@@ -707,6 +757,42 @@ chunk
 ```
 
 The manager should still normalize and validate the resulting batching YAML.
+
+Preferred batching should be explicit:
+
+- `batching_recipes` defines which batching presets exist.
+- Each preset should describe its kind, target table, target column, default values, and whether it can include an "other" group.
+- The template chooses which batching presets to apply.
+- The UI should show presets from `batching_recipes`; it should not hardcode `state`, `sex`, or `chunk`.
+
+Value selection behavior:
+
+- Leaving values blank means "batch by all values for this batching recipe."
+- Selecting explicit values means "create named batches for these values."
+- Values not explicitly selected should be batched together into an "all other" group by default.
+- The UI should make this visible with text similar to:
+
+```text
+Leave blank to batch by all state values. If selecting specific values, all other values will be batched together.
+```
+
+Example:
+
+```yaml
+batching:
+  - state:
+      values:
+        - CA
+        - VT
+```
+
+Intended meaning:
+
+```text
+Make one CA batch, one VT batch, and one all-other-states batch containing rows such as TX, LA, MS, etc.
+```
+
+The manager should preserve this behavior in normalized batching metadata so the user can see exactly what will happen before VM execution.
 
 ### Cohort Editor
 
@@ -719,6 +805,22 @@ The UI should:
 - Add the selected recipe to the draft `cohorts` list.
 - Let the user edit the cohort `name` after adding it.
 - Let advanced users set or override local `vars`, including `PKTable`.
+
+The Cohorts tab should clearly separate recipe-based cohorts from custom cohorts.
+
+Suggested layout:
+
+```text
+Cohorts
+
+Recipes
+  [recipe dropdown] [cohort name] [+ Add Recipe]
+
+Custom
+  [custom cohort/table editor]
+```
+
+The recipe dropdown should also include or sit near a `Custom` option that opens the custom cohort/table editor.
 
 The UI should visibly identify:
 
@@ -734,6 +836,88 @@ Exact final table count is less important than showing:
 - Expanded/multiplied cohorts.
 - Multipliers that will be applied.
 - Which table is the PK anchor.
+
+### Custom Cohort Builder
+
+The custom cohort builder should let the user define a cohort/table without first adding it to `recipes.yaml`.
+
+Custom cohort fields:
+
+- `name`
+- `dest_table`
+- `type`, selected from:
+  - `PK`
+  - `fact`
+- `pull_this_cycle` toggle
+- optional local `vars`
+
+PK rule:
+
+- The project should allow only one canonical PK cohort in a group.
+- If the user creates a custom cohort with `type: PK` while another PK cohort already exists, the UI should warn immediately.
+- The manager should still enforce this during validation.
+
+Column editor:
+
+- Add/remove column rows.
+- Each row should support:
+  - `source`
+  - `name`
+  - `type`
+  - `nullable`
+- `type` and `nullable` should be optional.
+- The UI should not initially try to verify these against an external data dictionary.
+- Future VM/data-dictionary work can infer or fill `type` and `nullable`.
+
+Filter editor:
+
+- `from` should be structured:
+  - table/source input
+  - fixed visible `AS`
+  - alias input
+- `join` should be line-by-line free text with add/remove controls.
+- `where` should be line-by-line free text with add/remove controls.
+- Advanced parsing of joins and where conditions should be deferred; the manager can still scan these strings for variables and table-column references where possible.
+
+Example custom output:
+
+```yaml
+cohorts:
+  - name: Mothers
+    dest_table: Mothers
+    type: fact
+    pull_this_cycle: true
+    columns:
+      - source: bpf.PatientDurableKey
+        name: MotherDurableKey
+      - source: bpf.EncounterKey
+        name: EncounterKey
+        type: BIGINT
+        nullable: false
+    filter:
+      from:
+        - BirthParentFact as bpf
+      join:
+        - INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = bpf.EncounterKey
+      where:
+        - bpf._IsDeleted = 0
+```
+
+### Export Custom As Recipe
+
+The UI should eventually let the user save the current set of custom cohorts as recipe snippets.
+
+First implementation:
+
+- Export the selected custom cohort as a downloadable YAML snippet.
+- Let the user choose a recipe name.
+- Do not directly overwrite `YAMLs/recipes.yaml` from static browser mode.
+
+Future implementation:
+
+- A local server or desktop-backed UI may write the recipe into `YAMLs/recipes.yaml`.
+- Direct recipe writing should require explicit confirmation.
+- If the target recipe name already exists, the UI should warn and require a rename or explicit replace.
 
 ### Column Display
 
