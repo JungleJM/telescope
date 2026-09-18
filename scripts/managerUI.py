@@ -401,6 +401,9 @@ def build_html(template_path: Path, recipes_path: Path, result: makeYaml.Compile
 
           <section id="builderDraft" class="builder-section block">
             <h2>Draft YAML</h2>
+            <div class="form-grid single">
+              <label>Download Name<input id="builderDraftFilename" type="text" placeholder="Test_Run_Full.yaml"></label>
+            </div>
             <div class="toolbar compact">
               <button id="copyDraftYaml">Copy Draft</button>
               <button id="downloadDraftYaml">Download Draft</button>
@@ -554,6 +557,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .builder-section { display: none; }
 .builder-section.active { display: block; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.form-grid.single { grid-template-columns: minmax(220px, 520px); margin-bottom: 12px; }
 .form-grid label, .editor-row label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .form-grid input, .form-grid select, .editor-row input, .editor-row select { width: 100%; color: var(--ink); font-weight: 400; }
 .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
@@ -717,6 +721,8 @@ function syncProjectFields() {
   if (el) el.addEventListener('input', syncProjectFields);
   if (el) el.addEventListener('change', syncProjectFields);
 });
+
+document.getElementById('builderDraftFilename')?.addEventListener('input', updateDraftYaml);
 
 function renderRecipeOptions() {
   const select = document.getElementById('newCohortRecipe');
@@ -913,11 +919,20 @@ document.getElementById('downloadDraftYaml')?.addEventListener('click', () => {
   const blob = new Blob([text], { type: 'text/yaml' });
   const a = document.createElement('a');
   const project = (draftTemplate.project_folder || 'draft').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
+  const requested = getValue('builderDraftFilename');
+  const filename = cleanDownloadName(requested || `${project}_Full.yaml`);
   a.href = URL.createObjectURL(blob);
-  a.download = `${project}.yaml`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+function cleanDownloadName(value) {
+  const cleaned = String(value || 'draft.yaml')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return /\.ya?ml$/i.test(cleaned) ? cleaned : `${cleaned || 'draft'}.yaml`;
+}
 
 function updateDraftYaml() {
   ensureDraftShape();
@@ -997,7 +1012,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
-    args = parser.parse_args(argv)
+    raw_argv = sys.argv[1:] if argv is None else argv
+    open_by_default = not raw_argv
+    args = parser.parse_args(raw_argv)
 
     template_path = Path(args.template)
     recipes_path = Path(args.recipes)
@@ -1011,7 +1028,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Status: {'Ready' if result.ok else 'Blocked'}")
     print(f"Errors: {len(result.errors)}")
     print(f"Warnings: {len(result.warnings)}")
-    if args.open:
+    if args.open or open_by_default:
         webbrowser.open(out_path.resolve().as_uri())
     return 0
 
