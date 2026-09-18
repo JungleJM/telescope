@@ -1,15 +1,13 @@
-cohorts:
-  - name: HatPatients
-    type: fact
-    pull_this_cycle: false
-    dest_table: HatPatients
+recipes:
+  - name: PatientWithDx
+    type: PK
+    pull_this_cycle: true
+    dest_table: Patients
     dedup_keys:
       - [PatientDurableKey]
     dedup_order_by:
       - IndexDate
-
     columns:
-      # Primary ordering per request:
       - source: dxf.PatientDurableKey
         name: PatientDurableKey
         type: BIGINT
@@ -26,7 +24,7 @@ cohorts:
         nullable: true
 
       - source: dxf.AgeKey
-        name: IndexAge
+        name: AgeAtIndexDiagnosis
         type: BIGINT
         nullable: true
 
@@ -39,6 +37,11 @@ cohorts:
         name: StateOrProvince
         type: VARCHAR(100)
         nullable: true
+
+      - source: p.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        type: VARCHAR(300)
+        nullable: false
 
       - source: p.Country
         name: Country
@@ -118,6 +121,8 @@ cohorts:
       join:
         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
+        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+
 
       where:
         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
@@ -129,3 +134,213 @@ cohorts:
         - "p.UseInCosmosAnalytics_X = 1"
         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
         - "dt.Value IN ('D89.44')"
+
+  - name: IndexDiagnosis
+    description: Patient's first time diagnoses with the condition, with date, age at diagnosis, event data
+    req_columns: [PatientDurableKey, DiagnosisEventKey]
+    dedup_keys:
+      - [BillingCodeValue]
+    dedup_order_by: 
+      - IndexDate
+    pull_this_cycle: true 
+    type: fact
+    dest_table: OtherDiagnoses
+    columns:
+      - source: def.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+
+      - source: tc.StandardName
+        name: BillingCodeType
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dt.Value
+        name: BillingCodeValue
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dt.NameAndCode
+        name: NameAndCode
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dur.Years
+        name: AgeAtDiagnosis
+        type: INT
+        nullable: true
+
+      - source: def.IsPrimary
+        name: IsPrimary
+        type: BIT
+        nullable: true
+
+      - source: dt.ReferenceBillingCode
+        name: IsReferenceBillingCode
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: def.Type
+        name: TypeOfDx
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: tc.Concept
+        name: TerminologyConcept
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: tc.Name
+        name: TerminologyName
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: def.Status
+        name: Status
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: def.StartDateKey
+        name: StartDateKey
+        type: INT
+        nullable: true
+
+      - source: def.EndDateKey
+        name: EndDateKey
+        type: INT
+        nullable: true
+
+      - source: def.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.DiagnosisKey
+        name: DiagnosisKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.EncounterKey
+        name: EncounterKey
+        type: BIGINT
+        nullable: false
+
+    filter:
+      from:
+        - DiagnosisEventFact AS def
+      join:
+        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+        - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+        - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+      where:
+        - "def._IsDeleted = 0"
+        - "dt._IsDeleted = 0"
+        - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+
+
+
+  - name: OtherDiagnoses
+    description: Patient's diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions
+    req_columns: [PatientDurableKey, DiagnosisEventKey]
+    dedup_keys:
+      - [BillingCodeValue]
+    pull_this_cycle: true 
+    type: fact
+    dest_table: OtherDiagnoses
+    columns:
+      - source: def.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+
+      - source: tc.StandardName
+        name: BillingCodeType
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dt.Value
+        name: BillingCodeValue
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dt.NameAndCode
+        name: NameAndCode
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dur.Years
+        name: AgeAtDiagnosis
+        type: INT
+        nullable: true
+
+      - source: def.IsPrimary
+        name: IsPrimary
+        type: BIT
+        nullable: true
+
+      - source: dt.ReferenceBillingCode
+        name: IsReferenceBillingCode
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: def.Type
+        name: TypeOfDx
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: tc.Concept
+        name: TerminologyConcept
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: tc.Name
+        name: TerminologyName
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: def.Status
+        name: Status
+        type: VARCHAR(100)
+        nullable: true
+
+      - source: def.StartDateKey
+        name: StartDateKey
+        type: INT
+        nullable: true
+
+      - source: def.EndDateKey
+        name: EndDateKey
+        type: INT
+        nullable: true
+
+      - source: def.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.DiagnosisKey
+        name: DiagnosisKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.EncounterKey
+        name: EncounterKey
+        type: BIGINT
+        nullable: false
+
+    filter:
+      from:
+        - DiagnosisEventFact AS def
+      join:
+        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+        - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+        - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+        - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+      where:
+        - "def._IsDeleted = 0"
+        - "dt._IsDeleted = 0"
+        - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
