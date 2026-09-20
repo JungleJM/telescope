@@ -2,8 +2,9 @@
 """
 Generate a self-contained HTML prototype UI for the Telescope YAML manager.
 
-This is intentionally a single dependency-light script. It reads the same
-template/recipes pair as makeYaml.py and writes one static HTML dashboard.
+This is intentionally a dependency-light script. It reads Telescope
+template/recipes files through a configurable backend and writes one static
+HTML dashboard.
 """
 
 from __future__ import annotations
@@ -11,8 +12,12 @@ from __future__ import annotations
 import argparse
 import html
 import http.server
+import importlib
+import ipaddress
 import json
+import os
 import re
+import socket
 import sys
 import urllib.parse
 import webbrowser
@@ -25,12 +30,33 @@ sys.pycache_prefix = str(PROJECT_ROOT / "cleanup" / "python_cache")
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import makeYaml  # noqa: E402
-
 
 DEFAULT_OUT = PROJECT_ROOT / "UI" / "manager_dashboard.html"
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
+BACKEND_MODULE = os.environ.get("TELESCOPE_BACKEND_MODULE", "telescope_backend")
+try:
+    backend = importlib.import_module(BACKEND_MODULE)
+except ImportError as exc:
+    raise SystemExit(
+        f"[telescope] Could not import backend module {BACKEND_MODULE!r}. "
+        "Set TELESCOPE_BACKEND_MODULE to a Python module on PYTHONPATH."
+    ) from exc
+
+
+def env_int(names: tuple[str, ...], fallback: int) -> int:
+    for name in names:
+        value = os.environ.get(name)
+        if not value:
+            continue
+        try:
+            return int(value)
+        except ValueError:
+            print(f"[telescope] Ignoring invalid {name}={value!r}; using {fallback}.", file=sys.stderr)
+            return fallback
+    return fallback
+
+
+DEFAULT_HOST = os.environ.get("TELESCOPE_MANAGER_HOST", os.environ.get("MANAGER_UI_HOST", "127.0.0.1"))
+DEFAULT_PORT = env_int(("TELESCOPE_MANAGER_PORT", "MANAGER_UI_PORT"), 8765)
 
 
 def e(value: Any) -> str:
@@ -42,7 +68,7 @@ def slug(value: str) -> str:
 
 
 def yaml_text(value: Any) -> str:
-    return makeYaml._simple_yaml_dump(value).rstrip()
+    return backend.dump_yaml_text(value).rstrip()
 
 
 def json_payload(value: Any) -> str:
@@ -87,7 +113,7 @@ def value_list(values: list[str], limit: int = 9) -> str:
     return f"<ul>{body}</ul>"
 
 
-def build_connections(result: makeYaml.CompileResult) -> dict[str, list[dict[str, Any]]]:
+def build_connections(result: backend.CompileResult) -> dict[str, list[dict[str, Any]]]:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     required_cols = (result.analysis or {}).get("required_table_columns", {})
     connections: dict[str, list[dict[str, Any]]] = {}
@@ -170,7 +196,7 @@ def column_list(values: list[str], connections: list[dict[str, Any]], limit: int
     return f"<ul>{''.join(items)}</ul>"
 
 
-def upload_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> str:
+def upload_cards(template: dict[str, Any], result: backend.CompileResult) -> str:
     uploads = template.get("upload_cohorts", []) or []
     if not uploads:
         return '<div class="empty">No upload cohorts defined.</div>'
@@ -201,7 +227,7 @@ def upload_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> st
     return "\n".join(cards)
 
 
-def cohort_cards(result: makeYaml.CompileResult) -> str:
+def cohort_cards(result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     analysis = result.analysis or {}
     required_vars = analysis.get("required_vars", {})
@@ -273,9 +299,9 @@ def recipe_cards(recipes_doc: dict[str, Any]) -> str:
     cards = []
     for recipe in recipes:
         name = recipe.get("name", "")
-        outputs = makeYaml.output_columns(recipe)
-        req_vars = sorted(makeYaml.infer_required_vars(recipe).keys())
-        inputs = makeYaml.infer_table_inputs(recipe)
+        outputs = backend.recipe_output_columns(recipe)
+        req_vars = sorted(backend.recipe_required_vars(recipe).keys())
+        inputs = backend.recipe_table_inputs(recipe)
         input_bits = []
         for table_var, meta in inputs.items():
             input_bits.append(f"<h4>{e(table_var)} as {e(meta.get('alias'))}</h4>{value_list(meta.get('required_columns', []))}")
@@ -298,7 +324,7 @@ def recipe_cards(recipes_doc: dict[str, Any]) -> str:
     return "\n".join(cards)
 
 
-def graph_panel(result: makeYaml.CompileResult) -> str:
+def graph_panel(result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     analysis = result.analysis or {}
     required_cols = analysis.get("required_table_columns", {})
@@ -330,7 +356,7 @@ def graph_panel(result: makeYaml.CompileResult) -> str:
     """
 
 
-def pipeline_panel(result: makeYaml.CompileResult) -> str:
+def pipeline_panel(result: backend.CompileResult) -> str:
     steps = [
         ("Load YAML", True),
         ("Import Recipes", not any(m.code == "missing_recipe" for m in result.errors)),
@@ -346,7 +372,7 @@ def pipeline_panel(result: makeYaml.CompileResult) -> str:
     )
 
 
-def summary_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> str:
+def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     uploads = template.get("upload_cohorts", []) or []
     status = "Ready" if result.ok else "Blocked"
@@ -361,9 +387,9 @@ def summary_cards(template: dict[str, Any], result: makeYaml.CompileResult) -> s
     """
 
 
-def build_html(template_path: Path, recipes_path: Path, result: makeYaml.CompileResult, auto_refresh: int = 0) -> str:
-    template = makeYaml.load_yaml(template_path) or {}
-    recipes_doc = makeYaml.load_yaml(recipes_path) or {}
+def build_html(template_path: Path, recipes_path: Path, result: backend.CompileResult, auto_refresh: int = 0) -> str:
+    template = backend.load_document(template_path) or {}
+    recipes_doc = backend.load_document(recipes_path) or {}
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
     refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
@@ -1473,8 +1499,8 @@ hydrateBuilder();
 """
 
 
-def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, makeYaml.CompileResult]:
-    result = makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
+    result = backend.compile_dashboard(template_path=template_path, recipes_path=recipes_path, write=False)
     return build_html(template_path, recipes_path, result, auto_refresh), result
 
 
@@ -1483,6 +1509,42 @@ def resolve_workspace_path(value: str | Path) -> Path:
     if path.is_absolute():
         return path
     return PROJECT_ROOT / path
+
+
+def url_host(host: str) -> str:
+    if host in ("", "0.0.0.0"):
+        return "127.0.0.1"
+    if host == "::":
+        return "[::1]"
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def network_hosts() -> list[str]:
+    ipv4_hosts: list[str] = []
+    ipv6_hosts: list[str] = []
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, type=socket.SOCK_STREAM)
+    except OSError:
+        return []
+    for info in infos:
+        address = info[4][0]
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if parsed.is_loopback or parsed.is_link_local or parsed.is_multicast or parsed.is_unspecified:
+            continue
+        hosts = ipv4_hosts if parsed.version == 4 else ipv6_hosts
+        if address not in hosts:
+            hosts.append(address)
+    return (ipv4_hosts + ipv6_hosts)[:8]
+
+
+def dashboard_url(host: str, port: int, template: str, recipes: str) -> str:
+    query = urllib.parse.urlencode({"template": template, "recipes": recipes})
+    return f"http://{url_host(host)}:{port}/?{query}"
 
 
 def error_html(title: str, message: str) -> str:
@@ -1510,7 +1572,15 @@ def error_html(title: str, message: str) -> str:
 """
 
 
-def serve_dashboard(host: str, port: int, template: str, recipes: str, auto_refresh: int, open_browser: bool) -> int:
+def serve_dashboard(
+    host: str,
+    port: int,
+    template: str,
+    recipes: str,
+    auto_refresh: int,
+    open_browser: bool,
+    browser_host: str | None = None,
+) -> int:
     default_template = template
     default_recipes = recipes
 
@@ -1539,14 +1609,32 @@ def serve_dashboard(host: str, port: int, template: str, recipes: str, auto_refr
             self.wfile.write(data)
 
         def log_message(self, format: str, *args: Any) -> None:
-            print(f"[managerUI] {self.address_string()} - {format % args}")
+            print(f"[telescope] {self.address_string()} - {format % args}")
 
-    server = http.server.ThreadingHTTPServer((host, port), DashboardHandler)
-    url = f"http://{host}:{port}/?template={urllib.parse.quote(default_template)}&recipes={urllib.parse.quote(default_recipes)}"
+    class DashboardServer(http.server.ThreadingHTTPServer):
+        address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+
+    try:
+        server = DashboardServer((host, port), DashboardHandler)
+    except OSError as exc:
+        print(f"[telescope] Could not bind to {host}:{port}: {exc}", file=sys.stderr)
+        print("[telescope] Try --host 127.0.0.1 for SSH tunnel use, --public for VM/LAN access, or --port 0 for a free port.", file=sys.stderr)
+        return 1
+
+    actual_host, actual_port = server.server_address[:2]
+    display_host = browser_host or actual_host
+    url = dashboard_url(display_host, int(actual_port), default_template, default_recipes)
     print(f"Serving Telescope YAML Manager at {url}")
+    if actual_host in ("", "0.0.0.0", "::"):
+        extra_urls = [dashboard_url(host, int(actual_port), default_template, default_recipes) for host in network_hosts()]
+        if extra_urls:
+            print("Other reachable URLs may include:")
+            for extra_url in extra_urls:
+                print(f"  {extra_url}")
     print("Stop the manager with Ctrl+C, or the stop button in your editor.")
     if open_browser:
-        webbrowser.open(url)
+        if not webbrowser.open(url):
+            print("[telescope] No browser was opened automatically; copy the URL above into a browser.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1564,15 +1652,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
     parser.add_argument("--static", action="store_true", help="Write a static dashboard file instead of starting the local server when no args are provided.")
-    parser.add_argument("--host", default=DEFAULT_HOST)
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or TELESCOPE_MANAGER_HOST/MANAGER_UI_HOST.")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or TELESCOPE_MANAGER_PORT/MANAGER_UI_PORT.")
+    parser.add_argument("--public", action="store_true", help="Bind to all interfaces unless --host is also supplied.")
+    parser.add_argument("--browser-host", help="Host name to use in printed/opened URLs when it differs from the bind address.")
+    parser.add_argument("--no-open", action="store_true", help="Do not try to open a browser when serving with no arguments.")
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     raw_argv = sys.argv[1:] if argv is None else argv
     open_by_default = not raw_argv
     args = parser.parse_args(raw_argv)
+    explicit_host = any(arg == "--host" or arg.startswith("--host=") for arg in raw_argv)
+    if args.public and not explicit_host:
+        args.host = "0.0.0.0"
 
     if args.serve or (open_by_default and not args.static):
-        return serve_dashboard(args.host, args.port, args.template, args.recipes, args.auto_refresh, open_browser=not args.static)
+        return serve_dashboard(
+            args.host,
+            args.port,
+            args.template,
+            args.recipes,
+            args.auto_refresh,
+            open_browser=not args.static and not args.no_open,
+            browser_host=args.browser_host,
+        )
 
     template_path = resolve_workspace_path(args.template)
     recipes_path = resolve_workspace_path(args.recipes)

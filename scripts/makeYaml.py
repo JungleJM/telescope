@@ -180,6 +180,10 @@ def _simple_yaml_dump(data: Any, indent: int = 0) -> str:
     return f"{pad}{_format_scalar(data)}\n"
 
 
+def dump_yaml_text(data: Any) -> str:
+    return _simple_yaml_dump(data)
+
+
 def _format_scalar(value: Any) -> str:
     if value is None:
         return ""
