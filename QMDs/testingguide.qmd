@@ -24,6 +24,7 @@ Run one group with:
 python3 scripts/makeYaml.py --tdd rendering
 python3 scripts/makeYaml.py --tdd multipliers
 python3 scripts/makeYaml.py --tdd batching
+python3 scripts/makeYaml.py --tdd normalization
 python3 scripts/makeYaml.py --tdd preyaml
 python3 scripts/makeYaml.py --tdd split_plan
 python3 scripts/makeYaml.py --tdd manifest
@@ -42,6 +43,7 @@ Current test groups:
 - `loading`
 - `recipes`
 - `inference`
+- `normalization`
 - `validation`
 - `rendering`
 - `multipliers`
@@ -63,6 +65,7 @@ recipes.import_recipe
 recipes.override_dest_table
 recipes.default_dest_table
 inference.required_vars
+normalization.grouped_metadata_vars
 validation.missing_var_error
 rendering.sql_condition_in
 rendering.sql_condition_like
@@ -96,7 +99,7 @@ PASS  loading.valid_template
 ...
 PASS  reports.includes_sections
 
-Summary: 28 passed, 0 failed
+Summary: 29 passed, 0 failed
 ```
 
 If any test fails, the command exits nonzero.

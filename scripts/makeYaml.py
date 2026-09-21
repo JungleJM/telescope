@@ -319,7 +319,15 @@ def default_recipes_path() -> Path:
 
 def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
     template = copy.deepcopy(template or {})
+    for section_name in ("cosmos_vars", "project_vars", "test_options"):
+        section = template.get(section_name)
+        if isinstance(section, dict):
+            for key, value in section.items():
+                template.setdefault(key, value)
     vars_block = dict(template.get("vars") or {})
+    run_vars = template.get("run_vars")
+    if isinstance(run_vars, dict):
+        vars_block = merge_vars(run_vars, vars_block)
     for legacy_key in ("min_date_key", "max_date_key"):
         if legacy_key in template and legacy_key not in vars_block:
             vars_block[legacy_key] = template[legacy_key]
@@ -1545,6 +1553,26 @@ cohorts:
             req = res.analysis["required_vars"]["Patients"]
             return all(v in req for v in ("min_date_key", "max_date_key", "ICD_Value")), str(req)
 
+    def case_grouped_metadata_vars():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            template = tiny_template().replace(
+                "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
+                "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\nrun_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\nproject_vars:\n  project_folder: Test Run\nvars:\n",
+            )
+            t = write_temp_yaml(tmp, "template.yaml", template)
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = compile_yaml(t, r)
+            text = json.dumps(res.finished_yaml)
+            ok = (
+                res.ok
+                and res.finished_yaml.get("project_db") == "PROJECTD33A929"
+                and res.finished_yaml.get("project_folder") == "Test Run"
+                and res.finished_yaml.get("vars", {}).get("min_date_key") == 20200101
+                and "dxf.StartDateKey BETWEEN 20200101 AND 20240101" in text
+            )
+            return ok, summarize_result(res) + " " + text
+
     def case_missing_var():
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d)
@@ -1941,6 +1969,7 @@ cohorts:
         TddCase("recipes.override_dest_table", "recipes", case_override_dest),
         TddCase("recipes.default_dest_table", "recipes", case_default_dest),
         TddCase("inference.required_vars", "inference", case_infer_vars),
+        TddCase("normalization.grouped_metadata_vars", "normalization", case_grouped_metadata_vars),
         TddCase("validation.missing_var_error", "validation", case_missing_var),
         TddCase("rendering.sql_condition_in", "rendering", case_render_in),
         TddCase("rendering.sql_condition_like", "rendering", case_render_like),
