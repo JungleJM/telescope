@@ -168,6 +168,31 @@ def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list
     return outgoing, incoming, sessions
 
 
+def upload_dest(upload: dict[str, Any]) -> str:
+    return str(upload.get("dest_table") or upload.get("name") or "")
+
+
+def upload_columns(upload: dict[str, Any]) -> list[str]:
+    schema = upload.get("columns") or upload.get("schema") or []
+    if not schema:
+        return []
+    if isinstance(schema, list) and schema and isinstance(schema[0], dict):
+        return [str(column.get("name")) for column in schema if column.get("name")]
+    if isinstance(schema, list):
+        return [str(column) for column in schema]
+    return []
+
+
+def upload_has_error(upload: dict[str, Any], result: backend.CompileResult) -> bool:
+    name = str(upload.get("name") or "")
+    dest = upload_dest(upload)
+    for msg in result.errors:
+        haystack = f"{msg.context} {msg.message}"
+        if (name and name in haystack) or (dest and dest in haystack):
+            return True
+    return False
+
+
 def connection_chips(items: list[dict[str, Any]], compact: bool = False, side: str = "incoming") -> str:
     if not items:
         return '<span class="muted">None detected</span>'
@@ -275,17 +300,20 @@ def upload_cards(template: dict[str, Any], result: backend.CompileResult) -> str
 
 def cohort_cards(result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
+    uploads = result.finished_yaml.get("upload_cohorts", []) or []
     analysis = result.analysis or {}
     required_vars = analysis.get("required_vars", {})
     required_cols = analysis.get("required_table_columns", {})
     outputs = analysis.get("output_columns", {})
     outgoing_connections, incoming_connections, sessions = build_connection_maps(result)
-    if not cohorts:
-        return '<div class="empty">No cohorts available.</div>'
+    if not cohorts and not uploads:
+        return '<div class="empty">No cohorts or uploads available.</div>'
     cards = []
+    known_tables: set[str] = set()
     for cohort in cohorts:
         name = cohort.get("name", "")
         dest = cohort.get("dest_table", name)
+        known_tables.update({str(name), str(dest)})
         ctype = str(cohort.get("type", "fact"))
         kind = "pk" if ctype.lower() == "pk" else "neutral"
         req_var_names = sorted((required_vars.get(name) or {}).keys())
@@ -296,8 +324,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
         outgoing = outgoing_connections.get(str(dest), [])
         incoming = incoming_connections.get(str(name), [])
         group = sessions.get(str(name), str(dest))
-        primary_incoming = [item for item in incoming if item.get("table_var") == "PKTable"] or incoming
-        summary = source_connection_columns(outgoing) if outgoing else connection_chips(primary_incoming, compact=True, side="incoming")
+        summary = source_connection_columns(outgoing) if outgoing else connection_chips(incoming, compact=True, side="incoming")
         split = cohort.get("split_after_build")
         batching = cohort.get("batching")
         cards.append(
@@ -309,7 +336,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
                   <span class="summary-connections">Cohort: {e(group)}</span>
                   <span class="summary-connections">Connections: {summary}</span>
                 </span>
-                <span>{badge(ctype, kind)} {badge(str(dest), "neutral")}</span>
+                <span>{badge(ctype, kind)}</span>
               </summary>
               <div class="grid two">
                 <section>
@@ -340,6 +367,82 @@ def cohort_cards(result: backend.CompileResult) -> str:
               <section>
                 <h4>Batching</h4>
                 <pre>{e(yaml_text(batching) if batching else "None")}</pre>
+              </section>
+            </details>
+            """
+        )
+    seen_uploads: set[int] = set()
+    for upload in uploads:
+        if not isinstance(upload, dict):
+            continue
+        ident = id(upload)
+        if ident in seen_uploads:
+            continue
+        seen_uploads.add(ident)
+        name = str(upload.get("name") or upload_dest(upload))
+        dest = upload_dest(upload) or name
+        known_tables.update({name, dest})
+        outgoing = outgoing_connections.get(dest, []) + ([] if name == dest else outgoing_connections.get(name, []))
+        cols = upload_columns(upload)
+        kind = "error" if upload_has_error(upload, result) else "upload"
+        type_badges = badge("upload", kind)
+        if str(upload.get("type", "")).lower() == "pk":
+            type_badges += " " + badge("PK", "pk")
+        detail_bits = [
+            ("Destination", dest),
+            ("File Type", upload.get("file_type", "")),
+            ("Scope", upload.get("scope", "global")),
+            ("Push This Cycle", upload.get("push_this_cycle", True)),
+            ("File/Table", upload.get("file_loc", "")),
+        ]
+        cards.append(
+            f"""
+            <details class="card cohort-card upload-card" id="cohort-{slug(name)}">
+              <summary>
+                <span>
+                  <strong>{e(name)}</strong>
+                  <span class="summary-connections">Upload: {e(dest)}</span>
+                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True, side="outgoing")}</span>
+                </span>
+                <span>{type_badges}</span>
+              </summary>
+              <div class="grid two">
+                <section>
+                  <h4>Upload Details</h4>
+                  <dl>{''.join(f'<dt>{e(label)}</dt><dd>{e(value)}</dd>' for label, value in detail_bits if value not in ("", None))}</dl>
+                </section>
+                <section>
+                  <h4>Output Columns</h4>
+                  {column_list(cols, outgoing, 12)}
+                </section>
+              </div>
+              <section>
+                <h4>Used By Tables</h4>
+                {connection_details(outgoing)}
+              </section>
+            </details>
+            """
+        )
+    unresolved_sources = [
+        source for source in outgoing_connections
+        if source and source not in known_tables
+    ]
+    for source in unresolved_sources:
+        outgoing = outgoing_connections.get(source, [])
+        cards.append(
+            f"""
+            <details class="card cohort-card unresolved-card" id="cohort-{slug(source)}">
+              <summary>
+                <span>
+                  <strong>{e(source)}</strong>
+                  <span class="summary-connections">Required input table</span>
+                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True, side="outgoing")}</span>
+                </span>
+                <span>{badge("unresolved", "warn")}</span>
+              </summary>
+              <section>
+                <h4>Used By Tables</h4>
+                {connection_details(outgoing)}
               </section>
             </details>
             """
@@ -381,9 +484,13 @@ def recipe_cards(recipes_doc: dict[str, Any]) -> str:
 
 def graph_panel(result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
+    uploads = result.finished_yaml.get("upload_cohorts", []) or []
     _, incoming_connections, _ = build_connection_maps(result)
     nodes = []
     edges = []
+    for upload in uploads:
+        if isinstance(upload, dict):
+            nodes.append(upload_dest(upload) or str(upload.get("name", "")))
     for cohort in cohorts:
         name = str(cohort.get("name", ""))
         nodes.append(name)
@@ -525,7 +632,6 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <button class="tab" data-tab="builder">Builder</button>
       <button class="tab" data-tab="pipeline">Pipeline</button>
       <button class="tab" data-tab="cohorts">Cohorts</button>
-      <button class="tab" data-tab="uploads">Uploads</button>
       <button class="tab" data-tab="recipes">Recipes</button>
       <button class="tab" data-tab="graph">Graph</button>
       <button class="tab" data-tab="exports">Exports</button>
@@ -694,13 +800,6 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <div id="cohortCards">{cohort_cards(result)}</div>
     </section>
 
-    <section id="uploads" class="panel">
-      <section class="block">
-        <h2>Upload Cohorts</h2>
-        {upload_cards(template, result)}
-      </section>
-    </section>
-
     <section id="recipes" class="panel">
       <section class="block">
         <h2>Recipes</h2>
@@ -812,7 +911,8 @@ main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .block, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 15px; margin-bottom: 12px; }
 .card summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; font-weight: 700; }
 .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 8px; background: var(--chip); color: var(--ink); font-size: 12px; font-weight: 600; }
-.badge.ok, .badge.pk { color: var(--ok); }
+.badge.ok, .badge.pk, .badge.upload { color: var(--ok); }
+.badge.warn { color: var(--warn); }
 .badge.error { color: var(--err); }
 .message { border-left: 4px solid var(--line); padding: 10px 12px; background: var(--chip); border-radius: 6px; margin-bottom: 9px; }
 .message.error { border-left-color: var(--err); }
