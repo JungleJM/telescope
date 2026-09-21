@@ -806,15 +806,16 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                 <button id="addCustomJoin">Add Join</button>
               </div>
               <div class="join-builder">
-                <select id="joinBaseAlias"></select>
-                <select id="joinBaseColumn"></select>
-                <select id="joinOperator">
-                  <option value="=">=</option>
-                  <option value="&lt;&gt;">&lt;&gt;</option>
-                </select>
-                <select id="joinTable"></select>
-                <input id="joinAlias" type="text" placeholder="as">
-                <select id="joinColumn"></select>
+                <label>Available Table<select id="joinBaseAlias"></select></label>
+                <label>Available Column<select id="joinBaseColumn"></select></label>
+                <label>Join<select id="joinOperator">
+                    <option value="=">=</option>
+                    <option value="&lt;&gt;">&lt;&gt;</option>
+                  </select>
+                </label>
+                <label>Add Table<select id="joinTable"></select></label>
+                <label>AS<input id="joinAlias" type="text" placeholder="as"></label>
+                <label>Add Column<select id="joinColumn"></select></label>
                 <span id="joinCheck" class="join-check muted"></span>
               </div>
               <div id="customJoinRows" class="editor-rows"></div>
@@ -1022,6 +1023,8 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .column-actions { display: inline-flex; gap: 5px; justify-content: end; }
 .column-actions button { padding: 4px 7px; min-width: 28px; }
 .join-builder { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(150px, 1fr) 70px minmax(150px, 1fr) minmax(80px, .45fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
+.join-builder label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.join-builder label select, .join-builder label input { width: 100%; color: var(--ink); font-weight: 400; }
 .join-check.ok { color: var(--ok); }
 .join-check.error { color: var(--err); }
 .subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
@@ -1619,7 +1622,7 @@ function renderJoinBuilder() {
   if (!baseAlias || !baseColumn || !joinTable || !joinColumn || !joinAlias) return;
   const sources = joinSources();
   const priorAlias = baseAlias.value;
-  baseAlias.innerHTML = sources.map(source => `<option value="${escapeAttr(source.alias)}" ${source.alias === priorAlias ? 'selected' : ''}>${escapeHtml(source.alias)} (${escapeHtml(source.table)})</option>`).join('');
+  baseAlias.innerHTML = sources.map(source => `<option value="${escapeAttr(source.alias)}" ${source.alias === priorAlias ? 'selected' : ''}>${escapeHtml(source.table)} as ${escapeHtml(source.alias)}</option>`).join('');
   const activeSource = sources.find(source => source.alias === baseAlias.value) || sources[0] || {};
   baseColumn.innerHTML = renderColumnOptions(activeSource.table, baseColumn.value);
   renderDictionaryTableOptions();
