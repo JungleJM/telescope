@@ -1666,6 +1666,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
     parser.add_argument("--static", action="store_true", help="Write a static dashboard file instead of starting the local server when no args are provided.")
     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), help="Write a pre-YAML artifact and exit.")
+    parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml, then exit.")
+    parser.add_argument("--out-dir", help="Directory for split export artifacts.")
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or YAMLMANAGER_HOST/TELESCOPE_MANAGER_HOST/MANAGER_UI_HOST.")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or YAMLMANAGER_PORT/TELESCOPE_MANAGER_PORT/MANAGER_UI_PORT.")
     parser.add_argument("--public", action="store_true", help="Bind to all interfaces unless --host is also supplied.")
@@ -1693,6 +1695,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Wrote {result.output_path}")
         else:
             print("FAILED: errors block pre-YAML export")
+        return 0 if result.ok else 1
+
+    if args.export_split:
+        result = backend.write_split_artifacts(
+            template_path=resolve_workspace_path(args.template),
+            recipes_path=resolve_workspace_path(args.recipes),
+            output_dir=args.out_dir,
+        )
+        print_messages(result)
+        if result.ok:
+            print(f"Wrote split artifacts to {result.analysis.get('split_output_dir')}")
+            print(f"Manifest: {result.output_path}")
+        else:
+            print("FAILED: errors block split export")
         return 0 if result.ok else 1
 
     if args.serve or (open_by_default and not args.static):

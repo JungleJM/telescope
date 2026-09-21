@@ -2032,6 +2032,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
     parser.add_argument("--inspect-recipes", action="store_true")
     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
+    parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")
+    parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
     parser.add_argument("--report", action="store_true")
     parser.add_argument("--report-out", default=None)
     parser.add_argument("--tdd", nargs="?", const="all", default=None)
@@ -2063,6 +2065,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Wrote {result.output_path}")
         else:
             print("FAILED: errors block pre-YAML export")
+        return 0 if result.ok else 1
+
+    if args.export_split:
+        result = write_split_artifacts(
+            template_path=args.template,
+            recipes_path=args.recipes,
+            output_dir=args.out_dir,
+        )
+        print_messages(result)
+        if result.ok:
+            print(f"Wrote split artifacts to {result.analysis.get('split_output_dir')}")
+            print(f"Manifest: {result.output_path}")
+        else:
+            print("FAILED: errors block split export")
         return 0 if result.ok else 1
 
     report_path = args.report_out if args.report else None

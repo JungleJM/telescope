@@ -49,6 +49,7 @@ Implemented in `scripts/makeYaml.py`:
 - Multiplier-derived sessions with logical batch runs.
 - Uploaded PK cohort validation and planning.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
+- CLI split export through `scripts/yamlmanager.py --export-split --out-dir ...` and `scripts/makeYaml.py --export-split --out-dir ...`.
 
 ## Completed UI/Adapter Work
 
@@ -97,8 +98,6 @@ Settled for the next iteration:
 
 Backend/API:
 
-- Add CLI commands for split export.
-
 UI:
 
 - Add pre-YAML preview/export controls.
@@ -123,8 +122,8 @@ Status markers:
 
 Current phase:
 
-- Phase 7: Uploaded PK Cohorts `[done]`
-- Next: Phase 8: CLI And Tests `[planned]`
+- Phase 8: CLI And Tests `[done]`
+- Next: Phase 9: UI Preview And Handoff `[planned]`
 
 Production sequence:
 
@@ -136,7 +135,7 @@ Production sequence:
 6. Phase 5: Split YAML Writing `[done]`
 7. Phase 6: Multipliers And Logical Batches `[done]`
 8. Phase 7: Uploaded PK Cohorts `[done]`
-9. Phase 8: CLI And Tests `[planned]`
+9. Phase 8: CLI And Tests `[done]`
 10. Phase 9: UI Preview And Handoff `[planned]`
 
 After each phase:
@@ -216,9 +215,9 @@ Completed:
 - Generate upload/PK artifacts for uploaded PK source.
 - Reflect uploaded PK in manifest and split YAML context.
 
-### Phase 8: CLI And Tests `[planned]`
+### Phase 8: CLI And Tests `[done]`
 
-Planned:
+Completed:
 
 - Expose pre-YAML and split export through CLI.
 - Add embedded TDD coverage and fixture coverage.

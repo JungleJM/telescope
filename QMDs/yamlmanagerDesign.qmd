@@ -727,7 +727,7 @@ Exit criteria:
 - Multiple uploaded PK cohorts produce a clear validation error.
 - Missing key column metadata produces a clear validation error or warning, depending on available schema.
 
-### Phase 8: CLI And Tests `[planned]`
+### Phase 8: CLI And Tests `[done]`
 
 Goal: make the new artifacts production-usable from the command line and covered by portable tests.
 
