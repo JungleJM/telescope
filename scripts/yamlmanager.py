@@ -444,7 +444,6 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
     refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
-    refresh_note = f"Auto-refreshing every {auto_refresh} seconds." if auto_refresh > 0 else "Refresh reloads this generated dashboard file."
     data_json = html.escape(json.dumps({
         "errors": [m.to_dict() for m in result.errors],
         "warnings": [m.to_dict() for m in result.warnings],
@@ -465,9 +464,12 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
 </head>
 <body class="dark">
   <header>
-    <div>
+    <div class="header-main">
       <h1>YAML Manager</h1>
-      <p>Recipes: {e(recipes_path)}</p>
+      <form id="templatePathForm" class="header-path-form" method="get" action="/">
+        <label>Template YAML<input id="templatePathInput" name="template" type="text" value="{e(template_path)}"></label>
+        <input name="recipes" type="hidden" value="{e(recipes_path)}">
+      </form>
     </div>
     <div class="header-actions">
       <button id="refreshPage" title="Reload dashboard">Refresh</button>
@@ -476,17 +478,6 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
   </header>
 
   <main>
-    <section class="block">
-      <h2>Dashboard File</h2>
-      <p>{e(refresh_note)}</p>
-      <form id="templatePathForm" class="path-form" method="get" action="/">
-        <label>Template YAML<input id="templatePathInput" name="template" type="text" value="{e(template_path)}"></label>
-        <input name="recipes" type="hidden" value="{e(recipes_path)}">
-        <button type="submit">Refresh</button>
-      </form>
-      <p class="muted">When opened from the local manager server, Refresh recompiles against this template path. Static file mode can only reload the generated page.</p>
-    </section>
-
     {summary_cards(template, result)}
 
     <nav class="tabs" aria-label="Dashboard sections">
@@ -738,7 +729,7 @@ body.light {
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 4; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 4; }
 h1 { margin: 0; font-size: 22px; }
 h2 { margin: 0 0 14px; font-size: 18px; }
 h3 { margin: 0 0 12px; font-size: 15px; }
@@ -749,6 +740,10 @@ button { border: 1px solid var(--line); background: var(--panel); color: var(--i
 button:hover { border-color: var(--accent); }
 input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
+.header-main { display: grid; gap: 8px; min-width: 0; flex: 1; }
+.header-path-form { max-width: 880px; }
+.header-path-form label { display: grid; grid-template-columns: max-content minmax(260px, 1fr); gap: 10px; align-items: center; color: var(--muted); font-size: 12px; font-weight: 700; }
+.header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
 .path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
@@ -840,8 +835,10 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .empty { color: var(--muted); padding: 8px 0; }
 .hidden { display: none; }
 @media (max-width: 900px) {
-  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch, .path-form { grid-template-columns: 1fr; }
-  header { position: static; align-items: flex-start; }
+  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
+  header { position: static; align-items: stretch; flex-direction: column; }
+  .header-actions { align-self: flex-end; }
+  .header-path-form label { grid-template-columns: 1fr; }
   .builder-nav { position: static; }
 }
 """
