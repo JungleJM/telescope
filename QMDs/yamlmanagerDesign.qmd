@@ -709,7 +709,7 @@ Exit criteria:
 - Batch-only templates produce one session with multiple logical batch runs.
 - Multiplier-plus-batch templates produce per-multiplier sessions with per-batch runs.
 
-### Phase 7: Uploaded PK Cohorts `[planned]`
+### Phase 7: Uploaded PK Cohorts `[done]`
 
 Goal: support client-provided PK lists as the canonical session PK source.
 

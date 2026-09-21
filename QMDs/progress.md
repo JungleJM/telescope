@@ -47,6 +47,7 @@ Implemented in `scripts/makeYaml.py`:
 - `build_pullmanifest(...)` with mutable status fields.
 - `write_split_artifacts(...)` for manifest plus setup/upload/PK/run YAML files.
 - Multiplier-derived sessions with logical batch runs.
+- Uploaded PK cohort validation and planning.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
@@ -96,7 +97,6 @@ Settled for the next iteration:
 
 Backend/API:
 
-- Add uploaded-PK validation and planning.
 - Add CLI commands for split export.
 
 UI:
@@ -123,8 +123,8 @@ Status markers:
 
 Current phase:
 
-- Phase 6: Multipliers And Logical Batches `[done]`
-- Next: Phase 7: Uploaded PK Cohorts `[planned]`
+- Phase 7: Uploaded PK Cohorts `[done]`
+- Next: Phase 8: CLI And Tests `[planned]`
 
 Production sequence:
 
@@ -135,7 +135,7 @@ Production sequence:
 5. Phase 4: Manifest Generation `[done]`
 6. Phase 5: Split YAML Writing `[done]`
 7. Phase 6: Multipliers And Logical Batches `[done]`
-8. Phase 7: Uploaded PK Cohorts `[planned]`
+8. Phase 7: Uploaded PK Cohorts `[done]`
 9. Phase 8: CLI And Tests `[planned]`
 10. Phase 9: UI Preview And Handoff `[planned]`
 
@@ -208,9 +208,9 @@ Completed:
 - Create logical batch runs.
 - Keep PK batch materialization out of YAML Manager.
 
-### Phase 7: Uploaded PK Cohorts `[planned]`
+### Phase 7: Uploaded PK Cohorts `[done]`
 
-Planned:
+Completed:
 
 - Validate zero-or-one uploaded PK cohort.
 - Generate upload/PK artifacts for uploaded PK source.

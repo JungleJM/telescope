@@ -541,6 +541,30 @@ def find_pk_table(cohorts: list[dict[str, Any]], result: CompileResult, group_ke
     return None
 
 
+def find_uploaded_pk_table(template: dict[str, Any], result: CompileResult) -> str | None:
+    pk_uploads = [
+        upload for upload in template.get("upload_cohorts", []) or []
+        if isinstance(upload, dict) and str(upload.get("type", "")).lower() == "pk"
+    ]
+    if len(pk_uploads) > 1:
+        result.error(
+            "multiple_uploaded_pk",
+            "Only one upload cohort may be marked `type: pk`.",
+            ", ".join(str(upload.get("name")) for upload in pk_uploads),
+        )
+        return None
+    if not pk_uploads:
+        return None
+    upload = pk_uploads[0]
+    if not upload.get("key_columns"):
+        result.error(
+            "uploaded_pk_missing_keys",
+            "Uploaded PK cohort must declare `key_columns`.",
+            str(upload.get("name")),
+        )
+    return str(upload.get("dest_table") or upload.get("name"))
+
+
 def validate_and_resolve(
     template: dict[str, Any],
     recipes_doc: dict[str, Any],
@@ -552,10 +576,18 @@ def validate_and_resolve(
     uploads = upload_index(template)
     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
     table_schemas.update(upload_schemas(template, uploads, result, base_dir))
+    uploaded_pk_table = find_uploaded_pk_table(template, result)
+    generated_pk = [c for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+    if uploaded_pk_table and generated_pk:
+        result.error(
+            "uploaded_pk_with_generated_pk",
+            "A template may not define both an uploaded PK cohort and generated type: PK cohorts.",
+            uploaded_pk_table,
+        )
     resolved_cohorts: list[dict[str, Any]] = []
     for cohort in cohorts:
         name = cohort.get("name")
-        pk_table = find_pk_table(cohorts, result, cohort.get("_group_key", ""))
+        pk_table = find_pk_table(cohorts, result, cohort.get("_group_key", "")) or uploaded_pk_table
         auto_vars = {}
         required = analysis["required_vars"].get(name, {})
         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
@@ -1136,8 +1168,15 @@ def build_split_plan_from_finished(
     pk_source = uploaded_pk_source(finished_yaml, result)
     pk_cohorts = [cohort for cohort in cohorts if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() == "pk"]
     if not pk_cohorts:
-        session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
-        pk_cohorts = [{"name": session_id, "dest_table": None}]
+        if pk_source:
+            pk_cohorts = [{
+                "name": pk_source.get("upload_name") or pk_source.get("table"),
+                "dest_table": pk_source.get("table"),
+                "type": "PK",
+            }]
+        else:
+            session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
+            pk_cohorts = [{"name": session_id, "dest_table": None}]
 
     sessions: list[SplitSession] = []
     for pk_cohort in pk_cohorts:
@@ -1830,6 +1869,71 @@ batching:
             )
             return ok, json.dumps(plan)
 
+    def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
+        keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
+        return f"""
+project_folder: Uploaded PK
+cosmos_db: COSMOS
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+upload_cohorts:
+  - name: ClientPK
+    type: pk
+    dest_table: ClientPK
+    file_type: csv
+    file_loc: pks.csv
+{keys}{extra_upload}
+cohorts:
+  - recipe: OtherDx
+    name: OtherDx
+"""
+
+    def case_uploaded_pk_plan():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
+            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template())
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = plan_split_runs(t, r)
+            plan = res.analysis.get("split_plan", {})
+            session = (plan.get("sessions") or [{}])[0]
+            pk_source = session.get("phases", {}).get("pk", {}).get("pk_source", {})
+            rendered = json.dumps(res.finished_yaml)
+            ok = (
+                res.ok
+                and session.get("session_id") == "ClientPK"
+                and pk_source.get("kind") == "uploaded_cohort"
+                and pk_source.get("table") == "ClientPK"
+                and "##JVM_ClientPK AS pk" in rendered
+            )
+            return ok, json.dumps({"plan": plan, "finished": res.finished_yaml})
+
+    def case_uploaded_pk_multiple_error():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
+            extra = """  - name: ClientPK2
+    type: pk
+    dest_table: ClientPK2
+    file_type: csv
+    file_loc: pks.csv
+    key_columns: [PatientDurableKey, DiagnosisEventKey]
+"""
+            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template(extra))
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = compile_yaml(t, r)
+            return has_error(res, "multiple_uploaded_pk"), summarize_result(res)
+
+    def case_uploaded_pk_missing_keys_error():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
+            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template(key_columns=False))
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = compile_yaml(t, r)
+            return has_error(res, "uploaded_pk_missing_keys"), summarize_result(res)
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1856,6 +1960,9 @@ batching:
         TddCase("manifest.basic", "manifest", case_manifest_basic),
         TddCase("split_artifacts.basic_files", "split_artifacts", case_split_artifacts_basic),
         TddCase("split_plan.multiplier_batches", "split_plan", case_split_plan_multiplier_batches),
+        TddCase("uploaded_pk.plan", "uploaded_pk", case_uploaded_pk_plan),
+        TddCase("uploaded_pk.multiple_error", "uploaded_pk", case_uploaded_pk_multiple_error),
+        TddCase("uploaded_pk.missing_keys_error", "uploaded_pk", case_uploaded_pk_missing_keys_error),
     ]
 
 
