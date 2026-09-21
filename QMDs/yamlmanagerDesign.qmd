@@ -595,7 +595,7 @@ Exit criteria:
 - Active docs identify one design source of truth.
 - Completed work and future work are separated.
 
-### Phase 1: Naming And Compatibility `[planned]`
+### Phase 1: Naming And Compatibility `[done]`
 
 Goal: make YAML Manager the standard name in code while avoiding needless breakage.
 

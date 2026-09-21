@@ -46,17 +46,12 @@ Implemented in `scripts/makeYaml.py`:
 
 Implemented:
 
-- The original `managerUI.py` simple UI has been renamed to `scripts/telescope.py`.
+- The original `managerUI.py` simple UI was renamed through `scripts/telescope.py` and now lives at `scripts/yamlmanager.py`.
 - Serving behavior now supports local, remote, VM, SSH tunnel, and public-bind use cases with configurable host/port behavior.
 - UI no longer imports `makeYaml.py` directly.
-- `scripts/telescope_backend.py` provides a stable Python adapter surface around the compiler.
-- `TELESCOPE_BACKEND_MODULE` can point the UI at an alternate backend module.
-
-Planned rename:
-
-- `scripts/telescope.py` should become `scripts/yamlmanager.py`.
-- `scripts/telescope_backend.py` should become `scripts/yamlmanager_backend.py`.
-- Compatibility wrappers can be kept temporarily if useful.
+- `scripts/yamlmanager_backend.py` provides a stable Python adapter surface around the compiler.
+- `YAMLMANAGER_BACKEND_MODULE` can point the UI at an alternate backend module.
+- `scripts/telescope.py` and `scripts/telescope_backend.py` remain as compatibility wrappers.
 
 ## Current Known Validation State
 
@@ -134,12 +129,13 @@ Status markers:
 
 Current phase:
 
-- Phase 0: Planning Baseline `[done]`
+- Phase 1: Naming And Compatibility `[done]`
+- Next: Phase 2: pre-YAML Export `[planned]`
 
 Production sequence:
 
 1. Phase 0: Planning Baseline `[done]`
-2. Phase 1: Naming And Compatibility `[planned]`
+2. Phase 1: Naming And Compatibility `[done]`
 3. Phase 2: pre-YAML Export `[planned]`
 4. Phase 3: Split Plan Model `[planned]`
 5. Phase 4: Manifest Generation `[planned]`
@@ -167,14 +163,14 @@ Completed:
 - Added uploaded-PK behavior to the design.
 - Defined the manifest-centered Pullmanager handoff contract.
 
-### Phase 1: Naming And Compatibility `[planned]`
+### Phase 1: Naming And Compatibility `[done]`
 
-Planned:
+Completed:
 
 - Rename `telescope.py` and `telescope_backend.py` to `yamlmanager.py` and `yamlmanager_backend.py`.
-- Keep wrappers for old entry points if useful.
+- Keep wrappers for old entry points.
 - Update environment-variable naming with backward-compatible fallbacks.
-- Verify the simple UI still runs.
+- Verify the simple UI still runs through the new and compatibility entry points.
 
 ### Phase 2: pre-YAML Export `[planned]`
 

@@ -1,40 +1,5 @@
-"""
-Stable Python API for Telescope frontends.
-
-Frontends should import this module instead of reaching into makeYaml directly.
-That keeps CLI/UI/Desktop naming independent from the compiler implementation.
-"""
+"""Compatibility wrapper for the renamed YAML Manager backend adapter."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
-import makeYaml
-
-
-CompileResult = makeYaml.CompileResult
-
-
-def load_document(path: str | Path) -> Any:
-    return makeYaml.load_yaml(path)
-
-
-def compile_dashboard(template_path: str | Path, recipes_path: str | Path, write: bool = False) -> CompileResult:
-    return makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=write)
-
-
-def dump_yaml_text(data: Any) -> str:
-    return makeYaml.dump_yaml_text(data)
-
-
-def recipe_output_columns(recipe: dict[str, Any]) -> list[str]:
-    return makeYaml.output_columns(recipe)
-
-
-def recipe_required_vars(recipe: dict[str, Any]) -> dict[str, Any]:
-    return makeYaml.infer_required_vars(recipe)
-
-
-def recipe_table_inputs(recipe: dict[str, Any]) -> dict[str, list[str]]:
-    return makeYaml.infer_table_inputs(recipe)
+from yamlmanager_backend import *  # noqa: F401,F403
