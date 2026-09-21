@@ -1,6 +1,6 @@
-# Proposed YAML Manager to Pullmanager Flowthrough
+# YAML Manager to Pullmanager Flowthrough
 
-This document describes the intended end-to-end workflow for YAML Manager, currently evolving out of Telescope, and its handoff to Pullmanager on the VM side. The goal is to preserve the flexible template/recipe authoring experience while producing execution artifacts that match how server connections, global temp tables, batching, local tables, and final parquet artifacts actually work.
+This document describes the intended end-to-end workflow for YAML Manager and its handoff to Pullmanager on the VM side. The goal is to preserve the flexible template/recipe authoring experience while producing execution artifacts that match how server connections, global temp tables, batching, local tables, and final parquet artifacts actually work.
 
 ## Core Idea
 
@@ -168,6 +168,23 @@ Uploads belong in this phase because uploaded/global temp resources are session-
 
 The upload YAML should be standalone-valid and should repeat the necessary metadata to make sense on its own.
 
+Most upload cohorts are fact/support resources, but an upload cohort may also be designated as the session PK source when a client supplies the exact PK list to pull. Because each session can have only one canonical PK table, YAML Manager should allow zero or one upload cohort to be marked as `type: pk`.
+
+Example:
+
+```yaml
+upload_cohorts:
+  - name: ClientPatientList
+    type: pk
+    file_type: csv
+    file_loc: uploads/client_patient_list.csv
+    dest_table: ClientPatientList
+    key_columns:
+      - PatientDurableKey
+```
+
+When an uploaded PK cohort exists, `upload_cohorts.yaml` uploads it during setup, and `pk.yaml` registers or validates that uploaded table as the session PK table rather than building a new PK cohort from server-side criteria.
+
 ### pk.yaml
 
 `pk.yaml` pulls or constructs the full PK table for the session.
@@ -175,6 +192,24 @@ The upload YAML should be standalone-valid and should repeat the necessary metad
 This is required before batch materialization. Even when there is no batching, the PK phase still exists so every session follows the same algorithm.
 
 For batched pulls, Pullmanager uses the PK output to determine actual batch membership. YAML Manager keeps batch definitions logical; Pullmanager turns those logical definitions into actual key sets after PKs exist on the VM side.
+
+If the session has an uploaded PK cohort, `pk.yaml` should be a PK registration/validation step. It should point to the uploaded table created by `upload_cohorts.yaml` and declare that this table is the canonical PK source for the session.
+
+Example:
+
+```yaml
+pull_context:
+  phase: pk
+  session_id: MainCohort__ClientList
+  pk_source:
+    kind: uploaded_cohort
+    upload_name: ClientPatientList
+    table: ClientPatientList
+    key_columns:
+      - PatientDurableKey
+```
+
+If no uploaded PK cohort exists, `pk.yaml` should build/pull the PK table using the normal cohort logic.
 
 ### run YAMLs
 
@@ -301,6 +336,8 @@ sessions:
       pk:
         yaml: sessions/MainCohort__UC/pk.yaml
         status: pending
+        pk_source:
+          kind: generated
         rows: null
     runs:
       - run_id: MainCohort__UC__batch-sex-female
@@ -362,11 +399,13 @@ batch:
 
 YAML Manager should not try to pre-materialize actual PK values, because those keys are only available after `pk.yaml` runs inside the VM/server environment.
 
+This is also true when the PK comes from an upload. YAML Manager can identify that the source is uploaded, but Pullmanager still owns verifying the uploaded table on the VM side and materializing any batch-specific key sets from that PK source.
+
 Pullmanager should:
 
 1. Run setup.
 2. Run uploads.
-3. Run PK.
+3. Run PK, either by building the PK table or registering the uploaded PK table.
 4. Use the pulled PK table plus logical batch instructions to determine batch key sets.
 5. Run each batch-specific pull.
 
@@ -412,6 +451,7 @@ YAML Manager validates internal logic:
 - Upload cohort references.
 - Table input/output compatibility.
 - PK table expectations.
+- Uploaded PK uniqueness and declared key columns.
 - Column requirements where known.
 - Multiplier and batching definitions.
 
@@ -486,7 +526,7 @@ For each session in manifest order, Pullmanager:
 1. Opens the server connection.
 2. Runs `setup.yaml`.
 3. Runs `upload_cohorts.yaml`.
-4. Runs `pk.yaml`.
+4. Runs `pk.yaml`, either building the PK table or registering an uploaded PK table.
 5. Materializes logical batch definitions from the pulled PK table.
 6. Runs each run YAML in order.
 7. Updates manifest statuses and row counts.
@@ -528,20 +568,201 @@ It creates:
 
 It should not rely solely on planned YAML because partial completion is possible.
 
-## Implementation Direction
+## Implementation Phases
 
-The practical refactor should happen in backend-first layers:
+Status markers:
 
-1. Rename Telescope-facing scripts/concepts to YAML Manager.
-2. Keep a stable Python backend adapter for frontends.
-3. Add `build_preyaml()` support.
-4. Add optional expanded-recipes pre-YAML export.
-5. Add split planning data structures.
-6. Add manifest generation.
-7. Add split YAML writing.
-8. Add CLI commands.
-9. Add UI inspection tabs.
-10. Add optional Pullmanager handoff.
+- `[done]`: implemented and committed.
+- `[in-progress]`: currently being built.
+- `[blocked]`: cannot proceed until a dependency or design question is resolved.
+- `[planned]`: agreed but not started.
+
+### Phase 0: Planning Baseline `[done]`
+
+Goal: consolidate the next-iteration design before production work begins.
+
+Scope:
+
+- Move the active design into `QMDs/yamlmanagerDesign.qmd`.
+- Track implementation status in `QMDs/progress.md`.
+- Mark older plans as superseded or historical.
+- Decide the file-based YAML Manager -> Pullmanager boundary.
+- Decide that `pullmanifest.yaml` is required and becomes Pullmanager's mutable status document.
+- Decide that upload cohorts may provide the canonical PK source with `type: pk`.
+
+Exit criteria:
+
+- Active docs identify one design source of truth.
+- Completed work and future work are separated.
+
+### Phase 1: Naming And Compatibility `[planned]`
+
+Goal: make YAML Manager the standard name in code while avoiding needless breakage.
+
+Scope:
+
+- Rename `scripts/telescope.py` to `scripts/yamlmanager.py`.
+- Rename `scripts/telescope_backend.py` to `scripts/yamlmanager_backend.py`.
+- Keep thin compatibility wrappers for the old script/module names if useful.
+- Rename environment variables from `TELESCOPE_*` to `YAMLMANAGER_*`, while temporarily accepting the old names as fallbacks.
+- Update docs and help text to use YAML Manager.
+
+Exit criteria:
+
+- `python3 scripts/yamlmanager.py --help` works.
+- Existing simple UI behavior still works.
+- Old entry points either continue as wrappers or fail with clear guidance.
+
+### Phase 2: pre-YAML Export `[planned]`
+
+Goal: formalize the portable pre-expansion artifact.
+
+Scope:
+
+- Add backend support for `build_preyaml(mode="symbolic")`.
+- Add backend support for `build_preyaml(mode="expanded-recipes")`.
+- Keep symbolic mode close to the authored `template.yaml`.
+- In expanded-recipes mode, translate recipe references into explicit cohort definitions for inspection without applying multiplier or batching expansion.
+- Add CLI export options.
+
+Exit criteria:
+
+- Symbolic pre-YAML export works.
+- Expanded-recipes pre-YAML export works.
+- Validation/reporting still works on exported pre-YAML.
+
+### Phase 3: Split Plan Model `[planned]`
+
+Goal: create an internal representation of sessions, phases, runs, and paths before writing files.
+
+Scope:
+
+- Define stable session IDs and run IDs.
+- Model the standard session routine: setup, upload cohorts, PK, runs.
+- Model session-level multiplier context.
+- Model logical batch context.
+- Model uploaded-PK context.
+- Keep generated plans independent of folder layout until writing.
+
+Exit criteria:
+
+- A template can be converted into an in-memory split plan.
+- No-multiplier/no-batch templates produce one session with one run.
+- Plan output can be inspected in tests or reports.
+
+### Phase 4: Manifest Generation `[planned]`
+
+Goal: generate `pullmanifest.yaml` from the split plan.
+
+Scope:
+
+- Write manifest schema version.
+- Include project/source metadata.
+- Include ordered sessions.
+- Include phase YAML paths.
+- Include ordered runs.
+- Include initial statuses.
+- Include status fields Pullmanager can later mutate.
+- Include PK source metadata, including generated versus uploaded PK.
+
+Exit criteria:
+
+- `pullmanifest.yaml` is deterministic and readable.
+- Pullmanager can use the manifest as the authoritative execution order.
+- Manifest entries have stable IDs suitable for retry/status updates.
+
+### Phase 5: Split YAML Writing `[planned]`
+
+Goal: write standalone-valid YAMLs for setup, upload cohorts, PK, and run phases.
+
+Scope:
+
+- Write `setup.yaml`.
+- Write `upload_cohorts.yaml`.
+- Write `pk.yaml`.
+- Write one or more run YAMLs.
+- Preserve project metadata in each standalone YAML.
+- Remove active `multipliers` and `batching` expansion instructions from split YAMLs.
+- Add `pull_context` to each split YAML.
+
+Exit criteria:
+
+- No-multiplier/no-batch split folder can be generated.
+- Each generated YAML is parseable and standalone-valid.
+- Generated YAML paths match the manifest.
+
+### Phase 6: Multipliers And Logical Batches `[planned]`
+
+Goal: apply multiplier and batch planning to split sessions/runs.
+
+Scope:
+
+- Create one session per multiplier-derived cohort group.
+- Keep all runs for a multiplier-derived cohort under the same session.
+- Create logical batch runs when batching is configured.
+- Keep batch definitions logical; do not materialize PK values.
+- Preserve readable file/session/run names.
+
+Exit criteria:
+
+- Multiplier-only templates produce one session per multiplier result.
+- Batch-only templates produce one session with multiple logical batch runs.
+- Multiplier-plus-batch templates produce per-multiplier sessions with per-batch runs.
+
+### Phase 7: Uploaded PK Cohorts `[planned]`
+
+Goal: support client-provided PK lists as the canonical session PK source.
+
+Scope:
+
+- Validate that zero or one upload cohort is marked `type: pk`.
+- Validate declared key columns where possible.
+- Put uploaded PK work in `upload_cohorts.yaml`.
+- Make `pk.yaml` register/validate the uploaded PK table instead of building a new PK table.
+- Reflect uploaded PK source in the manifest and `pull_context`.
+
+Exit criteria:
+
+- Uploaded-PK templates split successfully.
+- Multiple uploaded PK cohorts produce a clear validation error.
+- Missing key column metadata produces a clear validation error or warning, depending on available schema.
+
+### Phase 8: CLI And Tests `[planned]`
+
+Goal: make the new artifacts production-usable from the command line and covered by portable tests.
+
+Scope:
+
+- Add CLI commands/flags for pre-YAML export.
+- Add CLI commands/flags for split export.
+- Add embedded TDD coverage.
+- Add realistic fixture coverage.
+- Ensure generated output is deterministic enough for review.
+
+Exit criteria:
+
+- CLI can export symbolic pre-YAML.
+- CLI can export expanded-recipes pre-YAML.
+- CLI can export split folder and manifest.
+- TDD and relevant fixture tests pass.
+
+### Phase 9: UI Preview And Handoff `[planned]`
+
+Goal: expose the new backend phases through the simple UI and prepare eventual Pullmanager handoff.
+
+Scope:
+
+- Add pre-YAML preview/export controls.
+- Add expanded-recipes preview/export controls.
+- Add manifest/session/run preview.
+- Show uploaded PK source selection/validation.
+- Add optional handoff command once Pullmanager's CLI contract is available.
+
+Exit criteria:
+
+- User can inspect pre-YAML and split output before running Pullmanager.
+- Handoff remains file-based.
+- UI does not duplicate backend planning logic.
 
 Suggested CLI shape:
 
@@ -568,6 +789,7 @@ Recommended defaults unless future implementation pressure says otherwise:
 - Every session has setup, upload, PK, and run phases.
 - Every split YAML is standalone-valid.
 - Upload cohorts are session setup resources, not per-batch resources.
+- Zero or one upload cohort may be marked `type: pk`; if present, `pk.yaml` registers that uploaded table as the canonical PK source.
 - Batches remain logical in YAML Manager.
 - Pullmanager materializes actual PK batches.
 - Manifest status is mutable and owned by Pullmanager once execution begins.

@@ -1,3 +1,5 @@
+> Historical/source notes. These brainstorming notes have been consolidated into the active design doc at `QMDs/yamlmanagerDesign.qmd`. Use `QMDs/progress.md` for current implementation status.
+
 So we have to reimagine the workflow a little bit. At present, I have this system make a large single yaml out of a cohort collection with recipes and custom tables, and then multipliers and batchers. While this is great, I need something a little different. Let's call the yaml before the batching and multipcation are applied as 'preyaml'. 
 
 I have to copy something over to a closed server VM that has a local and server side. I now think I should copy that preyaml over to  VM, and then run it in the same program on that side. Once it confirms that everything is again working, I can do the delivery of the final yaml. except it shouldn't just be one big yaml, but divided by pull runs. 
