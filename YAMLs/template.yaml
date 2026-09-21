@@ -91,7 +91,7 @@ cohorts: #Use recipes premade or make your own tables. Multiplied and batched by
 
   #Example Cohorts - will be ignored, just for the sake of being an example on the template
 example_cohorts: 
-  - name: Patients
+  - name: Pts
     type: example # PK is generally the index all the others check against. non-PK tables are 'fact'. 'example' means ignore. 
     pull_this_cycle: false # if true, will become part of the cohort cycle. Sometimes you just want to update some and not others. 
     dest_table: Patients #Optional - if not specified, it just uses the same name as name:
