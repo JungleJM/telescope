@@ -44,6 +44,20 @@ def plan_split_runs(template_path: str | Path, recipes_path: str | Path) -> Comp
     return makeYaml.plan_split_runs(template_path=template_path, recipes_path=recipes_path)
 
 
+def build_pullmanifest(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    output_path: str | Path | None = None,
+    write: bool = False,
+) -> CompileResult:
+    return makeYaml.build_pullmanifest(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        output_path=output_path,
+        write=write,
+    )
+
+
 def dump_yaml_text(data: Any) -> str:
     return makeYaml.dump_yaml_text(data)
 

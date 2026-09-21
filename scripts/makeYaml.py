@@ -26,6 +26,7 @@ OUTPUT_SUFFIX = "_Full"
 PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 WILDCARD_CHARS = ("%", "_", "[", "]")
+DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
 
 
 # =============================================================================
@@ -73,11 +74,21 @@ class SplitPhase:
     yaml: str
     status: str = "pending"
     pk_source: dict[str, Any] | None = None
+    rows: int | None = None
+    outputs: dict[str, Any] = field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "yaml": self.yaml,
             "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "rows": self.rows,
+            "outputs": self.outputs,
+            "error": self.error,
         }
         if self.pk_source is not None:
             out["pk_source"] = self.pk_source
@@ -90,12 +101,22 @@ class SplitRun:
     yaml: str
     status: str = "pending"
     batch: dict[str, Any] | None = None
+    rows: int | None = None
+    outputs: dict[str, Any] = field(default_factory=dict)
+    error: dict[str, Any] | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "run_id": self.run_id,
             "yaml": self.yaml,
             "status": self.status,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "rows": self.rows,
+            "outputs": self.outputs,
+            "error": self.error,
         }
         if self.batch is not None:
             out["batch"] = self.batch
@@ -1123,6 +1144,24 @@ def plan_split_runs(
     return result
 
 
+def build_pullmanifest(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+    write: bool = False,
+) -> CompileResult:
+    result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+    if result.errors:
+        return result
+    manifest = result.analysis.get("split_plan", {})
+    result.finished_yaml = manifest
+    out_path = Path(output_path) if output_path else project_root() / DEFAULT_MANIFEST_PATH
+    result.output_path = str(out_path)
+    if write and result.ok:
+        dump_yaml(manifest, out_path)
+    return result
+
+
 def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in cohort.items() if not k.startswith("_")}
 
@@ -1562,6 +1601,30 @@ multipliers:
             )
             return ok, json.dumps(plan)
 
+    def case_manifest_basic():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            out = tmp / "pullmanifest.yaml"
+            res = build_pullmanifest(t, r, output_path=out, write=True)
+            manifest = res.finished_yaml
+            first = manifest.get("sessions", [{}])[0]
+            run = first.get("runs", [{}])[0]
+            pk_phase = first.get("phases", {}).get("pk", {})
+            ok = (
+                res.ok
+                and out.exists()
+                and manifest.get("manifest_version") == 1
+                and first.get("status") == "pending"
+                and pk_phase.get("status") == "pending"
+                and pk_phase.get("rows") is None
+                and pk_phase.get("error") is None
+                and run.get("status") == "pending"
+                and run.get("outputs") == {}
+            )
+            return ok, json.dumps(manifest)
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1585,6 +1648,7 @@ multipliers:
         TddCase("preyaml.symbolic", "preyaml", case_preyaml_symbolic),
         TddCase("preyaml.expanded_recipes", "preyaml", case_preyaml_expanded_recipes),
         TddCase("split_plan.basic_session", "split_plan", case_split_plan_basic),
+        TddCase("manifest.basic", "manifest", case_manifest_basic),
     ]
 
 

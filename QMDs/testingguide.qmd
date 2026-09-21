@@ -26,6 +26,7 @@ python3 scripts/makeYaml.py --tdd multipliers
 python3 scripts/makeYaml.py --tdd batching
 python3 scripts/makeYaml.py --tdd preyaml
 python3 scripts/makeYaml.py --tdd split_plan
+python3 scripts/makeYaml.py --tdd manifest
 ```
 
 The TDD suite answers:
@@ -47,6 +48,7 @@ Current test groups:
 - `reports`
 - `preyaml`
 - `split_plan`
+- `manifest`
 
 Current tests:
 
@@ -73,6 +75,7 @@ reports.includes_sections
 preyaml.symbolic
 preyaml.expanded_recipes
 split_plan.basic_session
+manifest.basic
 ```
 
 Expected successful output:
@@ -84,7 +87,7 @@ PASS  loading.valid_template
 ...
 PASS  reports.includes_sections
 
-Summary: 22 passed, 0 failed
+Summary: 23 passed, 0 failed
 ```
 
 If any test fails, the command exits nonzero.

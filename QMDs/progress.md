@@ -44,6 +44,7 @@ Implemented in `scripts/makeYaml.py`:
 - `build_preyaml(mode="symbolic")`.
 - `build_preyaml(mode="expanded-recipes")`.
 - `plan_split_runs(...)` with in-memory split plan structures.
+- `build_pullmanifest(...)` with mutable status fields.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
@@ -94,9 +95,7 @@ Settled for the next iteration:
 Backend/API:
 
 - Add uploaded-PK validation and planning.
-- Add `pullmanifest.yaml` generation.
 - Add split YAML generation.
-- Add manifest status schema defaults.
 - Add CLI commands for split export.
 
 UI:
@@ -125,8 +124,8 @@ Status markers:
 
 Current phase:
 
-- Phase 3: Split Plan Model `[done]`
-- Next: Phase 4: Manifest Generation `[planned]`
+- Phase 4: Manifest Generation `[done]`
+- Next: Phase 5: Split YAML Writing `[planned]`
 
 Production sequence:
 
@@ -134,7 +133,7 @@ Production sequence:
 2. Phase 1: Naming And Compatibility `[done]`
 3. Phase 2: pre-YAML Export `[done]`
 4. Phase 3: Split Plan Model `[done]`
-5. Phase 4: Manifest Generation `[planned]`
+5. Phase 4: Manifest Generation `[done]`
 6. Phase 5: Split YAML Writing `[planned]`
 7. Phase 6: Multipliers And Logical Batches `[planned]`
 8. Phase 7: Uploaded PK Cohorts `[planned]`
@@ -186,9 +185,9 @@ Completed:
 - Represent setup/upload/PK/run phases.
 - Represent uploaded PK source metadata.
 
-### Phase 4: Manifest Generation `[planned]`
+### Phase 4: Manifest Generation `[done]`
 
-Planned:
+Completed:
 
 - Generate `pullmanifest.yaml` from split plans.
 - Include phase/run paths and initial statuses.

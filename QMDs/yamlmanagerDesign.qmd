@@ -650,7 +650,7 @@ Exit criteria:
 - No-multiplier/no-batch templates produce one session with one run.
 - Plan output can be inspected in tests or reports.
 
-### Phase 4: Manifest Generation `[planned]`
+### Phase 4: Manifest Generation `[done]`
 
 Goal: generate `pullmanifest.yaml` from the split plan.
 
