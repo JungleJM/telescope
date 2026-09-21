@@ -25,6 +25,7 @@ python3 scripts/makeYaml.py --tdd rendering
 python3 scripts/makeYaml.py --tdd multipliers
 python3 scripts/makeYaml.py --tdd batching
 python3 scripts/makeYaml.py --tdd preyaml
+python3 scripts/makeYaml.py --tdd split_plan
 ```
 
 The TDD suite answers:
@@ -45,6 +46,7 @@ Current test groups:
 - `cosmos`
 - `reports`
 - `preyaml`
+- `split_plan`
 
 Current tests:
 
@@ -70,6 +72,7 @@ cosmos.bad_value
 reports.includes_sections
 preyaml.symbolic
 preyaml.expanded_recipes
+split_plan.basic_session
 ```
 
 Expected successful output:
@@ -81,7 +84,7 @@ PASS  loading.valid_template
 ...
 PASS  reports.includes_sections
 
-Summary: 21 passed, 0 failed
+Summary: 22 passed, 0 failed
 ```
 
 If any test fails, the command exits nonzero.

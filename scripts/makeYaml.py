@@ -67,6 +67,81 @@ class CompileResult:
         self.warnings.append(Message("WARN", code, message, context))
 
 
+@dataclass
+class SplitPhase:
+    name: str
+    yaml: str
+    status: str = "pending"
+    pk_source: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "yaml": self.yaml,
+            "status": self.status,
+        }
+        if self.pk_source is not None:
+            out["pk_source"] = self.pk_source
+        return out
+
+
+@dataclass
+class SplitRun:
+    run_id: str
+    yaml: str
+    status: str = "pending"
+    batch: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "run_id": self.run_id,
+            "yaml": self.yaml,
+            "status": self.status,
+        }
+        if self.batch is not None:
+            out["batch"] = self.batch
+        return out
+
+
+@dataclass
+class SplitSession:
+    session_id: str
+    cohort: str
+    pk_table: str | None
+    phases: dict[str, SplitPhase]
+    runs: list[SplitRun]
+    status: str = "pending"
+    multiplier: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "session_id": self.session_id,
+            "cohort": self.cohort,
+            "pk_table": self.pk_table,
+            "status": self.status,
+            "phases": {name: phase.to_dict() for name, phase in self.phases.items()},
+            "runs": [run.to_dict() for run in self.runs],
+        }
+        if self.multiplier is not None:
+            out["multiplier"] = self.multiplier
+        return out
+
+
+@dataclass
+class SplitPlan:
+    project: dict[str, Any]
+    source: dict[str, Any]
+    sessions: list[SplitSession]
+    manifest_version: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "manifest_version": self.manifest_version,
+            "project": self.project,
+            "source": self.source,
+            "sessions": [session.to_dict() for session in self.sessions],
+        }
+
+
 # =============================================================================
 # YAML loading and writing
 # =============================================================================
@@ -934,6 +1009,120 @@ def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
     return result
 
 
+def safe_id(value: Any, fallback: str = "item") -> str:
+    text = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "")).strip("-")
+    return text or fallback
+
+
+def project_metadata(template: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": template.get("project_folder") or template.get("project_db") or "YAML Manager Project",
+        "project_folder": template.get("project_folder"),
+        "project_db": template.get("project_db"),
+        "created_by": "yamlmanager",
+    }
+
+
+def uploaded_pk_source(template: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+    pk_uploads = [
+        upload for upload in template.get("upload_cohorts", []) or []
+        if isinstance(upload, dict) and str(upload.get("type", "")).lower() == "pk"
+    ]
+    if len(pk_uploads) > 1:
+        result.error(
+            "multiple_uploaded_pk",
+            "Only one upload cohort may be marked `type: pk`.",
+            ", ".join(str(upload.get("name")) for upload in pk_uploads),
+        )
+        return None
+    if not pk_uploads:
+        return None
+    upload = pk_uploads[0]
+    key_columns = upload.get("key_columns") or upload.get("columns") or []
+    if not key_columns:
+        result.error(
+            "uploaded_pk_missing_keys",
+            "Uploaded PK cohort must declare `key_columns`.",
+            str(upload.get("name")),
+        )
+    return {
+        "kind": "uploaded_cohort",
+        "upload_name": upload.get("name"),
+        "table": upload.get("dest_table") or upload.get("name"),
+        "key_columns": key_columns,
+    }
+
+
+def session_paths(session_id: str) -> dict[str, str]:
+    base = f"sessions/{session_id}"
+    return {
+        "setup": f"{base}/setup.yaml",
+        "upload_cohorts": f"{base}/upload_cohorts.yaml",
+        "pk": f"{base}/pk.yaml",
+        "run": f"{base}/runs/run.yaml",
+    }
+
+
+def build_split_plan_from_finished(
+    finished_yaml: dict[str, Any],
+    template_path: Path,
+    recipes_path: Path,
+    result: CompileResult,
+) -> SplitPlan:
+    cohorts = finished_yaml.get("cohorts", []) or []
+    pk_source = uploaded_pk_source(finished_yaml, result)
+    pk_cohorts = [cohort for cohort in cohorts if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() == "pk"]
+    if not pk_cohorts:
+        session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
+        pk_cohorts = [{"name": session_id, "dest_table": None}]
+
+    sessions: list[SplitSession] = []
+    for pk_cohort in pk_cohorts:
+        pk_name = str(pk_cohort.get("name") or pk_cohort.get("dest_table") or "PKTable")
+        pk_table = pk_cohort.get("dest_table") or pk_cohort.get("name")
+        session_id = safe_id(pk_table or pk_name, "session")
+        paths = session_paths(session_id)
+        source = pk_source or {"kind": "generated", "table": pk_table}
+        phases = {
+            "setup": SplitPhase("setup", paths["setup"]),
+            "upload_cohorts": SplitPhase("upload_cohorts", paths["upload_cohorts"]),
+            "pk": SplitPhase("pk", paths["pk"], pk_source=source),
+        }
+        runs = [SplitRun(run_id=f"{session_id}__run", yaml=paths["run"])]
+        sessions.append(
+            SplitSession(
+                session_id=session_id,
+                cohort=pk_name,
+                pk_table=str(pk_table) if pk_table else None,
+                phases=phases,
+                runs=runs,
+            )
+        )
+
+    return SplitPlan(
+        project=project_metadata(finished_yaml),
+        source={
+            "template": str(template_path),
+            "recipes": str(recipes_path),
+        },
+        sessions=sessions,
+    )
+
+
+def plan_split_runs(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+) -> CompileResult:
+    template_path = Path(template_path) if template_path else default_template_path()
+    recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+    result = compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+    if result.errors:
+        return result
+    plan = build_split_plan_from_finished(result.finished_yaml, template_path, recipes_path, result)
+    result.analysis["split_plan"] = plan.to_dict()
+    return result
+
+
 def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in cohort.items() if not k.startswith("_")}
 
@@ -1351,6 +1540,28 @@ multipliers:
             )
             return ok, text
 
+    def case_split_plan_basic():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = plan_split_runs(t, r)
+            plan = res.analysis.get("split_plan", {})
+            sessions = plan.get("sessions", [])
+            first = sessions[0] if sessions else {}
+            phases = first.get("phases", {})
+            runs = first.get("runs", [])
+            ok = (
+                res.ok
+                and plan.get("manifest_version") == 1
+                and len(sessions) == 1
+                and set(phases) == {"setup", "upload_cohorts", "pk"}
+                and phases["pk"].get("pk_source", {}).get("kind") == "generated"
+                and len(runs) == 1
+                and runs[0].get("run_id") == "Patients__run"
+            )
+            return ok, json.dumps(plan)
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1373,6 +1584,7 @@ multipliers:
         TddCase("reports.includes_sections", "reports", case_report),
         TddCase("preyaml.symbolic", "preyaml", case_preyaml_symbolic),
         TddCase("preyaml.expanded_recipes", "preyaml", case_preyaml_expanded_recipes),
+        TddCase("split_plan.basic_session", "split_plan", case_split_plan_basic),
     ]
 
 

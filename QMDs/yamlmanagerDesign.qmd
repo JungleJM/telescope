@@ -631,7 +631,7 @@ Exit criteria:
 - Expanded-recipes pre-YAML export works.
 - Validation/reporting still works on exported pre-YAML.
 
-### Phase 3: Split Plan Model `[planned]`
+### Phase 3: Split Plan Model `[done]`
 
 Goal: create an internal representation of sessions, phases, runs, and paths before writing files.
 

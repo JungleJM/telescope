@@ -40,6 +40,10 @@ def build_preyaml(
     )
 
 
+def plan_split_runs(template_path: str | Path, recipes_path: str | Path) -> CompileResult:
+    return makeYaml.plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+
+
 def dump_yaml_text(data: Any) -> str:
     return makeYaml.dump_yaml_text(data)
 

@@ -43,6 +43,7 @@ Implemented in `scripts/makeYaml.py`:
 - Public `dump_yaml_text()` helper for frontend/backend adapters.
 - `build_preyaml(mode="symbolic")`.
 - `build_preyaml(mode="expanded-recipes")`.
+- `plan_split_runs(...)` with in-memory split plan structures.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
@@ -92,8 +93,6 @@ Settled for the next iteration:
 
 Backend/API:
 
-- Add split planning data structures.
-- Add session/run ID generation.
 - Add uploaded-PK validation and planning.
 - Add `pullmanifest.yaml` generation.
 - Add split YAML generation.
@@ -126,15 +125,15 @@ Status markers:
 
 Current phase:
 
-- Phase 2: pre-YAML Export `[done]`
-- Next: Phase 3: Split Plan Model `[planned]`
+- Phase 3: Split Plan Model `[done]`
+- Next: Phase 4: Manifest Generation `[planned]`
 
 Production sequence:
 
 1. Phase 0: Planning Baseline `[done]`
 2. Phase 1: Naming And Compatibility `[done]`
 3. Phase 2: pre-YAML Export `[done]`
-4. Phase 3: Split Plan Model `[planned]`
+4. Phase 3: Split Plan Model `[done]`
 5. Phase 4: Manifest Generation `[planned]`
 6. Phase 5: Split YAML Writing `[planned]`
 7. Phase 6: Multipliers And Logical Batches `[planned]`
@@ -178,9 +177,9 @@ Completed:
 - Add expanded-recipes export mode.
 - Add CLI flags and tests.
 
-### Phase 3: Split Plan Model `[planned]`
+### Phase 3: Split Plan Model `[done]`
 
-Planned:
+Completed:
 
 - Define internal split plan structures.
 - Generate session/run IDs.
