@@ -32,6 +32,9 @@ if str(SCRIPT_DIR) not in sys.path:
 
 
 DEFAULT_OUT = PROJECT_ROOT / "UI" / "manager_dashboard.html"
+DEFAULT_DATA_DICTIONARY = Path(
+    os.environ.get("YAMLMANAGER_DATA_DICTIONARY", PROJECT_ROOT / "YAMLs" / "datadictionary.yaml")
+)
 BACKEND_MODULE = os.environ.get(
     "YAMLMANAGER_BACKEND_MODULE",
     os.environ.get("TELESCOPE_BACKEND_MODULE", "yamlmanager_backend"),
@@ -75,6 +78,15 @@ def slug(value: str) -> str:
 
 def yaml_text(value: Any) -> str:
     return backend.dump_yaml_text(value).rstrip()
+
+
+def load_data_dictionary(path: Path = DEFAULT_DATA_DICTIONARY) -> dict[str, Any]:
+    try:
+        doc = backend.load_document(path) or {}
+    except FileNotFoundError:
+        return {}
+    data = doc.get("DataDictionary", doc) if isinstance(doc, dict) else {}
+    return data if isinstance(data, dict) else {}
 
 
 def json_payload(value: Any) -> str:
@@ -617,6 +629,7 @@ def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> st
 def build_html(template_path: Path, recipes_path: Path, result: backend.CompileResult, auto_refresh: int = 0) -> str:
     template = backend.load_document(template_path) or {}
     recipes_doc = backend.load_document(recipes_path) or {}
+    data_dictionary = load_data_dictionary()
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
     refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
@@ -772,17 +785,37 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                   </select>
                 </label>
                 <label class="checkbox-label"><input id="customPullThisCycle" type="checkbox" checked> Pull this cycle</label>
-                <label>From Table<input id="customFromTable" type="text" placeholder="BirthParentFact"></label>
+                <label>From Table<select id="customFromTable"></select></label>
                 <label>AS<input id="customFromAlias" type="text" placeholder="bpf"></label>
               </div>
               <div class="subsection-head">
                 <h4>Columns</h4>
-                <button id="addCustomColumn">Add Column</button>
               </div>
-              <div id="customColumnRows" class="editor-rows"></div>
+              <div class="column-picker">
+                <section>
+                  <h4>Pulling</h4>
+                  <div id="customSelectedColumns" class="column-list"></div>
+                </section>
+                <section>
+                  <h4>Removed</h4>
+                  <div id="customRemovedColumns" class="column-list removed"></div>
+                </section>
+              </div>
               <div class="subsection-head">
                 <h4>Joins</h4>
                 <button id="addCustomJoin">Add Join</button>
+              </div>
+              <div class="join-builder">
+                <select id="joinBaseAlias"></select>
+                <select id="joinBaseColumn"></select>
+                <select id="joinOperator">
+                  <option value="=">=</option>
+                  <option value="&lt;&gt;">&lt;&gt;</option>
+                </select>
+                <select id="joinTable"></select>
+                <input id="joinAlias" type="text" placeholder="as">
+                <select id="joinColumn"></select>
+                <span id="joinCheck" class="join-check muted"></span>
               </div>
               <div id="customJoinRows" class="editor-rows"></div>
               <div class="subsection-head">
@@ -871,6 +904,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
   <script id="recipeNamesData" type="application/json">{json_payload(recipe_names)}</script>
   <script id="batchingNamesData" type="application/json">{json_payload(batching_names)}</script>
   <script id="batchingRecipesData" type="application/json">{json_payload(batching_recipes)}</script>
+  <script id="dataDictionaryData" type="application/json">{json_payload(data_dictionary)}</script>
   <script>{JS}</script>
 </body>
 </html>
@@ -974,11 +1008,22 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
 .editor-rows { display: grid; gap: 10px; }
 .editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
-.editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; }
+.editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto; }
 .editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto; }
 .editor-row.custom-column { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
 .editor-row.line-editor { grid-template-columns: minmax(220px, 1fr) auto; }
 .custom-builder { display: grid; gap: 12px; margin-top: 10px; }
+.column-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.column-list { display: grid; gap: 6px; align-content: start; min-height: 42px; }
+.column-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, .35fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
+.column-item.removed { opacity: .78; }
+.column-title { display: grid; gap: 2px; min-width: 0; }
+.column-title strong { overflow-wrap: anywhere; }
+.column-actions { display: inline-flex; gap: 5px; justify-content: end; }
+.column-actions button { padding: 4px 7px; min-width: 28px; }
+.join-builder { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(150px, 1fr) 70px minmax(150px, 1fr) minmax(80px, .45fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
+.join-check.ok { color: var(--ok); }
+.join-check.error { color: var(--err); }
 .subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
 .subsection-head h4 { margin: 0; }
 .helper-text { margin: 0 0 12px; }
@@ -1013,7 +1058,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .empty { color: var(--muted); padding: 8px 0; }
 .hidden { display: none; }
 @media (max-width: 900px) {
-  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
+  .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch, .column-picker, .join-builder { grid-template-columns: 1fr; }
   header { position: static; align-items: stretch; flex-direction: column; }
   .header-actions { align-self: flex-end; }
   .header-path-form { grid-template-columns: 1fr; }
@@ -1028,8 +1073,12 @@ const recipeDefs = JSON.parse(document.getElementById('recipeDefsData').textCont
 const recipeNames = JSON.parse(document.getElementById('recipeNamesData').textContent);
 const batchingNames = JSON.parse(document.getElementById('batchingNamesData').textContent);
 const batchingRecipes = JSON.parse(document.getElementById('batchingRecipesData').textContent);
+const dataDictionaryRaw = JSON.parse(document.getElementById('dataDictionaryData').textContent);
+const dataDictionary = normalizeDataDictionary(dataDictionaryRaw);
+const dictionaryTableNames = Object.keys(dataDictionary).sort((a, b) => a.localeCompare(b));
 let draftTemplate = clone(initialTemplate);
 let customDraft = blankCustomCohort();
+let editingCustomIndex = null;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
@@ -1160,6 +1209,7 @@ function hydrateBuilder() {
   setChecked('builderPrintoutMd', draftTemplate.test_options.printout_md !== false);
   renderRecipeOptions();
   renderBatchingOptions();
+  renderDictionaryTableOptions();
   renderCustomBuilder();
   renderUploadRows();
   renderBatchingRows();
@@ -1221,6 +1271,31 @@ function syncProjectFields() {
   if (el) el.addEventListener('change', syncCustomFields);
 });
 
+['joinBaseAlias', 'joinBaseColumn', 'joinOperator', 'joinTable', 'joinAlias', 'joinColumn'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    if (id === 'joinTable') {
+      setValue('joinAlias', aliasForTable(getValue('joinTable')));
+      renderJoinBuilder();
+    } else if (id === 'joinBaseAlias') {
+      renderJoinBuilder();
+    } else {
+      updateJoinCheck();
+    }
+  });
+  el.addEventListener('change', () => {
+    if (id === 'joinTable') {
+      setValue('joinAlias', aliasForTable(getValue('joinTable')));
+      renderJoinBuilder();
+    } else if (id === 'joinBaseAlias') {
+      renderJoinBuilder();
+    } else {
+      updateJoinCheck();
+    }
+  });
+});
+
 document.getElementById('builderDraftFilename')?.addEventListener('input', updateDraftYaml);
 document.getElementById('newBatchingRecipe')?.addEventListener('change', updateBatchingHelp);
 
@@ -1238,6 +1313,19 @@ function renderBatchingOptions() {
   if (!select) return;
   select.innerHTML = batchingNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
   updateBatchingHelp();
+}
+
+function renderDictionaryTableOptions() {
+  const tableOptions = ['<option value="">Select table</option>']
+    .concat(dictionaryTableNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`))
+    .join('');
+  ['customFromTable', 'joinTable'].forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = tableOptions;
+    if (current) select.value = current;
+  });
 }
 
 function renderUploadRows() {
@@ -1293,6 +1381,7 @@ function renderCohortRows() {
     <div class="editor-row cohort">
       <label>${cohort.recipe ? 'Recipe' : 'Custom'}<input data-cohort-field="${cohort.recipe ? 'recipe' : 'type'}" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort.type || '')}"></label>
       <label>Name<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
+      ${cohort.recipe ? '' : `<button data-edit-custom-cohort="${index}">Load</button>`}
       <button class="danger" data-remove-cohort="${index}">Remove</button>
     </div>
   `).join('') || '<div class="empty">No cohorts in draft.</div>';
@@ -1306,6 +1395,7 @@ function blankCustomCohort() {
     type: 'fact',
     pull_this_cycle: true,
     columns: [],
+    removed_columns: [],
     filter: {
       from_table: '',
       from_alias: '',
@@ -1315,7 +1405,141 @@ function blankCustomCohort() {
   };
 }
 
+function normalizeDataDictionary(raw) {
+  const source = raw?.DataDictionary || raw || {};
+  const normalized = {};
+  Object.entries(source).forEach(([tableName, table]) => {
+    const columns = table?.columns || {};
+    normalized[tableName] = {
+      description: table?.description || '',
+      granularity: table?.granularity || '',
+      columns: Object.entries(columns).map(([name, meta]) => ({
+        name,
+        type: String(meta?.type || ''),
+        normalizedType: normalizeColumnType(meta?.type || ''),
+        nullable: meta?.nullable,
+        description: meta?.description || ''
+      }))
+    };
+  });
+  return normalized;
+}
+
+function normalizeColumnType(type) {
+  const text = String(type || '').toLowerCase();
+  if (/(char|text|string|varchar|nvarchar)/.test(text)) return 'string';
+  if (/(date|time)/.test(text)) return 'datetime';
+  if (/(bool|bit|flag)/.test(text)) return 'boolean';
+  if (/(bigint|integer|int|numeric|decimal|float|double|real)/.test(text)) return 'number';
+  return text.replace(/\s*\(.*/, '').trim() || 'unknown';
+}
+
+function columnTypeForYaml(type) {
+  const text = String(type || '').toLowerCase();
+  if (/bigint/.test(text)) return 'BIGINT';
+  if (/integer|int/.test(text)) return 'INT';
+  if (/date\/datetime|datetime|date|time/.test(text)) return 'DATETIME2(7)';
+  if (/bool|bit|flag/.test(text)) return 'BIT';
+  if (/numeric|decimal|float|double|real/.test(text)) return 'FLOAT';
+  if (/char|text|string|varchar|nvarchar/.test(text)) return 'VARCHAR(400)';
+  return String(type || '');
+}
+
+function typesCompatible(left, right) {
+  const a = normalizeColumnType(left);
+  const b = normalizeColumnType(right);
+  return a !== 'unknown' && b !== 'unknown' && a === b;
+}
+
+function aliasForTable(tableName) {
+  const words = String(tableName || '').match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+/g) || [];
+  const letters = words.map(word => word[0]).join('').toLowerCase();
+  return letters || String(tableName || '').slice(0, 3).toLowerCase() || 't';
+}
+
+function dictionaryColumns(tableName) {
+  return dataDictionary[tableName]?.columns || [];
+}
+
+function dictionaryColumn(tableName, columnName) {
+  return dictionaryColumns(tableName).find(column => column.name === columnName) || null;
+}
+
+function columnFromDictionary(tableName, columnName, alias) {
+  const meta = dictionaryColumn(tableName, columnName) || {};
+  return {
+    source: `${alias || aliasForTable(tableName)}.${columnName}`,
+    name: columnName,
+    type: columnTypeForYaml(meta.type),
+    nullable: meta.nullable === undefined ? '' : Boolean(meta.nullable),
+    dict_table: tableName,
+    dict_column: columnName
+  };
+}
+
+function parseFromClause(fromValue) {
+  const first = Array.isArray(fromValue) ? fromValue[0] : fromValue;
+  const text = String(first || '').trim();
+  const match = text.match(/^(.+?)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)$/i);
+  if (match && dataDictionary[match[1].trim()]) return { table: match[1].trim(), alias: match[2].trim() };
+  return { table: dataDictionary[text] ? text : '', alias: '' };
+}
+
+function customDraftFromCohort(cohort) {
+  const from = parseFromClause(cohort?.filter?.from);
+  const alias = from.alias || aliasForTable(from.table);
+  const draft = blankCustomCohort();
+  draft.name = cohort?.name || '';
+  draft.dest_table = cohort?.dest_table || cohort?.name || '';
+  draft.type = cohort?.type || 'fact';
+  draft.pull_this_cycle = cohort?.pull_this_cycle !== false;
+  draft.filter.from_table = from.table;
+  draft.filter.from_alias = alias;
+  draft.filter.join = Array.isArray(cohort?.filter?.join) ? clone(cohort.filter.join) : [];
+  draft.filter.where = Array.isArray(cohort?.filter?.where) ? clone(cohort.filter.where) : [];
+  const existing = Array.isArray(cohort?.columns) ? cohort.columns : [];
+  if (from.table) {
+    const selected = [];
+    existing.forEach(column => {
+      const source = String(column.source || '');
+      const sourceCol = source.includes('.') ? source.split('.').pop() : column.name;
+      selected.push({
+        ...column,
+        name: column.name || sourceCol,
+        dict_table: from.table,
+        dict_column: sourceCol
+      });
+    });
+    const selectedNames = new Set(selected.map(column => column.dict_column || column.name));
+    draft.columns = selected;
+    draft.removed_columns = dictionaryColumns(from.table)
+      .filter(column => !selectedNames.has(column.name))
+      .map(column => column.name);
+  } else {
+    draft.columns = existing;
+  }
+  return draft;
+}
+
+function resetColumnsForTable(tableName, preserveExisting = false) {
+  const alias = customDraft.filter.from_alias || aliasForTable(tableName);
+  const dictCols = dictionaryColumns(tableName);
+  if (!tableName || !dictCols.length) return;
+  if (preserveExisting && customDraft.columns.length) {
+    const existingNames = new Set(customDraft.columns.map(column => column.dict_column || String(column.source || '').split('.').pop() || column.name));
+    customDraft.columns = customDraft.columns.map(column => {
+      const name = column.dict_column || String(column.source || '').split('.').pop() || column.name;
+      return { ...columnFromDictionary(tableName, name, alias), ...column, dict_table: tableName, dict_column: name };
+    });
+    customDraft.removed_columns = dictCols.filter(column => !existingNames.has(column.name)).map(column => column.name);
+    return;
+  }
+  customDraft.columns = dictCols.map(column => columnFromDictionary(tableName, column.name, alias));
+  customDraft.removed_columns = [];
+}
+
 function renderCustomBuilder() {
+  renderDictionaryTableOptions();
   setValue('customName', customDraft.name || '');
   setValue('customDestTable', customDraft.dest_table || '');
   setValue('customType', customDraft.type || 'fact');
@@ -1323,30 +1547,143 @@ function renderCustomBuilder() {
   if (pull) pull.checked = customDraft.pull_this_cycle !== false;
   setValue('customFromTable', customDraft.filter.from_table || '');
   setValue('customFromAlias', customDraft.filter.from_alias || '');
+  if (customDraft.filter.from_table && !customDraft.columns.length && !(customDraft.removed_columns || []).length) {
+    resetColumnsForTable(customDraft.filter.from_table);
+  }
   renderCustomColumnRows();
-  renderCustomLineRows('customJoinRows', 'join', 'join condition');
+  renderJoinBuilder();
+  renderCustomJoinRows();
   renderCustomLineRows('customWhereRows', 'where', 'where condition');
   updatePkWarning();
 }
 
 function renderCustomColumnRows() {
-  const root = document.getElementById('customColumnRows');
+  const selected = document.getElementById('customSelectedColumns');
+  const removed = document.getElementById('customRemovedColumns');
+  if (!selected || !removed) return;
+  selected.innerHTML = customDraft.columns.map((column, index) => {
+    const meta = dictionaryColumn(column.dict_table || customDraft.filter.from_table, column.dict_column || column.name) || {};
+    return `
+      <div class="column-item">
+        <span class="column-title">
+          <strong>${escapeHtml(column.name || column.dict_column || '')}</strong>
+          <span class="muted">${escapeHtml(meta.type || column.type || '')}${column.nullable === false ? ' · required' : ''}</span>
+        </span>
+        <input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}" title="Output name">
+        <span class="column-actions">
+          <button data-move-custom-column="${index}" data-direction="-1" title="Move up">Up</button>
+          <button data-move-custom-column="${index}" data-direction="1" title="Move down">Down</button>
+          <button class="danger" data-remove-custom-column="${index}" title="Remove">-</button>
+        </span>
+      </div>
+    `;
+  }).join('') || '<div class="empty">No columns selected.</div>';
+  removed.innerHTML = (customDraft.removed_columns || []).map(columnName => {
+    const meta = dictionaryColumn(customDraft.filter.from_table, columnName) || {};
+    return `
+      <div class="column-item removed">
+        <span class="column-title">
+          <strong>${escapeHtml(columnName)}</strong>
+          <span class="muted">${escapeHtml(meta.type || '')}</span>
+        </span>
+        <span></span>
+        <span class="column-actions"><button data-add-removed-column="${escapeAttr(columnName)}" title="Add">+</button></span>
+      </div>
+    `;
+  }).join('') || '<div class="empty">No removed columns.</div>';
+}
+
+function joinSources() {
+  const sources = [];
+  if (customDraft.filter.from_table) {
+    sources.push({ table: customDraft.filter.from_table, alias: customDraft.filter.from_alias || aliasForTable(customDraft.filter.from_table) });
+  }
+  (customDraft.filter.join || []).forEach(join => {
+    if (join && typeof join === 'object' && join.table && join.alias) {
+      sources.push({ table: join.table, alias: join.alias });
+    }
+  });
+  return sources;
+}
+
+function renderColumnOptions(tableName, selected = '') {
+  return dictionaryColumns(tableName).map(column => `<option value="${escapeAttr(column.name)}" ${column.name === selected ? 'selected' : ''}>${escapeHtml(column.name)}</option>`).join('');
+}
+
+function renderJoinBuilder() {
+  const baseAlias = document.getElementById('joinBaseAlias');
+  const baseColumn = document.getElementById('joinBaseColumn');
+  const joinTable = document.getElementById('joinTable');
+  const joinColumn = document.getElementById('joinColumn');
+  const joinAlias = document.getElementById('joinAlias');
+  if (!baseAlias || !baseColumn || !joinTable || !joinColumn || !joinAlias) return;
+  const sources = joinSources();
+  const priorAlias = baseAlias.value;
+  baseAlias.innerHTML = sources.map(source => `<option value="${escapeAttr(source.alias)}" ${source.alias === priorAlias ? 'selected' : ''}>${escapeHtml(source.alias)} (${escapeHtml(source.table)})</option>`).join('');
+  const activeSource = sources.find(source => source.alias === baseAlias.value) || sources[0] || {};
+  baseColumn.innerHTML = renderColumnOptions(activeSource.table, baseColumn.value);
+  renderDictionaryTableOptions();
+  if (!joinTable.value && dictionaryTableNames.length) joinTable.value = dictionaryTableNames[0];
+  if (!joinAlias.value && joinTable.value) joinAlias.value = aliasForTable(joinTable.value);
+  joinColumn.innerHTML = renderColumnOptions(joinTable.value, joinColumn.value);
+  updateJoinCheck();
+}
+
+function updateJoinCheck() {
+  const check = document.getElementById('joinCheck');
+  if (!check) return;
+  const sources = joinSources();
+  const source = sources.find(item => item.alias === getValue('joinBaseAlias'));
+  const left = dictionaryColumn(source?.table, getValue('joinBaseColumn'));
+  const right = dictionaryColumn(getValue('joinTable'), getValue('joinColumn'));
+  check.classList.remove('ok', 'error');
+  if (!left || !right) {
+    check.textContent = '';
+    return;
+  }
+  if (typesCompatible(left.type, right.type)) {
+    check.textContent = `${normalizeColumnType(left.type)} match`;
+    check.classList.add('ok');
+  } else {
+    check.textContent = `${left.type} vs ${right.type}`;
+    check.classList.add('error');
+  }
+}
+
+function joinDraftFromFields() {
+  const sources = joinSources();
+  const source = sources.find(item => item.alias === getValue('joinBaseAlias')) || sources[0];
+  const table = getValue('joinTable');
+  const alias = getValue('joinAlias') || aliasForTable(table);
+  const left = dictionaryColumn(source?.table, getValue('joinBaseColumn'));
+  const right = dictionaryColumn(table, getValue('joinColumn'));
+  if (!source || !left || !right || !typesCompatible(left.type, right.type)) return null;
+  return {
+    base_table: source.table,
+    base_alias: source.alias,
+    base_column: left.name,
+    operator: getValue('joinOperator') || '=',
+    table,
+    alias,
+    column: right.name
+  };
+}
+
+function renderJoinLine(join) {
+  if (typeof join === 'string') return join;
+  const operator = join.operator || '=';
+  return `INNER JOIN ${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
+}
+
+function renderCustomJoinRows() {
+  const root = document.getElementById('customJoinRows');
   if (!root) return;
-  root.innerHTML = customDraft.columns.map((column, index) => `
-    <div class="editor-row custom-column">
-      <label>Source<input data-custom-column-field="source" data-index="${index}" value="${escapeAttr(column.source || '')}"></label>
-      <label>Name<input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}"></label>
-      <label>Type<input data-custom-column-field="type" data-index="${index}" value="${escapeAttr(column.type || '')}" placeholder="optional"></label>
-      <label>Nullable
-        <select data-custom-column-field="nullable" data-index="${index}">
-          <option value="" ${column.nullable === undefined || column.nullable === '' ? 'selected' : ''}>blank</option>
-          <option value="true" ${column.nullable === true || column.nullable === 'true' ? 'selected' : ''}>true</option>
-          <option value="false" ${column.nullable === false || column.nullable === 'false' ? 'selected' : ''}>false</option>
-        </select>
-      </label>
-      <button class="danger" data-remove-custom-column="${index}">Remove</button>
+  root.innerHTML = customDraft.filter.join.map((join, index) => `
+    <div class="editor-row line-editor">
+      <label>join<input data-custom-line-field="join" data-index="${index}" value="${escapeAttr(renderJoinLine(join))}" ${typeof join === 'string' ? '' : 'readonly'}></label>
+      <button class="danger" data-remove-custom-line="join" data-index="${index}">Remove</button>
     </div>
-  `).join('') || '<div class="empty">No custom columns yet.</div>';
+  `).join('') || '<div class="empty">No join lines yet.</div>';
 }
 
 function renderCustomLineRows(rootId, field, placeholder) {
@@ -1361,12 +1698,31 @@ function renderCustomLineRows(rootId, field, placeholder) {
 }
 
 function syncCustomFields() {
+  const oldTable = customDraft.filter.from_table;
+  const oldAlias = customDraft.filter.from_alias;
   customDraft.name = getValue('customName');
   customDraft.dest_table = getValue('customDestTable');
   customDraft.type = getValue('customType') || 'fact';
   customDraft.pull_this_cycle = !!document.getElementById('customPullThisCycle')?.checked;
   customDraft.filter.from_table = getValue('customFromTable');
   customDraft.filter.from_alias = getValue('customFromAlias');
+  if (customDraft.filter.from_alias && customDraft.filter.from_alias !== oldAlias) {
+    customDraft.columns = customDraft.columns.map(column => {
+      const dictCol = column.dict_column || String(column.source || '').split('.').pop() || column.name;
+      return { ...column, source: `${customDraft.filter.from_alias}.${dictCol}`, dict_column: dictCol };
+    });
+  }
+  if (customDraft.filter.from_table && customDraft.filter.from_table !== oldTable) {
+    if (!customDraft.filter.from_alias || customDraft.filter.from_alias === aliasForTable(oldTable)) {
+      customDraft.filter.from_alias = aliasForTable(customDraft.filter.from_table);
+      setValue('customFromAlias', customDraft.filter.from_alias);
+    }
+    resetColumnsForTable(customDraft.filter.from_table);
+    customDraft.filter.join = [];
+    renderCustomColumnRows();
+    renderJoinBuilder();
+    renderCustomJoinRows();
+  }
   updatePkWarning();
 }
 
@@ -1385,7 +1741,7 @@ function makeCustomCohort() {
   const fromTable = customDraft.filter.from_table;
   const fromAlias = customDraft.filter.from_alias;
   if (fromTable) cohort.filter.from = [fromAlias ? `${fromTable} as ${fromAlias}` : fromTable];
-  const joins = customDraft.filter.join.map(line => line.trim()).filter(Boolean);
+  const joins = customDraft.filter.join.map(join => renderJoinLine(join).trim()).filter(Boolean);
   const wheres = customDraft.filter.where.map(line => line.trim()).filter(Boolean);
   if (joins.length) cohort.filter.join = joins;
   if (wheres.length) cohort.filter.where = wheres;
@@ -1516,8 +1872,14 @@ document.getElementById('addCustomColumn')?.addEventListener('click', () => {
 });
 
 document.getElementById('addCustomJoin')?.addEventListener('click', () => {
-  customDraft.filter.join.push('');
-  renderCustomLineRows('customJoinRows', 'join', 'join condition');
+  const join = joinDraftFromFields();
+  if (!join) {
+    updateJoinCheck();
+    return;
+  }
+  customDraft.filter.join.push(join);
+  renderJoinBuilder();
+  renderCustomJoinRows();
 });
 
 document.getElementById('addCustomWhere')?.addEventListener('click', () => {
@@ -1527,8 +1889,14 @@ document.getElementById('addCustomWhere')?.addEventListener('click', () => {
 
 document.getElementById('addCustomCohort')?.addEventListener('click', () => {
   ensureDraftShape();
-  draftTemplate.cohorts.push(makeCustomCohort());
+  const cohort = makeCustomCohort();
+  if (editingCustomIndex === null) {
+    draftTemplate.cohorts.push(cohort);
+  } else {
+    draftTemplate.cohorts[editingCustomIndex] = cohort;
+  }
   customDraft = blankCustomCohort();
+  editingCustomIndex = null;
   renderCustomBuilder();
   renderCohortRows();
   updateDraftYaml();
@@ -1536,6 +1904,7 @@ document.getElementById('addCustomCohort')?.addEventListener('click', () => {
 
 document.getElementById('resetCustomCohort')?.addEventListener('click', () => {
   customDraft = blankCustomCohort();
+  editingCustomIndex = null;
   renderCustomBuilder();
 });
 
@@ -1650,16 +2019,54 @@ document.addEventListener('click', event => {
   }
   if (target.dataset.removeCohort) {
     draftTemplate.cohorts.splice(Number(target.dataset.removeCohort), 1);
+    if (editingCustomIndex === Number(target.dataset.removeCohort)) {
+      customDraft = blankCustomCohort();
+      editingCustomIndex = null;
+      renderCustomBuilder();
+    }
     renderCohortRows();
     updateDraftYaml();
   }
+  if (target.dataset.editCustomCohort) {
+    editingCustomIndex = Number(target.dataset.editCustomCohort);
+    customDraft = customDraftFromCohort(draftTemplate.cohorts[editingCustomIndex]);
+    renderCustomBuilder();
+    document.getElementById('customName')?.focus();
+  }
+  if (target.dataset.moveCustomColumn) {
+    const index = Number(target.dataset.moveCustomColumn);
+    const direction = Number(target.dataset.direction);
+    const next = index + direction;
+    if (next >= 0 && next < customDraft.columns.length) {
+      const [column] = customDraft.columns.splice(index, 1);
+      customDraft.columns.splice(next, 0, column);
+      renderCustomColumnRows();
+    }
+  }
   if (target.dataset.removeCustomColumn) {
-    customDraft.columns.splice(Number(target.dataset.removeCustomColumn), 1);
+    const index = Number(target.dataset.removeCustomColumn);
+    const [column] = customDraft.columns.splice(index, 1);
+    const name = column?.dict_column || column?.name;
+    if (name && !(customDraft.removed_columns || []).includes(name)) {
+      customDraft.removed_columns = customDraft.removed_columns || [];
+      customDraft.removed_columns.push(name);
+    }
+    renderCustomColumnRows();
+  }
+  if (target.dataset.addRemovedColumn) {
+    const name = target.dataset.addRemovedColumn;
+    customDraft.removed_columns = (customDraft.removed_columns || []).filter(column => column !== name);
+    customDraft.columns.push(columnFromDictionary(customDraft.filter.from_table, name, customDraft.filter.from_alias));
     renderCustomColumnRows();
   }
   if (target.dataset.removeCustomLine) {
     customDraft.filter[target.dataset.removeCustomLine].splice(Number(target.dataset.index), 1);
-    renderCustomLineRows(target.dataset.removeCustomLine === 'join' ? 'customJoinRows' : 'customWhereRows', target.dataset.removeCustomLine, `${target.dataset.removeCustomLine} condition`);
+    if (target.dataset.removeCustomLine === 'join') {
+      renderJoinBuilder();
+      renderCustomJoinRows();
+    } else {
+      renderCustomLineRows('customWhereRows', 'where', 'where condition');
+    }
   }
 });
 
