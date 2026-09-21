@@ -691,7 +691,7 @@ Exit criteria:
 - Each generated YAML is parseable and standalone-valid.
 - Generated YAML paths match the manifest.
 
-### Phase 6: Multipliers And Logical Batches `[planned]`
+### Phase 6: Multipliers And Logical Batches `[done]`
 
 Goal: apply multiplier and batch planning to split sessions/runs.
 

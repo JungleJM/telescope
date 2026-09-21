@@ -77,6 +77,7 @@ reports.includes_sections
 preyaml.symbolic
 preyaml.expanded_recipes
 split_plan.basic_session
+split_plan.multiplier_batches
 manifest.basic
 split_artifacts.basic_files
 ```
@@ -90,7 +91,7 @@ PASS  loading.valid_template
 ...
 PASS  reports.includes_sections
 
-Summary: 24 passed, 0 failed
+Summary: 25 passed, 0 failed
 ```
 
 If any test fails, the command exits nonzero.

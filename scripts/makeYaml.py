@@ -1085,6 +1085,47 @@ def session_paths(session_id: str) -> dict[str, str]:
     }
 
 
+def batch_run_name(batch: dict[str, Any], index: int) -> str:
+    name = batch.get("name") or batch.get("kind") or f"batch-{index + 1}"
+    if batch.get("values") not in (None, "all"):
+        values = batch.get("values")
+        if isinstance(values, list) and len(values) == 1:
+            name = f"{name}-{values[0]}"
+    elif batch.get("rows_per_batch"):
+        name = f"{name}-{batch.get('rows_per_batch')}"
+    return safe_id(name, f"batch-{index + 1}")
+
+
+def session_runs(session_id: str, pk_cohort: dict[str, Any]) -> list[SplitRun]:
+    batching = pk_cohort.get("batching") or []
+    base = f"sessions/{session_id}/runs"
+    if not batching:
+        return [SplitRun(run_id=f"{session_id}__run", yaml=f"{base}/run.yaml")]
+    runs: list[SplitRun] = []
+    for idx, batch in enumerate(batching):
+        if not isinstance(batch, dict):
+            batch = {"name": str(batch), "logic": batch}
+        batch_name = batch_run_name(batch, idx)
+        runs.append(
+            SplitRun(
+                run_id=f"{session_id}__{batch_name}",
+                yaml=f"{base}/{batch_name}.yaml",
+                batch={
+                    "name": batch_name,
+                    "logic": copy.deepcopy(batch),
+                },
+            )
+        )
+    return runs
+
+
+def session_multiplier_context(pk_cohort: dict[str, Any], session_id: str) -> dict[str, Any] | None:
+    context: dict[str, Any] = {"session_label": session_id}
+    if pk_cohort.get("split_after_build"):
+        context["split_after_build"] = copy.deepcopy(pk_cohort.get("split_after_build"))
+    return context if len(context) > 1 else None
+
+
 def build_split_plan_from_finished(
     finished_yaml: dict[str, Any],
     template_path: Path,
@@ -1110,7 +1151,7 @@ def build_split_plan_from_finished(
             "upload_cohorts": SplitPhase("upload_cohorts", paths["upload_cohorts"]),
             "pk": SplitPhase("pk", paths["pk"], pk_source=source),
         }
-        runs = [SplitRun(run_id=f"{session_id}__run", yaml=paths["run"])]
+        runs = session_runs(session_id, pk_cohort)
         sessions.append(
             SplitSession(
                 session_id=session_id,
@@ -1118,6 +1159,7 @@ def build_split_plan_from_finished(
                 pk_table=str(pk_table) if pk_table else None,
                 phases=phases,
                 runs=runs,
+                multiplier=session_multiplier_context(pk_cohort, session_id),
             )
         )
 
@@ -1754,6 +1796,40 @@ multipliers:
             )
             return ok, json.dumps({"manifest": manifest, "expected": expected, "loaded": loaded})
 
+    def case_split_plan_multiplier_batches():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            extra = """
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+      - strat: B
+        vars:
+          ICD_Value: B%
+batching:
+  - sex
+  - chunk: 2000
+"""
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = plan_split_runs(t, r)
+            plan = res.analysis.get("split_plan", {})
+            sessions = plan.get("sessions", [])
+            session_ids = sorted(session.get("session_id") for session in sessions)
+            ok = (
+                res.ok
+                and session_ids == ["APatients", "BPatients"]
+                and all(len(session.get("runs", [])) == 2 for session in sessions)
+                and all(session["runs"][0].get("batch") for session in sessions)
+                and all("sex" in session["runs"][0]["run_id"] for session in sessions)
+                and all("chunk" in session["runs"][1]["run_id"] for session in sessions)
+            )
+            return ok, json.dumps(plan)
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1779,6 +1855,7 @@ multipliers:
         TddCase("split_plan.basic_session", "split_plan", case_split_plan_basic),
         TddCase("manifest.basic", "manifest", case_manifest_basic),
         TddCase("split_artifacts.basic_files", "split_artifacts", case_split_artifacts_basic),
+        TddCase("split_plan.multiplier_batches", "split_plan", case_split_plan_multiplier_batches),
     ]
 
 

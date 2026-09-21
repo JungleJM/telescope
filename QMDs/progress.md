@@ -46,6 +46,7 @@ Implemented in `scripts/makeYaml.py`:
 - `plan_split_runs(...)` with in-memory split plan structures.
 - `build_pullmanifest(...)` with mutable status fields.
 - `write_split_artifacts(...)` for manifest plus setup/upload/PK/run YAML files.
+- Multiplier-derived sessions with logical batch runs.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
@@ -108,8 +109,6 @@ UI:
 
 Testing:
 
-- Add TDD coverage for split planning without batching.
-- Add TDD coverage for split planning with batching.
 - Add TDD coverage for uploaded PK cohort behavior.
 - Add fixture templates for split output and manifest shape.
 
@@ -124,8 +123,8 @@ Status markers:
 
 Current phase:
 
-- Phase 5: Split YAML Writing `[done]`
-- Next: Phase 6: Multipliers And Logical Batches `[planned]`
+- Phase 6: Multipliers And Logical Batches `[done]`
+- Next: Phase 7: Uploaded PK Cohorts `[planned]`
 
 Production sequence:
 
@@ -135,7 +134,7 @@ Production sequence:
 4. Phase 3: Split Plan Model `[done]`
 5. Phase 4: Manifest Generation `[done]`
 6. Phase 5: Split YAML Writing `[done]`
-7. Phase 6: Multipliers And Logical Batches `[planned]`
+7. Phase 6: Multipliers And Logical Batches `[done]`
 8. Phase 7: Uploaded PK Cohorts `[planned]`
 9. Phase 8: CLI And Tests `[planned]`
 10. Phase 9: UI Preview And Handoff `[planned]`
@@ -201,9 +200,9 @@ Completed:
 - Add `pull_context`.
 - Remove active multiplier/batching instructions from split YAMLs.
 
-### Phase 6: Multipliers And Logical Batches `[planned]`
+### Phase 6: Multipliers And Logical Batches `[done]`
 
-Planned:
+Completed:
 
 - Create sessions from multiplier-derived cohort groups.
 - Create logical batch runs.
