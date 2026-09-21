@@ -746,7 +746,7 @@ Exit criteria:
 - CLI can export split folder and manifest.
 - TDD and relevant fixture tests pass.
 
-### Phase 9: UI Preview And Handoff `[planned]`
+### Phase 9: UI Preview And Handoff `[done]`
 
 Goal: expose the new backend phases through the simple UI and prepare eventual Pullmanager handoff.
 

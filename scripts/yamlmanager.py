@@ -385,6 +385,44 @@ def pipeline_panel(result: backend.CompileResult) -> str:
     )
 
 
+def export_preview_block(title: str, artifact_id: str, filename: str, result: Any) -> str:
+    if getattr(result, "ok", False):
+        text = yaml_text(result.finished_yaml)
+    else:
+        messages = [m.to_dict() for m in getattr(result, "errors", [])]
+        text = json.dumps({"errors": messages}, indent=2)
+    return f"""
+      <section class="block export-block">
+        <div class="export-head">
+          <h2>{e(title)}</h2>
+          <div class="toolbar compact">
+            <button data-copy-artifact="{e(artifact_id)}">Copy</button>
+            <button data-download-artifact="{e(artifact_id)}" data-filename="{e(filename)}">Download</button>
+          </div>
+        </div>
+        <pre id="{e(artifact_id)}">{e(text)}</pre>
+      </section>
+    """
+
+
+def exports_panel(template_path: Path, recipes_path: Path) -> str:
+    symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
+    expanded = backend.build_preyaml(template_path, recipes_path, mode="expanded-recipes")
+    manifest = backend.build_pullmanifest(template_path, recipes_path)
+    return f"""
+      <div class="grid three">
+        {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
+        {export_preview_block("Expanded Recipes pre-YAML", "exportPreyamlExpanded", "preyaml.expanded.yaml", expanded)}
+        {export_preview_block("pullmanifest.yaml", "exportPullmanifest", "pullmanifest.yaml", manifest)}
+      </div>
+      <section class="block">
+        <h2>Handoff</h2>
+        <p>Pullmanager handoff remains file-based. Once Pullmanager's CLI contract is available, YAML Manager can call it with the generated manifest path.</p>
+        <pre>pullmanager split/pullmanifest.yaml</pre>
+      </section>
+    """
+
+
 def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     uploads = template.get("upload_cohorts", []) or []
@@ -459,6 +497,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <button class="tab" data-tab="uploads">Uploads</button>
       <button class="tab" data-tab="recipes">Recipes</button>
       <button class="tab" data-tab="graph">Graph</button>
+      <button class="tab" data-tab="exports">Exports</button>
       <button class="tab" data-tab="yaml">YAML</button>
     </nav>
 
@@ -637,6 +676,10 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       </section>
     </section>
 
+    <section id="exports" class="panel">
+      {exports_panel(template_path, recipes_path)}
+    </section>
+
     <section id="yaml" class="panel">
       <div class="grid two">
         <section class="block">
@@ -741,6 +784,9 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .toolbar input { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); }
 .toolbar.compact { margin-top: 14px; margin-bottom: 0; flex-wrap: wrap; }
+.export-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.export-head .toolbar { margin-top: 0; }
+.export-block pre { max-height: 420px; }
 .builder-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
 .builder-nav { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; position: sticky; top: 88px; display: grid; gap: 8px; }
 .builder-link { text-align: left; }
@@ -1358,6 +1404,19 @@ document.addEventListener('change', event => {
 
 document.addEventListener('click', event => {
   const target = event.target;
+  if (target.dataset.copyArtifact) {
+    const text = document.getElementById(target.dataset.copyArtifact)?.innerText || '';
+    navigator.clipboard.writeText(text).catch(() => window.prompt('Copy artifact:', text));
+  }
+  if (target.dataset.downloadArtifact) {
+    const text = document.getElementById(target.dataset.downloadArtifact)?.innerText || '';
+    const blob = new Blob([text], { type: 'text/yaml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = cleanDownloadName(target.dataset.filename || 'artifact.yaml');
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
   if (target.dataset.removeUpload) {
     draftTemplate.upload_cohorts.splice(Number(target.dataset.removeUpload), 1);
     renderUploadRows();

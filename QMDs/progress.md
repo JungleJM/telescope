@@ -61,6 +61,7 @@ Implemented:
 - `scripts/yamlmanager_backend.py` provides a stable Python adapter surface around the compiler.
 - `YAMLMANAGER_BACKEND_MODULE` can point the UI at an alternate backend module.
 - `scripts/telescope.py` and `scripts/telescope_backend.py` remain as compatibility wrappers.
+- The UI has an Exports tab for symbolic pre-YAML, expanded-recipes pre-YAML, and pullmanifest previews/downloads.
 
 ## Current Known Validation State
 
@@ -100,9 +101,6 @@ Backend/API:
 
 UI:
 
-- Add pre-YAML preview/export controls.
-- Add expanded-recipes preview/export controls.
-- Add split manifest/session preview.
 - Add validation display for uploaded PK source selection.
 - Add optional handoff button/command once Pullmanager contract exists.
 
@@ -122,8 +120,8 @@ Status markers:
 
 Current phase:
 
-- Phase 8: CLI And Tests `[done]`
-- Next: Phase 9: UI Preview And Handoff `[planned]`
+- Phase 9: UI Preview And Handoff `[done]`
+- Next: Pullmanager CLI contract and deeper UI polish `[planned]`
 
 Production sequence:
 
@@ -136,7 +134,7 @@ Production sequence:
 7. Phase 6: Multipliers And Logical Batches `[done]`
 8. Phase 7: Uploaded PK Cohorts `[done]`
 9. Phase 8: CLI And Tests `[done]`
-10. Phase 9: UI Preview And Handoff `[planned]`
+10. Phase 9: UI Preview And Handoff `[done]`
 
 After each phase:
 
@@ -222,12 +220,12 @@ Completed:
 - Expose pre-YAML and split export through CLI.
 - Add embedded TDD coverage and fixture coverage.
 
-### Phase 9: UI Preview And Handoff `[planned]`
+### Phase 9: UI Preview And Handoff `[done]`
 
-Planned:
+Completed:
 
 - Add UI previews/exports for pre-YAML and split output.
-- Add optional Pullmanager handoff once Pullmanager CLI contract exists.
+- Add file-based handoff guidance. Direct Pullmanager launch remains pending until Pullmanager's CLI contract exists.
 
 ## Historical Docs
 
