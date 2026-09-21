@@ -143,7 +143,7 @@ def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list
     incoming: dict[str, list[dict[str, Any]]] = {}
     sessions: dict[str, str] = {}
     current_pk_dest = ""
-    color_counter = 0
+    color_by_source: dict[str, int] = {}
     for cohort in cohorts:
         dest = str(cohort.get("dest_table", cohort.get("name", "")))
         name = str(cohort.get("name", dest))
@@ -155,16 +155,17 @@ def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list
             target = str(resolved_vars.get(table_var) or table_var)
             if table_var == "PKTable" and current_pk_dest:
                 target = current_pk_dest
+            if target not in color_by_source:
+                color_by_source[target] = len(color_by_source) % 8
             item = {
                 "source": target,
                 "target": name,
                 "table_var": table_var,
                 "columns": cols,
-                "color": color_counter % 8,
+                "color": color_by_source[target],
             }
             outgoing.setdefault(target, []).append(item)
             incoming.setdefault(name, []).append(item)
-            color_counter += 1
     return outgoing, incoming, sessions
 
 
@@ -214,18 +215,47 @@ def connection_chips(items: list[dict[str, Any]], compact: bool = False, side: s
 
 
 def source_connection_columns(items: list[dict[str, Any]]) -> str:
-    cols: list[str] = []
-    seen: set[str] = set()
+    cols: dict[str, int] = {}
     for item in items:
         for col in item.get("columns") or []:
             text = str(col)
-            if text not in seen:
-                seen.add(text)
-                cols.append(text)
+            cols.setdefault(text, item.get("color", 0))
     if not cols:
         return '<span class="muted">None detected</span>'
-    chips = "".join(f'<span class="connection-chip c0">{e(col)}</span>' for col in cols)
+    chips = "".join(f'<span class="connection-chip c{color}">{e(col)}</span>' for col, color in cols.items())
     return f'<span class="connection-chips">{chips}</span>'
+
+
+def grouped_outgoing_chips(items: list[dict[str, Any]], compact: bool = False) -> str:
+    if not items:
+        return '<span class="muted">None detected</span>'
+    grouped: dict[str, dict[str, Any]] = {}
+    fallback_counter = 0
+    for item in items:
+        columns = item.get("columns") or [item.get("table_var")]
+        for column in columns:
+            col = str(column)
+            if col not in grouped:
+                grouped[col] = {"targets": [], "color": item.get("color", fallback_counter % 8)}
+                fallback_counter += 1
+            target = str(item.get("target") or "")
+            if target and target not in grouped[col]["targets"]:
+                grouped[col]["targets"].append(target)
+    pairs = list(grouped.items())
+    max_items = 4 if compact else len(pairs)
+    chips = []
+    for column, meta in pairs[:max_items]:
+        targets = meta["targets"]
+        target_text = ", ".join(targets[:4])
+        if len(targets) > 4:
+            target_text += f", +{len(targets) - 4} more"
+        chips.append(
+            f'<span class="connection-chip c{meta.get("color", 0)}">'
+            f'{e(column)}: {e(target_text)}</span>'
+        )
+    if compact and len(pairs) > max_items:
+        chips.append('<span class="muted">(click to expand)</span>')
+    return f'<span class="connection-chips">{"".join(chips)}</span>'
 
 
 def connection_details(items: list[dict[str, Any]], side: str = "outgoing") -> str:
@@ -402,7 +432,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
                 <span>
                   <strong>{e(name)}</strong>
                   <span class="summary-connections">Upload: {e(dest)}</span>
-                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True, side="outgoing")}</span>
+                  <span class="summary-connections">Connections: {grouped_outgoing_chips(outgoing, compact=True)}</span>
                 </span>
                 <span>{type_badges}</span>
               </summary>
@@ -436,7 +466,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
                 <span>
                   <strong>{e(source)}</strong>
                   <span class="summary-connections">Required input table</span>
-                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True, side="outgoing")}</span>
+                  <span class="summary-connections">Connections: {grouped_outgoing_chips(outgoing, compact=True)}</span>
                 </span>
                 <span>{badge("unresolved", "warn")}</span>
               </summary>
