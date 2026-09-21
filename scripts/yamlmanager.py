@@ -806,16 +806,21 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                 <button id="addCustomJoin">Add Join</button>
               </div>
               <div class="join-builder">
-                <label>Available Table<select id="joinBaseAlias"></select></label>
-                <label>Available Column<select id="joinBaseColumn"></select></label>
+                <label>Join Type<select id="joinType">
+                    <option value="INNER">INNER</option>
+                    <option value="LEFT">LEFT</option>
+                    <option value="RIGHT">RIGHT</option>
+                    <option value="FULL">FULL</option>
+                  </select>
+                </label>
+                <label>This Column<select id="joinBaseColumn"></select></label>
                 <label>Join<select id="joinOperator">
                     <option value="=">=</option>
                     <option value="&lt;&gt;">&lt;&gt;</option>
                   </select>
                 </label>
-                <label>Add Table<select id="joinTable"></select></label>
-                <label>AS<input id="joinAlias" type="text" placeholder="as"></label>
-                <label>Add Column<select id="joinColumn"></select></label>
+                <label>Available Table<select id="joinTable"></select></label>
+                <label>Join Column<select id="joinColumn"></select></label>
                 <span id="joinCheck" class="join-check muted"></span>
               </div>
               <div id="customJoinRows" class="editor-rows"></div>
@@ -1022,7 +1027,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .column-title strong { overflow-wrap: anywhere; }
 .column-actions { display: inline-flex; gap: 5px; justify-content: end; }
 .column-actions button { padding: 4px 7px; min-width: 28px; }
-.join-builder { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(150px, 1fr) 70px minmax(150px, 1fr) minmax(80px, .45fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
+.join-builder { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(150px, 1fr) 70px minmax(170px, 1fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
 .join-builder label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .join-builder label select, .join-builder label input { width: 100%; color: var(--ink); font-weight: 400; }
 .join-check.ok { color: var(--ok); }
@@ -1274,14 +1279,11 @@ function syncProjectFields() {
   if (el) el.addEventListener('change', syncCustomFields);
 });
 
-['joinBaseAlias', 'joinBaseColumn', 'joinOperator', 'joinTable', 'joinAlias', 'joinColumn'].forEach(id => {
+['joinType', 'joinBaseColumn', 'joinOperator', 'joinTable', 'joinColumn'].forEach(id => {
   const el = document.getElementById(id);
   if (!el) return;
   el.addEventListener('input', () => {
     if (id === 'joinTable') {
-      setValue('joinAlias', aliasForTable(getValue('joinTable')));
-      renderJoinBuilder();
-    } else if (id === 'joinBaseAlias') {
       renderJoinBuilder();
     } else {
       updateJoinCheck();
@@ -1289,9 +1291,6 @@ function syncProjectFields() {
   });
   el.addEventListener('change', () => {
     if (id === 'joinTable') {
-      setValue('joinAlias', aliasForTable(getValue('joinTable')));
-      renderJoinBuilder();
-    } else if (id === 'joinBaseAlias') {
       renderJoinBuilder();
     } else {
       updateJoinCheck();
@@ -1389,6 +1388,7 @@ function renderCohortRows() {
     </div>
   `).join('') || '<div class="empty">No cohorts in draft.</div>';
   updatePkWarning();
+  renderJoinBuilder();
 }
 
 function blankCustomCohort() {
@@ -1596,52 +1596,97 @@ function renderCustomColumnRows() {
   }).join('') || '<div class="empty">No removed columns.</div>';
 }
 
-function joinSources() {
-  const sources = [];
-  if (customDraft.filter.from_table) {
-    sources.push({ table: customDraft.filter.from_table, alias: customDraft.filter.from_alias || aliasForTable(customDraft.filter.from_table) });
-  }
-  (customDraft.filter.join || []).forEach(join => {
-    if (join && typeof join === 'object' && join.table && join.alias) {
-      sources.push({ table: join.table, alias: join.alias });
-    }
-  });
-  return sources;
+function cohortOutputColumns(cohort) {
+  if (!cohort) return [];
+  const source = cohort.recipe ? recipeDefs.find(recipe => recipe.name === cohort.recipe) : cohort;
+  return (source?.columns || []).map(column => {
+    const name = column.name || String(column.source || '').split('.').pop();
+    return {
+      name,
+      type: column.type || '',
+      normalizedType: normalizeColumnType(column.type || ''),
+      nullable: column.nullable
+    };
+  }).filter(column => column.name);
 }
 
-function renderColumnOptions(tableName, selected = '') {
-  return dictionaryColumns(tableName).map(column => `<option value="${escapeAttr(column.name)}" ${column.name === selected ? 'selected' : ''}>${escapeHtml(column.name)}</option>`).join('');
+function uploadOutputColumns(upload) {
+  const schema = upload?.columns || upload?.schema || [];
+  if (!Array.isArray(schema)) return [];
+  return schema.map(column => {
+    if (column && typeof column === 'object') {
+      return {
+        name: column.name,
+        type: column.type || '',
+        normalizedType: normalizeColumnType(column.type || ''),
+        nullable: column.nullable
+      };
+    }
+    return { name: String(column), type: '', normalizedType: 'unknown', nullable: '' };
+  }).filter(column => column.name);
+}
+
+function availableJoinTables() {
+  const tables = [];
+  draftTemplate.cohorts.forEach((cohort, index) => {
+    if (editingCustomIndex !== null && index === editingCustomIndex) return;
+    const name = cohort.dest_table || cohort.name || cohort.recipe;
+    if (!name) return;
+    tables.push({
+      name,
+      kind: cohort.recipe ? 'recipe' : 'custom',
+      columns: cohortOutputColumns(cohort)
+    });
+  });
+  draftTemplate.upload_cohorts.forEach(upload => {
+    const name = upload.dest_table || upload.name;
+    if (!name) return;
+    tables.push({
+      name,
+      kind: 'upload',
+      columns: uploadOutputColumns(upload)
+    });
+  });
+  return tables;
+}
+
+function currentColumnOptions(selected = '') {
+  return customDraft.columns.map((column, index) => {
+    const sourceColumn = column.dict_column || String(column.source || '').split('.').pop() || column.name;
+    const label = column.name && column.name !== sourceColumn ? `${column.name} (${sourceColumn})` : sourceColumn;
+    return `<option value="${index}" ${String(index) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function availableColumnOptions(tableName, selected = '') {
+  const table = availableJoinTables().find(item => item.name === tableName);
+  return (table?.columns || []).map(column => `<option value="${escapeAttr(column.name)}" ${column.name === selected ? 'selected' : ''}>${escapeHtml(column.name)}</option>`).join('');
 }
 
 function renderJoinBuilder() {
-  const baseAlias = document.getElementById('joinBaseAlias');
   const baseColumn = document.getElementById('joinBaseColumn');
   const joinTable = document.getElementById('joinTable');
   const joinColumn = document.getElementById('joinColumn');
-  const joinAlias = document.getElementById('joinAlias');
-  if (!baseAlias || !baseColumn || !joinTable || !joinColumn || !joinAlias) return;
-  const sources = joinSources();
-  const priorAlias = baseAlias.value;
-  baseAlias.innerHTML = sources.map(source => `<option value="${escapeAttr(source.alias)}" ${source.alias === priorAlias ? 'selected' : ''}>${escapeHtml(source.table)} as ${escapeHtml(source.alias)}</option>`).join('');
-  const activeSource = sources.find(source => source.alias === baseAlias.value) || sources[0] || {};
-  baseColumn.innerHTML = renderColumnOptions(activeSource.table, baseColumn.value);
-  renderDictionaryTableOptions();
-  if (!joinTable.value && dictionaryTableNames.length) joinTable.value = dictionaryTableNames[0];
-  if (!joinAlias.value && joinTable.value) joinAlias.value = aliasForTable(joinTable.value);
-  joinColumn.innerHTML = renderColumnOptions(joinTable.value, joinColumn.value);
+  if (!baseColumn || !joinTable || !joinColumn) return;
+  const priorBaseColumn = baseColumn.value;
+  const priorTable = joinTable.value;
+  baseColumn.innerHTML = currentColumnOptions(priorBaseColumn);
+  const tables = availableJoinTables();
+  joinTable.innerHTML = tables.map(table => `<option value="${escapeAttr(table.name)}" ${table.name === priorTable ? 'selected' : ''}>${escapeHtml(table.name)} (${escapeHtml(table.kind)})</option>`).join('');
+  if (!joinTable.value && tables.length) joinTable.value = tables[0].name;
+  joinColumn.innerHTML = availableColumnOptions(joinTable.value, joinColumn.value);
   updateJoinCheck();
 }
 
 function updateJoinCheck() {
   const check = document.getElementById('joinCheck');
   if (!check) return;
-  const sources = joinSources();
-  const source = sources.find(item => item.alias === getValue('joinBaseAlias'));
-  const left = dictionaryColumn(source?.table, getValue('joinBaseColumn'));
-  const right = dictionaryColumn(getValue('joinTable'), getValue('joinColumn'));
+  const left = customDraft.columns[Number(getValue('joinBaseColumn'))];
+  const table = availableJoinTables().find(item => item.name === getValue('joinTable'));
+  const right = table?.columns.find(column => column.name === getValue('joinColumn'));
   check.classList.remove('ok', 'error');
   if (!left || !right) {
-    check.textContent = '';
+    check.textContent = table ? '' : 'No available tables';
     return;
   }
   if (typesCompatible(left.type, right.type)) {
@@ -1654,20 +1699,19 @@ function updateJoinCheck() {
 }
 
 function joinDraftFromFields() {
-  const sources = joinSources();
-  const source = sources.find(item => item.alias === getValue('joinBaseAlias')) || sources[0];
+  const left = customDraft.columns[Number(getValue('joinBaseColumn'))];
   const table = getValue('joinTable');
-  const alias = getValue('joinAlias') || aliasForTable(table);
-  const left = dictionaryColumn(source?.table, getValue('joinBaseColumn'));
-  const right = dictionaryColumn(table, getValue('joinColumn'));
-  if (!source || !left || !right || !typesCompatible(left.type, right.type)) return null;
+  const available = availableJoinTables().find(item => item.name === table);
+  const right = available?.columns.find(column => column.name === getValue('joinColumn'));
+  if (!left || !available || !right || !typesCompatible(left.type, right.type)) return null;
+  const sourceColumn = left.dict_column || String(left.source || '').split('.').pop() || left.name;
   return {
-    base_table: source.table,
-    base_alias: source.alias,
-    base_column: left.name,
+    join_type: getValue('joinType') || 'INNER',
+    base_alias: customDraft.filter.from_alias || aliasForTable(customDraft.filter.from_table),
+    base_column: sourceColumn,
     operator: getValue('joinOperator') || '=',
     table,
-    alias,
+    alias: aliasForTable(table),
     column: right.name
   };
 }
@@ -1675,7 +1719,8 @@ function joinDraftFromFields() {
 function renderJoinLine(join) {
   if (typeof join === 'string') return join;
   const operator = join.operator || '=';
-  return `INNER JOIN ${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
+  const joinType = join.join_type || 'INNER';
+  return `${joinType} JOIN ##JVM_${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
 }
 
 function renderCustomJoinRows() {
@@ -2044,6 +2089,7 @@ document.addEventListener('click', event => {
       const [column] = customDraft.columns.splice(index, 1);
       customDraft.columns.splice(next, 0, column);
       renderCustomColumnRows();
+      renderJoinBuilder();
     }
   }
   if (target.dataset.removeCustomColumn) {
@@ -2055,12 +2101,14 @@ document.addEventListener('click', event => {
       customDraft.removed_columns.push(name);
     }
     renderCustomColumnRows();
+    renderJoinBuilder();
   }
   if (target.dataset.addRemovedColumn) {
     const name = target.dataset.addRemovedColumn;
     customDraft.removed_columns = (customDraft.removed_columns || []).filter(column => column !== name);
     customDraft.columns.push(columnFromDictionary(customDraft.filter.from_table, name, customDraft.filter.from_alias));
     renderCustomColumnRows();
+    renderJoinBuilder();
   }
   if (target.dataset.removeCustomLine) {
     customDraft.filter[target.dataset.removeCustomLine].splice(Number(target.dataset.index), 1);
