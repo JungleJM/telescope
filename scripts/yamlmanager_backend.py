@@ -24,6 +24,22 @@ def compile_dashboard(template_path: str | Path, recipes_path: str | Path, write
     return makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=write)
 
 
+def build_preyaml(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    output_path: str | Path | None = None,
+    mode: str = "symbolic",
+    write: bool = False,
+) -> CompileResult:
+    return makeYaml.build_preyaml(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        output_path=output_path,
+        mode=mode,
+        write=write,
+    )
+
+
 def dump_yaml_text(data: Any) -> str:
     return makeYaml.dump_yaml_text(data)
 

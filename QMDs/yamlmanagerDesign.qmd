@@ -613,7 +613,7 @@ Exit criteria:
 - Existing simple UI behavior still works.
 - Old entry points either continue as wrappers or fail with clear guidance.
 
-### Phase 2: pre-YAML Export `[planned]`
+### Phase 2: pre-YAML Export `[done]`
 
 Goal: formalize the portable pre-expansion artifact.
 

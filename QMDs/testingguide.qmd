@@ -24,6 +24,7 @@ Run one group with:
 python3 scripts/makeYaml.py --tdd rendering
 python3 scripts/makeYaml.py --tdd multipliers
 python3 scripts/makeYaml.py --tdd batching
+python3 scripts/makeYaml.py --tdd preyaml
 ```
 
 The TDD suite answers:
@@ -43,6 +44,7 @@ Current test groups:
 - `batching`
 - `cosmos`
 - `reports`
+- `preyaml`
 
 Current tests:
 
@@ -62,9 +64,12 @@ multipliers.group_specific_pk
 multipliers.split_metadata
 batching.chunk_shorthand
 batching.metadata_visible
+batching.include_other_metadata
 cosmos.dual_suffix
 cosmos.bad_value
 reports.includes_sections
+preyaml.symbolic
+preyaml.expanded_recipes
 ```
 
 Expected successful output:
@@ -76,7 +81,7 @@ PASS  loading.valid_template
 ...
 PASS  reports.includes_sections
 
-Summary: 18 passed, 0 failed
+Summary: 21 passed, 0 failed
 ```
 
 If any test fails, the command exits nonzero.
@@ -205,4 +210,3 @@ for f in YAMLs/manager_test_cases/*.yaml; do
     --report-out "YAMLs/manager_test_cases/reports/${base}_report.md"
 done
 ```
-

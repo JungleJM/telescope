@@ -41,6 +41,9 @@ Implemented in `scripts/makeYaml.py`:
 - Embedded `--tdd` test suite.
 - Fixture templates under `YAMLs/manager_test_cases/`.
 - Public `dump_yaml_text()` helper for frontend/backend adapters.
+- `build_preyaml(mode="symbolic")`.
+- `build_preyaml(mode="expanded-recipes")`.
+- CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
 
@@ -89,20 +92,16 @@ Settled for the next iteration:
 
 Backend/API:
 
-- Rename legacy UI scripts/modules to YAML Manager names.
-- Add `build_preyaml(mode="symbolic")`.
-- Add `build_preyaml(mode="expanded-recipes")`.
 - Add split planning data structures.
 - Add session/run ID generation.
 - Add uploaded-PK validation and planning.
 - Add `pullmanifest.yaml` generation.
 - Add split YAML generation.
 - Add manifest status schema defaults.
-- Add CLI commands for pre-YAML and split export.
+- Add CLI commands for split export.
 
 UI:
 
-- Update UI naming to YAML Manager.
 - Add pre-YAML preview/export controls.
 - Add expanded-recipes preview/export controls.
 - Add split manifest/session preview.
@@ -111,8 +110,6 @@ UI:
 
 Testing:
 
-- Add TDD coverage for pre-YAML symbolic export.
-- Add TDD coverage for expanded-recipes export.
 - Add TDD coverage for split planning without batching.
 - Add TDD coverage for split planning with batching.
 - Add TDD coverage for uploaded PK cohort behavior.
@@ -129,14 +126,14 @@ Status markers:
 
 Current phase:
 
-- Phase 1: Naming And Compatibility `[done]`
-- Next: Phase 2: pre-YAML Export `[planned]`
+- Phase 2: pre-YAML Export `[done]`
+- Next: Phase 3: Split Plan Model `[planned]`
 
 Production sequence:
 
 1. Phase 0: Planning Baseline `[done]`
 2. Phase 1: Naming And Compatibility `[done]`
-3. Phase 2: pre-YAML Export `[planned]`
+3. Phase 2: pre-YAML Export `[done]`
 4. Phase 3: Split Plan Model `[planned]`
 5. Phase 4: Manifest Generation `[planned]`
 6. Phase 5: Split YAML Writing `[planned]`
@@ -172,9 +169,9 @@ Completed:
 - Update environment-variable naming with backward-compatible fallbacks.
 - Verify the simple UI still runs through the new and compatibility entry points.
 
-### Phase 2: pre-YAML Export `[planned]`
+### Phase 2: pre-YAML Export `[done]`
 
-Planned:
+Completed:
 
 - Add backend pre-YAML export functions.
 - Add symbolic export mode.

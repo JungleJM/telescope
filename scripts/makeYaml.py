@@ -23,6 +23,8 @@ from typing import Any, Callable
 
 
 OUTPUT_SUFFIX = "_Full"
+PREYAML_SUFFIX = "_preyaml"
+EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 
 
@@ -932,6 +934,62 @@ def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
     return result
 
 
+def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in cohort.items() if not k.startswith("_")}
+
+
+def build_preyaml(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+    mode: str = "symbolic",
+    write: bool = False,
+    report_path: str | Path | None = None,
+) -> CompileResult:
+    result = CompileResult()
+    template_path = Path(template_path) if template_path else default_template_path()
+    recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+    try:
+        template = load_yaml(template_path) or {}
+    except Exception as exc:
+        result.error("yaml_load_error", str(exc), str(template_path))
+        return result
+    if not isinstance(template, dict):
+        result.error("invalid_template", "Template YAML must be a mapping.", str(template_path))
+        return result
+    if mode not in ("symbolic", "expanded-recipes"):
+        result.error("bad_preyaml_mode", f"Unsupported pre-YAML mode `{mode}`.", mode)
+        return result
+
+    if mode == "symbolic":
+        preyaml = copy.deepcopy(template)
+        suffix = PREYAML_SUFFIX
+    else:
+        try:
+            recipes_doc = load_yaml(recipes_path) or {}
+        except Exception as exc:
+            result.error("yaml_load_error", str(exc), str(recipes_path))
+            return result
+        normalized = normalize_template(template, result)
+        cohorts = import_recipes(normalized, recipes_doc, result)
+        preyaml = copy.deepcopy(normalized)
+        preyaml["cohorts"] = [public_cohort(cohort) for cohort in cohorts]
+        preyaml.pop("example_cohorts", None)
+        result.analysis = analyze_cohorts(cohorts)
+        suffix = EXPANDED_PREYAML_SUFFIX
+
+    result.finished_yaml = preyaml
+    out_path = Path(output_path) if output_path else output_path_for(template, suffix)
+    result.output_path = str(out_path)
+    if write and result.ok:
+        dump_yaml(preyaml, out_path)
+    if report_path:
+        report_out = Path(report_path)
+        report_out.parent.mkdir(parents=True, exist_ok=True)
+        report_out.write_text(build_report(result), encoding="utf-8")
+    return result
+
+
 # =============================================================================
 # Embedded TDD
 # =============================================================================
@@ -1238,6 +1296,61 @@ batching:
         report = build_report(res)
         return all(s in report for s in ["Errors", "Warnings", "Patients", "Required Columns"]), report
 
+    def case_preyaml_symbolic():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            extra = """
+batching:
+  - sex
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+"""
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = build_preyaml(t, r, mode="symbolic")
+            cohorts = res.finished_yaml.get("cohorts", [])
+            ok = (
+                res.ok
+                and cohorts[0].get("recipe") == "PatientWithDx"
+                and "multipliers" in res.finished_yaml
+                and "batching" in res.finished_yaml
+            )
+            return ok, json.dumps(res.finished_yaml)
+
+    def case_preyaml_expanded_recipes():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            extra = """
+batching:
+  - sex
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+"""
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = build_preyaml(t, r, mode="expanded-recipes")
+            cohorts = res.finished_yaml.get("cohorts", [])
+            text = json.dumps(res.finished_yaml)
+            ok = (
+                res.ok
+                and cohorts[0].get("name") == "Patients"
+                and "recipe" not in cohorts[0]
+                and "DiagnosisEventFact AS dxf" in text
+                and "APatients" not in text
+                and "batching" in res.finished_yaml
+            )
+            return ok, text
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1258,6 +1371,8 @@ batching:
         TddCase("cosmos.dual_suffix", "cosmos", case_cosmos_dual),
         TddCase("cosmos.bad_value", "cosmos", case_cosmos_bad_value),
         TddCase("reports.includes_sections", "reports", case_report),
+        TddCase("preyaml.symbolic", "preyaml", case_preyaml_symbolic),
+        TddCase("preyaml.expanded_recipes", "preyaml", case_preyaml_expanded_recipes),
     ]
 
 
@@ -1318,7 +1433,7 @@ def print_messages(result: CompileResult) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Compile Telescope YAML.")
+    parser = argparse.ArgumentParser(description="Compile YAML Manager templates.")
     parser.add_argument("--template", default=str(default_template_path()))
     parser.add_argument("--recipes", default=str(default_recipes_path()))
     parser.add_argument("--out", default=None)
@@ -1326,6 +1441,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="Write finished YAML if validation passes.")
     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
     parser.add_argument("--inspect-recipes", action="store_true")
+    parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
     parser.add_argument("--report", action="store_true")
     parser.add_argument("--report-out", default=None)
     parser.add_argument("--tdd", nargs="?", const="all", default=None)
@@ -1338,6 +1454,25 @@ def main(argv: list[str] | None = None) -> int:
         result = inspect_recipes(args.recipes)
         print_messages(result)
         print(json.dumps(result.analysis, indent=2))
+        return 0 if result.ok else 1
+
+    if args.export_preyaml:
+        report_path = args.report_out if args.report else None
+        result = build_preyaml(
+            template_path=args.template,
+            recipes_path=args.recipes,
+            output_path=args.out,
+            mode=args.export_preyaml,
+            write=not args.validate,
+            report_path=report_path,
+        )
+        print_messages(result)
+        if result.ok:
+            print(f"OK: pre-YAML ready at {result.output_path}")
+            if not args.validate:
+                print(f"Wrote {result.output_path}")
+        else:
+            print("FAILED: errors block pre-YAML export")
         return 0 if result.ok else 1
 
     report_path = args.report_out if args.report else None

@@ -86,6 +86,13 @@ def json_payload(value: Any) -> str:
     )
 
 
+def print_messages(result: Any) -> None:
+    for msg in getattr(result, "errors", []):
+        print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
+    for msg in getattr(result, "warnings", []):
+        print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
+
+
 def message_rows(messages: list[Any]) -> str:
     if not messages:
         return '<div class="empty">None</div>'
@@ -1658,6 +1665,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
     parser.add_argument("--static", action="store_true", help="Write a static dashboard file instead of starting the local server when no args are provided.")
+    parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), help="Write a pre-YAML artifact and exit.")
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or YAMLMANAGER_HOST/TELESCOPE_MANAGER_HOST/MANAGER_UI_HOST.")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or YAMLMANAGER_PORT/TELESCOPE_MANAGER_PORT/MANAGER_UI_PORT.")
     parser.add_argument("--public", action="store_true", help="Bind to all interfaces unless --host is also supplied.")
@@ -1668,8 +1676,24 @@ def main(argv: list[str] | None = None) -> int:
     open_by_default = not raw_argv
     args = parser.parse_args(raw_argv)
     explicit_host = any(arg == "--host" or arg.startswith("--host=") for arg in raw_argv)
+    explicit_out = any(arg == "--out" or arg.startswith("--out=") for arg in raw_argv)
     if args.public and not explicit_host:
         args.host = "0.0.0.0"
+
+    if args.export_preyaml:
+        result = backend.build_preyaml(
+            template_path=resolve_workspace_path(args.template),
+            recipes_path=resolve_workspace_path(args.recipes),
+            output_path=args.out if explicit_out else None,
+            mode=args.export_preyaml,
+            write=True,
+        )
+        print_messages(result)
+        if result.ok:
+            print(f"Wrote {result.output_path}")
+        else:
+            print("FAILED: errors block pre-YAML export")
+        return 0 if result.ok else 1
 
     if args.serve or (open_by_default and not args.static):
         return serve_dashboard(
