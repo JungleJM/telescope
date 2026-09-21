@@ -1,13 +1,13 @@
 # Cosmos variables
-project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
-cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
-                         # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
+cosmos_vars:
+  project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
+  cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
+                           # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
 
 # Initial variables. Dates in format YYYYMMDD
-vars: 
+run_vars: 
   min_date_key: 19900101
   max_date_key: 20260601
-  HospitalICDTable: HospitalICDCodes
 
 # Test Vars
 test_options:
@@ -17,24 +17,13 @@ test_options:
   random_pk_sample: false      # For controls in multiplier will always be random
   printout_md: true            # Can print out a Markdown of the run and its results (rows, time, etc). in the r_dump root
 
-
 # Data Science Variables.
 # Generates R scripts to run in R Studio to make Parquet files of what you just pulled
-project_folder: "Test Run"     # Folder within QueryGenerator. 
+project_vars:
+  project_folder: "Test Run"     # Folder within QueryGenerator. 
 
 
-upload_cohorts:
-  - name: PKTable              # PROJECTS.<project_db>.dbo.(name))
-    dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
-    file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS'.dbo.project_db)
-    push_this_cycle: true      # optional; defaults to true
 
-  - name: HospitalICDCodes
-    dest_table: HospitalICDCodes
-    file_type: csv
-    file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
-    scope: global #global or per_group
-    push_this_cycle: true
 
 multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
   - name: IBDType
@@ -79,13 +68,23 @@ batching:  # splits by value in PK Tables, or by number. Suffixes title with spl
     separate_parquets: true
   - chunk: 2000 # if a number, splits into batches (not sure how to do yet)
 
+upload_cohorts:
+  - name: PKTable              # PROJECTS.<project_db>.dbo.(name))
+    dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
+    file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS'.dbo.project_db)
+    push_this_cycle: true      # optional; defaults to true
+
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
+    scope: global #global or per_group
+    push_this_cycle: true
+
 cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
     name: Patients
   - recipe: OtherHospitalizations
-
-
-
 
   # Make as many cohorts as you need, each is its own table. 
   # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you're deriving from

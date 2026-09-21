@@ -16,3 +16,16 @@ So back to the yaml and the yaml manager-
 I am going to need the yaml manager to parse through and make sure the logic of the tables works correctly (which is already in the plans), but then give an option for a 'pre-yaml' version, and maybe an option for a 'full split' version. Thus I'd be able to inspect both before I open my pullmanager and send it at the folder of split yamls and tell it to start the pulling. 
 
 Ideally I could also just have yamlmanager do a handoff to pullmanager, so that this is all automated once I approve the pre-yaml and teh yamlmanager agrees no logic issues. 
+
+
+Questions raised: 
+1. pre-yaml should basically be template.yaml as it stands. the metadata of cosmos_vars, run_vars, test_options, project_vars. Then it should have the the multipliers, batching, and then the upload_cohorts and cohorts. Recipe references are to remain symbolic. Imagine that I'm essentially saying I can run the 'creation' phase on VM or mac side, they're the same but I just can't transfer data from one side to the other. 
+2. only in the fill split phase. Upon split it will split by multiplication and boundaries per the sections above. 
+3. really, the template.yaml as it is. Specifically it's the 'recipe' book that multiplication and batching will split into - but instead of doing all that, and then having to design algorithms to then cut it up, i'll be seeing pre-split versions along the lines of multiplication and batching that is done by yamlmanager. 
+4. it makes sense to have a pullmanifest.yaml, if it makes pullmanager's job easier. 
+5. currently expects a single fine, but I am ok with defining it as we need. In all honesty i'm going to try and either refactor or completely remake the pullmanager I have now, so let's design this as specifically is best for our use case. 
+6. hmm let's explore this
+7. I don't think it needs to do that - pullmanager is actually making the connections to the server and local so it can do that managing. So long as we give instructions of what it should do and it passes the internal logic checks, I think pullmanager can do that
+8. agreed, pullmanager consumes files, and yamlmanager outputs files. Telescope will eventually be both, so for now we will move towards calling it yamlmanager. 
+9. yes, perhaps it should be readable in either some tab or in a yamlmanifest setup. 
+10. parquetcontents.yaml should be planned by makeArtifacts. I'm imagning that if there is an error halfway through a batch of cohortB or something, and the future batches can't run, the prior files will still have been pulled. So we want the contents to reflect what's actually been pulled. 
