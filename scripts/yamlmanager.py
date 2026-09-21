@@ -126,10 +126,22 @@ def value_list(values: list[str], limit: int = 9) -> str:
     return f"<ul>{body}</ul>"
 
 
-def build_connections(result: backend.CompileResult) -> dict[str, list[dict[str, Any]]]:
+def session_label(name: str, pk_table: str) -> str:
+    for suffix in ("Patients", "PKTable"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)] or name
+    for suffix in ("OtherHospitalizations", "Hospitalizations", "OtherDx"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)] or name
+    return pk_table or name
+
+
+def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], dict[str, str]]:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     required_cols = (result.analysis or {}).get("required_table_columns", {})
-    connections: dict[str, list[dict[str, Any]]] = {}
+    outgoing: dict[str, list[dict[str, Any]]] = {}
+    incoming: dict[str, list[dict[str, Any]]] = {}
+    sessions: dict[str, str] = {}
     current_pk_dest = ""
     color_counter = 0
     for cohort in cohorts:
@@ -137,22 +149,26 @@ def build_connections(result: backend.CompileResult) -> dict[str, list[dict[str,
         name = str(cohort.get("name", dest))
         if str(cohort.get("type", "")).lower() == "pk":
             current_pk_dest = dest
+        sessions[name] = session_label(name, current_pk_dest)
         resolved_vars = cohort.get("_resolved_vars", {})
         for table_var, cols in (required_cols.get(name) or {}).items():
             target = str(resolved_vars.get(table_var) or table_var)
             if table_var == "PKTable" and current_pk_dest:
                 target = current_pk_dest
-            connections.setdefault(target, []).append({
+            item = {
+                "source": target,
                 "target": name,
                 "table_var": table_var,
                 "columns": cols,
                 "color": color_counter % 8,
-            })
+            }
+            outgoing.setdefault(target, []).append(item)
+            incoming.setdefault(name, []).append(item)
             color_counter += 1
-    return connections
+    return outgoing, incoming, sessions
 
 
-def connection_chips(items: list[dict[str, Any]], compact: bool = False) -> str:
+def connection_chips(items: list[dict[str, Any]], compact: bool = False, side: str = "incoming") -> str:
     if not items:
         return '<span class="muted">None detected</span>'
     chips = []
@@ -162,24 +178,41 @@ def connection_chips(items: list[dict[str, Any]], compact: bool = False) -> str:
         col_text = ", ".join(cols[:3])
         if len(cols) > 3:
             col_text += f", +{len(cols) - 3} more"
+        label = item.get("source") if side == "incoming" else item.get("target")
         chips.append(
             f'<span class="connection-chip c{item.get("color", 0)}">'
-            f'{e(item.get("target"))}: {e(col_text or item.get("table_var"))}</span>'
+            f'{e(label)}: {e(col_text or item.get("table_var"))}</span>'
         )
     if compact and len(items) > max_items:
         chips.append('<span class="muted">(click to expand)</span>')
     return f'<span class="connection-chips">{"".join(chips)}</span>'
 
 
-def connection_details(items: list[dict[str, Any]]) -> str:
+def source_connection_columns(items: list[dict[str, Any]]) -> str:
+    cols: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        for col in item.get("columns") or []:
+            text = str(col)
+            if text not in seen:
+                seen.add(text)
+                cols.append(text)
+    if not cols:
+        return '<span class="muted">None detected</span>'
+    chips = "".join(f'<span class="connection-chip c0">{e(col)}</span>' for col in cols)
+    return f'<span class="connection-chips">{chips}</span>'
+
+
+def connection_details(items: list[dict[str, Any]], side: str = "outgoing") -> str:
     if not items:
         return '<div class="empty">None</div>'
     blocks = []
     for item in items:
+        title = item.get("source") if side == "incoming" else item.get("target")
         blocks.append(
             f"""
             <div class="connection-detail c{item.get("color", 0)}">
-              <strong>{e(item.get("target"))}</strong>
+              <strong>{e(title)}</strong>
               <span class="muted">via {e(item.get("table_var"))}</span>
               {value_list(item.get("columns") or [], 12)}
             </div>
@@ -246,7 +279,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
     required_vars = analysis.get("required_vars", {})
     required_cols = analysis.get("required_table_columns", {})
     outputs = analysis.get("output_columns", {})
-    connections = build_connections(result)
+    outgoing_connections, incoming_connections, sessions = build_connection_maps(result)
     if not cohorts:
         return '<div class="empty">No cohorts available.</div>'
     cards = []
@@ -260,7 +293,11 @@ def cohort_cards(result: backend.CompileResult) -> str:
         table_bits = []
         for table_var, cols in table_inputs.items():
             table_bits.append(f"<h4>{e(table_var)}</h4>{value_list(cols)}")
-        outgoing = connections.get(str(dest), [])
+        outgoing = outgoing_connections.get(str(dest), [])
+        incoming = incoming_connections.get(str(name), [])
+        group = sessions.get(str(name), str(dest))
+        primary_incoming = [item for item in incoming if item.get("table_var") == "PKTable"] or incoming
+        summary = source_connection_columns(outgoing) if outgoing else connection_chips(primary_incoming, compact=True, side="incoming")
         split = cohort.get("split_after_build")
         batching = cohort.get("batching")
         cards.append(
@@ -269,7 +306,8 @@ def cohort_cards(result: backend.CompileResult) -> str:
               <summary>
                 <span>
                   <strong>{e(name)}</strong>
-                  <span class="summary-connections">Connections: {connection_chips(outgoing, compact=True)}</span>
+                  <span class="summary-connections">Cohort: {e(group)}</span>
+                  <span class="summary-connections">Connections: {summary}</span>
                 </span>
                 <span>{badge(ctype, kind)} {badge(str(dest), "neutral")}</span>
               </summary>
@@ -284,11 +322,15 @@ def cohort_cards(result: backend.CompileResult) -> str:
                 </section>
               </div>
               <section>
-                <h4>Connections</h4>
+                <h4>Required Input Tables</h4>
                 {''.join(table_bits) if table_bits else '<div class="empty">None</div>'}
               </section>
               <section>
-                <h4>Referenced For Tables</h4>
+                <h4>Connected To</h4>
+                {connection_details(incoming, side="incoming") if incoming else '<div class="empty">None</div>'}
+              </section>
+              <section>
+                <h4>Used By Tables</h4>
                 {connection_details(outgoing)}
               </section>
               <section>
@@ -339,17 +381,14 @@ def recipe_cards(recipes_doc: dict[str, Any]) -> str:
 
 def graph_panel(result: backend.CompileResult) -> str:
     cohorts = result.finished_yaml.get("cohorts", []) or []
-    analysis = result.analysis or {}
-    required_cols = analysis.get("required_table_columns", {})
+    _, incoming_connections, _ = build_connection_maps(result)
     nodes = []
     edges = []
     for cohort in cohorts:
         name = str(cohort.get("name", ""))
         nodes.append(name)
-        resolved_vars = cohort.get("_resolved_vars", {})
-        for table_var in (required_cols.get(name) or {}):
-            target = resolved_vars.get(table_var) or table_var
-            edges.append((str(target), name, table_var))
+        for item in incoming_connections.get(name, []):
+            edges.append((str(item.get("source")), name, str(item.get("table_var"))))
     if not nodes:
         return '<div class="empty">No dependency graph available.</div>'
     unique_nodes = []
@@ -530,6 +569,14 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
               </label>
               <label>Min Date Key<input id="builderMinDate" type="text"></label>
               <label>Max Date Key<input id="builderMaxDate" type="text"></label>
+            </div>
+            <h3>Test Options</h3>
+            <div class="form-grid">
+              <label class="checkbox-label"><input id="builderSmallset" type="checkbox"> Small set</label>
+              <label>PK Row Limit<input id="builderStopAtPk" type="number" min="0"></label>
+              <label>Fact Row Limit<input id="builderStopAtNonPk" type="number" min="0"></label>
+              <label class="checkbox-label"><input id="builderRandomPkSample" type="checkbox"> Random PK sample</label>
+              <label class="checkbox-label"><input id="builderPrintoutMd" type="checkbox"> Print markdown</label>
             </div>
             <div class="toolbar compact">
               <button id="builderNewTemplate">New Blank Template</button>
@@ -931,6 +978,10 @@ document.querySelectorAll('.builder-link').forEach(button => {
 });
 
 function ensureDraftShape() {
+  draftTemplate.cosmos_vars = draftTemplate.cosmos_vars || {};
+  draftTemplate.run_vars = draftTemplate.run_vars || {};
+  draftTemplate.project_vars = draftTemplate.project_vars || {};
+  draftTemplate.test_options = draftTemplate.test_options || {};
   draftTemplate.vars = draftTemplate.vars || {};
   draftTemplate.upload_cohorts = Array.isArray(draftTemplate.upload_cohorts) ? draftTemplate.upload_cohorts : [];
   draftTemplate.batching = Array.isArray(draftTemplate.batching) ? draftTemplate.batching : [];
@@ -939,13 +990,25 @@ function ensureDraftShape() {
 
 function blankTemplate() {
   return {
-    project_db: 'PROJECTD93A57',
-    cosmos_db: 'COSMOS',
-    project_folder: 'New Project',
-    vars: {
+    cosmos_vars: {
+      project_db: 'PROJECTD93A57',
+      cosmos_db: 'COSMOS'
+    },
+    run_vars: {
       min_date_key: '',
       max_date_key: ''
     },
+    test_options: {
+      smallset: false,
+      stop_at_for_pk_table: 10,
+      stop_at_for_non_pk_tables: 0,
+      random_pk_sample: false,
+      printout_md: true
+    },
+    project_vars: {
+      project_folder: 'New Project'
+    },
+    vars: {},
     upload_cohorts: [],
     multipliers: [],
     batching: [],
@@ -955,11 +1018,16 @@ function blankTemplate() {
 
 function hydrateBuilder() {
   ensureDraftShape();
-  setValue('builderProjectFolder', draftTemplate.project_folder || '');
-  setValue('builderProjectDb', draftTemplate.project_db || '');
-  setValue('builderCosmosDb', draftTemplate.cosmos_db || 'COSMOS');
-  setValue('builderMinDate', draftTemplate.vars.min_date_key || '');
-  setValue('builderMaxDate', draftTemplate.vars.max_date_key || '');
+  setValue('builderProjectFolder', draftTemplate.project_vars.project_folder || draftTemplate.project_folder || '');
+  setValue('builderProjectDb', draftTemplate.cosmos_vars.project_db || draftTemplate.project_db || '');
+  setValue('builderCosmosDb', draftTemplate.cosmos_vars.cosmos_db || draftTemplate.cosmos_db || 'COSMOS');
+  setValue('builderMinDate', draftTemplate.run_vars.min_date_key || draftTemplate.vars.min_date_key || '');
+  setValue('builderMaxDate', draftTemplate.run_vars.max_date_key || draftTemplate.vars.max_date_key || '');
+  setChecked('builderSmallset', Boolean(draftTemplate.test_options.smallset));
+  setValue('builderStopAtPk', draftTemplate.test_options.stop_at_for_pk_table ?? '');
+  setValue('builderStopAtNonPk', draftTemplate.test_options.stop_at_for_non_pk_tables ?? '');
+  setChecked('builderRandomPkSample', Boolean(draftTemplate.test_options.random_pk_sample));
+  setChecked('builderPrintoutMd', draftTemplate.test_options.printout_md !== false);
   renderRecipeOptions();
   renderBatchingOptions();
   renderCustomBuilder();
@@ -974,22 +1042,44 @@ function setValue(id, value) {
   if (el) el.value = value;
 }
 
+function setChecked(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.checked = Boolean(value);
+}
+
 function getValue(id) {
   const el = document.getElementById(id);
   return el ? el.value.trim() : '';
 }
 
+function getChecked(id) {
+  const el = document.getElementById(id);
+  return Boolean(el?.checked);
+}
+
+function numericOrZero(value) {
+  const text = String(value ?? '').trim();
+  if (text === '') return 0;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : 0;
+}
+
 function syncProjectFields() {
   ensureDraftShape();
-  draftTemplate.project_folder = getValue('builderProjectFolder');
-  draftTemplate.project_db = getValue('builderProjectDb');
-  draftTemplate.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
-  draftTemplate.vars.min_date_key = getValue('builderMinDate');
-  draftTemplate.vars.max_date_key = getValue('builderMaxDate');
+  draftTemplate.project_vars.project_folder = getValue('builderProjectFolder');
+  draftTemplate.cosmos_vars.project_db = getValue('builderProjectDb');
+  draftTemplate.cosmos_vars.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
+  draftTemplate.run_vars.min_date_key = getValue('builderMinDate');
+  draftTemplate.run_vars.max_date_key = getValue('builderMaxDate');
+  draftTemplate.test_options.smallset = getChecked('builderSmallset');
+  draftTemplate.test_options.stop_at_for_pk_table = numericOrZero(getValue('builderStopAtPk'));
+  draftTemplate.test_options.stop_at_for_non_pk_tables = numericOrZero(getValue('builderStopAtNonPk'));
+  draftTemplate.test_options.random_pk_sample = getChecked('builderRandomPkSample');
+  draftTemplate.test_options.printout_md = getChecked('builderPrintoutMd');
   updateDraftYaml();
 }
 
-['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate'].forEach(id => {
+['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderSmallset', 'builderStopAtPk', 'builderStopAtNonPk', 'builderRandomPkSample', 'builderPrintoutMd'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', syncProjectFields);
   if (el) el.addEventListener('change', syncProjectFields);
@@ -1481,7 +1571,8 @@ document.getElementById('downloadDraftYaml')?.addEventListener('click', () => {
   const text = document.getElementById('draftYaml')?.innerText || '';
   const blob = new Blob([text], { type: 'text/yaml' });
   const a = document.createElement('a');
-  const project = (draftTemplate.project_folder || 'draft').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
+  const projectName = draftTemplate.project_vars?.project_folder || draftTemplate.project_folder || 'draft';
+  const project = projectName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
   const requested = getValue('builderDraftFilename');
   const filename = cleanDownloadName(requested || `${project}_Full.yaml`);
   a.href = URL.createObjectURL(blob);
@@ -1500,9 +1591,10 @@ function cleanDownloadName(value) {
 function updateDraftYaml() {
   ensureDraftShape();
   const clean = {
-    project_db: draftTemplate.project_db || '',
-    cosmos_db: draftTemplate.cosmos_db || 'COSMOS',
-    project_folder: draftTemplate.project_folder || '',
+    cosmos_vars: draftTemplate.cosmos_vars || {},
+    run_vars: draftTemplate.run_vars || {},
+    test_options: draftTemplate.test_options || {},
+    project_vars: draftTemplate.project_vars || {},
     vars: draftTemplate.vars || {},
     upload_cohorts: draftTemplate.upload_cohorts || [],
     multipliers: draftTemplate.multipliers || [],
