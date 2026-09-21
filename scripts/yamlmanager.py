@@ -467,12 +467,13 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     <div class="header-main">
       <h1>YAML Manager</h1>
       <form id="templatePathForm" class="header-path-form" method="get" action="/">
-        <label>Template YAML<input id="templatePathInput" name="template" type="text" value="{e(template_path)}"></label>
+        <label for="templatePathInput">Template YAML</label>
+        <input id="templatePathInput" name="template" type="text" value="{e(template_path)}">
         <input name="recipes" type="hidden" value="{e(recipes_path)}">
+        <button id="refreshPage" type="submit" title="Reload dashboard">Refresh</button>
       </form>
     </div>
     <div class="header-actions">
-      <button id="refreshPage" title="Reload dashboard">Refresh</button>
       <button id="themeToggle" title="Toggle dark mode">Theme</button>
     </div>
   </header>
@@ -741,8 +742,8 @@ button:hover { border-color: var(--accent); }
 input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .header-main { display: grid; gap: 8px; min-width: 0; flex: 1; }
-.header-path-form { max-width: 880px; }
-.header-path-form label { display: grid; grid-template-columns: max-content minmax(260px, 1fr); gap: 10px; align-items: center; color: var(--muted); font-size: 12px; font-weight: 700; }
+.header-path-form { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; gap: 10px; align-items: center; max-width: 980px; }
+.header-path-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
@@ -838,7 +839,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
   .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch { grid-template-columns: 1fr; }
   header { position: static; align-items: stretch; flex-direction: column; }
   .header-actions { align-self: flex-end; }
-  .header-path-form label { grid-template-columns: 1fr; }
+  .header-path-form { grid-template-columns: 1fr; }
   .builder-nav { position: static; }
 }
 """
@@ -868,12 +869,6 @@ document.querySelectorAll('.tab').forEach(button => {
 
 document.getElementById('themeToggle').addEventListener('click', () => {
   document.body.classList.toggle('light');
-});
-
-document.getElementById('refreshPage').addEventListener('click', () => {
-  const form = document.getElementById('templatePathForm');
-  if (form) form.requestSubmit();
-  else window.location.reload();
 });
 
 document.getElementById('templatePathForm')?.addEventListener('submit', event => {
