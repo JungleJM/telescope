@@ -27,6 +27,7 @@ PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
+DEFAULT_SPLIT_DIR = Path("split")
 
 
 # =============================================================================
@@ -1162,6 +1163,101 @@ def build_pullmanifest(
     return result
 
 
+def split_base_document(finished_yaml: dict[str, Any]) -> dict[str, Any]:
+    doc = copy.deepcopy(finished_yaml)
+    doc.pop("cohorts", None)
+    doc.pop("multipliers", None)
+    doc.pop("batching", None)
+    doc.pop("example_cohorts", None)
+    return doc
+
+
+def split_pull_context(session: dict[str, Any], phase: str, run: dict[str, Any] | None = None) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "session_id": session.get("session_id"),
+        "phase": phase,
+        "cohort": session.get("cohort"),
+        "pk_table": session.get("pk_table"),
+    }
+    if run is not None:
+        context["run_id"] = run.get("run_id")
+        if run.get("batch") is not None:
+            context["batch"] = run.get("batch")
+    if session.get("multiplier") is not None:
+        context["multiplier"] = session.get("multiplier")
+    pk_phase = (session.get("phases") or {}).get("pk") or {}
+    if pk_phase.get("pk_source") is not None:
+        context["pk_source"] = pk_phase.get("pk_source")
+    return context
+
+
+def split_phase_document(
+    finished_yaml: dict[str, Any],
+    session: dict[str, Any],
+    phase: str,
+    run: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    doc = split_base_document(finished_yaml)
+    cohorts = finished_yaml.get("cohorts", []) or []
+    pk_table = session.get("pk_table")
+    pk_cohorts = [
+        cohort for cohort in cohorts
+        if isinstance(cohort, dict)
+        and str(cohort.get("type", "")).lower() == "pk"
+        and (pk_table is None or cohort.get("dest_table") == pk_table or cohort.get("name") == pk_table)
+    ]
+    fact_cohorts = [
+        cohort for cohort in cohorts
+        if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() != "pk"
+    ]
+    doc["pull_context"] = split_pull_context(session, phase, run)
+    if phase == "upload_cohorts":
+        doc["upload_cohorts"] = copy.deepcopy(finished_yaml.get("upload_cohorts", []) or [])
+        doc["cohorts"] = []
+    elif phase == "pk":
+        doc["cohorts"] = copy.deepcopy(pk_cohorts)
+    elif phase == "run":
+        doc["cohorts"] = copy.deepcopy(fact_cohorts)
+    else:
+        doc["cohorts"] = []
+    return doc
+
+
+def write_split_artifacts(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+    output_dir: str | Path | None = None,
+) -> CompileResult:
+    result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+    if result.errors:
+        return result
+    out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
+    finished_yaml = copy.deepcopy(result.finished_yaml)
+    manifest = result.analysis.get("split_plan", {})
+    manifest_path = out_dir / "pullmanifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    dump_yaml(manifest, manifest_path)
+
+    for session in manifest.get("sessions", []) or []:
+        phases = session.get("phases", {}) or {}
+        for phase_name in ("setup", "upload_cohorts", "pk"):
+            phase = phases.get(phase_name)
+            if not phase:
+                continue
+            path = out_dir / phase["yaml"]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            dump_yaml(split_phase_document(finished_yaml, session, phase_name), path)
+        for run in session.get("runs", []) or []:
+            path = out_dir / run["yaml"]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            dump_yaml(split_phase_document(finished_yaml, session, "run", run), path)
+
+    result.finished_yaml = manifest
+    result.output_path = str(manifest_path)
+    result.analysis["split_output_dir"] = str(out_dir)
+    return result
+
+
 def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in cohort.items() if not k.startswith("_")}
 
@@ -1625,6 +1721,39 @@ multipliers:
             )
             return ok, json.dumps(manifest)
 
+    def case_split_artifacts_basic():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
+            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            out_dir = tmp / "split"
+            res = write_split_artifacts(t, r, output_dir=out_dir)
+            manifest_path = out_dir / "pullmanifest.yaml"
+            manifest = load_yaml(manifest_path)
+            session = manifest["sessions"][0]
+            expected = [
+                session["phases"]["setup"]["yaml"],
+                session["phases"]["upload_cohorts"]["yaml"],
+                session["phases"]["pk"]["yaml"],
+                session["runs"][0]["yaml"],
+            ]
+            loaded = [load_yaml(out_dir / path) for path in expected]
+            pk_doc = loaded[2]
+            run_doc = loaded[3]
+            ok = (
+                res.ok
+                and manifest_path.exists()
+                and all((out_dir / path).exists() for path in expected)
+                and pk_doc.get("pull_context", {}).get("phase") == "pk"
+                and len(pk_doc.get("cohorts", [])) == 1
+                and str(pk_doc["cohorts"][0].get("type", "")).lower() == "pk"
+                and run_doc.get("pull_context", {}).get("phase") == "run"
+                and run_doc.get("cohorts")
+                and "multipliers" not in run_doc
+                and "batching" not in run_doc
+            )
+            return ok, json.dumps({"manifest": manifest, "expected": expected, "loaded": loaded})
+
     return [
         TddCase("loading.valid_template", "loading", case_load_valid),
         TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
@@ -1649,6 +1778,7 @@ multipliers:
         TddCase("preyaml.expanded_recipes", "preyaml", case_preyaml_expanded_recipes),
         TddCase("split_plan.basic_session", "split_plan", case_split_plan_basic),
         TddCase("manifest.basic", "manifest", case_manifest_basic),
+        TddCase("split_artifacts.basic_files", "split_artifacts", case_split_artifacts_basic),
     ]
 
 

@@ -58,6 +58,18 @@ def build_pullmanifest(
     )
 
 
+def write_split_artifacts(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    output_dir: str | Path | None = None,
+) -> CompileResult:
+    return makeYaml.write_split_artifacts(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        output_dir=output_dir,
+    )
+
+
 def dump_yaml_text(data: Any) -> str:
     return makeYaml.dump_yaml_text(data)
 

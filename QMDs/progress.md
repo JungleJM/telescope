@@ -45,6 +45,7 @@ Implemented in `scripts/makeYaml.py`:
 - `build_preyaml(mode="expanded-recipes")`.
 - `plan_split_runs(...)` with in-memory split plan structures.
 - `build_pullmanifest(...)` with mutable status fields.
+- `write_split_artifacts(...)` for manifest plus setup/upload/PK/run YAML files.
 - CLI pre-YAML export through `scripts/yamlmanager.py --export-preyaml ...` and `scripts/makeYaml.py --export-preyaml ...`.
 
 ## Completed UI/Adapter Work
@@ -95,7 +96,6 @@ Settled for the next iteration:
 Backend/API:
 
 - Add uploaded-PK validation and planning.
-- Add split YAML generation.
 - Add CLI commands for split export.
 
 UI:
@@ -124,8 +124,8 @@ Status markers:
 
 Current phase:
 
-- Phase 4: Manifest Generation `[done]`
-- Next: Phase 5: Split YAML Writing `[planned]`
+- Phase 5: Split YAML Writing `[done]`
+- Next: Phase 6: Multipliers And Logical Batches `[planned]`
 
 Production sequence:
 
@@ -134,7 +134,7 @@ Production sequence:
 3. Phase 2: pre-YAML Export `[done]`
 4. Phase 3: Split Plan Model `[done]`
 5. Phase 4: Manifest Generation `[done]`
-6. Phase 5: Split YAML Writing `[planned]`
+6. Phase 5: Split YAML Writing `[done]`
 7. Phase 6: Multipliers And Logical Batches `[planned]`
 8. Phase 7: Uploaded PK Cohorts `[planned]`
 9. Phase 8: CLI And Tests `[planned]`
@@ -193,9 +193,9 @@ Completed:
 - Include phase/run paths and initial statuses.
 - Include mutable status fields for Pullmanager.
 
-### Phase 5: Split YAML Writing `[planned]`
+### Phase 5: Split YAML Writing `[done]`
 
-Planned:
+Completed:
 
 - Write standalone-valid setup, upload, PK, and run YAMLs.
 - Add `pull_context`.

@@ -671,7 +671,7 @@ Exit criteria:
 - Pullmanager can use the manifest as the authoritative execution order.
 - Manifest entries have stable IDs suitable for retry/status updates.
 
-### Phase 5: Split YAML Writing `[planned]`
+### Phase 5: Split YAML Writing `[done]`
 
 Goal: write standalone-valid YAMLs for setup, upload cohorts, PK, and run phases.
 
