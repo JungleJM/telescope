@@ -377,8 +377,9 @@ python ./pullmanager_runtime/pullmanager.py --tdd
 ```
 
 Test modules are discovered by filename (`pullmanager/tests/test_*.py`), so a
-new module needs no registration. `makeYaml.py` keeps its own `--tdd` harness
-for now; migrating it is optional and independent.
+new module needs no registration. `makeYaml.py` uses `unittest` too, with one
+TestCase class per `--tdd` group; it keeps its tests inline because that file is
+deliberately self-contained for the VM copy-update workflow.
 
 Tests are about 55% of the shipped source. They are bundled deliberately, so
 the VM can prove a copied bundle is sound without network access or a repo.

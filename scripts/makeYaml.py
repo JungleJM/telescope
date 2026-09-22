@@ -16,10 +16,11 @@ import re
 import subprocess
 import sys
 import tempfile
+import unittest
 from dataclasses import dataclass, field
 from itertools import product
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 OUTPUT_SUFFIX = "_Full"
@@ -1477,13 +1478,6 @@ def build_preyaml(
 # =============================================================================
 
 
-@dataclass
-class TddCase:
-    name: str
-    group: str
-    run: Callable[[], tuple[bool, str]]
-
-
 def write_temp_yaml(tmp: Path, name: str, data: str) -> Path:
     path = tmp / name
     path.write_text(data.strip() + "\n", encoding="utf-8")
@@ -1544,523 +1538,9 @@ recipes:
 """
 
 
-def tiny_template(extra: str = "") -> str:
+def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
+    keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
     return f"""
-project_folder: Test Run
-cosmos_db: COSMOS
-vars:
-  min_date_key: 20200101
-  max_date_key: 20240101
-  ICD_Value:
-    - K50
-    - K51
-cohorts:
-  - recipe: PatientWithDx
-    name: Patients
-  - recipe: OtherDx
-    name: OtherDx
-{extra}
-"""
-
-
-def tdd_cases() -> list[TddCase]:
-    def case_load_valid():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return res.ok, summarize_result(res)
-
-    def case_malformed_yaml():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", "vars:\n  - bad: [")
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return (not res.ok and has_error(res, "yaml_load_error")), summarize_result(res)
-
-    def case_import_recipe():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            names = [c.get("name") for c in res.finished_yaml.get("cohorts", [])]
-            return ("Patients" in names and "OtherDx" in names), str(names)
-
-    def case_override_dest():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            template = """
-project_folder: Test
-vars: {min_date_key: 1, max_date_key: 2, ICD_Value: K50}
-cohorts:
-  - recipe: PatientWithDx
-    name: Patients
-    dest_table: MyPatients
-"""
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return res.finished_yaml["cohorts"][0]["dest_table"] == "MyPatients", summarize_result(res)
-
-    def case_default_dest():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return res.finished_yaml["cohorts"][0]["dest_table"] == "Patients", summarize_result(res)
-
-    def case_infer_vars():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            req = res.analysis["required_vars"]["Patients"]
-            return all(v in req for v in ("min_date_key", "max_date_key", "ICD_Value")), str(req)
-
-    def case_grouped_metadata_vars():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            template = tiny_template().replace(
-                "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
-                "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\nrun_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\nproject_vars:\n  project_folder: Test Run\nvars:\n",
-            )
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            text = json.dumps(res.finished_yaml)
-            ok = (
-                res.ok
-                and res.finished_yaml.get("project_db") == "PROJECTD33A929"
-                and res.finished_yaml.get("project_folder") == "Test Run"
-                and res.finished_yaml.get("vars", {}).get("min_date_key") == 20200101
-                and "dxf.StartDateKey BETWEEN 20200101 AND 20240101" in text
-            )
-            return ok, summarize_result(res) + " " + text
-
-    def case_missing_var():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return has_error(res, "missing_variable"), summarize_result(res)
-
-    def case_render_in():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            text = json.dumps(res.finished_yaml)
-            return "dt.Value IN ('K50', 'K51')" in text, text
-
-    def case_render_like():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            template = tiny_template().replace("- K50\n    - K51", "- K50.%\n    - K51.%")
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            text = json.dumps(res.finished_yaml)
-            return "dt.Value LIKE 'K50.%'" in text and " OR " in text, text
-
-    def case_like_underscore_warn():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            template = tiny_template().replace("- K50\n    - K51", "- K50_%")
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return has_warning(res, "like_underscore"), summarize_result(res)
-
-    def case_multiplier_split_missing_column():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-multipliers:
-  - name: BadSplit
-    stage: split_after_build
-    applies_to: PKTable
-    levels:
-      - strat: bad
-        column: MissingRace
-        values: [x]
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return has_error(res, "missing_split_column"), summarize_result(res)
-
-    def case_multiplier_group_pk():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-multipliers:
-  - name: Type
-    stage: during_build
-    levels:
-      - strat: A
-        vars:
-          ICD_Value: A%
-      - strat: B
-        vars:
-          ICD_Value: B%
-"""
-            template = tiny_template(extra).replace(
-                "  ICD_Value:\n    - K50\n    - K51\n",
-                "",
-            )
-            t = write_temp_yaml(tmp, "template.yaml", template)
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            cohorts = {c["name"]: c for c in res.finished_yaml.get("cohorts", [])}
-            ok = (
-                res.ok
-                and "##JVM_APatients AS pk" in json.dumps(cohorts.get("AOtherDx", {}))
-                and "##JVM_BPatients AS pk" in json.dumps(cohorts.get("BOtherDx", {}))
-            )
-            return ok, summarize_result(res) + " " + json.dumps(cohorts)
-
-    def case_multiplier_split_metadata():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-multipliers:
-  - name: Race
-    stage: split_after_build
-    applies_to: PKTable
-    levels:
-      - strat: black
-        column: FirstRace
-        values:
-          - Black %
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            pk = next(c for c in res.finished_yaml.get("cohorts", []) if c.get("name") == "blackPatients")
-            text = json.dumps(pk)
-            return "split_after_build" in pk and "pk.FirstRace LIKE 'Black %'" in text, text
-
-    def case_batching_chunk():
-        norm = normalize_batching([{"chunk": 2000}], load_yaml_from_text(tiny_recipes()), CompileResult())
-        return norm[0].get("rows_per_batch") == 2000, str(norm)
-
-    def case_batching_metadata():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-batching:
-  - sex
-  - chunk: 2000
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            first = res.finished_yaml["cohorts"][0]
-            return "batching" in first and len(first["batching"]) == 2, json.dumps(first)
-
-    def case_batching_include_other():
-        recipes_doc = load_yaml_from_text(tiny_recipes())
-        norm = normalize_batching([{"sex": {"values": ["Female"], "include_other": True}}], recipes_doc, CompileResult())
-        first = norm[0]
-        return (
-            first.get("name") == "sex"
-            and first.get("values") == ["Female"]
-            and first.get("include_other") is True
-            and first.get("column") == "Sex"
-        ), json.dumps(first)
-
-    def case_cosmos_dual():
-        cohorts = [{"name": "Patients", "dest_table": "Patients"}]
-        res = CompileResult()
-        out = expand_cosmos({"cosmos_db": "Dual"}, cohorts, res)
-        names = [c["dest_table"] for c in out]
-        return names == ["Patients", "Patients_sp"], str(names)
-
-    def case_cosmos_bad_value():
-        res = CompileResult()
-        validate_cosmos({"cosmos_db": "Mars"}, res)
-        return has_error(res, "bad_cosmos_db"), summarize_result(res)
-
-    def case_report():
-        res = CompileResult()
-        res.error("x", "bad")
-        res.warn("y", "careful")
-        res.finished_yaml = {"cohorts": [{"name": "Patients", "dest_table": "Patients"}]}
-        res.analysis = {"required_table_columns": {"OtherDx": {"PKTable": ["PatientDurableKey"]}}}
-        report = build_report(res)
-        return all(s in report for s in ["Errors", "Warnings", "Patients", "Required Columns"]), report
-
-    def case_preyaml_symbolic():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-batching:
-  - sex
-multipliers:
-  - name: Type
-    stage: during_build
-    levels:
-      - strat: A
-        vars:
-          ICD_Value: A%
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = build_preyaml(t, r, mode="symbolic")
-            cohorts = res.finished_yaml.get("cohorts", [])
-            ok = (
-                res.ok
-                and cohorts[0].get("recipe") == "PatientWithDx"
-                and "multipliers" in res.finished_yaml
-                and "batching" in res.finished_yaml
-            )
-            return ok, json.dumps(res.finished_yaml)
-
-    def case_preyaml_expanded_recipes():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-batching:
-  - sex
-multipliers:
-  - name: Type
-    stage: during_build
-    levels:
-      - strat: A
-        vars:
-          ICD_Value: A%
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = build_preyaml(t, r, mode="expanded-recipes")
-            cohorts = res.finished_yaml.get("cohorts", [])
-            text = json.dumps(res.finished_yaml)
-            ok = (
-                res.ok
-                and cohorts[0].get("name") == "Patients"
-                and "recipe" not in cohorts[0]
-                and "DiagnosisEventFact AS dxf" in text
-                and "APatients" not in text
-                and "batching" in res.finished_yaml
-            )
-            return ok, text
-
-    def case_split_plan_basic():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = plan_split_runs(t, r)
-            plan = res.analysis.get("split_plan", {})
-            sessions = plan.get("sessions", [])
-            first = sessions[0] if sessions else {}
-            phases = first.get("phases", {})
-            runs = first.get("runs", [])
-            ok = (
-                res.ok
-                and plan.get("manifest_version") == 1
-                and len(sessions) == 1
-                and set(phases) == {"setup", "upload_cohorts", "pk"}
-                and phases["pk"].get("pk_source", {}).get("kind") == "generated"
-                and len(runs) == 1
-                and runs[0].get("run_id") == "Patients__run"
-            )
-            return ok, json.dumps(plan)
-
-    def case_manifest_basic():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            out = tmp / "pullmanifest.yaml"
-            res = build_pullmanifest(t, r, output_path=out, write=True)
-            manifest = res.finished_yaml
-            first = manifest.get("sessions", [{}])[0]
-            run = first.get("runs", [{}])[0]
-            pk_phase = first.get("phases", {}).get("pk", {})
-            ok = (
-                res.ok
-                and out.exists()
-                and manifest.get("manifest_version") == 1
-                and first.get("status") == "pending"
-                and pk_phase.get("status") == "pending"
-                and pk_phase.get("rows") is None
-                and pk_phase.get("error") is None
-                and run.get("status") == "pending"
-                and run.get("outputs") == {}
-            )
-            return ok, json.dumps(manifest)
-
-    def case_split_artifacts_basic():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            out_dir = tmp / "split"
-            res = write_split_artifacts(t, r, output_dir=out_dir)
-            manifest_path = out_dir / "pullmanifest.yaml"
-            manifest = load_yaml(manifest_path)
-            session = manifest["sessions"][0]
-            expected = [
-                session["phases"]["setup"]["yaml"],
-                session["phases"]["upload_cohorts"]["yaml"],
-                session["phases"]["pk"]["yaml"],
-                session["runs"][0]["yaml"],
-            ]
-            loaded = [load_yaml(out_dir / path) for path in expected]
-            pk_doc = loaded[2]
-            run_doc = loaded[3]
-            ok = (
-                res.ok
-                and manifest_path.exists()
-                and all((out_dir / path).exists() for path in expected)
-                and pk_doc.get("pull_context", {}).get("phase") == "pk"
-                and len(pk_doc.get("cohorts", [])) == 1
-                and str(pk_doc["cohorts"][0].get("type", "")).lower() == "pk"
-                and run_doc.get("pull_context", {}).get("phase") == "run"
-                and run_doc.get("cohorts")
-                and "multipliers" not in run_doc
-                and "batching" not in run_doc
-            )
-            return ok, json.dumps({"manifest": manifest, "expected": expected, "loaded": loaded})
-
-    def case_split_plan_multiplier_batches():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            extra = """
-multipliers:
-  - name: Type
-    stage: during_build
-    levels:
-      - strat: A
-        vars:
-          ICD_Value: A%
-      - strat: B
-        vars:
-          ICD_Value: B%
-batching:
-  - sex
-  - chunk: 2000
-"""
-            t = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = plan_split_runs(t, r)
-            plan = res.analysis.get("split_plan", {})
-            sessions = plan.get("sessions", [])
-            session_ids = sorted(session.get("session_id") for session in sessions)
-            run_ids = {
-                session.get("session_id"): [run["run_id"] for run in session.get("runs", [])]
-                for session in sessions
-            }
-            ok = (
-                res.ok
-                and session_ids == ["APatients", "BPatients"]
-                and run_ids["APatients"] == ["APatients__Female", "APatients__Male"]
-                and run_ids["BPatients"] == ["BPatients__Female", "BPatients__Male"]
-                and all(
-                    [d["value"] for d in session["runs"][0]["batch"]["dimensions"]] == ["Female"]
-                    for session in sessions
-                )
-                and all(
-                    [r["name"] for r in session["runs"][0]["batch"]["runtime"]] == ["chunk"]
-                    for session in sessions
-                )
-            )
-            return ok, json.dumps(run_ids)
-
-    def plan_runs(extra: str):
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            t_path = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
-            r_path = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = plan_split_runs(t_path, r_path)
-            sessions = res.analysis.get("split_plan", {}).get("sessions", [])
-            runs = sessions[0].get("runs", []) if sessions else []
-            return res, runs
-
-    def case_batching_cross_product():
-        # state[LA, MS] x sex[Female, Male] is four disjoint slices, not two axes.
-        res, runs = plan_runs("""
-batching:
-  - state:
-      values: [LA, MS]
-  - sex
-""")
-        names = [run["batch"]["name"] for run in runs]
-        ok = res.ok and names == ["LA-Female", "LA-Male", "MS-Female", "MS-Male"]
-        return ok, json.dumps(names)
-
-    def case_batching_product_records_dimensions():
-        res, runs = plan_runs("""
-batching:
-  - state:
-      values: [LA, MS]
-  - sex
-""")
-        first = runs[0]["batch"]["dimensions"] if runs else []
-        ok = res.ok and first == [
-            {"name": "state", "kind": "column_values", "column": "StateOrProvinceAbbreviation", "value": "LA"},
-            {"name": "sex", "kind": "column_values", "column": "Sex", "value": "Female"},
-        ]
-        return ok, json.dumps(first)
-
-    def case_batching_include_other_bucket():
-        # include_other contributes an extra bucket, so it multiplies too.
-        res, runs = plan_runs("""
-batching:
-  - sex:
-      values: [Female]
-      include_other: true
-""")
-        names = [run["batch"]["name"] for run in runs]
-        flags = [d.get("is_other") for run in runs for d in run["batch"]["dimensions"]]
-        ok = res.ok and names == ["Female", "sex-other"] and flags == [None, True]
-        return ok, json.dumps({"names": names, "is_other": flags})
-
-    def case_batching_runtime_dims_deferred():
-        # `values: all` needs a DISTINCT and chunking needs a row count, so
-        # neither can expand at plan time; both stay logical for Pullmanager.
-        res, runs = plan_runs("""
-batching:
-  - state
-  - chunk: 2000
-""")
-        ok = (
-            res.ok
-            and len(runs) == 1
-            and runs[0]["batch"]["dimensions"] == []
-            and [r["name"] for r in runs[0]["batch"]["runtime"]] == ["state", "chunk"]
-        )
-        return ok, json.dumps(runs[0]["batch"] if runs else None)
-
-    def case_batching_static_and_runtime_mix():
-        res, runs = plan_runs("""
-batching:
-  - sex
-  - state
-  - chunk: 2000
-""")
-        names = [run["batch"]["name"] for run in runs]
-        runtime = [r["name"] for r in runs[0]["batch"]["runtime"]] if runs else []
-        ok = res.ok and names == ["Female", "Male"] and runtime == ["state", "chunk"]
-        return ok, json.dumps({"names": names, "runtime": runtime})
-
-    def case_batching_no_batching_single_run():
-        res, runs = plan_runs("")
-        ok = res.ok and len(runs) == 1 and runs[0].get("batch") is None
-        return ok, json.dumps([run["run_id"] for run in runs])
-
-    def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
-        keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
-        return f"""
 project_folder: Uploaded PK
 cosmos_db: COSMOS
 vars:
@@ -2078,88 +1558,24 @@ cohorts:
     name: OtherDx
 """
 
-    def case_uploaded_pk_plan():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
-            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template())
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = plan_split_runs(t, r)
-            plan = res.analysis.get("split_plan", {})
-            session = (plan.get("sessions") or [{}])[0]
-            pk_source = session.get("phases", {}).get("pk", {}).get("pk_source", {})
-            rendered = json.dumps(res.finished_yaml)
-            ok = (
-                res.ok
-                and session.get("session_id") == "ClientPK"
-                and pk_source.get("kind") == "uploaded_cohort"
-                and pk_source.get("table") == "ClientPK"
-                and "##JVM_ClientPK AS pk" in rendered
-            )
-            return ok, json.dumps({"plan": plan, "finished": res.finished_yaml})
 
-    def case_uploaded_pk_multiple_error():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
-            extra = """  - name: ClientPK2
-    type: pk
-    dest_table: ClientPK2
-    file_type: csv
-    file_loc: pks.csv
-    key_columns: [PatientDurableKey, DiagnosisEventKey]
+def tiny_template(extra: str = "") -> str:
+    return f"""
+project_folder: Test Run
+cosmos_db: COSMOS
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+  ICD_Value:
+    - K50
+    - K51
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients
+  - recipe: OtherDx
+    name: OtherDx
+{extra}
 """
-            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template(extra))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return has_error(res, "multiple_uploaded_pk"), summarize_result(res)
-
-    def case_uploaded_pk_missing_keys_error():
-        with tempfile.TemporaryDirectory() as d:
-            tmp = Path(d)
-            (tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
-            t = write_temp_yaml(tmp, "template.yaml", uploaded_pk_template(key_columns=False))
-            r = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
-            res = compile_yaml(t, r)
-            return has_error(res, "uploaded_pk_missing_keys"), summarize_result(res)
-
-    return [
-        TddCase("loading.valid_template", "loading", case_load_valid),
-        TddCase("loading.malformed_yaml", "loading", case_malformed_yaml),
-        TddCase("recipes.import_recipe", "recipes", case_import_recipe),
-        TddCase("recipes.override_dest_table", "recipes", case_override_dest),
-        TddCase("recipes.default_dest_table", "recipes", case_default_dest),
-        TddCase("inference.required_vars", "inference", case_infer_vars),
-        TddCase("normalization.grouped_metadata_vars", "normalization", case_grouped_metadata_vars),
-        TddCase("validation.missing_var_error", "validation", case_missing_var),
-        TddCase("rendering.sql_condition_in", "rendering", case_render_in),
-        TddCase("rendering.sql_condition_like", "rendering", case_render_like),
-        TddCase("rendering.like_underscore_warning", "rendering", case_like_underscore_warn),
-        TddCase("multipliers.split_missing_column", "multipliers", case_multiplier_split_missing_column),
-        TddCase("multipliers.group_specific_pk", "multipliers", case_multiplier_group_pk),
-        TddCase("multipliers.split_metadata", "multipliers", case_multiplier_split_metadata),
-        TddCase("batching.chunk_shorthand", "batching", case_batching_chunk),
-        TddCase("batching.metadata_visible", "batching", case_batching_metadata),
-        TddCase("batching.include_other_metadata", "batching", case_batching_include_other),
-        TddCase("batching.cross_product", "batching", case_batching_cross_product),
-        TddCase("batching.product_records_dimensions", "batching", case_batching_product_records_dimensions),
-        TddCase("batching.include_other_bucket", "batching", case_batching_include_other_bucket),
-        TddCase("batching.runtime_dims_deferred", "batching", case_batching_runtime_dims_deferred),
-        TddCase("batching.static_and_runtime_mix", "batching", case_batching_static_and_runtime_mix),
-        TddCase("batching.no_batching_single_run", "batching", case_batching_no_batching_single_run),
-        TddCase("cosmos.dual_suffix", "cosmos", case_cosmos_dual),
-        TddCase("cosmos.bad_value", "cosmos", case_cosmos_bad_value),
-        TddCase("reports.includes_sections", "reports", case_report),
-        TddCase("preyaml.symbolic", "preyaml", case_preyaml_symbolic),
-        TddCase("preyaml.expanded_recipes", "preyaml", case_preyaml_expanded_recipes),
-        TddCase("split_plan.basic_session", "split_plan", case_split_plan_basic),
-        TddCase("manifest.basic", "manifest", case_manifest_basic),
-        TddCase("split_artifacts.basic_files", "split_artifacts", case_split_artifacts_basic),
-        TddCase("split_plan.multiplier_batches", "split_plan", case_split_plan_multiplier_batches),
-        TddCase("uploaded_pk.plan", "uploaded_pk", case_uploaded_pk_plan),
-        TddCase("uploaded_pk.multiple_error", "uploaded_pk", case_uploaded_pk_multiple_error),
-        TddCase("uploaded_pk.missing_keys_error", "uploaded_pk", case_uploaded_pk_missing_keys_error),
-    ]
 
 
 def load_yaml_from_text(text: str) -> Any:
@@ -2185,25 +1601,505 @@ def summarize_result(result: CompileResult) -> str:
     return "; ".join(bits) or "ok"
 
 
-def run_tdd(group: str | None = None) -> int:
-    cases = [c for c in tdd_cases() if group in (None, c.group)]
-    passed = 0
-    failed = 0
-    print("TDD Results\n")
-    for case in cases:
-        try:
-            ok, detail = case.run()
-        except Exception as exc:
-            ok, detail = False, repr(exc)
-        if ok:
-            passed += 1
-            print(f"PASS  {case.name}")
-        else:
-            failed += 1
-            print(f"FAIL  {case.name}")
-            print(f"      {detail}")
-    print(f"\nSummary: {passed} passed, {failed} failed")
-    return 0 if failed == 0 else 1
+class MakeYamlTest(unittest.TestCase):
+    """Base case: a scratch dir plus the template/recipes boilerplate folded in."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    def write_pair(self, template: str | None = None, extra: str = "") -> tuple[Path, Path]:
+        text = tiny_template(extra) if template is None else template
+        return (
+            write_temp_yaml(self.tmp, "template.yaml", text),
+            write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes()),
+        )
+
+    def compile_template(self, template: str | None = None, extra: str = "") -> CompileResult:
+        return compile_yaml(*self.write_pair(template, extra))
+
+    def plan_split(self, template: str | None = None, extra: str = "") -> CompileResult:
+        return plan_split_runs(*self.write_pair(template, extra))
+
+    def runs_for(self, extra: str = "") -> tuple[CompileResult, list[dict[str, Any]]]:
+        res = self.plan_split(extra=extra)
+        sessions = res.analysis.get("split_plan", {}).get("sessions", [])
+        return res, (sessions[0].get("runs", []) if sessions else [])
+
+    def cohorts_by_name(self, res: CompileResult) -> dict[str, Any]:
+        return {c.get("name"): c for c in res.finished_yaml.get("cohorts", [])}
+
+    def assertCompiles(self, res: CompileResult) -> None:
+        self.assertTrue(res.ok, summarize_result(res))
+
+    def assertHasError(self, res: CompileResult, code: str) -> None:
+        self.assertTrue(has_error(res, code), summarize_result(res))
+
+    def assertHasWarning(self, res: CompileResult, code: str) -> None:
+        self.assertTrue(has_warning(res, code), summarize_result(res))
+
+
+class LoadingTests(MakeYamlTest):
+    def test_valid_template_compiles(self):
+        self.assertCompiles(self.compile_template())
+
+    def test_malformed_yaml_is_reported(self):
+        res = self.compile_template("vars:\n  - bad: [")
+        self.assertFalse(res.ok)
+        self.assertHasError(res, "yaml_load_error")
+
+
+class RecipeTests(MakeYamlTest):
+    def test_recipe_cohorts_are_imported(self):
+        names = [c.get("name") for c in self.compile_template().finished_yaml.get("cohorts", [])]
+        self.assertIn("Patients", names)
+        self.assertIn("OtherDx", names)
+
+    def test_dest_table_can_be_overridden(self):
+        res = self.compile_template("""
+project_folder: Test
+vars: {min_date_key: 1, max_date_key: 2, ICD_Value: K50}
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients
+    dest_table: MyPatients
+""")
+        self.assertEqual(res.finished_yaml["cohorts"][0]["dest_table"], "MyPatients")
+
+    def test_dest_table_defaults_to_cohort_name(self):
+        res = self.compile_template()
+        self.assertEqual(res.finished_yaml["cohorts"][0]["dest_table"], "Patients")
+
+
+class InferenceTests(MakeYamlTest):
+    def test_required_vars_are_inferred_from_recipe_body(self):
+        required = self.compile_template().analysis["required_vars"]["Patients"]
+        for name in ("min_date_key", "max_date_key", "ICD_Value"):
+            with self.subTest(var=name):
+                self.assertIn(name, required)
+
+
+class NormalizationTests(MakeYamlTest):
+    def test_grouped_metadata_vars_are_flattened(self):
+        template = tiny_template().replace(
+            "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
+            "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\n"
+            "run_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n"
+            "project_vars:\n  project_folder: Test Run\nvars:\n",
+        )
+        res = self.compile_template(template)
+        self.assertCompiles(res)
+        self.assertEqual(res.finished_yaml.get("project_db"), "PROJECTD33A929")
+        self.assertEqual(res.finished_yaml.get("project_folder"), "Test Run")
+        self.assertEqual(res.finished_yaml.get("vars", {}).get("min_date_key"), 20200101)
+        self.assertIn(
+            "dxf.StartDateKey BETWEEN 20200101 AND 20240101",
+            json.dumps(res.finished_yaml),
+        )
+
+
+class ValidationTests(MakeYamlTest):
+    def test_missing_variable_is_an_error(self):
+        template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
+        self.assertHasError(self.compile_template(template), "missing_variable")
+
+
+class RenderingTests(MakeYamlTest):
+    def test_multiple_exact_values_render_as_in(self):
+        self.assertIn(
+            "dt.Value IN ('K50', 'K51')",
+            json.dumps(self.compile_template().finished_yaml),
+        )
+
+    def test_wildcard_values_render_as_or_ed_likes(self):
+        template = tiny_template().replace("- K50\n    - K51", "- K50.%\n    - K51.%")
+        text = json.dumps(self.compile_template(template).finished_yaml)
+        self.assertIn("dt.Value LIKE 'K50.%'", text)
+        self.assertIn(" OR ", text)
+
+    def test_underscore_in_like_value_warns(self):
+        template = tiny_template().replace("- K50\n    - K51", "- K50_%")
+        self.assertHasWarning(self.compile_template(template), "like_underscore")
+
+
+class MultiplierTests(MakeYamlTest):
+    def test_split_on_missing_column_is_an_error(self):
+        res = self.compile_template(extra="""
+multipliers:
+  - name: BadSplit
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: bad
+        column: MissingRace
+        values: [x]
+""")
+        self.assertHasError(res, "missing_split_column")
+
+    def test_during_build_multiplier_gives_each_group_its_own_pk(self):
+        template = tiny_template("""
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+      - strat: B
+        vars:
+          ICD_Value: B%
+""").replace("  ICD_Value:\n    - K50\n    - K51\n", "")
+        res = self.compile_template(template)
+        self.assertCompiles(res)
+        cohorts = self.cohorts_by_name(res)
+        self.assertIn("##JVM_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
+        self.assertIn("##JVM_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
+
+    def test_split_after_build_metadata_survives_on_the_pk(self):
+        res = self.compile_template(extra="""
+multipliers:
+  - name: Race
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: black
+        column: FirstRace
+        values:
+          - Black %
+""")
+        pk = self.cohorts_by_name(res)["blackPatients"]
+        self.assertIn("split_after_build", pk)
+        self.assertIn("pk.FirstRace LIKE 'Black %'", json.dumps(pk))
+
+
+class BatchingTests(MakeYamlTest):
+    def test_chunk_shorthand_normalizes(self):
+        norm = normalize_batching(
+            [{"chunk": 2000}], load_yaml_from_text(tiny_recipes()), CompileResult()
+        )
+        self.assertEqual(norm[0].get("rows_per_batch"), 2000)
+        self.assertEqual(norm[0].get("kind"), "row_chunk")
+
+    def test_batching_metadata_reaches_the_pk_cohort(self):
+        res = self.compile_template(extra="""
+batching:
+  - sex
+  - chunk: 2000
+""")
+        first = res.finished_yaml["cohorts"][0]
+        self.assertIn("batching", first)
+        self.assertEqual(len(first["batching"]), 2)
+
+    def test_include_other_is_preserved_by_normalization(self):
+        norm = normalize_batching(
+            [{"sex": {"values": ["Female"], "include_other": True}}],
+            load_yaml_from_text(tiny_recipes()),
+            CompileResult(),
+        )
+        self.assertEqual(
+            {k: norm[0].get(k) for k in ("name", "values", "include_other", "column")},
+            {"name": "sex", "values": ["Female"], "include_other": True, "column": "Sex"},
+        )
+
+    def test_dimensions_cross_multiply(self):
+        # state[LA, MS] x sex[Female, Male] is four disjoint slices, not two axes.
+        res, runs = self.runs_for("""
+batching:
+  - state:
+      values: [LA, MS]
+  - sex
+""")
+        self.assertCompiles(res)
+        self.assertEqual(
+            [run["batch"]["name"] for run in runs],
+            ["LA-Female", "LA-Male", "MS-Female", "MS-Male"],
+        )
+
+    def test_each_run_records_its_resolved_dimensions(self):
+        _, runs = self.runs_for("""
+batching:
+  - state:
+      values: [LA, MS]
+  - sex
+""")
+        self.assertEqual(
+            runs[0]["batch"]["dimensions"],
+            [
+                {
+                    "name": "state",
+                    "kind": "column_values",
+                    "column": "StateOrProvinceAbbreviation",
+                    "value": "LA",
+                },
+                {"name": "sex", "kind": "column_values", "column": "Sex", "value": "Female"},
+            ],
+        )
+
+    def test_include_other_contributes_a_bucket_to_the_product(self):
+        _, runs = self.runs_for("""
+batching:
+  - sex:
+      values: [Female]
+      include_other: true
+""")
+        self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "sex-other"])
+        self.assertTrue(runs[1]["batch"]["dimensions"][0]["is_other"])
+        self.assertNotIn("value", runs[1]["batch"]["dimensions"][0])
+
+    def test_unresolvable_dimensions_stay_logical(self):
+        # `values: all` needs a DISTINCT and chunking needs a row count, so
+        # neither can expand until the PK table exists.
+        res, runs = self.runs_for("""
+batching:
+  - state
+  - chunk: 2000
+""")
+        self.assertCompiles(res)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["batch"]["dimensions"], [])
+        self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
+
+    def test_static_and_runtime_dimensions_coexist(self):
+        _, runs = self.runs_for("""
+batching:
+  - sex
+  - state
+  - chunk: 2000
+""")
+        self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "Male"])
+        self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
+
+    def test_no_batching_gives_one_unbatched_run(self):
+        res, runs = self.runs_for("")
+        self.assertCompiles(res)
+        self.assertEqual(len(runs), 1)
+        self.assertIsNone(runs[0].get("batch"))
+
+
+class CosmosTests(MakeYamlTest):
+    def test_dual_expands_to_both_instances(self):
+        out = expand_cosmos(
+            {"cosmos_db": "Dual"},
+            [{"name": "Patients", "dest_table": "Patients"}],
+            CompileResult(),
+        )
+        self.assertEqual([c["dest_table"] for c in out], ["Patients", "Patients_sp"])
+
+    def test_unknown_cosmos_db_is_an_error(self):
+        res = CompileResult()
+        validate_cosmos({"cosmos_db": "Mars"}, res)
+        self.assertHasError(res, "bad_cosmos_db")
+
+
+class ReportTests(MakeYamlTest):
+    def test_report_includes_every_section(self):
+        res = CompileResult()
+        res.error("x", "bad")
+        res.warn("y", "careful")
+        res.finished_yaml = {"cohorts": [{"name": "Patients", "dest_table": "Patients"}]}
+        res.analysis = {"required_table_columns": {"OtherDx": {"PKTable": ["PatientDurableKey"]}}}
+        report = build_report(res)
+        for section in ("Errors", "Warnings", "Patients", "Required Columns"):
+            with self.subTest(section=section):
+                self.assertIn(section, report)
+
+
+class PreyamlTests(MakeYamlTest):
+    MIXED = """
+batching:
+  - sex
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+"""
+
+    def test_symbolic_mode_keeps_recipe_references(self):
+        res = build_preyaml(*self.write_pair(extra=self.MIXED), mode="symbolic")
+        self.assertCompiles(res)
+        self.assertEqual(res.finished_yaml["cohorts"][0].get("recipe"), "PatientWithDx")
+        self.assertIn("multipliers", res.finished_yaml)
+        self.assertIn("batching", res.finished_yaml)
+
+    def test_expanded_mode_inlines_recipes_without_applying_multipliers(self):
+        res = build_preyaml(*self.write_pair(extra=self.MIXED), mode="expanded-recipes")
+        self.assertCompiles(res)
+        first = res.finished_yaml["cohorts"][0]
+        text = json.dumps(res.finished_yaml)
+        self.assertEqual(first.get("name"), "Patients")
+        self.assertNotIn("recipe", first)
+        self.assertIn("DiagnosisEventFact AS dxf", text)
+        self.assertNotIn("APatients", text)
+        self.assertIn("batching", res.finished_yaml)
+
+
+class SplitPlanTests(MakeYamlTest):
+    def test_plain_template_gives_one_session_with_one_run(self):
+        res = self.plan_split()
+        plan = res.analysis.get("split_plan", {})
+        sessions = plan.get("sessions", [])
+        self.assertCompiles(res)
+        self.assertEqual(plan.get("manifest_version"), 1)
+        self.assertEqual(len(sessions), 1)
+        phases = sessions[0]["phases"]
+        self.assertEqual(set(phases), {"setup", "upload_cohorts", "pk"})
+        self.assertEqual(phases["pk"]["pk_source"]["kind"], "generated")
+        self.assertEqual([r["run_id"] for r in sessions[0]["runs"]], ["Patients__run"])
+
+    def test_multiplier_gives_one_session_per_group_each_batched(self):
+        res = self.plan_split(extra="""
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+      - strat: B
+        vars:
+          ICD_Value: B%
+batching:
+  - sex
+  - chunk: 2000
+""")
+        sessions = res.analysis.get("split_plan", {}).get("sessions", [])
+        self.assertCompiles(res)
+        self.assertEqual(
+            sorted(s["session_id"] for s in sessions), ["APatients", "BPatients"]
+        )
+        for session in sessions:
+            with self.subTest(session=session["session_id"]):
+                sid = session["session_id"]
+                self.assertEqual(
+                    [r["run_id"] for r in session["runs"]],
+                    [f"{sid}__Female", f"{sid}__Male"],
+                )
+                first = session["runs"][0]["batch"]
+                self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
+                self.assertEqual([r["name"] for r in first["runtime"]], ["chunk"])
+
+
+class ManifestTests(MakeYamlTest):
+    def test_manifest_is_written_with_pending_status_fields(self):
+        out = self.tmp / "pullmanifest.yaml"
+        res = build_pullmanifest(*self.write_pair(), output_path=out, write=True)
+        self.assertCompiles(res)
+        self.assertTrue(out.exists())
+
+        manifest = res.finished_yaml
+        session = manifest["sessions"][0]
+        pk_phase = session["phases"]["pk"]
+        self.assertEqual(manifest.get("manifest_version"), 1)
+        self.assertEqual(session.get("status"), "pending")
+        self.assertEqual(pk_phase.get("status"), "pending")
+        self.assertIsNone(pk_phase.get("rows"))
+        self.assertIsNone(pk_phase.get("error"))
+        self.assertEqual(session["runs"][0].get("status"), "pending")
+        self.assertEqual(session["runs"][0].get("outputs"), {})
+
+
+class SplitArtifactTests(MakeYamlTest):
+    def test_every_phase_yaml_is_written_and_standalone(self):
+        out_dir = self.tmp / "split"
+        res = write_split_artifacts(*self.write_pair(), output_dir=out_dir)
+        self.assertCompiles(res)
+
+        manifest_path = out_dir / "pullmanifest.yaml"
+        self.assertTrue(manifest_path.exists())
+        session = load_yaml(manifest_path)["sessions"][0]
+        expected = [
+            session["phases"]["setup"]["yaml"],
+            session["phases"]["upload_cohorts"]["yaml"],
+            session["phases"]["pk"]["yaml"],
+            session["runs"][0]["yaml"],
+        ]
+        for rel in expected:
+            with self.subTest(path=rel):
+                self.assertTrue((out_dir / rel).exists())
+
+        pk_doc = load_yaml(out_dir / expected[2])
+        self.assertEqual(pk_doc["pull_context"]["phase"], "pk")
+        self.assertEqual(len(pk_doc.get("cohorts", [])), 1)
+        self.assertEqual(str(pk_doc["cohorts"][0].get("type", "")).lower(), "pk")
+
+        run_doc = load_yaml(out_dir / expected[3])
+        self.assertEqual(run_doc["pull_context"]["phase"], "run")
+        self.assertTrue(run_doc.get("cohorts"))
+        # Expansion instructions must not survive, or they would be applied twice.
+        self.assertNotIn("multipliers", run_doc)
+        self.assertNotIn("batching", run_doc)
+
+
+class UploadedPkTests(MakeYamlTest):
+    def setUp(self):
+        super().setUp()
+        (self.tmp / "pks.csv").write_text(
+            "PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8"
+        )
+
+    def test_uploaded_cohort_becomes_the_session_pk(self):
+        res = self.plan_split(uploaded_pk_template())
+        session = res.analysis["split_plan"]["sessions"][0]
+        pk_source = session["phases"]["pk"]["pk_source"]
+        self.assertCompiles(res)
+        self.assertEqual(session["session_id"], "ClientPK")
+        self.assertEqual(pk_source["kind"], "uploaded_cohort")
+        self.assertEqual(pk_source["table"], "ClientPK")
+        self.assertIn("##JVM_ClientPK AS pk", json.dumps(res.finished_yaml))
+
+    def test_two_uploaded_pk_cohorts_is_an_error(self):
+        extra = """  - name: ClientPK2
+    type: pk
+    dest_table: ClientPK2
+    file_type: csv
+    file_loc: pks.csv
+    key_columns: [PatientDurableKey, DiagnosisEventKey]
+"""
+        res = self.compile_template(uploaded_pk_template(extra))
+        self.assertHasError(res, "multiple_uploaded_pk")
+
+    def test_uploaded_pk_without_key_columns_is_an_error(self):
+        res = self.compile_template(uploaded_pk_template(key_columns=False))
+        self.assertHasError(res, "uploaded_pk_missing_keys")
+
+
+TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
+    "loading": LoadingTests,
+    "recipes": RecipeTests,
+    "inference": InferenceTests,
+    "normalization": NormalizationTests,
+    "validation": ValidationTests,
+    "rendering": RenderingTests,
+    "multipliers": MultiplierTests,
+    "batching": BatchingTests,
+    "cosmos": CosmosTests,
+    "reports": ReportTests,
+    "preyaml": PreyamlTests,
+    "split_plan": SplitPlanTests,
+    "manifest": ManifestTests,
+    "split_artifacts": SplitArtifactTests,
+    "uploaded_pk": UploadedPkTests,
+}
+
+
+def run_tdd(group: str | None = None, verbosity: int = 2) -> int:
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    if group:
+        case = TEST_GROUPS.get(group)
+        if case is None:
+            print(f"No test group {group!r}. Available: " + ", ".join(TEST_GROUPS))
+            return 1
+        suite.addTests(loader.loadTestsFromTestCase(case))
+    else:
+        for case in TEST_GROUPS.values():
+            suite.addTests(loader.loadTestsFromTestCase(case))
+    result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
+    return 0 if result.wasSuccessful() else 1
 
 
 # =============================================================================
