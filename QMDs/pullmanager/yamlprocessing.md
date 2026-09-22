@@ -2,15 +2,15 @@
 
 This note analyzes `inputSimple.yaml` and the currently available example SQL files in `QMDs/pullmanager/`.
 
-At the time of the first read, both `examplecos.sql` and `exampleproj.sql` were empty. `examplecos.sql` has now been populated and is analyzed below. `exampleproj.sql` is still empty, so Projects-side comparison remains pending.
+At the time of the first read, both `examplecos.sql` and `exampleproj.sql` were empty. Both have now been populated/analyzed, with `exampleproj.sql` treated as a structural specimen from another project rather than a matching pair for `inputSimple.yaml`.
 
 ## File status
 
 - `inputSimple.yaml`: parseable YAML.
 - `examplecos.sql`: populated Cosmos-side SQL.
-- `exampleproj.sql`: 0 bytes.
+- `exampleproj.sql`: populated Projects-side transfer snippet from another project.
 
-Once the Projects SQL example is populated, this document should be extended with a field-by-field comparison of:
+Because the Projects SQL is from another project, it should not be compared field-by-field against `inputSimple.yaml`. It is useful for:
 
 - YAML columns to local table schema.
 - Projects-side `OPENQUERY`.

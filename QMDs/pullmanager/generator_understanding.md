@@ -211,8 +211,8 @@ The new manifest does not need to preserve all printed messages, but Pullmanager
 - Were rows filtered/deduped?
 - Did the row count exceed a risk threshold?
 - What failed and where?
-
-- How long did it take to finish each table?
+- How long did each table or grouped cohort take from start to saved output?
+- Can duration be shown in minutes and seconds as well as raw seconds?
 
 ### Error handling
 
