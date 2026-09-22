@@ -1,10 +1,10 @@
 # YAML Manager Progress
 
-This is the active progress tracker for the next YAML Manager iteration. The older phase-by-phase build history remains in `QMDs/completed/buildprogress.qmd`.
+This is the active progress tracker for the next YAML Manager iteration. The older phase-by-phase build history remains in `QMDs/yamlmanager/completed/buildprogress.qmd`.
 
 ## Current Direction
 
-The active design is `QMDs/yamlmanagerDesign.qmd`.
+The active design is `QMDs/yamlmanager/yamlmanagerDesign.qmd`.
 
 YAML Manager is moving from "compile one large finished YAML" toward a planner/exporter workflow:
 
@@ -55,12 +55,12 @@ Implemented in `scripts/makeYaml.py`:
 
 Implemented:
 
-- The original `managerUI.py` simple UI was renamed through `scripts/telescope.py` and now lives at `scripts/yamlmanager.py`.
+- The original `managerUI.py` / `telescope.py` simple UI now lives at `scripts/yamlmanager.py`.
 - Serving behavior now supports local, remote, VM, SSH tunnel, and public-bind use cases with configurable host/port behavior.
 - UI no longer imports `makeYaml.py` directly.
 - `scripts/yamlmanager_backend.py` provides a stable Python adapter surface around the compiler.
 - `YAMLMANAGER_BACKEND_MODULE` can point the UI at an alternate backend module.
-- `scripts/telescope.py` and `scripts/telescope_backend.py` remain as compatibility wrappers.
+- Legacy `scripts/telescope.py` and `scripts/telescope_backend.py` compatibility wrappers were removed during repository cleanup.
 - The UI has an Exports tab for symbolic pre-YAML, expanded-recipes pre-YAML, and pullmanifest previews/downloads.
 
 ## Current Known Validation State
@@ -148,7 +148,7 @@ After each phase:
 
 Completed:
 
-- Consolidated the active design into `QMDs/yamlmanagerDesign.qmd`.
+- Consolidated the active design into `QMDs/yamlmanager/yamlmanagerDesign.qmd`.
 - Added this progress tracker.
 - Marked older active plans as pointers/historical notes.
 - Added uploaded-PK behavior to the design.
@@ -158,7 +158,7 @@ Completed:
 
 Completed:
 
-- Rename `telescope.py` and `telescope_backend.py` to `yamlmanager.py` and `yamlmanager_backend.py`.
+- Rename `telescope.py` and `telescope_backend.py` to `yamlmanager.py` and `yamlmanager_backend.py`; later cleanup removed the legacy wrappers.
 - Keep wrappers for old entry points.
 - Update environment-variable naming with backward-compatible fallbacks.
 - Verify the simple UI still runs through the new and compatibility entry points.
@@ -231,5 +231,5 @@ Completed:
 
 Use these for context, not as active implementation targets:
 
-- `QMDs/completed/buildprogress.qmd`: detailed completed phase history.
-- `QMDs/splittingVMtasks.qmd`: original brainstorming notes that led to the current design.
+- `QMDs/yamlmanager/completed/buildprogress.qmd`: detailed completed phase history.
+- `QMDs/yamlmanager/completed/splittingVMtasks.qmd`: original brainstorming notes that led to the current design.

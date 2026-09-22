@@ -4,9 +4,9 @@ This file is retained only as a historical marker.
 
 The older "next" notes were completed or superseded by the current YAML Manager direction. Use these active files instead:
 
-- `QMDs/yamlmanagerDesign.qmd`
-- `QMDs/progress.md`
+- `QMDs/yamlmanager/yamlmanagerDesign.qmd`
+- `QMDs/yamlmanager/progress.md`
 
 Historical implementation details remain in:
 
-- `QMDs/completed/buildprogress.qmd`
+- `QMDs/yamlmanager/completed/buildprogress.qmd`

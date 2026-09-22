@@ -4,11 +4,11 @@ This file is retained as a pointer for older references.
 
 The active production design is:
 
-- `QMDs/yamlmanagerDesign.qmd`
+- `QMDs/yamlmanager/yamlmanagerDesign.qmd`
 
 The active progress and next-task list is:
 
-- `QMDs/progress.md`
+- `QMDs/yamlmanager/progress.md`
 
 The previous production plan focused on making `scripts/makeYaml.py` a portable VM-safe compiler that produced one finished YAML for the existing SQL generation pipeline. That first compiler is now substantially implemented. The next production target is different: YAML Manager should export pre-YAML, split session/run YAMLs, and `pullmanifest.yaml` for Pullmanager.
 
@@ -19,4 +19,4 @@ The old constraints still matter:
 - Keep backend logic interface-agnostic.
 - Preserve a file-based boundary between YAML Manager and Pullmanager.
 
-But the active artifact contract is now the one described in `QMDs/yamlmanagerDesign.qmd`.
+But the active artifact contract is now the one described in `QMDs/yamlmanager/yamlmanagerDesign.qmd`.

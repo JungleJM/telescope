@@ -583,8 +583,8 @@ Goal: consolidate the next-iteration design before production work begins.
 
 Scope:
 
-- Move the active design into `QMDs/yamlmanagerDesign.qmd`.
-- Track implementation status in `QMDs/progress.md`.
+- Move the active design into `QMDs/yamlmanager/yamlmanagerDesign.qmd`.
+- Track implementation status in `QMDs/yamlmanager/progress.md`.
 - Mark older plans as superseded or historical.
 - Decide the file-based YAML Manager -> Pullmanager boundary.
 - Decide that `pullmanifest.yaml` is required and becomes Pullmanager's mutable status document.
@@ -604,7 +604,7 @@ Scope:
 - Rename `scripts/telescope.py` to `scripts/yamlmanager.py`.
 - Rename `scripts/telescope_backend.py` to `scripts/yamlmanager_backend.py`.
 - Keep thin compatibility wrappers for the old script/module names if useful.
-- Rename environment variables from `TELESCOPE_*` to `YAMLMANAGER_*`, while temporarily accepting the old names as fallbacks.
+- Rename environment variables from `TELESCOPE_*` to `YAMLMANAGER_*`.
 - Update docs and help text to use YAML Manager.
 
 Exit criteria:

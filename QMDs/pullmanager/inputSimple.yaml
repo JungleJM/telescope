@@ -1,0 +1,106 @@
+# Cosmos variables
+project_db: PROJECTD93A5E7  # Must start with 'PROJECTD...'
+cosmos_db: COSMOS_Sneak    # COSMOS or COSMOS_Sneak
+
+# Initial variables, in format YYYYMMDD
+min_date_key: 20210101     # matches @minDiagStartDateKey in HaT_info.sql
+max_date_key: 20260601
+
+# Test Vars
+test_options:
+  smallest: true            # If true, will just make a table up to 'stop_at' number
+  # of rows for the PKTable
+  stop_at_for_pk_table: 50  # limits to SELECT TOP(value)
+  stop_at_for_non_pk_tables: 0  # 0 or blank means 'don't stop at'
+  print_md: true            # Can print out a Markdown of the run and its result
+                            # (rows, time, etc). in the QueryGenerator root
+
+# Data Science Variables
+# Generates R scripts to run in R Studio to make Parquet files of what you just pulled
+# Makes an "Export to pull from SQL", a "Load" to load in R, a copy of this YAML, and a
+# "Map" YAML to tell you the tables and their columns and types, so that VSCodium can use
+# it to help with R Gen.
+# NOTE: The storage data will be GITIGNORED so that it won't save in the repo. To change
+# that, modify .gitignore
+run_output_folder: "Example Run"
+parquet_storage_location: "data"  # name of folder at root of data science repo where
+                                   # parquets are
+
+cohorts:
+  # 0. PKTable: HaT Patients with index diagnosis & post-index visit count
+  #    This is the anchor for case/control and outcomes.
+  - name: PKTable
+    type: PK
+    key_column: "PatientDurableKey"
+    pull_this_cycle: true
+    dest_table: PKTable2
+
+    columns:
+      # HaT index info from DiagnosisEventFact / DiagnosisTerminologyDim
+      - source: p.DurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+
+    filter:
+      from: "PatientDim AS p"
+      join: []
+      where:
+        - "p.IsDeleted = 0"
+        - "p.IsCurrent = 1"
+        - "p.UseInCosmosAnalytics_X = 1"
+
+  # 0. PKTable: IBD diagnosis events (K50.*, K51.*) for Black patients
+  - name: PKTable
+    type: PK
+    key_column: "DiagnosisEventKey"  # primary key for this cohort
+    pull_this_cycle: true
+    dedup_key: [DiagnosisEventKey]
+    dest_table: PKTable
+
+    columns:
+      - source: def.DiagnosisEventKey
+        name: DiagnosisEventKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.EncounterKey
+        name: EncounterKey
+        type: BIGINT
+        nullable: false
+
+      - source: def.StartDateKey
+        name: StartDateKey
+        type: INT
+        nullable: false
+
+      - source: dt.Value
+        name: BillingCodeValue
+        type: VARCHAR(400)
+        nullable: true
+
+      - source: dt.Type
+        name: BillingCodeType
+        type: VARCHAR(100)
+        nullable: true
+
+    filter:
+      from: "DiagnosisEventFact AS def"
+      join:
+        - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+        - "INNER JOIN #UVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey"
+      where:
+        - "def.IsDeleted = 0"
+        - "dt.IsDeleted = 0"
+        - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+        - "p.Type IN ('ICD-10-AM', 'ICD-10-CM')"  # restrict to ICD-10
+        - "( dt.Value LIKE 'K50.%'"
+        - "  OR dt.Value = 'K50'"
+        - "  OR dt.Value LIKE 'K51.%'"
+        - "  OR dt.Value = 'K51'"
+        - ")"

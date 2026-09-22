@@ -37,7 +37,7 @@ DEFAULT_DATA_DICTIONARY = Path(
 )
 BACKEND_MODULE = os.environ.get(
     "YAMLMANAGER_BACKEND_MODULE",
-    os.environ.get("TELESCOPE_BACKEND_MODULE", "yamlmanager_backend"),
+    "yamlmanager_backend",
 )
 try:
     backend = importlib.import_module(BACKEND_MODULE)
@@ -63,9 +63,9 @@ def env_int(names: tuple[str, ...], fallback: int) -> int:
 
 DEFAULT_HOST = os.environ.get(
     "YAMLMANAGER_HOST",
-    os.environ.get("TELESCOPE_MANAGER_HOST", os.environ.get("MANAGER_UI_HOST", "127.0.0.1")),
+    os.environ.get("MANAGER_UI_HOST", "127.0.0.1"),
 )
-DEFAULT_PORT = env_int(("YAMLMANAGER_PORT", "TELESCOPE_MANAGER_PORT", "MANAGER_UI_PORT"), 8765)
+DEFAULT_PORT = env_int(("YAMLMANAGER_PORT", "MANAGER_UI_PORT"), 8765)
 
 
 def e(value: Any) -> str:
@@ -2399,8 +2399,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), help="Write a pre-YAML artifact and exit.")
     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml, then exit.")
     parser.add_argument("--out-dir", help="Directory for split export artifacts.")
-    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or YAMLMANAGER_HOST/TELESCOPE_MANAGER_HOST/MANAGER_UI_HOST.")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or YAMLMANAGER_PORT/TELESCOPE_MANAGER_PORT/MANAGER_UI_PORT.")
+    parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or YAMLMANAGER_HOST/MANAGER_UI_HOST.")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or YAMLMANAGER_PORT/MANAGER_UI_PORT.")
     parser.add_argument("--public", action="store_true", help="Bind to all interfaces unless --host is also supplied.")
     parser.add_argument("--browser-host", help="Host name to use in printed/opened URLs when it differs from the bind address.")
     parser.add_argument("--no-open", action="store_true", help="Do not try to open a browser when serving with no arguments.")

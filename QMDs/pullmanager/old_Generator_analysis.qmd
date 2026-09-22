@@ -1,0 +1,1540 @@
+Generator stack — behavior & stability notes
+
+    Transcribed from the 10 supplied two-page-view screenshots. The source PDF page pairs are 1–2, 3–4, 5–6, 7–8, 9–10, 11–12, 13–14, 15–16, 17–18, and 19.
+
+    This is an OCR-style reconstruction intended to be pasted into an analysis/refactoring workflow. Preserve the original repository/code as the source of truth for exact function signatures and line references.
+
+1. generator.py — top-level orchestrator / safety wrapper
+
+generator.py is now the single “supervisor” for the whole pipeline. It:
+
+    Parses CLI flags and parameters.
+
+    Loads and validates YAML.
+
+    Builds Cosmos.sql in-process (no longer via external makeCosmos).
+
+    Executes Cosmos.sql via pyodbc and captures detailed telemetry.
+
+    Derives per-cohort status and row counts.
+
+    Runs makeProjects with dynamic Cosmos server name.
+
+    Executes Projects.sql in a controlled, per-dest-table fashion.
+
+    Runs make_R conditionally.
+
+    Writes a markdown run report when requested.
+
+    Mirrors QueryScripts and R scripts to an optional run-specific folder.
+
+1.1. Configuration and constants
+
+Key constants and legacy wiring:
+
+    SCRIPT_DIR = "Generator Files": base folder for helper scripts.
+
+    RUN_OUTPUTS_BASE_DIR = "Run Outputs": unified location under repo root for run-specific artifacts.
+
+        Legacy constants retained:
+
+            DEFAULT_OUTPUT_DIR
+
+            GENERATOR_OUTPUT_BASE_DIR
+
+            COHORT_CONFIG_PATH = "test_cohort.yaml" (not primary anymore)
+
+    Legacy fallback SQL paths:
+
+        COSMOS_SQL_PATH = os.path.join(SCRIPT_DIR, "QueryScripts", "Cosmos.sql")
+
+        PROJECTS_SQL_PATH = os.path.join(SCRIPT_DIR, "QueryScripts", "Projects.sql")
+
+    Fixed server names:
+
+        Cosmos: COSMOS, DB COSMOS
+
+        Projects: PROJECTS
+
+        COSMOS_PYODBC_CONNECTION_STRING is a fixed trusted-connection string to COSMOS.COSMOS.
+
+These give a stable reference environment even if YAML points cosmos_db to COSMOS_SneakPeek for generation.
+1.2. Verbose logging and timestamp helpers
+
+    Global VERBOSE flag, toggled by -vv.
+
+    vprint() (generator.py:68) handles conditional logging; all diagnostic detail goes through this.
+
+    Time helpers:
+
+        _now_iso_utc() (generator.py:73)
+
+        _now_iso_central() (generator.py:77) with a constant UTC-5 “Central” as coded.
+
+        _now_iso() (generator.py:83) used everywhere for phase timestamps.
+
+        _phase_prefix(dest_table, phase, location) (generator.py:87) generates a structured ID like:
+
+            [PatientDim|Cosmos=filter]
+
+            [EDVisitFacts|Projects=transfer]
+
+These prefixes are baked into SQL comments and Python prints to keep telemetry and logs structured by phase and table.
+1.3. YAML loading and path handling
+
+load_yaml_config() (generator.py:103):
+
+    Accepts a path that can be absolute or relative.
+
+    Resolves relative paths against os.getcwd() (repo root when running generator).
+
+    Raises FileNotFoundError with an explicit message if missing.
+
+    Uses yaml.safe_load for safety.
+
+This is the common entry point for configuration in this file.
+
+_get_project_db_from_config() (generator.py:122):
+
+    Reads project_db from YAML.
+
+    Requires a non-empty string; raises ValueError otherwise.
+
+    Normalizes whitespace and logs the final value (project_db).
+
+_project_folder_from_project_db() (generator.py:134):
+
+    Converts PROJECTDxxxxx-style DB names into a human folder name:
+
+        PROJECTD139081 → Project D139081
+
+    Used by repo-root computation to find the external Z:\Project D<suffix> tree.
+
+get_data_science_repo_root() (generator.py:149):
+
+    Derives the external repo root on Z: based on:
+
+        project_db (converted to Project Dxxxx)
+
+        data_science_repo (desired subfolder under that project directory)
+
+    Strips weird Unicode separators (\u2028, \u2029) and non-printable control characters.
+
+    Logs raw and normalized repo names and final repo_root = "Z:\\<ProjectFolder>\\<repo>".
+
+    Primarily used to point R scripts to their source location, and as a source of path-normalization stability.
+
+get_parquet_storage_location() (generator.py:178):
+
+    Reads parquet_storage_location (string) from YAML.
+
+    Defaults to "data" if missing or blank.
+
+    This is only for logging and coordination; actual parquet is handled elsewhere.
+
+_get_printout_md_flag() (generator.py:185):
+
+    Reads test_options.printout_md from YAML.
+
+    Defaults to False.
+
+    Controls whether generator_output.md is emitted.
+
+_get_r_dump_folder() (generator.py:191):
+
+    Legacy: now a fallback used only if run output folder is missing.
+
+    Defaults to "Generator Files/scripts" when not present.
+
+    Preserves old behavior while migrating to Run Outputs/<run_output_folder>.
+
+1.4. Running helper scripts in Generator Files/
+
+_run_python_script_in_generator_dir(script_name, args) (generator.py:207):
+
+    Resolves script_path = os.path.join(root_dir, SCRIPT_DIR, script_name) where root_dir = os.getcwd() when generator started.
+
+    Verifies existence; raises FileNotFoundError if missing.
+
+    Executes with:
+
+        python exe = sys.executable or "python"
+
+        cwd = script_dir_path (Generator Files)
+
+        Captures stdout only (stderr merged into stdout).
+
+    Returns text output; if returncode != 0, raises RuntimeError with full output.
+
+This wrapper provides a stable, centralized way to run sub-scripts (makeProjects, makeR, etc.) while keeping their working directory correct and capturing all logs for inclusion in markdown output.
+
+Thin wrappers on top of this:
+
+_run_make_cosmos(config_path) (generator.py:246):
+
+    Resolves config path to absolute.
+
+    Calls ["MAKE_COSMOS_FILENAME"] (generator.py:25) with [resolved_config_path] + ["-vv" if VERBOSE].
+
+    Now effectively deprecated, since generator builds Cosmos.sql in-process; retained for back-compat.
+
+_run_make_projects(config_path, cosmos_instance_override=None) (generator.py:264):
+
+    Resolves config path.
+
+    Adds --cosmos-instance <override> to args to allow runtime overrides of the OPENQUERY server.
+
+    Adds -vv if VERBOSE.
+
+    Calls makeProjects.py via _run_python_script_in_generator_dir() (generator.py:207).
+
+_run_make_r(config_path, repo_root) (generator.py:290):
+
+    Resolves config path.
+
+    Passes repo_root to makeR (the R output target).
+
+    Adds -vv if VERBOSE.
+
+These wrappers separate the “how to call script” logic from CLI parsing in main().
+1.5. Mirroring QueryScripts and R scripts
+
+_copy_query_scripts_to_location(target_root) (generator.py:318):
+
+    Copies Generator Files/QueryScripts tree into <target root>/QueryScripts.
+
+    Uses os.walk to preserve subdirectory structure.
+
+    Uses shutil.copy2 to preserve metadata.
+
+    Logs each copied file or write error.
+
+_copy_r_scripts_to_location(target_root) (generator.py:354):
+
+    Similar to above, but for Generator Files/scripts into <target root>/scripts.
+
+    Used when passing run_folder so that a self-contained bundle with SQL + R scripts can ship.
+
+These functions reflect the “mirror into run-specific folder” stability behavior: they make sure each run has its own copy of scripts that match that run’s YAML and generator version, avoiding cross-run contamination.
+1.6. pyodbc result printing and telemetry capture
+
+_print_result_set(cursor, max_rows=10, accumulator=None, cosmos_row_counts=None) (generator.py:393):
+
+    Reads cursor.description to get column names.
+
+    Fetches up to max_rows via fetchmany.
+
+    Prints a header [SQL RESULT] Columns: ... and appends to accumulator if provided.
+
+    Prints each row as [SQL RESULT] Row N: <values> and appends to accumulator.
+
+    Adds truncation notice if exactly max_rows.
+
+This function is responsible for turning Cosmos telemetry SELECTs into Python dictionary entries (row counts) while also preserving a text log for Markdown.
+
+_run_sql_with_messages(conn, sql, params=None, fetch_results=True) (generator.py:456):
+
+    General-purpose helper to execute SQL and return:
+
+        row_counts (if any)
+
+        cursor.messages (server messages)
+
+        error_text (if pyodbc.Error raised)
+
+    Not heavily used in the current pipeline, but encapsulates the pattern of “try to run SQL, capture server messages and errors separately.”
+
+1.7. Cosmos.sql execution and telemetry
+
+_run_cosmos_sql_and_capture_server(cfg, cosmos_sql_path_override=None) (generator.py:488):
+
+High-level responsibilities:
+
+    Opens a pyodbc connection to COSMOS using COSMOS_PYODBC_CONNECTION_STRING.
+
+    Reads Cosmos.sql from either:
+
+        the --cosmos-sql-path override (when generator wrote it into Run Outputs/<run>/QueryScripts), or
+
+        the legacy COSMOS_SQL_PATH under Generator Files/QueryScripts.
+
+    Splits Cosmos.sql by GO into batches.
+
+    Executes each batch in sequence with robust logging and telemetry.
+
+    Collects telemetry into:
+
+        cosmos_messages_lines (string log)
+
+        cosmos_row_counts (a dictionary keyed by dest_table and (dest_table, CountType))
+
+    Commits changes once at the end.
+
+    Queries SELECT @@SERVERNAME to capture dynamic Cosmos server instance name.
+
+    Computes overall duration (start/end timestamps).
+
+    Returns (cosmos_instance, cosmos_sql_output, conn, cosmos_row_counts).
+
+Stability / safety details:
+
+    Batch splitting uses .splitlines() and treats a line GO (case-insensitive) as a batch separator.
+
+    Skips empty batches with explicit log message.
+
+    For each batch:
+
+        Executes via cursor.execute(batch).
+
+        Iterates over cursor.nextset().
+
+        When cursor.description is not None, prints the result set via _print_result_set() (generator.py:393) and captures telemetry.
+
+        When cursor.description is None, calls cursor.fetchall() to clear the result set; catches pyodbc.ProgrammingError.
+
+        On pyodbc.Error:
+
+            Captures all cursor.messages (server-level messages including OPENQUERY inner errors).
+
+            Prints [SQL MESSAGE] ... for each.
+
+            Raises RuntimeError with batch index and error summary — a “fail-fast” behavior that stops the pipeline early if Cosmos.sql fails.
+
+    After all batches:
+
+        If cosmos_row_counts is empty, prints a warning that “Subsequent pipeline stages will treat all cohorts as failed.”
+
+        Commits once at the end.
+
+    Uses @@SERVERNAME to determine the actual Cosmos server that executed the script (useful when multiple Cosmos instances sit behind a dispatcher).
+
+    Duration measurement uses datetime.fromisoformat on start/end timestamps and robust fallback.
+
+This function is the critical stability guard: it ensures Cosmos-side failures are caught with context and prevents downstream stages from running when Cosmos.sql did not complete.
+1.8. Projects.sql execution with per-cohort gating
+
+_run_projects_sql(project_db, cohort_config_path, accumulator, projects_sql_path_override=None, cohort_status=None) (generator.py:651):
+
+Responsibilities:
+
+    Loads Projects.sql from:
+
+        projects_sql_path_override (run-specific QueryScripts), or
+
+        legacy PROJECTS_SQL_PATH.
+
+    Loads YAML to find which cohorts/dest_tables are enabled.
+
+    Filters destination tables based on:
+
+        YAML pull_this_cycle (controller-level gating), and
+
+        cohort_status from Cosmos telemetry (only run Projects for “success” cohorts).
+
+    Splits Projects.sql into blocks by GO.
+
+    For each enabled dest_table:
+
+        Identifies blocks in Projects.sql where SQL mentions dbo.<dest_table> or [dbo].[<dest_table>].
+
+        For each block, executes it against PROJECTS.<project_db> via pyodbc with detailed logging and per-block timing.
+
+Safety/stability features:
+
+    If Projects.sql file is missing, raises FileNotFoundError.
+
+    Enabled destination tables are computed as:
+
+        cohort exists in YAML;
+
+        dest_table is present;
+
+        pull_this_cycle (default True); and
+
+        cohort_status[dest] == "success" (if provided).
+
+    Blocks split using same GO logic as Cosmos.
+
+    _block_matches_dest_table does simple substring search; this ensures only relevant blocks execute for each destination table.
+
+Per-block execution (_execute_projects_block_for_cohort):
+
+    Constructs a local connection string for PROJECTS with timeout=10 seconds.
+
+        This prevents indefinite hangs on long-running or broken queries.
+
+    Logs:
+
+        start timestamp with _phase_prefix(dest_table, "transfer", "Projects")
+
+        connection string details (via vprint)
+
+        execution block SQL, iterating nextset().
+
+        When cursor.local.description is not None, prints result sets via _print_result_set().
+
+        Catches ProgrammingError on nextset() and logs the error; continues gracefully.
+
+        Commits per block and logs commit and per-block duration.
+
+        Closes connection and logs closure with per-block prefix.
+
+Controller-level timing:
+
+    Logs Projects.sql per-dest_table execution controller START/END with overall duration.
+
+    If no blocks are found for a dest_table, logs skip message.
+
+This function decouples Projects.sql from Cosmos.sql and ensures only cohorts that succeeded on Cosmos are actually materialized in Projects.
+1.9. Projects-side summaries
+
+_summarize_projects_tables(cfg, accumulator, cosmos_row_counts) (generator.py:937):
+
+    Opens PROJECTS connection using project DB from config.
+
+    For each cohort in YAML:
+
+        Prints header with phase prefix (dest_table, summary, Projects) and full table name <project_db>.dbo.<dest_table>.
+
+        Executes COUNT_BIG(1) on the table.
+
+        Aliases as <dest_table>RowCount to keep column names unique in logs.
+
+        Logs the row count via [SUMMARY] line; appends to accumulator.
+
+        Executes INFORMATION_SCHEMA.COLUMNS query for table.
+
+        Logs (ColumnName [DATA_TYPE]) list via [SUMMARY] Columns: ....
+
+    Catches pyodbc errors and logs [SUMMARY WARNING] with error text.
+
+_summarize_upload_cohorts(cfg, accumulator) (generator.py:1006):
+
+    Same pattern, but for upload_cohorts defined in YAML.
+
+    Summarizes row counts and columns of upload tables, giving visibility into file-based uploads and their Projects representation.
+
+These summary functions provide post-run introspection for debugging and verifying tables.
+1.10. Markdown run report
+
+_write_query_generator_output_markdown(generator_base_dir, cosmos_generator_output, cosmos_sql_output, projects_output) (generator.py:1074):
+
+    Ensures directory exists.
+
+    Writes generator_output.md with sections:
+
+        makeCosmos output (legacy; now just a placeholder)
+
+        Cosmos.sql output (full cosmos_sql_output telemetry log)
+
+        Projects output (makeProjects + Projects.sql log lines collected in projects_lines)
+
+    Wraps each section in fenced code blocks for readability.
+
+    Returns path to markdown file.
+
+This is used when test_options.printout_md is true to create a self-contained report of the run.
+1.11. Cosmos-side generation machinery inside generator.py
+
+From around load_config() (generator.py:1117) onward, generator duplicates and extends the behavior of makeCosmos.py, but in-process.
+
+Key building blocks:
+
+    build_column_definition() (generator.py:1122)
+
+    build_column_list() (generator.py:1134)
+
+    build_select_projection() (generator.py:1139)
+
+        Same semantics as in makeCosmos.py (Generator Files/makeCosmos.py:19): define schema and projections from YAML columns, including nullable behavior.
+
+    _substitute_cosmos_placeholders() (generator.py:1151)
+
+        Replaces {cosmos_server}, {cosmos_db}, {cosmos_schema} placeholders in strings used in filter/from/join/where.
+
+        Allows YAML to carry generator parameters rather than hard-coded COSMOS.dbo.
+
+    _build_filter_fragment() (generator.py:1165)
+
+        Hardened builder for FROM/JOIN/WHERE portion of each cohort.
+
+        Key safety features:
+
+            Validates filter.from is present and non-empty.
+
+            Supports filter.from as a list (e.g., "PatientDim AS p") and uses first item.
+
+            Applies placeholder substitution.
+
+            Joins are processed, substituting {project_db} and Cosmos placeholders.
+
+            WHERE conditions:
+
+                Replaces {{min_date_key}} and {{max_date_key}} with actual numeric keys from global config.
+
+                Adds AND automatically for conditions after the first unless condition:
+
+                    already starts with AND/OR;
+
+                    is a pure ("...)` expression;
+
+                    is a comment (--).
+
+                Looks like a YAML-coded literal "value", or "value", to avoid turning them into AND 'value',.
+
+                Prefixes each line with indentation for readability.
+
+        Prevents “auto-AND” from corrupting YAML-coded IN-lists and ensures where clauses remain syntactically valid.
+
+    _build_not_null_where_conditions() (generator.py:1253)
+
+        Adds source_expr IS NOT NULL for every column with nullable=False and a non-empty source.
+
+        Appends these to filter_cfg.where, ensuring required columns are enforced in SQL via WHERE rather than relying on CREATE TABLE nullability alone.
+
+    _build_dedup_window_clauses() (generator.py:1270)
+
+        Interprets dedup_keys (list-of-lists) from YAML.
+
+        Returns partition_by, order_by strings; if dedup_keys invalid or missing, returns empty strings and effectively disables dedup (non-deduplicated staging).
+
+    _build_global_temp_name(dest_table) (generator.py:1288)
+
+        Normalizes destination table names.
+
+        If dest_table starts with JVM_, removes the prefix, then adds ##JVM_<base>.
+
+        All global temps use ##JVM_<base>, matching the makeCosmos convention.
+
+1.12. Cohort generation: generate_cosmos_sql_for_cohort (in-generator version)
+
+generate_cosmos_sql_for_cohort(global_cfg, cohort_cfg) (generator.py:1295) — note this is generator.py’s version, distinct from makeCosmos:
+
+Responsibilities:
+
+    Reads global config:
+
+        project_db, min_date_key, max_date_key, cosmos_db, test_options (smallest, stop-at limits, random PK sample).
+
+    Reads cohort config:
+
+        name, dest_table, columns, filter, type, dedup_keys.
+
+    Injects required non-null conditions into filter_cfg["where"].
+
+    Builds all fragments:
+
+        column definitions / list / select projection;
+
+        filter fragment (FROM/JOIN/WHERE);
+
+        global temp name;
+
+        TOP clause and ORDER BY for smallest sampling.
+
+    Builds base schema SQL:
+
+        DROP TABLE IF EXISTS global_temp;
+
+        CREATE TABLE global_temp (...);
+
+Dedup versus non-dedup behavior:
+
+    If dedup_keys resolve to a real partition (non-empty), generator adds robust dedup scaffolding with extra safety:
+
+        Checks that dedup keys actually match column names. If none match:
+
+            Logs a dedup_comment explaining fallback.
+
+            Emits non-dedup staging block (global temp insert only).
+
+            Returns schema_sql and fallback populate_temp (no dedup/waterfall temps).
+
+        If keys match columns, generator builds:
+
+            #Keys_<dest>
+
+            #Cohort_<dest>
+
+            #Cohort_<dest>_Dedup
+
+    These temporary tables:
+
+        Stage raw cohort rows into #Cohort_<dest>.
+
+        Insert distinct key combinations into #Keys_<dest>.
+
+        Use CROSS APPLY to select TOP (1) candidate for each key.
+
+        #Cohort_<dest>_Dedup orders by dedup_keys and order_by (master dedup rule).
+
+        Inserts deduplicated rows into #Cohort_<dest>_Dedup.
+
+        Inserts into global temp name from #Cohort_<dest>_Dedup.
+
+Telemetry:
+
+    Emits telemetry SELECTs for:
+
+        source_raw count from raw source table.
+
+        cohort_stage count from #Cohort_<dest>.
+
+        cohort_dedup count from #Cohort_<dest>_Dedup.
+
+        All appear in cosmos_row_counts as typed counts.
+
+If no dedup configured or partition_by empty:
+
+    Emits raw_source_count_sql (source-raw telemetry).
+
+    Builds non-deduplicated stage insert_block:
+
+        INSERT INTO global_temp SELECT ... FROM filter fragment.
+
+        Wraps with comment -- No dedup_keys configured; using raw staged cohort rows as-is.
+
+Limit handling:
+
+    Limit (TOP) is computed from YAML test_options:
+
+        PK cohorts: stop_at_for_pk_table.
+
+        Non-PK: stop_at_for_non_pk_tables.
+
+        If both zero, fallback to stop_at.
+
+        smallest must be true and limit > 0 for generator to emit TOP (limit) and optionally ORDER BY NEWID() for PK cohorts with random_pk_sample.
+
+Telemetry wrapper:
+
+    populate_sql is wrapped into a block that:
+
+        Declares @StartTime_<dest> and @EndTime_<dest> using SYSDATETIME().
+
+        Executes the final row count and durations from global temp:
+
+            CohortName, DestTable, start/end times, CohortDurationSeconds, Minutes, RemainingSeconds, and CohortRowCount.
+
+        This SELECT is what Cosmos-side runner (_print_result_set) uses to populate cosmos_row_counts[dest_table] with CohortRowCount.
+
+Overall, this generator-internal generate_cosmos_sql_for_cohort is a superset of makeCosmos’s version: it adds source raw/cohort stage/cohort dedup telemetry and more defensive dedup-key validation.
+1.13. Cohort normalization
+
+normalize_cohort_cfg(cohort_cfg) (generator.py:1631):
+
+    Validates PK cohorts:
+
+        If type == "PK" and no filter block or filter is None, raises ValueError.
+
+    Validates dedup_keys:
+
+        Must be a non-empty list of key lists.
+
+        dedup_keys[0] must be a non-empty list of column names.
+
+    Validates columns:
+
+        Every column must have a non-empty name.
+
+        Prevents duplicate column names within a cohort; raises ValueError if duplicates found.
+
+This is a YAML-structure safety gate to prevent generating broken SQL or ambiguous dedup behavior.
+1.14. Pull and upload switch blocks
+
+build_pull_switch_block(cohort_descriptors) (generator.py:1677):
+
+    Declares @Pull<dest_table> integer variables:
+
+        1 if pull_this_cycle true.
+
+        0 otherwise.
+
+    Cosmos SQL uses these in IF (@Pull<dest_table> = 1) wrappers around each per-cohort execution block.
+
+_normalize_bool(value, default) (generator.py:1688):
+
+    Normalizes YAML-ish booleans (True/False, "true"/"yes"/"1", etc.) for push/pull flags.
+
+build_upload_switch_block(upload_descriptors) (generator.py:1702):
+
+    Similar to pull switch, but for uploads:
+
+        @Push<dest_table> set to 1/0.
+
+    Cosmos SQL uses these around each upload block.
+
+1.15. Upload cohort blocks — dbtable / CSV / parquet
+
+There are three upload types.
+1.15.1. DB table uploads
+
+build_upload_block_for_dbtable(project_db, upload_cfg) (generator.py:1716):
+
+    For file type "dbtable":
+
+        Drops global temp for destination table.
+
+        Uses OPENQUERY(PROJECTS_LINKED_SERVER) to select all rows from [project_db].dbo.[source_name], where source_name = upload_cfg["name"].
+
+        Does SELECT * INTO global_temp.
+
+This is the simplest path when upstream pipeline has already loaded data into PROJECTS.
+1.15.2. CSV uploads
+
+build_upload_block_for_csv(project_root, upload_cfg) (generator.py:1776):
+
+    Strict behavior: hard fails if CSV is missing:
+
+        Raises FileNotFoundError with guidance to fix YAML or create file.
+
+    Resolves file_loc to absolute path, relative to project_root if not absolute.
+
+    Reads CSV via Python’s csv module with BOM-safe utf-8-sig:
+
+        First row is header; remainder are data rows.
+
+    Normalizes header to SQL-safe identifiers via _normalize_sql_identifier() (generator.py:1714):
+
+        Strips whitespace and wrapping pair of quotes.
+
+        Replaces non-alphanumeric/underscore with _.
+
+        Ensures non-empty; first char is alpha or _.
+
+    Cases:
+
+        No header columns: creates global temp with a single DummyColumn NVARCHAR(300) NULL; table remains empty.
+
+        Header but no data rows: creates global temp with columns from header, but no rows.
+
+        Header and data rows:
+
+            Builds CREATE TABLE global_temp ([Col] NVARCHAR(300) NULL, ...).
+
+            Builds a single multi-row INSERT with properly escaped string values (single quotes doubled; empty values as NULL).
+
+        Always drops any existing global temp before creation.
+
+This gives a robust CSV-driven upload where schema is derived from the first row and data is encoded as inline SQL values.
+1.15.3. Parquet uploads
+
+build_upload_block_for_parquet(project_root, upload_cfg) (generator.py:1907):
+
+    Recognizes file type "parquet".
+
+    Resolves path similarly to CSV.
+
+    Emits a documentation-only block:
+
+        Drops global temp (so there is no stale table).
+
+        Writes comments describing:
+
+            Cosmos cannot consume parquet directly from local paths.
+
+            An external pipeline (R/EDDI) should either:
+
+                load parquet into PROJECTS DB table and treat it as dbtable, or
+
+                populate the global temp directly in COSMOS prior to cohort execution.
+
+This is a coordination stub clarifying expectations and avoiding silent no-op.
+1.15.4. Wrapped upload blocks
+
+build_upload_blocks(project_db, upload_cfgs, project_root) (generator.py:1957):
+
+    For each upload config:
+
+        Normalizes file type.
+
+        Builds body from appropriate builder (dbtable/csv/parquet).
+
+        Wraps with:
+
+sql
+IF (@Push<dest_table> = 1)
+BEGIN
+    <upload body>
+END;
+
+    Returns combined section for Cosmos.sql.
+
+1.16. Cosmos.sql assembly (build_cosmos_script in generator)
+
+build_cosmos_script(global_cfg, cohorts_cfg, cohort_descriptors, upload_cfgs, upload_descriptors, project_root) (generator.py:2001):
+
+Key steps:
+
+    Reads cosmos_db and project_db.
+
+    Builds upload_switch_block, upload_blocks_section, and pull_switch_block.
+
+    For each cohort:
+
+        Generates schema and populate SQL via in-generator generate_cosmos_sql_for_cohort.
+
+        Wraps schema into labelled block/comment.
+
+        Builds telemetry execution block with DECLARE @StartTime_<dest>, @EndTime_<dest>, plus rowcount SELECT and durations.
+
+        Wraps telemetry into IF (@Pull<dest_table> = 1) BEGIN ... END.
+
+Assembles:
+
+    Header:
+
+        USE <cosmos_db>;
+
+        SELECT @@SERVERNAME AS CosmosServerName;
+
+    Upload switches + upload blocks (Phase 0).
+
+    Pull switches + schema blocks (Phase 1).
+
+    Cohort execution blocks (Phase 2).
+
+    Final SELECT listing global temp table names.
+
+Differences from original makeCosmos.py:
+
+    Everything is written as a single script (no GO separation; generator’s Cosmos runner splits on GO).
+
+    Telemetry is more extensive:
+
+        Source raw counts.
+
+        Stage counts.
+
+        Dedup counts.
+
+        Per-cohort durations.
+
+        Global-level FinalCosmosGlobalTemps list.
+
+1.17. Main pipeline (main() in generator)
+
+main() (generator.py:2124) is the orchestrator. High-level phases:
+
+    Startup and CLI args
+
+        Logs [PIPELINE] STARTING GENERATOR MAIN.
+
+        Parses argv:
+
+            -vv sets VERBOSE.
+
+            --smoke-test calls smoke_test() (generator.py:2120) and returns.
+
+            --projects-dry-run sets projects_dry_run.
+
+            yaml=<path>, files_location=<path>, plus generic key=value mapping stored in params.
+
+    YAML path resolution
+
+        yaml path can be passed either:
+
+            As yaml=<path> key=value.
+
+            As legacy YAML <path> direct argument.
+
+        Prefers params["yaml"] if present; else uses yaml_path_override; else defaults to DEFAULT_CONFIG_PATH = template.yaml.
+
+        Resolves relative paths against project_root = dirname(generator.py).
+
+    Load YAML
+
+        cfg = load_yaml_config(config_path).
+
+    Run output folder resolution
+
+        run_output_folder_rel from YAML run_output_folder if present.
+
+        Else fallback:
+
+            r_dump_folder from YAML if present.
+
+            Else "default_run".
+
+        run_output_folder_abs = os.path.join(repo_root, RUN_OUTPUTS_BASE_DIR, run_output_folder_rel) where repo_root = os.getcwd().
+
+        Creates folder; logs.
+
+    Parquet storage location + printout md
+
+        Reads parquet_storage_location and test_options.printout_md, and logs.
+
+    Output directory selection
+
+        If files_location CLI param present:
+
+            Resolves to absolute path; uses as output_dir.
+
+            Logs [PIPELINE] Using files location override as OUTPUT_DIR.
+
+        Else:
+
+            Uses run_output_folder_abs as output_dir.
+
+    R dump folder path
+
+        Sets r_dump_folder_abs = run_output_folder_abs.
+
+    Cosmos / Projects SQL path overrides
+
+        Will point to OUTPUT_DIR/QueryScripts/Cosmos.sql and Projects.sql.
+
+    Most SQL generation happens
+
+        Constructs global_cfg from YAML.
+
+        Normalizes upload cohorts into upload_cfgs and upload_descriptors, applying _normalize_bool to push_this_cycle.
+
+        Normalizes cohorts into cohorts_cfg via normalize_cohort_cfg.
+
+        Builds cohort_descriptors (dest_table, pull_this_cycle, type).
+
+        Calls build_cosmos_script() (generator.py:2001) with all these.
+
+        Writes Cosmos.sql to output_dir/QueryScripts/Cosmos.sql.
+
+        Sets cosmos_sql_path_override to that path.
+
+        Prepares Projects SQL path override at the same QueryScripts root.
+
+    Optional mirroring to run_folder
+
+        Reads run_folder from params; if provided, resolves path and uses:
+
+            _copy_query_scripts_to_location() (generator.py:318)
+
+            _copy_r_scripts_to_location() (generator.py:354)
+
+        Mirrors QueryScripts and R scripts into run_folder.
+
+    Cosmos.sql execution
+
+        Calls _run_cosmos_sql_and_capture_server() (generator.py:488) with cfg and cosmos_sql_path_override.
+
+        On failure, logs error and returns early (no Projects or R).
+
+        On success, gets cosmos_instance, cosmos_sql_output, cosmos_conn, and cosmos_row_counts.
+
+    Derive cohort status from telemetry
+
+        For each dest_table in cohort_descriptors:
+
+            If dest_table in Cosmos row counts (i.e., final row count SELECT happened), set status to "success".
+
+            Else "failed".
+
+        Logs source_raw counts separately when available via (dest_table, "source_raw").
+
+    Row count cutoff warning
+
+        ROW_CUTOFF = 80_000_000.
+
+        If any dest_table has RowCount > ROW_CUTOFF (cohort row count or possibly other typed counts), prints warning about Cosmos not being able to pull data reliably and suggests reconfiguring search.
+
+    makeProjects invocation
+
+        If output_dir is set:
+
+            Calls _run_python_script_in_generator_dir() (generator.py:207) on MAKE_PROJECTS_FILENAME with arguments:
+
+                [config_path, cosmos_instance, output_dir] + ["-vv" if VERBOSE]
+
+            This ensures Projects.sql is written into the same QueryScripts folder and mirrored to run folder if that path is used inside makeProjects.
+
+        Else fallback to legacy _run_make_projects() (generator.py:264).
+
+        Logs wrapped output both to console and projects_lines.
+
+    Projects.sql execution / dry run
+
+        Retrieves project_db from YAML.
+
+        If projects_dry_run flag set:
+
+            Logs that Projects.sql will not be executed.
+
+            Tells user they can inspect Generator Files/QueryScripts/Projects.sql manually.
+
+        Else:
+
+            Calls _run_projects_sql() (generator.py:651) with:
+
+                project_db
+
+                config_path
+
+                accumulator=projects_lines
+
+                projects_sql_path_override
+
+                cohort_status
+
+            This executes Projects.sql per dest_table with gating based on Cosmos success.
+
+    makeR conditional execution
+
+        Logs R step.
+
+        Constructs successful_dests list where cohort status is "success".
+
+        If there are successful cohorts:
+
+            Calls _run_python_script_in_generator_dir() (generator.py:207) on MAKE_R_FILENAME and args [config_path, r_dump_folder_abs, output_dir, success_arg] + ["-vv" if VERBOSE].
+
+            Catches RuntimeError, logs failure but keeps pipeline going.
+
+        If no successes: logs that R script generation is skipped.
+
+    Cosmos telemetry echo
+
+        Logs “Cosmos per-table telemetry and temp table summary” (from Cosmos.sql).
+
+        vprint(cosmos_sql_output) echoes entire Cosmos output if VERBOSE.
+
+    Projects-side summarization
+
+        Calls _summarize_projects_tables() (generator.py:937) and _summarize_upload_cohorts() (generator.py:1006) to append rowcount + column summaries into projects_lines.
+
+    Per-cohort status summary
+
+        Prints dest_table=status for each.
+
+        Computes first_failed_dest_table, if any.
+
+        Logs summary line either:
+
+            Completed all cohorts <list>; first failure at dest_table=X, or
+
+            All cohorts completed successfully.
+
+        Appends summary line to projects_lines.
+
+    Markdown output (optional)
+
+        If printout_md is true:
+
+            Assembles projects_output_combined = "\n".join(projects_lines).
+
+            Calls _write_query_generator_output_markdown() (generator.py:1074) with generator_base_dir=run_output_folder_abs, cosmos_generator_output set to a fixed string since Cosmos.sql is in-process, cosmos_sql_output (full log), and projects_output.
+
+            Logs path of generator_output.md.
+
+        Else logs that it is skipping generator_output.md.
+
+    Cleanup
+
+        Closes cosmos_conn explicitly.
+
+        Logs final GENERATOR MAIN COMPLETED.
+
+This main() function is where most of the stability and instrumentation lives: gating steps on success, logging durations and row counts, and avoiding downstream work when Cosmos fails.
+2. Generator Files/makeCosmos.py — standalone Cosmos.sql generator (legacy / vertical)
+
+Generator Files/makeCosmos.py is an earlier, standalone version of the Cosmos-side generator. Much of its logic has now been reproduced (and extended) inside generator.py (generator.py:1117), but it still provides:
+
+    Standalone CLI entry to generate Cosmos.sql without running pyodbc.
+
+    Four-batch, GO-separated Cosmos.sql structure for vertical execution.
+
+    Simplified telemetry focused on dedup stage counts (no source_raw/cohort_stage separate telemetry).
+
+    Only dbtable and a simple csv file type support (no parquet).
+
+2.1. Configuration and loading
+
+    DEFAULT_CONFIG_PATH = "cohort_simplified.yaml" — older YAML naming convention.
+
+    OPENQUERY_DIR = "QueryScripts" — where Cosmos.sql is written relative to generator root.
+
+    PROJECTS_LINKED_SERVER = "PROJECTS" — same as generator.
+
+load_config() (Generator Files/makeCosmos.py:14):
+
+    Simple yaml.safe_load from given path.
+
+2.2. Column builders and placeholder substitution
+
+    build_column_definition() (Generator Files/makeCosmos.py:19)
+
+    build_column_list() (Generator Files/makeCosmos.py:37)
+
+    build_select_projection() (Generator Files/makeCosmos.py:42)
+
+    _substitute_cosmos_placeholders() (Generator Files/makeCosmos.py:60)
+
+Same semantics as in generator: type/nullable, column list, alias projection, placeholder substitution.
+2.3. Filter fragment (earlier version)
+
+_build_filter_fragment() (Generator Files/makeCosmos.py:74):
+
+Very similar to generator version, but:
+
+    Focuses on vertical concerns:
+
+        Hardcoded AND before YAML-coded IN-list lines 87–88.
+
+        Comments explained.
+
+    Doesn’t handle min/max date keys as a generic concept (it does the same replacements).
+
+    Doesn’t add not-null conditions by itself; this is done later.
+
+2.4. Not-null conditions and dedup window clauses
+
+_build_not_null_where_conditions() (Generator Files/makeCosmos.py:165) and _build_dedup_window_clauses() (Generator Files/makeCosmos.py:185) mirror generator’s logic:
+
+    Adds source_expr IS NOT NULL for columns with nullable=False.
+
+    Produces partition_by, order_by from dedup_keys.
+
+2.5. Global temp names
+
+_build_global_temp_name(dest_table) (Generator Files/makeCosmos.py:201):
+
+    Same ##JVM_<base> pattern with normalization for JVM_ prefix.
+
+2.6. Cohort generation (makeCosmos version)
+
+generate_cosmos_sql_for_cohort(global_cfg, cohort_cfg) (Generator Files/makeCosmos.py:215):
+
+Differences from generator’s version:
+
+    Dedup path:
+
+        Builds #Keys_<dest>, #Cohort_<dest>, #Cohort_<dest>_Dedup triple with dedup.
+
+        Telemetry limited to dedup result:
+
+            SELECT 'cohort dedup' CountType, COUNT_BIG(1) AS [<dest>RowCount] FROM cohort_dedup_temp; (no source_raw or stage counts).
+
+    Non-dedup path:
+
+        INSERT INTO global_temp from filter_fragment with optional TOP, ORDER BY.
+
+        Telemetry: no dedup counters comment.
+
+So makeCosmos is narrower in telemetry than generator’s in-process version.
+
+Limit handling:
+
+    Same test_options fields:
+
+        smallest
+
+        stop_at_for_pk_table
+
+        stop_at_for_non_pk_tables
+
+        stop_at
+
+    Same random PK sample logic.
+
+2.7. Cohort normalization (PK-aware)
+
+normalize_cohort_cfg() (Generator Files/makeCosmos.py:456):
+
+    Only enforces that PK cohorts must have a filter block.
+
+    Does not validate dedup keys or duplicate columns; that was added later in generator.
+
+2.8. Pull switch block
+
+build_pull_switch_block(cohort_descriptors) (Generator Files/makeCosmos.py:477):
+
+    Same pattern as generator’s version.
+
+2.9. Upload switch block and upload types (old behavior)
+
+_normalize_bool() (Generator Files/makeCosmos.py:488):
+
+    Same boolean normalization logic.
+
+build_upload_switch_block(upload_descriptors) (Generator Files/makeCosmos.py:505):
+
+    Same as generator.
+
+Upload types:
+
+    dbtable: build_upload_block_for_dbtable() (Generator Files/makeCosmos.py:524) — identical semantics to generator version.
+
+    csv: build_upload_block_for_csv() (Generator Files/makeCosmos.py:558) — very different behavior from generator:
+
+        Treats CSV as a simple list of codes (no header).
+
+        Creates global temp with one column: DiagnosisCode NVARCHAR(50) NOT NULL.
+
+        Inserts one code per row as [code] values.
+
+        Hard fails if CSV missing.
+
+        If CSV empty, creates table with DiagnosisCode but leaves it empty.
+
+    No parquet type handling; only dbtable and csv.
+
+build_upload_blocks() (Generator Files/makeCosmos.py:650):
+
+    Same per-upload guard: IF (@Push<dest> = 1) BEGIN ... END.
+
+2.10. Cosmos script assembly (makeCosmos version)
+
+build_cosmos_script() (Generator Files/makeCosmos.py:696):
+
+    Creates four distinct batches separated by GO:
+
+        Batch 1: header
+
+            USE <cosmos_db>
+
+            SELECT @@SERVERNAME AS CosmosServerName;
+
+        Batch 2: upload switches + upload blocks.
+
+        Batch 3: pull switches + schema blocks.
+
+        Batch 4: execution blocks + final temp list.
+
+    Batches joined as "GO" separators, so a vertical runner (like SQLCMD) can run each as a separate batch; generator’s run_cosmos_sql_and_capture_server splits on GO to reproduce this behavior.
+
+This structure is explicitly documented as “vertical, GO-separated phases.”
+2.11. CLI main — standalone mode
+
+main() (Generator Files/makeCosmos.py:844):
+
+    Resolves:
+
+        generator_root = dirname(__file__) (Generator Files).
+
+        project_root = dirname(generator_root) (repo root).
+
+    Determines config path as:
+
+        sys.argv[1] if present, else DEFAULT_CONFIG_PATH from project_root.
+
+    Optional run folder from sys.argv[2], resolved relative to project root.
+
+    Loads YAML, builds global_cfg.
+
+    Normalizes upload_cfgs and upload_descriptors from upload_cohorts.
+
+    Normalizes cohorts_cfg via normalize_cohort_cfg.
+
+    Ensures OPENQUERY_DIR exists.
+
+    Builds cohort_descriptors from cohorts_cfg.
+
+    Calls build_cosmos_script() (Generator Files/makeCosmos.py:696).
+
+    Writes Cosmos.sql to:
+
+        Generator Files/QueryScripts/Cosmos.sql.
+
+        If run_folder provided, mirrors Cosmos.sql to <run_folder>/QueryScripts/Cosmos.sql.
+
+This script remains a self-contained generator for Cosmos.sql, but generator’s in-process builder is now preferred.
+3. Generator Files/makeProjects.py — standalone Projects.sql generator
+
+Generator Files/makeProjects.py generates Projects-side SQL independently, with an emphasis on:
+
+    Stable OPENQUERY use with dynamic Cosmos instance.
+
+    Removing SQL-level @Pull gating; Python decides which cohorts to execute.
+
+    Per-cohort instrumentation via PRINT and timing.
+
+    Ensuring destination-table schema is always aligned with YAML by drop/recreate semantics.
+
+3.1. Configuration and loading
+
+    DEFAULT_CONFIG_PATH = "cohort_simplified.yaml".
+
+    OPENQUERY_DIR = "QueryScripts".
+
+load_config() (Generator Files/makeProjects.py:35):
+
+    Simple YAML load.
+
+3.2. Column and global temp builders
+
+    build_column_definition() (Generator Files/makeProjects.py:40)
+
+    build_column_list() (Generator Files/makeProjects.py:58)
+
+        Same semantics as makeCosmos/generator.
+
+build_global_temp_name(dest_table) (Generator Files/makeProjects.py:63):
+
+    Same ##JVM_<base> pattern.
+
+3.3. Cohort-level Projects SQL
+
+generate_projects_sql_for_cohort(global_cfg, cohort_cfg) (Generator Files/makeProjects.py:78):
+
+Responsibilities:
+
+    Read global config:
+
+        project_db
+
+        cosmos_instance (runtime or YAML)
+
+    Read cohort config:
+
+        dest_table, name, type, columns.
+
+    Build column definitions and list.
+
+    Derive names:
+
+        global temp name build_global_temp_name(dest_table).
+
+        local temp name #Local_<dest_table>.
+
+OpenQUERY block:
+
+    Drops destination table in Projects DB, creates it fresh from columns.
+
+    Drops local temp.
+
+    Uses:
+
+sql
+SELECT <col list> INTO <local_temp> FROM OPENQUERY([cosmos_instance], 'SELECT <col list> FROM <global_temp_name>');
+
+    Inserts <local_temp> rows into destination table.
+
+Reporting blocks:
+
+    Cosmos-side row count:
+
+        Uses OPENQUERY to SELECT COUNT(*) from global temp.
+
+        Note: uses SELECT 1 AS dummy and count, a stable pattern that avoids transmitting actual data here.
+
+    Projects-side row count:
+
+        SELECT COUNT(*) AS <dest>RowCount FROM <project_db>.dbo.<dest_table>;
+
+    Sample rows:
+
+        SELECT TOP (1) * FROM <project_db>.dbo.<dest_table>;
+
+Wrapper:
+
+    Adds outer commentary:
+
+        USE <project_db> at top.
+
+        Comments distinguishing source/destination.
+
+This defines the core fragment for one cohort.
+3.4. Cohort normalization (PK-aware)
+
+normalize_cohort_cfg() (Generator Files/makeProjects.py:204):
+
+    Similar to makeCosmos version: PK cohorts must define filter.from; non-PK pass through unchanged.
+
+3.5. Full Projects script assembly
+
+build_projects_script(global_cfg, cohorts_cfg, cohort_descriptors) (Generator Files/makeProjects.py:225):
+
+Aims:
+
+    Build Projects.sql with:
+
+        No SQL-level @Pull variables.
+
+        Each cohort block unconditional in SQL.
+
+        Python chooses which blocks to run when executing Projects.sql (via _run_projects_sql in generator).
+
+Process:
+
+    For each cohort:
+
+        Generates inner_sql via generate_projects_sql_for_cohort() (Generator Files/makeProjects.py:78).
+
+        Wraps with instrumentation block:
+
+            Declares @StartTime_<dest> and logs start via PRINT.
+
+            Executes inner_sql.
+
+            Declares @EndTime_<dest> and logs end time via PRINT.
+
+            Calculates @ElapsedSeconds, @ElapsedMinutes, @RemainingSeconds.
+
+            Prints durations via PRINT.
+
+    Collects all per-cohort blocks into body.
+
+    Builds final Projects script:
+
+        Top-level:
+
+            USE <project_db>;
+
+            Script-level start/end times and durations.
+
+            Final PRINT listing dest table names.
+
+This script has no GO; it is expected to be executed as a single script, but generator’s _run_projects_sql splits it into per-dest-table blocks by matching.
+3.6. CLI main — standalone mode
+
+main() (Generator Files/makeProjects.py:321):
+
+Responsibilities:
+
+    Determine roots:
+
+        generator_root = dirname(__file__) (Generator Files).
+
+        project_root = dirname(generator_root) (repo root).
+
+    Resolve config path:
+
+        Raw config path from sys.argv[1], else default.
+
+        Resolve relative path against project_root.
+
+    Load YAML (cfg).
+
+    Runtime cosmos instance override:
+
+        If sys.argv[2] present, treat as runtime_cosmos_instance.
+
+        Else use cfg["cosmos_instance"].
+
+    Run folder support:
+
+        If sys.argv[3] present, treat as run-specific folder path relative to project root.
+
+        Used to mirror Projects.sql into <run_folder>/QueryScripts.
+
+    Build global_cfg:
+
+        project_db, min/max date keys, cosmos_instance, test options (smallest/stop-at fields).
+
+    Normalize cohorts via normalize_cohort_cfg.
+
+    Create OPENQUERY_DIR under generator root (Generator Files/QueryScripts).
+
+    Build cohort_descriptors for potential gating in generator (not used here).
+
+    Call build_projects_script() (Generator Files/makeProjects.py:225).
+
+    Write Projects.sql to Generator Files/QueryScripts/Projects.sql.
+
+    If run folder provided:
+
+        Mirror Projects.sql to <run_folder>/QueryScripts/Projects.sql using shutil.copy2.
+
+This script is primarily used by generator via _run_python_script_in_generator_dir, but can be run directly if needed.
+4. Summary: stability behaviors across the stack
+
+Across generator.py, makeCosmos.py, and makeProjects.py, the stability and guardrail behaviors include:
+Path resolution / normalization
+
+    Always resolve YAML paths relative to project root when not absolute.
+
+    Derive run output folders under Run Outputs, but mirror QueryScripts/scripts into user-specified run folders when needed.
+
+    Normalize external Z:\Project Dxxxx\<repo> roots with robust Unicode stripping.
+
+YAML validation
+
+    PK cohorts must define filter.from/filter configuration.
+
+    dedup_keys must be well-formed list-of-lists in generator’s newer version.
+
+    Columns must have unique names and non-empty name fields.
+
+Filter and WHERE building
+
+    Automatic AND injection avoids corrupting YAML-coded IN-list lines, parentheses, and comments.
+
+    Date-key placeholders ({{min_date_key}}, {{max_date_key}}) are resolved centrally.
+
+    Not-null constraints for non-null columns are enforced via WHERE.
+
+Dedup scaffolding
+
+    Local dedup staging tables (#Keys_*, #Cohort_*, #Cohort_*_Dedup) ensure any duplicates are resolved before populating global temps.
+
+    Dedup keys and order-by are validated against actual columns; fallback to non-dedup staging if mismatch.
+
+Telemetry and row-count tracking
+
+    Cosmos side:
+
+        Source raw count.
+
+        Stage count.
+
+        Dedup count.
+
+        Final cohort row count and durations per destination table.
+
+    Projects side:
+
+        Per-cohort durations and row counts.
+
+        Script-level start/end times and durations.
+
+    Python side:
+
+        cosmos_row_counts dictionary keyed by (dest_table, CountType) pairs.
+
+        Row-count cutoff warnings for exceptionally large cohorts.
+
+Execution gating
+
+    @Pull<dest> gating inside Cosmos SQL (cohorts).
+
+    @Push<dest> gating for upload blocks.
+
+    Generator chooses which Projects.sql blocks to run based on:
+
+        pull_this_cycle
+
+        Cosmos success status.
+
+Error handling
+
+    Cosmos batch errors surfaced as RuntimeError with full server messages.
+
+    Missing YAML/SQL/CSV paths raise explicit errors rather than silent failures.
+
+    timeout parameter on PROJECTS connections reduces risk of hangs.
+
+    makeR vertical errors logged and treated as non-fatal.
+
+Mirroring / run-specific outputs
+
+    QueryScripts and R scripts mirrored to an optional run folder for self-contained deliverables.
+
+    Cosmos.sql and Projects.sql always written under a unified Run Outputs/<run>/QueryScripts tree when generator is used with a run output folder.
+
+Refactoring-oriented observations
+
+The document identifies substantial duplication and orchestration coupling that are likely refactoring targets:
+
+    Duplicated SQL-generation logic: generator.py contains in-process copies/evolutions of logic also present in makeCosmos.py, while similar builders exist in makeProjects.py.
+
+    Mixed responsibilities in generator.py: CLI parsing, YAML normalization, SQL code generation, database execution, telemetry parsing, filesystem mirroring, report writing, and downstream script orchestration coexist in one module.
+
+    String-built SQL mixed with execution: SQL-fragment construction, script assembly, and pyodbc runtime handling are intertwined, making unit testing and correctness validation harder.
+
+    Telemetry protocol is implicit: result-set column naming and CountType strings are parsed by generic cursor code rather than defined as a typed/explicit contract.
+
+    Dual output-path models: legacy Generator Files/QueryScripts, newer Run Outputs/<run>/QueryScripts, and optional run_folder mirroring coexist.
+
+    Duplicate config normalization: cohort/upload config handling is spread across the three scripts, with different validation strength.
+
+    Fragile Projects block selection: _block_matches_dest_table uses substring matching against SQL blocks, which can mis-associate tables if names collide or comments contain table names.
+
+A likely end state would retain the behavior while separating domain models/config validation, SQL rendering, execution adapters, telemetry parsing, and output/reporting into independently testable modules.

@@ -1,4 +1,4 @@
-> Historical/source notes. These brainstorming notes have been consolidated into the active design doc at `QMDs/yamlmanagerDesign.qmd`. Use `QMDs/progress.md` for current implementation status.
+> Historical/source notes. These brainstorming notes have been consolidated into the active design doc at `QMDs/yamlmanager/yamlmanagerDesign.qmd`. Use `QMDs/yamlmanager/progress.md` for current implementation status.
 
 So we have to reimagine the workflow a little bit. At present, I have this system make a large single yaml out of a cohort collection with recipes and custom tables, and then multipliers and batchers. While this is great, I need something a little different. Let's call the yaml before the batching and multipcation are applied as 'preyaml'. 
 

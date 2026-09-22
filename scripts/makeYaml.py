@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compile human-authored Telescope YAML into finished VM-facing YAML.
+Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
 
 The file is intentionally self-contained for the VM copy-update workflow.
 """
