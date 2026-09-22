@@ -212,6 +212,8 @@ The new manifest does not need to preserve all printed messages, but Pullmanager
 - Did the row count exceed a risk threshold?
 - What failed and where?
 
+- How long did it take to finish each table?
+
 ### Error handling
 
 Old guardrails worth carrying forward:
