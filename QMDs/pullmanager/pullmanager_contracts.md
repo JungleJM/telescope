@@ -363,6 +363,118 @@ combination, since a missing combination means silently unpulled patients.
 
 Covered by `makeYaml.py --tdd batching`.
 
+## Connection And Execution Facts
+
+Harvested from the old generator. These are the narrow mechanical answers the
+refactor plan means by using the old code as a reference quarry, not as
+architecture.
+
+### Authentication
+
+Both connections use Windows integrated auth, so **there are no credentials to
+store**:
+
+```python
+# Cosmos
+"Driver={ODBC Driver 17 for SQL Server};"
+"Server=tcp:COSMOS;"          # DNS alias; @@SERVERNAME resolves the real instance
+"Database=COSMOS;"            # or COSMOS_SneakPeek
+"Trusted_Connection=yes;"
+
+# Projects, opened per destination table
+"Driver={ODBC Driver 17 for SQL Server};"
+f"Server=tcp:{PROJECTS_SERVER};"
+f"Database={project_db_name};"
+"Trusted_Connection=yes;"
+```
+
+`.env` therefore holds host and database names only. Driver 17 is what is
+installed; it defaults to `Encrypt=no`, so no certificate handling is needed.
+
+Projects connections are opened with `timeout=10`. Cosmos uses the default.
+
+### The Cosmos Connection Is Held Open
+
+`run_cosmos_sql_and_capture_server()` **returns the live connection** rather
+than closing it. That is what keeps `##JVM_*` alive for the Projects-side
+`OPENQUERY` to read. Confirms the session model: the Cosmos connection must
+outlive every phase that touches its global temps.
+
+`SELECT @@SERVERNAME` is executed on that same connection after the batches
+complete, and a missing result is a hard error rather than a fallback.
+
+### Statement Execution
+
+Scripts are split on lines equal to `GO` (case-insensitive, stripped), since
+`GO` is a client batch separator that the driver will not accept.
+
+Each batch drains every result set, because a script emits telemetry `SELECT`s
+interleaved with DDL and inserts:
+
+```python
+cursor.execute(batch)
+while True:
+    if cursor.description is not None:
+        handle_result_set(cursor)
+    else:
+        try:
+            cursor.fetchall()          # statement produced no rows
+        except pyodbc.ProgrammingError:
+            pass
+    if not cursor.nextset():
+        break
+```
+
+### Server Messages
+
+`cursor.messages` carries `PRINT` output and nested engine errors, and is read
+on **both** the success and failure paths. This is what surfaces the inner
+error of a failed `OPENQUERY`, which otherwise reports only a generic outer
+failure:
+
+```python
+except pyodbc.Error as exc:
+    msgs = list(cursor.messages)
+    error_text = " | ".join(str(part) for part in exc.args)
+```
+
+A failed Cosmos batch raises immediately, naming the batch index and preserving
+the last error.
+
+### Transactions
+
+`pyodbc` defaults to `autocommit=False`, so each Projects block runs as one
+implicit transaction and is committed after the block finishes, with the
+connection closed in a `finally`. SQL Server supports transactional DDL, so the
+drop/create/insert sequence is already atomic per block — the write-mode
+guarantee above therefore costs nothing extra to preserve.
+
+### Do Not Reproduce: Substring Block Matching
+
+The old runner selected which parts of a combined `Projects.sql` to execute by
+searching for a table name:
+
+```python
+simple_pattern = f"dbo.{dest_table_name}".lower()
+return simple_pattern in block_sql.lower()
+```
+
+This is broken on prefix names, and it fires on the project's own example.
+`dbo.PKTable` is a substring of `dbo.PKTable2`, so processing `PKTable` matches
+the `PKTable2` block as well and re-runs it — dropping, recreating and
+refilling a table that was already done, and emitting its row-count telemetry
+twice. Correctness survives only because the transfer happens to be idempotent
+while the Cosmos temp still exists.
+
+Pullmanager selects work by manifest id. No SQL text is ever searched.
+
+### Do Not Reproduce: Telemetry Scraped By Column Name
+
+Row counts were recovered by inspecting result-set column names
+(`DestTable`, `CohortRowCount`, `CountType`, `RowCount`) across arbitrary
+result sets, with a warning if none appeared. Pullmanager reads telemetry from
+a declared contract tied to manifest ids instead.
+
 ## Data Dictionary Validation
 
 `YAMLs/datadictionary.yaml` is the source of truth for column types. Authoring
