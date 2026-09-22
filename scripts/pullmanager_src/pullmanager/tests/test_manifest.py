@@ -229,6 +229,65 @@ class SessionRollupTests(unittest.TestCase):
         self.assertEqual(session.recompute_status(), BLOCKED)
 
 
+class EpochTests(unittest.TestCase):
+    """Global temps die with the connection; the epoch is how we know."""
+
+    def test_begin_epoch_records_connection_facts(self):
+        session = sample_manifest().sessions[0]
+        epoch = session.begin_epoch(linked_server="et4003vpdsq1032")
+        self.assertEqual(session.epoch, epoch)
+        self.assertEqual(session.runtime["linked_server"], "et4003vpdsq1032")
+        self.assertIsNotNone(session.runtime["opened_at"])
+
+    def test_each_epoch_is_distinct(self):
+        session = sample_manifest().sessions[0]
+        self.assertNotEqual(session.begin_epoch(), session.begin_epoch())
+
+    def test_finishing_stamps_the_current_epoch(self):
+        session = sample_manifest().sessions[0]
+        epoch = session.begin_epoch()
+        phase = session.phases[2]
+        phase.start()
+        phase.finish(rows=12345)
+        self.assertEqual(phase.epoch, epoch)
+
+    def test_work_from_the_current_epoch_is_not_stale(self):
+        session = sample_manifest().sessions[0]
+        session.begin_epoch()
+        phase = session.phases[2]
+        phase.start()
+        phase.finish()
+        self.assertFalse(phase.is_stale(session.epoch))
+
+    def test_work_from_a_previous_epoch_is_stale(self):
+        session = sample_manifest().sessions[0]
+        session.begin_epoch()
+        for child in session.children:
+            child.start()
+            child.finish()
+
+        # Restarting the process opens a new connection; the old temps are gone.
+        session.begin_epoch()
+        self.assertEqual(len(session.stale_children()), len(session.children))
+        self.assertTrue(session.phases[2].is_stale(session.epoch))
+
+    def test_unfinished_work_is_never_stale(self):
+        session = sample_manifest().sessions[0]
+        session.begin_epoch()
+        self.assertFalse(session.phases[0].is_stale(session.epoch))
+        session.runs[0].block("upstream failed")
+        self.assertFalse(session.runs[0].is_stale(session.epoch))
+
+    def test_manifest_without_epochs_is_never_stale(self):
+        # Manifests written before epochs existed must not be read as stale.
+        session = sample_manifest().sessions[0]
+        phase = session.phases[0]
+        phase.start()
+        phase.finish()
+        self.assertIsNone(phase.epoch)
+        self.assertFalse(phase.is_stale("some-new-epoch"))
+
+
 class RoundTripTests(TempDirTestCase):
     def saved_manifest(self) -> Manifest:
         manifest = sample_manifest()
@@ -275,6 +334,21 @@ class RoundTripTests(TempDirTestCase):
             sorted(path.name for path in self.tmp.iterdir()),
             ["pullmanifest.yaml"],
         )
+
+    def test_epoch_survives_save_and_reload(self):
+        manifest = self.saved_manifest()
+        session = manifest.sessions[0]
+        epoch = session.begin_epoch(linked_server="et4003vpdsq1032")
+        session.phases[0].start()
+        session.phases[0].finish()
+        manifest.save()
+
+        reloaded = Manifest.load(self.manifest_path).sessions[0]
+        self.assertEqual(reloaded.epoch, epoch)
+        self.assertEqual(reloaded.runtime["linked_server"], "et4003vpdsq1032")
+        self.assertEqual(reloaded.phases[0].epoch, epoch)
+        self.assertFalse(reloaded.phases[0].is_stale(epoch))
+        self.assertTrue(reloaded.phases[0].is_stale("a-later-epoch"))
 
     def test_load_rejects_missing_file(self):
         with self.assertRaises(ManifestError):

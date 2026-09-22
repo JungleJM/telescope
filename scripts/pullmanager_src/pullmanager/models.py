@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 PENDING = "pending"
@@ -27,6 +28,16 @@ def validate_status(status: str) -> str:
             f"Unknown status {status!r}. Expected one of: {', '.join(ALL_STATUSES)}"
         )
     return status
+
+
+def new_epoch() -> str:
+    """Identify one live server connection.
+
+    Global temp tables die with the connection, so work recorded under a
+    previous epoch is known to be gone from the server even though the manifest
+    still says `done`.
+    """
+    return f"{datetime.now().astimezone().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
 
 
 def now_iso() -> str:

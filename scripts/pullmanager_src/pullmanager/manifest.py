@@ -21,6 +21,7 @@ from .models import (
     SETTLED_STATUSES,
     SKIPPED,
     duration_block,
+    new_epoch,
     now_iso,
     validate_status,
 )
@@ -36,9 +37,10 @@ class ManifestError(ValueError):
 class Node:
     """A manifest entry carrying status and timing fields."""
 
-    def __init__(self, data: dict[str, Any], label: str):
+    def __init__(self, data: dict[str, Any], label: str, session: "Session | None" = None):
         self._data = data
         self.label = label
+        self._session = session
 
     @property
     def data(self) -> dict[str, Any]:
@@ -71,6 +73,22 @@ class Node:
     @property
     def note(self) -> str | None:
         return self._data.get("note")
+
+    @property
+    def epoch(self) -> str | None:
+        """The server connection this node last completed under."""
+        return self._data.get("epoch")
+
+    def is_stale(self, current_epoch: str | None) -> bool:
+        """True when this finished under a connection that no longer exists.
+
+        Server-side output (global temps, uploaded tables) from a stale node is
+        gone even though the status still reads `done`. Local Projects tables
+        are permanent and survive regardless.
+        """
+        if self.status != DONE:
+            return False
+        return self.epoch is not None and self.epoch != current_epoch
 
     def start(self) -> None:
         self.status = RUNNING
@@ -108,6 +126,8 @@ class Node:
 
     def _stamp_finish(self) -> None:
         self._data["finished_at"] = now_iso()
+        if self._session is not None and self._session.epoch is not None:
+            self._data["epoch"] = self._session.epoch
         duration = duration_block(self._data.get("started_at"), self._data["finished_at"])
         if duration is not None:
             self._data["duration"] = duration
@@ -117,8 +137,8 @@ class Node:
 
 
 class Phase(Node):
-    def __init__(self, name: str, data: dict[str, Any], session_id: str):
-        super().__init__(data, f"{session_id}/{name}")
+    def __init__(self, name: str, data: dict[str, Any], session: "Session"):
+        super().__init__(data, f"{session.label}/{name}", session)
         self.name = name
 
     @property
@@ -127,8 +147,8 @@ class Phase(Node):
 
 
 class Run(Node):
-    def __init__(self, data: dict[str, Any]):
-        super().__init__(data, str(data.get("run_id")))
+    def __init__(self, data: dict[str, Any], session: "Session"):
+        super().__init__(data, str(data.get("run_id")), session)
 
     @property
     def run_id(self) -> str:
@@ -150,11 +170,11 @@ class Session(Node):
                 f"Expected only: {', '.join(PHASE_ORDER)}"
             )
         self.phases = [
-            Phase(name, raw_phases[name], self.label)
+            Phase(name, raw_phases[name], self)
             for name in PHASE_ORDER
             if name in raw_phases
         ]
-        self.runs = [Run(run) for run in data.get("runs") or []]
+        self.runs = [Run(run, self) for run in data.get("runs") or []]
 
     @property
     def session_id(self) -> str:
@@ -163,6 +183,28 @@ class Session(Node):
     @property
     def pk_table(self) -> str | None:
         return self._data.get("pk_table")
+
+    @property
+    def runtime(self) -> dict[str, Any]:
+        """Facts discovered when the session's connection opened."""
+        return self._data.setdefault("runtime", {})
+
+    @property
+    def epoch(self) -> str | None:
+        return self.runtime.get("epoch")
+
+    def begin_epoch(self, linked_server: str | None = None) -> str:
+        """Open a new server connection scope for this session."""
+        epoch = new_epoch()
+        self.runtime["epoch"] = epoch
+        self.runtime["opened_at"] = now_iso()
+        if linked_server is not None:
+            self.runtime["linked_server"] = linked_server
+        return epoch
+
+    def stale_children(self) -> list[Node]:
+        """Nodes marked done whose server-side output died with a past epoch."""
+        return [child for child in self.children if child.is_stale(self.epoch)]
 
     @property
     def children(self) -> list[Node]:

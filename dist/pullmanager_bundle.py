@@ -278,7 +278,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "ed43497af682fd0946948b314910cf0ad4e93728f807bd12270378aaec5223a3",
+  "content_id": "254454b77f6d25d96c3d3980a2e2ad7dab6df2844535e3938b126e3a79150422",
   "file_count": 11,
   "files": [
     {
@@ -303,13 +303,13 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/manifest.py",
-      "sha256": "4988dd62782d803affd588a06c0f378255a55966855b16128d3aaadbac37f52b",
-      "size": 9279
+      "sha256": "a7080258227bc2635cc7c78a6e211354c70b0717c118a29187135eafac3a539b",
+      "size": 11009
     },
     {
       "path": "pullmanager/models.py",
-      "sha256": "2968dd3add73006402f59dc95284184525b0e408b7ec44404077eefbfadbbfd2",
-      "size": 1794
+      "sha256": "2eb665cf240632931fdb1f07b9b4d6e04757c51fb188ea3d17c184c60cdf87be",
+      "size": 2154
     },
     {
       "path": "pullmanager/tests/__init__.py",
@@ -323,8 +323,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
-      "sha256": "ec274acef38bf5a58d57eefdba6096e129ba793764b0593dca42c23ce7bd09cd",
-      "size": 11213
+      "sha256": "33e49a044e8d1ec3d82c66ff1a221a08de8db4b05e1866ab0bba220e791452ad",
+      "size": 14238
     },
     {
       "path": "pullmanager/tests/test_models.py",
@@ -457,7 +457,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/manifest.py SHA256: 4988dd62782d803affd588a06c0f378255a55966855b16128d3aaadbac37f52b SIZE: 9279 ===
+# === BEGIN FILE: pullmanager/manifest.py SHA256: a7080258227bc2635cc7c78a6e211354c70b0717c118a29187135eafac3a539b SIZE: 11009 ===
 # """Load, mutate, and write back `pullmanifest.yaml`.
 #
 # The manifest is YAML Manager's plan on the way in and Pullmanager's status
@@ -481,6 +481,7 @@ if __name__ == "__main__":
 #     SETTLED_STATUSES,
 #     SKIPPED,
 #     duration_block,
+#     new_epoch,
 #     now_iso,
 #     validate_status,
 # )
@@ -496,9 +497,10 @@ if __name__ == "__main__":
 # class Node:
 #     """A manifest entry carrying status and timing fields."""
 #
-#     def __init__(self, data: dict[str, Any], label: str):
+#     def __init__(self, data: dict[str, Any], label: str, session: "Session | None" = None):
 #         self._data = data
 #         self.label = label
+#         self._session = session
 #
 #     @property
 #     def data(self) -> dict[str, Any]:
@@ -531,6 +533,22 @@ if __name__ == "__main__":
 #     @property
 #     def note(self) -> str | None:
 #         return self._data.get("note")
+#
+#     @property
+#     def epoch(self) -> str | None:
+#         """The server connection this node last completed under."""
+#         return self._data.get("epoch")
+#
+#     def is_stale(self, current_epoch: str | None) -> bool:
+#         """True when this finished under a connection that no longer exists.
+#
+#         Server-side output (global temps, uploaded tables) from a stale node is
+#         gone even though the status still reads `done`. Local Projects tables
+#         are permanent and survive regardless.
+#         """
+#         if self.status != DONE:
+#             return False
+#         return self.epoch is not None and self.epoch != current_epoch
 #
 #     def start(self) -> None:
 #         self.status = RUNNING
@@ -568,6 +586,8 @@ if __name__ == "__main__":
 #
 #     def _stamp_finish(self) -> None:
 #         self._data["finished_at"] = now_iso()
+#         if self._session is not None and self._session.epoch is not None:
+#             self._data["epoch"] = self._session.epoch
 #         duration = duration_block(self._data.get("started_at"), self._data["finished_at"])
 #         if duration is not None:
 #             self._data["duration"] = duration
@@ -577,8 +597,8 @@ if __name__ == "__main__":
 #
 #
 # class Phase(Node):
-#     def __init__(self, name: str, data: dict[str, Any], session_id: str):
-#         super().__init__(data, f"{session_id}/{name}")
+#     def __init__(self, name: str, data: dict[str, Any], session: "Session"):
+#         super().__init__(data, f"{session.label}/{name}", session)
 #         self.name = name
 #
 #     @property
@@ -587,8 +607,8 @@ if __name__ == "__main__":
 #
 #
 # class Run(Node):
-#     def __init__(self, data: dict[str, Any]):
-#         super().__init__(data, str(data.get("run_id")))
+#     def __init__(self, data: dict[str, Any], session: "Session"):
+#         super().__init__(data, str(data.get("run_id")), session)
 #
 #     @property
 #     def run_id(self) -> str:
@@ -610,11 +630,11 @@ if __name__ == "__main__":
 #                 f"Expected only: {', '.join(PHASE_ORDER)}"
 #             )
 #         self.phases = [
-#             Phase(name, raw_phases[name], self.label)
+#             Phase(name, raw_phases[name], self)
 #             for name in PHASE_ORDER
 #             if name in raw_phases
 #         ]
-#         self.runs = [Run(run) for run in data.get("runs") or []]
+#         self.runs = [Run(run, self) for run in data.get("runs") or []]
 #
 #     @property
 #     def session_id(self) -> str:
@@ -623,6 +643,28 @@ if __name__ == "__main__":
 #     @property
 #     def pk_table(self) -> str | None:
 #         return self._data.get("pk_table")
+#
+#     @property
+#     def runtime(self) -> dict[str, Any]:
+#         """Facts discovered when the session's connection opened."""
+#         return self._data.setdefault("runtime", {})
+#
+#     @property
+#     def epoch(self) -> str | None:
+#         return self.runtime.get("epoch")
+#
+#     def begin_epoch(self, linked_server: str | None = None) -> str:
+#         """Open a new server connection scope for this session."""
+#         epoch = new_epoch()
+#         self.runtime["epoch"] = epoch
+#         self.runtime["opened_at"] = now_iso()
+#         if linked_server is not None:
+#             self.runtime["linked_server"] = linked_server
+#         return epoch
+#
+#     def stale_children(self) -> list[Node]:
+#         """Nodes marked done whose server-side output died with a past epoch."""
+#         return [child for child in self.children if child.is_stale(self.epoch)]
 #
 #     @property
 #     def children(self) -> list[Node]:
@@ -741,11 +783,12 @@ if __name__ == "__main__":
 #         return target
 #
 # === END FILE: pullmanager/manifest.py ===
-# === BEGIN FILE: pullmanager/models.py SHA256: 2968dd3add73006402f59dc95284184525b0e408b7ec44404077eefbfadbbfd2 SIZE: 1794 ===
+# === BEGIN FILE: pullmanager/models.py SHA256: 2eb665cf240632931fdb1f07b9b4d6e04757c51fb188ea3d17c184c60cdf87be SIZE: 2154 ===
 # """Status vocabulary and timing helpers shared by manifest nodes."""
 #
 # from __future__ import annotations
 #
+# import uuid
 # from datetime import datetime
 #
 # PENDING = "pending"
@@ -771,6 +814,16 @@ if __name__ == "__main__":
 #             f"Unknown status {status!r}. Expected one of: {', '.join(ALL_STATUSES)}"
 #         )
 #     return status
+#
+#
+# def new_epoch() -> str:
+#     """Identify one live server connection.
+#
+#     Global temp tables die with the connection, so work recorded under a
+#     previous epoch is known to be gone from the server even though the manifest
+#     still says `done`.
+#     """
+#     return f"{datetime.now().astimezone().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
 #
 #
 # def now_iso() -> str:
@@ -981,7 +1034,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: ec274acef38bf5a58d57eefdba6096e129ba793764b0593dca42c23ce7bd09cd SIZE: 11213 ===
+# === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 33e49a044e8d1ec3d82c66ff1a221a08de8db4b05e1866ab0bba220e791452ad SIZE: 14238 ===
 # """Manifest loading, validation, status transitions, and round-tripping."""
 #
 # from __future__ import annotations
@@ -1213,6 +1266,65 @@ if __name__ == "__main__":
 #         self.assertEqual(session.recompute_status(), BLOCKED)
 #
 #
+# class EpochTests(unittest.TestCase):
+#     """Global temps die with the connection; the epoch is how we know."""
+#
+#     def test_begin_epoch_records_connection_facts(self):
+#         session = sample_manifest().sessions[0]
+#         epoch = session.begin_epoch(linked_server="et4003vpdsq1032")
+#         self.assertEqual(session.epoch, epoch)
+#         self.assertEqual(session.runtime["linked_server"], "et4003vpdsq1032")
+#         self.assertIsNotNone(session.runtime["opened_at"])
+#
+#     def test_each_epoch_is_distinct(self):
+#         session = sample_manifest().sessions[0]
+#         self.assertNotEqual(session.begin_epoch(), session.begin_epoch())
+#
+#     def test_finishing_stamps_the_current_epoch(self):
+#         session = sample_manifest().sessions[0]
+#         epoch = session.begin_epoch()
+#         phase = session.phases[2]
+#         phase.start()
+#         phase.finish(rows=12345)
+#         self.assertEqual(phase.epoch, epoch)
+#
+#     def test_work_from_the_current_epoch_is_not_stale(self):
+#         session = sample_manifest().sessions[0]
+#         session.begin_epoch()
+#         phase = session.phases[2]
+#         phase.start()
+#         phase.finish()
+#         self.assertFalse(phase.is_stale(session.epoch))
+#
+#     def test_work_from_a_previous_epoch_is_stale(self):
+#         session = sample_manifest().sessions[0]
+#         session.begin_epoch()
+#         for child in session.children:
+#             child.start()
+#             child.finish()
+#
+#         # Restarting the process opens a new connection; the old temps are gone.
+#         session.begin_epoch()
+#         self.assertEqual(len(session.stale_children()), len(session.children))
+#         self.assertTrue(session.phases[2].is_stale(session.epoch))
+#
+#     def test_unfinished_work_is_never_stale(self):
+#         session = sample_manifest().sessions[0]
+#         session.begin_epoch()
+#         self.assertFalse(session.phases[0].is_stale(session.epoch))
+#         session.runs[0].block("upstream failed")
+#         self.assertFalse(session.runs[0].is_stale(session.epoch))
+#
+#     def test_manifest_without_epochs_is_never_stale(self):
+#         # Manifests written before epochs existed must not be read as stale.
+#         session = sample_manifest().sessions[0]
+#         phase = session.phases[0]
+#         phase.start()
+#         phase.finish()
+#         self.assertIsNone(phase.epoch)
+#         self.assertFalse(phase.is_stale("some-new-epoch"))
+#
+#
 # class RoundTripTests(TempDirTestCase):
 #     def saved_manifest(self) -> Manifest:
 #         manifest = sample_manifest()
@@ -1259,6 +1371,21 @@ if __name__ == "__main__":
 #             sorted(path.name for path in self.tmp.iterdir()),
 #             ["pullmanifest.yaml"],
 #         )
+#
+#     def test_epoch_survives_save_and_reload(self):
+#         manifest = self.saved_manifest()
+#         session = manifest.sessions[0]
+#         epoch = session.begin_epoch(linked_server="et4003vpdsq1032")
+#         session.phases[0].start()
+#         session.phases[0].finish()
+#         manifest.save()
+#
+#         reloaded = Manifest.load(self.manifest_path).sessions[0]
+#         self.assertEqual(reloaded.epoch, epoch)
+#         self.assertEqual(reloaded.runtime["linked_server"], "et4003vpdsq1032")
+#         self.assertEqual(reloaded.phases[0].epoch, epoch)
+#         self.assertFalse(reloaded.phases[0].is_stale(epoch))
+#         self.assertTrue(reloaded.phases[0].is_stale("a-later-epoch"))
 #
 #     def test_load_rejects_missing_file(self):
 #         with self.assertRaises(ManifestError):

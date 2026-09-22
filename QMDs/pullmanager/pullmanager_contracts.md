@@ -110,6 +110,16 @@ duration:                    # written on finish/fail, cleared on retry
   seconds: 312
   display: "5m 12s"
 note: <str>                  # why something was skipped or blocked
+epoch: <str>                 # the server connection this completed under
+```
+
+And on each session:
+
+```yaml
+runtime:                     # discovered when the connection opens
+  epoch: "20260922T140000-3f2a9c11"
+  opened_at: "2026-09-22T14:00:00-05:00"
+  linked_server: et4003vpdsq1032
 ```
 
 `note` exists because `error` would misrepresent a skip. A skipped phase is not
@@ -172,16 +182,84 @@ Implementation lands in Phase 3 (`naming.py`), tested there.
 Destination tables are fully qualified even when the script also issues `USE`,
 because generated SQL gets run from tools with ambiguous database context.
 
-## Session Lifetime
+## Session Lifetime And Epochs
 
-Global temp tables live and die with the server connection. Therefore one
-connection stays open across `setup` → `upload_cohorts` → `pk` → all runs for a
-session, and closes only when the session completes or terminally fails.
+Global temp tables live and die with the server connection. One connection is
+held across `setup` -> `upload_cohorts` -> `pk` -> every run in a session, and
+closed only when the session completes or terminally fails.
 
-The runtime linked-server identity (old `SELECT @@SERVERNAME`) is captured
-during `setup` and recorded in that phase's `outputs`, because the real
+The runtime linked-server identity (the old `SELECT @@SERVERNAME`) is captured
+when that connection opens and recorded in `session.runtime`, because the real
 instance name can differ from any configured value and local `OPENQUERY` SQL
 needs the real one.
+
+### Ephemeral Versus Durable Output
+
+This split is the whole reason resume is hard:
+
+| Output | Lives in | Survives the connection closing |
+| --- | --- | --- |
+| `##JVM_<dest>` global temps | Cosmos session | No |
+| Uploaded cohort temps | Cosmos session | No |
+| `#Local_<dest>` staging | Projects session | No |
+| `<project_db>.dbo.<dest>` | Projects database | Yes |
+
+A phase marked `done` therefore does not mean its output still exists. It means
+it completed once.
+
+### The Epoch
+
+`Session.begin_epoch()` mints an id each time a connection opens, and every
+node stamps it on completion. `node.is_stale(session.epoch)` is then true when
+a node finished under a connection that no longer exists.
+
+Read it precisely: **stale means the server-side output is gone**, not that the
+work was wasted. For `setup`, `upload_cohorts` and `pk`, server-side output is
+all there is, so a stale node must replay. For a run, the durable result is
+rows in a Projects table, which survive — so a stale run may still be skippable.
+Deciding that is Phase 9's job, not something `is_stale` answers alone.
+
+A manifest with no `epoch` values (written before this existed) is never
+reported stale, so older manifests keep working.
+
+### Resume Policy
+
+Default: a new process replays the whole session and drops its Projects tables.
+Always correct, and these pulls run overnight where the wasted time is cheap.
+
+`--resume-partial` (Phase 9) will keep completed local transfers and replay only
+the server side. It must be guarded, because Cosmos is a refreshing snapshot:
+if the rebuilt PK is not the same set of keys as the one the earlier batches
+were pulled against, appending later batches onto them stitches one table from
+two different cohort definitions, silently. The guard is to compare the rebuilt
+PK against the row count recorded when the PK phase first completed, and refuse
+on mismatch.
+
+Batch boundaries carry the same risk. Dimensions resolved at run time
+(`values: all`, `row_chunk`) can produce a different number of batches against
+refreshed data, so "batch 3 of 5" is not necessarily the same rows it was.
+
+## Write Mode
+
+Projects tables are dropped and recreated **once per session**, in the `setup`
+phase, and every run then appends:
+
+```text
+setup           DROP + CREATE  <project_db>.dbo.<dest>
+run LA-Female   INSERT
+run LA-Male     INSERT
+run MS-Female   INSERT
+run MS-Male     INSERT
+```
+
+The old generator dropped and recreated inside every transfer block, which with
+batching would leave only the last batch. Moving the drop into `setup` is what
+makes batches accumulate into one complete cohort table.
+
+Because batches append, a run that fails midway through its insert would
+duplicate rows on retry. The final `INSERT INTO <dest> SELECT ... FROM
+#Local_<dest>` therefore runs in an explicit transaction; the slow `OPENQUERY`
+pull into `#Local_<dest>` stays outside it, so no lock is held during transfer.
 
 ## Bundle Contract
 
@@ -285,10 +363,80 @@ combination, since a missing combination means silently unpulled patients.
 
 Covered by `makeYaml.py --tdd batching`.
 
+## Data Dictionary Validation
+
+`YAMLs/datadictionary.yaml` is the source of truth for column types. Authoring
+validation checks every cohort column against it. This belongs in
+`makeYaml.py`, not Pullmanager, since it validates authored templates.
+
+### The Two Vocabularies
+
+The dictionary uses annotated abstract types; cohorts declare T-SQL:
+
+```text
+dictionary:  bigint (foreign key to PatientDim.DurableKey)   integer (DateKey)   boolean (flag)   string
+cohort:      BIGINT                                          INT                 BIT              VARCHAR(400)
+```
+
+So the check strips the parenthetical, then compares families rather than
+literals:
+
+| Dictionary | Accepts |
+| --- | --- |
+| `bigint` | `BIGINT` |
+| `integer` | `INT`, `SMALLINT`, `TINYINT`, `BIGINT` |
+| `string` | `VARCHAR(n)`, `NVARCHAR(n)`, `CHAR(n)` |
+| `boolean` | `BIT` |
+| `numeric` | `DECIMAL`, `NUMERIC`, `FLOAT`, `REAL` |
+| `datetime`, `date/datetime` | `DATE`, `DATETIME`, `DATETIME2(n)` |
+
+Lengths cannot be validated: the dictionary carries no length, so `VARCHAR(50)`
+and `VARCHAR(400)` are indistinguishable to it.
+
+### Alias Resolution
+
+Columns arrive as `source: def.DiagnosisEventKey`, so the alias has to be
+resolved to a table through `filter.from` and `filter.join` before any lookup.
+This is what catches the `p.Type` versus `dt.Type` mistake in
+`yamlprocessing.md`: the alias exists, but the column belongs to a different
+joined table.
+
+### Outcomes
+
+| Case | Result |
+| --- | --- |
+| Table absent from the dictionary | **Error.** Usually an invented or pseudocode table name. Add the table to the dictionary to proceed. |
+| Table present, column absent | **Error.** A typo or a wrong alias. |
+| Type family mismatch | **Error.** |
+| Alias cannot be resolved | **Error.** |
+
+An unknown table is a hard stop by design: the dictionary is meant to stay
+complete, so a new table is added to it rather than worked around. This is a
+deliberate reversal of the softer "warn on unknown table" default.
+
+Nullability is not cross-checked. A cohort declaring `nullable: false` on a
+dictionary-nullable column is the documented way to force an `IS NOT NULL`
+filter, so it is intentional rather than a conflict.
+
 ## Open Questions
 
 Flagged rather than assumed. These need answers before Phases 4-8.
-Batch semantics used to head this list; it is settled above.
+Batch semantics, write mode, and resume policy used to head this list; they are
+settled above.
+
+Settled authoring rules:
+
+- Legacy `dedup_key` (singular) is a hard error, not a silent normalization.
+  The old generator accepted only `dedup_keys` and quietly emitted no dedup,
+  which changes row counts invisibly.
+- `#UVM_` in `inputSimple.yaml` is OCR damage. The only temp prefix is `##JVM_`.
+- `print_md` / `printout_md` are dead: the manifest is the status system and
+  Pullmanager writes no markdown run report. Importing a template that sets
+  either should warn that it is ignored rather than drop it silently.
+  (`makeYaml.py --report` is unrelated and stays; it reports on the template,
+  not on a run.)
+- Column types are validated against `YAMLs/datadictionary.yaml`, which is the
+  source of truth. See below.
 
 1. **Multi-step PK.** `inputSimple.yaml` shows a PK built from a prior PK
    (`PKTable` depends on `PKTable2`). The current `pk` phase is a single YAML.
@@ -355,7 +503,8 @@ Execution and telemetry (Phases 6–9):
   `scripts/bundle_extractor.py`, `dist/pullmanager_bundle.py`).
 - Phase 2 — Core models and manifest I/O: **done**
   (`pullmanager/models.py`, `pullmanager/manifest.py`).
-- Phase 3 — Normalization and naming: next.
+- Phase 3 — Normalization and naming: next. Carries the data dictionary
+  check (in `makeYaml.py`) and the settled authoring rules above.
 
 ## Running The Tests
 
