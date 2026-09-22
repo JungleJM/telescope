@@ -1125,34 +1125,103 @@ def session_paths(session_id: str) -> dict[str, str]:
     }
 
 
-def batch_run_name(batch: dict[str, Any], index: int) -> str:
-    name = batch.get("name") or batch.get("kind") or f"batch-{index + 1}"
-    if batch.get("values") not in (None, "all"):
-        values = batch.get("values")
-        if isinstance(values, list) and len(values) == 1:
-            name = f"{name}-{values[0]}"
-    elif batch.get("rows_per_batch"):
-        name = f"{name}-{batch.get('rows_per_batch')}"
-    return safe_id(name, f"batch-{index + 1}")
+def batch_buckets(dim: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Plan-time buckets for one batching dimension.
+
+    Returns None when the buckets cannot be known until the PK table exists:
+    row chunks depend on the row count, and `values: all` needs a DISTINCT over
+    real data. Those dimensions stay logical for Pullmanager to materialize.
+    """
+    if str(dim.get("kind", "")).lower() == "row_chunk":
+        return None
+    values = dim.get("values")
+    if not isinstance(values, list) or not values:
+        return None
+    buckets = [{"value": value, "is_other": False} for value in values]
+    if dim.get("include_other"):
+        buckets.append({"value": None, "is_other": True})
+    return buckets
 
 
-def session_runs(session_id: str, pk_cohort: dict[str, Any]) -> list[SplitRun]:
-    batching = pk_cohort.get("batching") or []
+def bucket_label(dim: dict[str, Any], bucket: dict[str, Any]) -> str:
+    if bucket.get("is_other"):
+        return safe_id(f"{dim.get('name') or 'batch'}-other", "other")
+    return safe_id(bucket.get("value"), "value")
+
+
+def resolved_dimension(dim: dict[str, Any], bucket: dict[str, Any]) -> dict[str, Any]:
+    resolved: dict[str, Any] = {
+        "name": dim.get("name"),
+        "kind": dim.get("kind") or "column_values",
+        "column": dim.get("column"),
+    }
+    if bucket.get("is_other"):
+        resolved["is_other"] = True
+    else:
+        resolved["value"] = bucket.get("value")
+    return resolved
+
+
+def session_runs(
+    session_id: str,
+    pk_cohort: dict[str, Any],
+    result: CompileResult | None = None,
+) -> list[SplitRun]:
+    """One run per batch combination.
+
+    Batching dimensions multiply: state[LA, MS] x sex[Female, Male] is four
+    runs, each a disjoint slice of the cohort, not three runs describing three
+    different axes of the whole cohort.
+    """
     base = f"sessions/{session_id}/runs"
-    if not batching:
+    dims = [
+        dim if isinstance(dim, dict) else {"name": str(dim)}
+        for dim in pk_cohort.get("batching") or []
+    ]
+    if not dims:
         return [SplitRun(run_id=f"{session_id}__run", yaml=f"{base}/run.yaml")]
+
+    static: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    runtime: list[dict[str, Any]] = []
+    for dim in dims:
+        buckets = batch_buckets(dim)
+        if buckets is None:
+            runtime.append(copy.deepcopy(dim))
+        else:
+            static.append((dim, buckets))
+
+    if not static:
+        return [
+            SplitRun(
+                run_id=f"{session_id}__run",
+                yaml=f"{base}/run.yaml",
+                batch={"name": "run", "dimensions": [], "runtime": runtime},
+            )
+        ]
+
     runs: list[SplitRun] = []
-    for idx, batch in enumerate(batching):
-        if not isinstance(batch, dict):
-            batch = {"name": str(batch), "logic": batch}
-        batch_name = batch_run_name(batch, idx)
+    seen: set[str] = set()
+    for combo in product(*[buckets for _, buckets in static]):
+        pairs = list(zip(static, combo))
+        name = safe_id("-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs), "batch")
+        if name in seen:
+            if result is not None:
+                result.error(
+                    "duplicate_batch_name",
+                    f"Batch combination `{name}` is not unique in session `{session_id}`. "
+                    "Two batching dimensions produce the same label; rename a value.",
+                    session_id,
+                )
+            continue
+        seen.add(name)
         runs.append(
             SplitRun(
-                run_id=f"{session_id}__{batch_name}",
-                yaml=f"{base}/{batch_name}.yaml",
+                run_id=f"{session_id}__{name}",
+                yaml=f"{base}/{name}.yaml",
                 batch={
-                    "name": batch_name,
-                    "logic": copy.deepcopy(batch),
+                    "name": name,
+                    "dimensions": [resolved_dimension(dim, bucket) for (dim, _), bucket in pairs],
+                    "runtime": copy.deepcopy(runtime),
                 },
             )
         )
@@ -1198,7 +1267,7 @@ def build_split_plan_from_finished(
             "upload_cohorts": SplitPhase("upload_cohorts", paths["upload_cohorts"]),
             "pk": SplitPhase("pk", paths["pk"], pk_source=source),
         }
-        runs = session_runs(session_id, pk_cohort)
+        runs = session_runs(session_id, pk_cohort, result)
         sessions.append(
             SplitSession(
                 session_id=session_id,
@@ -1887,15 +1956,107 @@ batching:
             plan = res.analysis.get("split_plan", {})
             sessions = plan.get("sessions", [])
             session_ids = sorted(session.get("session_id") for session in sessions)
+            run_ids = {
+                session.get("session_id"): [run["run_id"] for run in session.get("runs", [])]
+                for session in sessions
+            }
             ok = (
                 res.ok
                 and session_ids == ["APatients", "BPatients"]
-                and all(len(session.get("runs", [])) == 2 for session in sessions)
-                and all(session["runs"][0].get("batch") for session in sessions)
-                and all("sex" in session["runs"][0]["run_id"] for session in sessions)
-                and all("chunk" in session["runs"][1]["run_id"] for session in sessions)
+                and run_ids["APatients"] == ["APatients__Female", "APatients__Male"]
+                and run_ids["BPatients"] == ["BPatients__Female", "BPatients__Male"]
+                and all(
+                    [d["value"] for d in session["runs"][0]["batch"]["dimensions"]] == ["Female"]
+                    for session in sessions
+                )
+                and all(
+                    [r["name"] for r in session["runs"][0]["batch"]["runtime"]] == ["chunk"]
+                    for session in sessions
+                )
             )
-            return ok, json.dumps(plan)
+            return ok, json.dumps(run_ids)
+
+    def plan_runs(extra: str):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            t_path = write_temp_yaml(tmp, "template.yaml", tiny_template(extra))
+            r_path = write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
+            res = plan_split_runs(t_path, r_path)
+            sessions = res.analysis.get("split_plan", {}).get("sessions", [])
+            runs = sessions[0].get("runs", []) if sessions else []
+            return res, runs
+
+    def case_batching_cross_product():
+        # state[LA, MS] x sex[Female, Male] is four disjoint slices, not two axes.
+        res, runs = plan_runs("""
+batching:
+  - state:
+      values: [LA, MS]
+  - sex
+""")
+        names = [run["batch"]["name"] for run in runs]
+        ok = res.ok and names == ["LA-Female", "LA-Male", "MS-Female", "MS-Male"]
+        return ok, json.dumps(names)
+
+    def case_batching_product_records_dimensions():
+        res, runs = plan_runs("""
+batching:
+  - state:
+      values: [LA, MS]
+  - sex
+""")
+        first = runs[0]["batch"]["dimensions"] if runs else []
+        ok = res.ok and first == [
+            {"name": "state", "kind": "column_values", "column": "StateOrProvinceAbbreviation", "value": "LA"},
+            {"name": "sex", "kind": "column_values", "column": "Sex", "value": "Female"},
+        ]
+        return ok, json.dumps(first)
+
+    def case_batching_include_other_bucket():
+        # include_other contributes an extra bucket, so it multiplies too.
+        res, runs = plan_runs("""
+batching:
+  - sex:
+      values: [Female]
+      include_other: true
+""")
+        names = [run["batch"]["name"] for run in runs]
+        flags = [d.get("is_other") for run in runs for d in run["batch"]["dimensions"]]
+        ok = res.ok and names == ["Female", "sex-other"] and flags == [None, True]
+        return ok, json.dumps({"names": names, "is_other": flags})
+
+    def case_batching_runtime_dims_deferred():
+        # `values: all` needs a DISTINCT and chunking needs a row count, so
+        # neither can expand at plan time; both stay logical for Pullmanager.
+        res, runs = plan_runs("""
+batching:
+  - state
+  - chunk: 2000
+""")
+        ok = (
+            res.ok
+            and len(runs) == 1
+            and runs[0]["batch"]["dimensions"] == []
+            and [r["name"] for r in runs[0]["batch"]["runtime"]] == ["state", "chunk"]
+        )
+        return ok, json.dumps(runs[0]["batch"] if runs else None)
+
+    def case_batching_static_and_runtime_mix():
+        res, runs = plan_runs("""
+batching:
+  - sex
+  - state
+  - chunk: 2000
+""")
+        names = [run["batch"]["name"] for run in runs]
+        runtime = [r["name"] for r in runs[0]["batch"]["runtime"]] if runs else []
+        ok = res.ok and names == ["Female", "Male"] and runtime == ["state", "chunk"]
+        return ok, json.dumps({"names": names, "runtime": runtime})
+
+    def case_batching_no_batching_single_run():
+        res, runs = plan_runs("")
+        ok = res.ok and len(runs) == 1 and runs[0].get("batch") is None
+        return ok, json.dumps([run["run_id"] for run in runs])
 
     def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
         keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
@@ -1980,6 +2141,12 @@ cohorts:
         TddCase("batching.chunk_shorthand", "batching", case_batching_chunk),
         TddCase("batching.metadata_visible", "batching", case_batching_metadata),
         TddCase("batching.include_other_metadata", "batching", case_batching_include_other),
+        TddCase("batching.cross_product", "batching", case_batching_cross_product),
+        TddCase("batching.product_records_dimensions", "batching", case_batching_product_records_dimensions),
+        TddCase("batching.include_other_bucket", "batching", case_batching_include_other_bucket),
+        TddCase("batching.runtime_dims_deferred", "batching", case_batching_runtime_dims_deferred),
+        TddCase("batching.static_and_runtime_mix", "batching", case_batching_static_and_runtime_mix),
+        TddCase("batching.no_batching_single_run", "batching", case_batching_no_batching_single_run),
         TddCase("cosmos.dual_suffix", "cosmos", case_cosmos_dual),
         TddCase("cosmos.bad_value", "cosmos", case_cosmos_bad_value),
         TddCase("reports.includes_sections", "reports", case_report),

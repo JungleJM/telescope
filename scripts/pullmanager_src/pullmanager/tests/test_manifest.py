@@ -1,0 +1,289 @@
+"""Manifest loading, validation, status transitions, and round-tripping."""
+
+from __future__ import annotations
+
+import copy
+import tempfile
+import unittest
+from pathlib import Path
+
+from ..manifest import Manifest, ManifestError
+from ..models import BLOCKED, DONE, FAILED, PENDING, RUNNING, SKIPPED
+from ..yaml_io import dump_yaml
+from .support import SAMPLE_MANIFEST, sample_manifest
+
+
+class TempDirTestCase(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.manifest_path = self.tmp / "pullmanifest.yaml"
+
+
+class LoadTests(unittest.TestCase):
+    def test_reads_sessions_phases_and_runs(self):
+        manifest = sample_manifest()
+        self.assertEqual(len(manifest.sessions), 2)
+        self.assertEqual(manifest.sessions[0].session_id, "UCblackPatients")
+        self.assertEqual(
+            [phase.name for phase in manifest.sessions[0].phases],
+            ["setup", "upload_cohorts", "pk"],
+        )
+        self.assertEqual(len(manifest.sessions[0].runs), 2)
+
+    def test_source_is_template_and_recipes(self):
+        # The design prose said `source.preyaml`; makeYaml emits template +
+        # recipes. Pin the real contract so drift shows up here.
+        self.assertEqual(sorted(sample_manifest().source), ["recipes", "template"])
+
+    def test_exposes_both_pk_source_kinds(self):
+        manifest = sample_manifest()
+        generated = manifest.sessions[0].phases[2]
+        uploaded = manifest.sessions[1].phases[2]
+        self.assertEqual(generated.pk_source["kind"], "generated")
+        self.assertEqual(uploaded.pk_source["kind"], "uploaded_cohort")
+        self.assertEqual(uploaded.pk_source["key_columns"], ["PatientDurableKey"])
+
+    def test_resolves_yaml_paths_against_manifest_directory(self):
+        manifest = sample_manifest()
+        setup = manifest.sessions[0].phases[0]
+        self.assertEqual(manifest.resolve(setup), Path("split/sessions/UCblackPatients/setup.yaml"))
+
+
+class ValidationTests(unittest.TestCase):
+    def assertRejects(self, data, fragment):
+        with self.assertRaises(ManifestError) as caught:
+            Manifest(data)
+        self.assertIn(fragment.lower(), str(caught.exception).lower())
+
+    def test_rejects_unsupported_version(self):
+        self.assertRejects({"manifest_version": 99, "sessions": []}, "manifest_version")
+
+    def test_rejects_missing_sessions_list(self):
+        self.assertRejects({"manifest_version": 1}, "sessions")
+
+    def test_rejects_non_mapping_root(self):
+        with self.assertRaises(ManifestError):
+            Manifest(["not", "a", "mapping"])
+
+    def test_rejects_unknown_phase_name(self):
+        self.assertRejects(
+            {
+                "manifest_version": 1,
+                "sessions": [
+                    {
+                        "session_id": "S",
+                        "status": "pending",
+                        "phases": {"teardown": {"yaml": "x.yaml", "status": "pending"}},
+                        "runs": [],
+                    }
+                ],
+            },
+            "unknown phase",
+        )
+
+    def test_rejects_duplicate_run_id(self):
+        run = {"run_id": "R", "yaml": "r.yaml", "status": "pending"}
+        self.assertRejects(
+            {
+                "manifest_version": 1,
+                "sessions": [
+                    {
+                        "session_id": "S",
+                        "status": "pending",
+                        "phases": {},
+                        "runs": [dict(run), dict(run)],
+                    }
+                ],
+            },
+            "duplicate run_id",
+        )
+
+    def test_rejects_duplicate_session_id(self):
+        session = {"session_id": "S", "status": "pending", "phases": {}, "runs": []}
+        self.assertRejects(
+            {"manifest_version": 1, "sessions": [dict(session), dict(session)]},
+            "duplicate session_id",
+        )
+
+    def test_rejects_phase_without_yaml_path(self):
+        self.assertRejects(
+            {
+                "manifest_version": 1,
+                "sessions": [
+                    {
+                        "session_id": "S",
+                        "status": "pending",
+                        "phases": {"setup": {"status": "pending"}},
+                        "runs": [],
+                    }
+                ],
+            },
+            "missing its `yaml`",
+        )
+
+    def test_rejects_unknown_status_value(self):
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        data["sessions"][0]["phases"]["setup"]["status"] = "finished"
+        with self.assertRaises(Exception):
+            Manifest(data)
+
+
+class TransitionTests(unittest.TestCase):
+    def test_start_marks_running_and_stamps_start(self):
+        phase = sample_manifest().sessions[0].phases[0]
+        phase.start()
+        self.assertEqual(phase.status, RUNNING)
+        self.assertIsNotNone(phase.data["started_at"])
+        self.assertIsNone(phase.data["finished_at"])
+
+    def test_finish_records_rows_outputs_and_duration(self):
+        phase = sample_manifest().sessions[0].phases[2]
+        phase.start()
+        phase.finish(rows=12345, outputs={"global_temp": "##JVM_UCblackPatients"})
+        self.assertEqual(phase.status, DONE)
+        self.assertEqual(phase.rows, 12345)
+        self.assertEqual(phase.outputs["global_temp"], "##JVM_UCblackPatients")
+        self.assertIsNotNone(phase.data["finished_at"])
+        self.assertGreaterEqual(phase.data["duration"]["seconds"], 0)
+
+    def test_fail_records_message_and_detail(self):
+        run = sample_manifest().sessions[0].runs[0]
+        run.start()
+        run.fail("OPENQUERY failed", detail="Login timeout expired")
+        self.assertEqual(run.status, FAILED)
+        self.assertEqual(run.error["message"], "OPENQUERY failed")
+        self.assertEqual(run.error["detail"], "Login timeout expired")
+
+    def test_retry_clears_previous_error_and_duration(self):
+        run = sample_manifest().sessions[0].runs[0]
+        run.start()
+        run.fail("boom")
+        run.start()
+        self.assertEqual(run.status, RUNNING)
+        self.assertIsNone(run.error)
+        self.assertNotIn("duration", run.data)
+
+    def test_skip_and_block_use_note_not_error(self):
+        # A skipped phase is not a failure; an `error` block would read like one.
+        for action, expected in (("skip", SKIPPED), ("block", BLOCKED)):
+            with self.subTest(action=action):
+                run = sample_manifest().sessions[0].runs[1]
+                getattr(run, action)("upstream PK failed")
+                self.assertEqual(run.status, expected)
+                self.assertEqual(run.note, "upstream PK failed")
+                self.assertIsNone(run.error)
+
+
+class SessionRollupTests(unittest.TestCase):
+    def test_pending_while_untouched(self):
+        self.assertEqual(sample_manifest().sessions[0].recompute_status(), PENDING)
+
+    def test_running_when_partially_complete(self):
+        session = sample_manifest().sessions[0]
+        session.phases[0].start()
+        session.phases[0].finish()
+        self.assertEqual(session.recompute_status(), RUNNING)
+
+    def test_failure_outranks_every_other_state(self):
+        session = sample_manifest().sessions[0]
+        for phase in session.phases:
+            phase.start()
+            phase.finish()
+        session.runs[0].start()
+        session.runs[0].fail("nope")
+        session.runs[1].block("upstream failed")
+        self.assertEqual(session.recompute_status(), FAILED)
+
+    def test_done_when_every_child_is_done(self):
+        session = sample_manifest().sessions[1]
+        for child in session.children:
+            child.start()
+            child.finish()
+        self.assertEqual(session.recompute_status(), DONE)
+
+    def test_done_when_children_mix_done_and_skipped(self):
+        session = sample_manifest().sessions[1]
+        session.phases[0].start()
+        session.phases[0].finish()
+        session.phases[1].skip("no upload cohorts")
+        session.phases[2].start()
+        session.phases[2].finish()
+        session.runs[0].start()
+        session.runs[0].finish()
+        self.assertEqual(session.recompute_status(), DONE)
+
+    def test_skipped_only_when_everything_skipped(self):
+        session = sample_manifest().sessions[1]
+        for child in session.children:
+            child.skip()
+        self.assertEqual(session.recompute_status(), SKIPPED)
+
+    def test_blocked_when_blocking_is_the_worst_state(self):
+        session = sample_manifest().sessions[1]
+        for phase in session.phases:
+            phase.start()
+            phase.finish()
+        session.runs[0].block("upstream failed")
+        self.assertEqual(session.recompute_status(), BLOCKED)
+
+
+class RoundTripTests(TempDirTestCase):
+    def saved_manifest(self) -> Manifest:
+        manifest = sample_manifest()
+        manifest.path = self.manifest_path
+        return manifest
+
+    def test_status_and_rows_survive_save_and_reload(self):
+        manifest = self.saved_manifest()
+        manifest.sessions[0].phases[0].start()
+        manifest.sessions[0].phases[0].finish(rows=42)
+        manifest.save()
+
+        reloaded = Manifest.load(self.manifest_path)
+        setup = reloaded.sessions[0].phases[0]
+        self.assertEqual(setup.status, DONE)
+        self.assertEqual(setup.rows, 42)
+        self.assertEqual(reloaded.sessions[0].status, RUNNING)
+
+    def test_unknown_keys_survive(self):
+        manifest = self.saved_manifest()
+        manifest.data["future_field"] = {"added_by": "a later yamlmanager"}
+        manifest.sessions[0].runs[0].data["parquet_hint"] = "keep me"
+        manifest.save()
+
+        reloaded = Manifest.load(self.manifest_path)
+        self.assertEqual(reloaded.data["future_field"], {"added_by": "a later yamlmanager"})
+        self.assertEqual(reloaded.sessions[0].runs[0].data["parquet_hint"], "keep me")
+
+    def test_batch_product_and_multiplier_context_survive(self):
+        manifest = self.saved_manifest()
+        manifest.save()
+
+        run = Manifest.load(self.manifest_path).sessions[0].runs[0]
+        self.assertEqual(run.batch["name"], "LA-Female")
+        self.assertEqual(
+            [dim["value"] for dim in run.batch["dimensions"]],
+            ["LA", "Female"],
+        )
+        self.assertEqual([dim["name"] for dim in run.batch["runtime"]], ["chunk"])
+
+    def test_save_leaves_no_temp_file_behind(self):
+        self.saved_manifest().save()
+        self.assertEqual(
+            sorted(path.name for path in self.tmp.iterdir()),
+            ["pullmanifest.yaml"],
+        )
+
+    def test_load_rejects_missing_file(self):
+        with self.assertRaises(ManifestError):
+            Manifest.load(self.tmp / "nope.yaml")
+
+    def test_bare_yaml_nulls_load_as_none(self):
+        # makeYaml writes empty values as bare `key:`; they must come back as
+        # None rather than the string "None".
+        dump_yaml(SAMPLE_MANIFEST, self.manifest_path)
+        self.assertIn("started_at:", self.manifest_path.read_text(encoding="utf-8"))
+        reloaded = Manifest.load(self.manifest_path)
+        self.assertIsNone(reloaded.sessions[0].phases[0].data["started_at"])

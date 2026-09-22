@@ -1,0 +1,123 @@
+project_db: PROJECTD33A929
+cosmos_db: COSMOS
+project_folder: "Manager Valid Basic"
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+  HospitalICDTable: HospitalICDCodes
+  ICD_Value:
+  - K50
+  - K51
+upload_cohorts:
+- name: HospitalICDCodes
+  dest_table: HospitalICDCodes
+  file_type: csv
+  file_loc: "fixtures/hospital_icd_codes.csv"
+  push_this_cycle: true
+pull_context:
+  session_id: Patients
+  phase: run
+  cohort: Patients
+  pk_table: Patients
+  run_id: Patients__run
+  pk_source:
+    kind: generated
+    table: Patients
+cohorts:
+- name: OtherHospitalizations
+  type: fact
+  pull_this_cycle: true
+  dest_table: OtherHospitalizations
+  dedup_keys:
+  - - InpatientEncounterKey
+  columns:
+  - source: haf.HospitalAdmissionKey
+    name: HospitalAdmissionKey
+    type: BIGINT
+    nullable: false
+  - source: haf.EncounterKey
+    name: InpatientEncounterKey
+    type: BIGINT
+    nullable: false
+  - source: haf.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+    nullable: false
+  - source: haf.AdmissionDateKey
+    name: AdmissionDateKey
+    type: INT
+    nullable: false
+  - source: haf.InpatientAdmissionInstant
+    name: InpatientAdmissionInstant
+    type: DATETIME2(7)
+    nullable: false
+  - source: haf.DischargeDateKey
+    name: DischargeDateKey
+    type: INT
+    nullable: true
+  - source: haf.DischargeInstant
+    name: DischargeInstant
+    type: DATETIME2(7)
+    nullable: true
+  - source: haf.DischargeDisposition
+    name: DischargeDisposition
+    type: VARCHAR(300)
+    nullable: true
+  - source: haf.InpatientLengthOfStayInDays
+    name: InpatientLengthOfStayInDays
+    type: INT
+    nullable: true
+  - source: haf.LengthOfStayInDays
+    name: LengthOfStayInDays
+    type: INT
+    nullable: true
+  - source: haf.DaysSincePriorAdmission_X
+    name: DaysSincePriorAdmission_X
+    type: INT
+    nullable: true
+  - source: haf.ReadmissionCausedByKey_X
+    name: ReadmissionCausedByKey_X
+    type: BIGINT
+    nullable: true
+  - source: haf.IsPlannedReadmission_X
+    name: IsPlannedReadmission_X
+    type: BIT
+    nullable: true
+  - source: haf.IsUnplannedReadmission_X
+    name: IsUnplannedReadmission_X
+    type: BIT
+    nullable: true
+  - source: haf.EncounterType
+    name: EncounterType
+    type: NVARCHAR(300)
+    nullable: true
+  - source: haf.FinancialClass
+    name: FinancialClass
+    type: VARCHAR(100)
+    nullable: true
+  - source: dt.Value
+    name: ICDCode
+    type: VARCHAR(400)
+    nullable: true
+  - source: dt.NameAndCode
+    name: ICDName
+    type: VARCHAR(400)
+    nullable: true
+  filter:
+    from:
+    - HospitalAdmissionFact AS haf
+    join:
+    - 'INNER JOIN ##JVM_Patients AS pk ON pk.PatientDurableKey = haf.PatientDurableKey'
+    - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = 
+      haf.EncounterKey
+    - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = 
+      dxf.DiagnosisKey
+    - 'INNER JOIN ##JVM_HospitalICDCodes AS ih ON ih.DiagnosisCode = dt.Value'
+    where:
+    - haf._IsDeleted = 0
+    - haf.AdmissionDateKey IS NOT NULL
+    - haf.AdmissionDateKey BETWEEN 20200101 AND 20240101
+    - dxf._IsDeleted = 0
+    - dt._IsDeleted = 0
+    - dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')
+  batching: []

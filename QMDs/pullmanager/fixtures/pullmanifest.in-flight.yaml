@@ -1,0 +1,66 @@
+manifest_version: 1
+project:
+  name: "Manager Valid Basic"
+  project_folder: "Manager Valid Basic"
+  project_db: PROJECTD33A929
+  created_by: yamlmanager
+source:
+  template: YAMLs/manager_test_cases/01_valid_basic.yaml
+  recipes: YAMLs/recipes.yaml
+sessions:
+- session_id: Patients
+  cohort: Patients
+  pk_table: Patients
+  status: failed
+  phases:
+    setup:
+      yaml: sessions/Patients/setup.yaml
+      status: done
+      started_at: '2026-09-22T14:00:00-05:00'
+      finished_at: '2026-09-22T14:00:12-05:00'
+      rows:
+      outputs:
+        linked_server: et4003vpdsq1032
+      error:
+      duration:
+        seconds: 12
+        display: 12s
+    upload_cohorts:
+      yaml: sessions/Patients/upload_cohorts.yaml
+      status: skipped
+      started_at:
+      finished_at:
+      rows:
+      outputs: {}
+      error:
+      note: session declares no upload cohorts
+    pk:
+      yaml: sessions/Patients/pk.yaml
+      status: done
+      started_at: '2026-09-22T14:01:00-05:00'
+      finished_at: '2026-09-22T14:06:12-05:00'
+      rows: 12345
+      outputs:
+        global_temp: '##JVM_Patients'
+      error:
+      pk_source:
+        kind: generated
+        table: Patients
+      duration:
+        seconds: 312
+        display: 5m 12s
+  runs:
+  - run_id: Patients__run
+    yaml: sessions/Patients/runs/run.yaml
+    status: failed
+    started_at: '2026-09-22T14:06:40-05:00'
+    finished_at: '2026-09-22T14:07:10-05:00'
+    rows:
+    outputs: {}
+    error:
+      message: OPENQUERY transfer failed
+      detail: "Msg 7321: An error occurred while preparing the query for execution
+        against linked server 'et4003vpdsq1032'"
+    duration:
+      seconds: 30
+      display: 30s

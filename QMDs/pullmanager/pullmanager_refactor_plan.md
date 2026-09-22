@@ -1,5 +1,10 @@
 # Pullmanager Refactor Plan
 
+> **Status:** Phases 0-2 are implemented. The verified schema, naming rules,
+> and open questions now live in `pullmanager_contracts.md`, which corrects
+> several details this plan and `yamlmanagerDesign.qmd` got wrong. Read that
+> first; this document remains the phase roadmap.
+
 This document turns the old generator lessons into a new Pullmanager build plan. The goal is not to port the old program line by line. The goal is to preserve the hard-earned behaviors while building a cleaner manifest-driven runner.
 
 ## Core Direction

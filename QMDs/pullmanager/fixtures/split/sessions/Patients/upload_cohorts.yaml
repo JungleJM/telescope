@@ -1,0 +1,25 @@
+project_db: PROJECTD33A929
+cosmos_db: COSMOS
+project_folder: "Manager Valid Basic"
+vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+  HospitalICDTable: HospitalICDCodes
+  ICD_Value:
+  - K50
+  - K51
+upload_cohorts:
+- name: HospitalICDCodes
+  dest_table: HospitalICDCodes
+  file_type: csv
+  file_loc: "fixtures/hospital_icd_codes.csv"
+  push_this_cycle: true
+pull_context:
+  session_id: Patients
+  phase: upload_cohorts
+  cohort: Patients
+  pk_table: Patients
+  pk_source:
+    kind: generated
+    table: Patients
+cohorts: []

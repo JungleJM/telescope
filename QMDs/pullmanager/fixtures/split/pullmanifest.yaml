@@ -1,0 +1,51 @@
+manifest_version: 1
+project:
+  name: "Manager Valid Basic"
+  project_folder: "Manager Valid Basic"
+  project_db: PROJECTD33A929
+  created_by: yamlmanager
+source:
+  template: YAMLs/manager_test_cases/01_valid_basic.yaml
+  recipes: YAMLs/recipes.yaml
+sessions:
+- session_id: Patients
+  cohort: Patients
+  pk_table: Patients
+  status: pending
+  phases:
+    setup:
+      yaml: sessions/Patients/setup.yaml
+      status: pending
+      started_at:
+      finished_at:
+      rows:
+      outputs: {}
+      error:
+    upload_cohorts:
+      yaml: sessions/Patients/upload_cohorts.yaml
+      status: pending
+      started_at:
+      finished_at:
+      rows:
+      outputs: {}
+      error:
+    pk:
+      yaml: sessions/Patients/pk.yaml
+      status: pending
+      started_at:
+      finished_at:
+      rows:
+      outputs: {}
+      error:
+      pk_source:
+        kind: generated
+        table: Patients
+  runs:
+  - run_id: Patients__run
+    yaml: sessions/Patients/runs/run.yaml
+    status: pending
+    started_at:
+    finished_at:
+    rows:
+    outputs: {}
+    error:
