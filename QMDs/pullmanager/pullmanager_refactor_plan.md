@@ -1,6 +1,7 @@
 # Pullmanager Refactor Plan
 
 > **Status:** Phases 0-8 are implemented; Phase 9's policy landed with them.
+> Decisions and their reasoning are in `decisions.md`.
 > Phases 6-8 have never run against a database and cannot from the
 > development machine, which has no driver and no reachable server. The verified schema, naming rules,
 > and open questions now live in `pullmanager_contracts.md`, which corrects
@@ -511,6 +512,7 @@ agreed during planning:
 - `dedup_key` accepted and normalized with a warning at authoring time.
 - `stop_at_for_pk_table` applied to the root PK cohort only.
 - `stop_at_for_non_pk_tables`, `print_md` and `printout_md` warned as ignored.
+- Data dictionary validation, which landed with the batch cross-product fix.
 
 The batch cross-product fix already landed in `makeYaml.py`.
 

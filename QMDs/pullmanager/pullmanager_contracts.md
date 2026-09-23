@@ -6,6 +6,8 @@ real `scripts/makeYaml.py --export-split` output, not inferred from design
 notes. Where the design prose and the generator disagree, the generator wins
 and the disagreement is called out.
 
+Why each contract was chosen, and what was rejected, is in `decisions.md`.
+
 Regenerate the evidence at any time:
 
 ```bash
@@ -486,6 +488,26 @@ Row counts were recovered by inspecting result-set column names
 result sets, with a warning if none appeared. Pullmanager reads telemetry from
 a declared contract tied to manifest ids instead.
 
+## Choosing The Cosmos Database
+
+`cosmos_db` lives in the template's `cosmos_vars`, never in VM configuration.
+It accepts five spellings, and two of them are directives rather than database
+names:
+
+| Setting | Connects to | Cohorts rendered |
+| --- | --- | --- |
+| `COSMOS` | `COSMOS` | once |
+| `COSMOS_SneakPeek`, `sneakpeek`, `sp` | `COSMOS_SneakPeek` | once, each tagged |
+| `Dual`, `both` | `COSMOS` | twice; `_sp` variants tagged `COSMOS_SneakPeek` |
+
+Under `Dual` one session therefore spans two databases. A cohort that declares
+its own `cosmos_db` qualifies its tables three-part
+(`COSMOS_SneakPeek.dbo.PatientDim`), because a two-part name resolves against
+whichever database the connection is in. Global temps stay unqualified: tempdb
+does not follow the connected database.
+
+Both variants are roots of their own chain, so a row limit applies to each.
+
 ## Getting Data Up To Cosmos
 
 There is **no linked server from Cosmos back to Projects**. Cosmos can be read
@@ -749,7 +771,7 @@ Needs confirmation before Phase 7 proceeds.
 ## Running The Tests
 
 ```bash
-python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (182)
+python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (249)
 python3 scripts/pullmanager_src/pullmanager.py --tdd manifest   # one module
 python3 scripts/bundle_pullmanager.py --tdd                     # bundler (31)
 python3 scripts/bundle_pullmanager.py --tdd tamper              # one class
