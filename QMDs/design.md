@@ -10,7 +10,8 @@ each, so a fact lives in exactly one place:
 | `roadmap.md` | What is unbuilt, unverified, or undecided. The only place status lives. |
 
 When code and this document disagree, one of them is a bug. Fix whichever is
-wrong in the same commit. `old_generator/` is history and can be deleted.
+wrong in the same commit. Working conventions for this repo are in `CLAUDE.md`
+at the root.
 
 ---
 
@@ -43,10 +44,37 @@ landed) is planned, not built. See the roadmap.
 
 Two machines, one codebase, updated one way.
 
-- **Mac**: development, and most YAML authoring, in the browser UI.
+- **Mac** (and the Linux dev box): development, and most YAML authoring, in
+  the browser UI.
 - **VM**: air-gapped Windows, the only place Cosmos and Projects are reachable.
-  Runs pulls. Cannot pull from git, cannot load a browser page served by Python
-  or opened from disk, and has tkinter but no other Python desktop toolkit.
+  Runs pulls. Cannot pull from git. Cannot load a page served by Python on
+  localhost, or a static HTML file opened from disk, and has no in-editor
+  browser. Has tkinter, but no other Python desktop toolkit (the `shiny` and
+  `tcltk` entries in its package list are R).
+
+### Environments
+
+| | VM | Linux dev box |
+| --- | --- | --- |
+| OS | Windows | Bluefin (immutable Fedora Silverblue) |
+| Python | 3.13.9 | brew 3.14 (`/var/home/linuxbrew/.linuxbrew/bin/python3`); system `/usr/bin/python3` has no tkinter |
+| tkinter | yes, likely Tk 8.6 | via `brew install python-tk@3.14`, Tk 9 |
+| Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver |
+| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | whatever is installed; Ruby fallback |
+
+**`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.**
+Check it before depending on anything outside the standard library; if it is
+not listed, the VM does not have it and cannot get it.
+
+Cosmos permissions are narrow: `VIEW DATABASE PERFORMANCE STATE` is denied and
+`sys.partitions` returns nothing, so row counts come from counting, never from
+metadata (D33).
+
+Dev box gotchas: an IDE Python console (Positron's `%run`) keeps a started
+`yamlmanager` server alive and holding port 8765 after the script "finishes";
+run the server from a terminal instead. To reach it from another machine over
+Tailscale: `--public --browser-host <hostname> --no-open`. Real-Tk GUI testing
+without a display uses Xvfb (`brew install xorg-server`).
 
 ### The Bundle
 
@@ -115,6 +143,40 @@ No `.env` ships and none is needed. Both hosts are DNS aliases with defaults
 come from the manifest. `COSMOS` versus `COSMOS_SneakPeek` versus `Dual` is a
 template setting. `PULLMANAGER_*` environment variables, or a `.env` passed with
 `--env` or found in the working directory, override if a host ever changes.
+
+### Delivering An Update
+
+On the Mac:
+
+```bash
+python3 scripts/bundle_pullmanager.py --tdd     # optional: the bundle's own tests
+python3 scripts/bundle_pullmanager.py           # writes dist/pullmanager_bundle.py
+```
+
+Copy that one file to the VM. Nothing else travels. The same sources always
+produce the same `content_id`, so it tells you whether the VM has the latest.
+
+### Setting Up The VM Folder
+
+The extracted tree is replaced on every update, so everything you author sits
+beside it:
+
+```text
+<project share>\
+  data\                       big reference files; recipes/dictionary if kept outside the bundle
+  QueryGenerator\             where you work: the working directory for every command
+    pullmanager_bundle.py     the copied file
+    telescope\                extracted; managed; never put your own files in here
+    mypull.yaml               your template (start from telescope\YAMLs\template.yaml.example)
+    split\                    written by --export-split
+    sql\                      written by a dry run
+    .pullmanager-gui.json     the launcher's remembered paths
+```
+
+Typed paths resolve from the working directory, so the parent folder is plain
+`..\data\recipes.yaml`. Upload `file_loc` values resolve relative to the
+template. `YAMLMANAGER_DATA_DICTIONARY` sets the dictionary once; recipes have
+no environment variable, so pass `--recipes` when they live outside the bundle.
 
 ### The Whole Pathway On The VM
 
@@ -364,6 +426,8 @@ predicate includes `IS NULL`, because `NOT IN` never matches NULL.
 | `row_chunk` | at run time | Pullmanager | `batch.runtime` |
 
 So `chunk: 2000` subdivides each combination rather than joining the product.
+**Known bug:** Pullmanager currently pulls only the first chunk of each run and
+drops the rest silently. Do not use `chunk:` until it is fixed (roadmap).
 Two dimensions that would produce the same run name are an error, since a lost
 combination means patients silently not pulled.
 
@@ -549,10 +613,11 @@ to `failed`, so a partial table cannot read as complete.
 
 ### Running Again
 
-Running `--execute` again on a manifest replays each unfinished session **in
-full**: a new connection makes every server-side phase stale, setup drops the
-destinations, and every run pulls again. Always correct; costs time, which is
-cheap overnight.
+Running `--execute` again on a manifest replays **every session in full,
+finished ones included**: each session opens a new connection, which makes
+every `done` node stale, so setup drops the destinations and every run pulls
+again. Always correct; costs time. To re-pull only some sessions today, run a
+manifest containing only those. Skipping finished sessions is on the roadmap.
 
 - `--retry-failed` reopens `failed` work. Without it, failed work is excluded
   and the output says so, because rebuilding a session around a failed unit

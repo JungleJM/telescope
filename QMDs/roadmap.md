@@ -20,6 +20,35 @@ When an item here is built, delete it from this file and describe the result in
 | Launcher (`--gui`) | Built; tested with a fake tkinter and by hand on Tk 9. Not yet opened on the VM |
 | Artifact handoff (parquets) | Not built |
 
+## Known Bugs
+
+Found by reading the code; none has been hit yet, because nothing has run
+against a database.
+
+### `chunk:` pulls only the first chunk
+
+`SessionRunner._materialize_batch` calls `select_batch_rows(...)` without a
+`chunk_index`, so every run with a `row_chunk` dimension narrows the PK to rows
+`0..rows_per_batch` and stops. The rest of the batch is never pulled, with no
+error. `count_batch_rows` exists to size the fan-out but nothing calls it.
+
+The fix: count the batch's PK rows, then loop `chunk_index` over
+`ceil(count / rows_per_batch)`, each chunk refilling `##JVM_<pk>` and appending.
+Decide whether chunks are recorded in the manifest as they are discovered (the
+design always intended that for resume and retry) or executed inside the one
+run node. The test must check the **outcome**: every PK row's data lands
+exactly once across the chunks. Until fixed, do not use `chunk:`.
+
+### A second `--execute` re-pulls finished sessions
+
+Every session opens a new connection, which makes every `done` node stale, so
+re-running a manifest to retry one failed session re-pulls every session that
+had already finished. Correct, but it can double an overnight job. A session
+whose status is `done` has complete Projects tables and could be skipped
+outright, with a flag to force it.
+
+---
+
 ## Next: The First Live Run
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:
@@ -27,7 +56,8 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
 1. Extract, then `pullmanager.py --tdd`.
 2. `pullmanager.py --gui`. The VM likely has Tk 8.6, not the 9 it was checked
    against, so watch for option or layout errors.
-3. Execute a small template with an upload and a batched run. Check:
+3. Execute a small template with an upload and a batched run (explicit
+   `values:` dimensions, no `chunk:`). Check:
    - `@@SERVERNAME` is captured and `OPENQUERY` reaches that instance.
    - Cosmos and Projects row counts agree.
    - An upload over 1000 rows succeeds.
@@ -140,10 +170,26 @@ no button to hand a split folder to Pullmanager.
   time would change the manifest's run set after planning.
 - **Tests still owed**: duplicate output column names and blank `source`
   expressions in a cohort.
+- **A recipes environment variable.** The dictionary can be set once with
+  `YAMLMANAGER_DATA_DICTIONARY`; recipes kept outside the bundle (e.g. in
+  `..\data\`) must be passed as `--recipes` every time.
 
 ---
 
 ## Needs Research
+
+### Questions For The Cosmos Developers
+
+These decide whether a partial resume can ever be trusted across a refresh.
+Refreshes are every few weeks.
+
+1. Is `PatientDurableKey` stable across refreshes? (Expected yes: "durable".)
+2. **Is there a snapshot or version identifier that can be `SELECT`ed?** If so,
+   record it beside the epoch, and "did Cosmos refresh between these two
+   connections" becomes a check instead of a judgment.
+3. Do `IsCurrent`, `IsDeleted` and `UseInCosmosAnalytics_X` change for existing
+   patients between refreshes? Those flags are why a re-run PK query can return
+   a different set even with fixed date windows.
 
 ### Primary And Foreign Keys In The Data Dictionary
 

@@ -28,7 +28,7 @@ mismatches between `inputSimple.yaml` and the SQL it produced, and comparing
 against the real files showed nearly all of them were OCR damage in the
 transcriptions. The old generator was faithful. That reversal is what made its
 output usable as a specification for Phase 4 instead of a cautionary tale.
-(Those files are now in `old_generator/`.)
+(Those files were deleted in `721ed36`; recover them from git history.)
 
 **Cost.** The analysis documents had to be retracted in part, and three
 fixtures replaced.
@@ -666,11 +666,29 @@ counts, phase statuses and open questions had already drifted.
 
 **Decision.** `design.md` for what exists, `decisions.md` for why, `roadmap.md`
 for what does not exist yet, and nowhere else. Status lives only in the
-roadmap. Old-generator material moved to `old_generator/`, which nothing
-current depends on. Split fixtures moved beside the code that tests against
+roadmap. Old-generator material was first gathered into `old_generator/`,
+then deleted (`721ed36`): nothing current depends on it, and git keeps it. Split fixtures moved beside the code that tests against
 them. The completed folder was deleted: its build history is in git, and its
 one lasting lesson (report each problem once) is in the design.
 
 **Consequences.** A fact has one home, so a change updates one place. The rule
 that makes it hold: when code and `design.md` disagree, fix whichever is wrong
 in the same commit.
+
+### D48. Paths typed on the command line resolve from the working directory
+
+**Context.** `makeYaml` took `--template` literally, but `yamlmanager`
+resolved it against its own install directory, while `--out-dir` in the same
+command meant the working directory. On the VM that forced
+`--template ..\IBDTest.yaml` for a file sitting beside the user.
+
+**Decision.** Every path typed on the command line (`--template`, `--recipes`,
+`--datadictionary`, output paths) resolves from the working directory, like any
+command-line tool. Defaults, when nothing is typed, still resolve from the
+install, which is how the bundled recipes and dictionary are found.
+
+**Consequences.** A behaviour change for anyone who had learned the old
+workaround: `..\IBDTest.yaml` now means the parent of the working directory.
+Found alongside two related bugs: `--export-split` ignored `--datadictionary`,
+validating against the bundled copy, and a missing default template crashed
+with a traceback instead of pointing at `template.yaml.example`.
