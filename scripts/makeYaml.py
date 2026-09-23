@@ -319,6 +319,25 @@ def default_recipes_path() -> Path:
     return project_root() / "YAMLs" / "recipes.yaml"
 
 
+def missing_template_message(template_path: Path) -> str | None:
+    """A useful sentence for a template that does not exist, or None if it does.
+
+    The bundle ships the template as template.yaml.example so updates never land
+    on a real one -- which means running without --template from an extracted
+    bundle points at a file that is deliberately absent.
+    """
+    path = Path(template_path)
+    if path.is_file():
+        return None
+    example = path.with_name(path.name + ".example")
+    if example.is_file():
+        return (
+            f"No template at {path}. Pass --template with your own file, or copy "
+            f"{example.name} to start one."
+        )
+    return f"No template at {path}. Pass --template with the file to use."
+
+
 def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
     template = copy.deepcopy(template or {})
     for section_name in ("cosmos_vars", "project_vars", "test_options"):
@@ -1225,6 +1244,10 @@ def compile_yaml(
     result = CompileResult()
     template_path = Path(template_path) if template_path else default_template_path()
     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+    missing = missing_template_message(template_path)
+    if missing:
+        result.error("template_not_found", missing, str(template_path))
+        return result
     try:
         template = normalize_template(load_yaml(template_path), result)
         recipes_doc = load_yaml(recipes_path) or {}
@@ -1266,8 +1289,17 @@ def compile_yaml(
     return result
 
 
-def validate_yaml(template_path: str | Path | None = None, recipes_path: str | Path | None = None) -> CompileResult:
-    return compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+def validate_yaml(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+    datadictionary_path: str | Path | None = None,
+) -> CompileResult:
+    return compile_yaml(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        write=False,
+        datadictionary_path=datadictionary_path,
+    )
 
 
 def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
@@ -1509,10 +1541,16 @@ def build_split_plan_from_finished(
 def plan_split_runs(
     template_path: str | Path | None = None,
     recipes_path: str | Path | None = None,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
     template_path = Path(template_path) if template_path else default_template_path()
     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
-    result = compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+    result = compile_yaml(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        write=False,
+        datadictionary_path=datadictionary_path,
+    )
     if result.errors:
         return result
     plan = build_split_plan_from_finished(result.finished_yaml, template_path, recipes_path, result)
@@ -1525,8 +1563,13 @@ def build_pullmanifest(
     recipes_path: str | Path | None = None,
     output_path: str | Path | None = None,
     write: bool = False,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
-    result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+    result = plan_split_runs(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        datadictionary_path=datadictionary_path,
+    )
     if result.errors:
         return result
     manifest = result.analysis.get("split_plan", {})
@@ -1645,8 +1688,13 @@ def write_split_artifacts(
     template_path: str | Path | None = None,
     recipes_path: str | Path | None = None,
     output_dir: str | Path | None = None,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
-    result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+    result = plan_split_runs(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        datadictionary_path=datadictionary_path,
+    )
     if result.errors:
         return result
     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
@@ -1803,6 +1851,10 @@ recipes:
       where:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 """
+
+
+def tiny_recipes_path(tmp: Path) -> Path:
+    return write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
 
 
 def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
@@ -2445,6 +2497,49 @@ class DataDictionaryTests(MakeYamlTest):
         self.assertEqual(res.errors, [])
         self.assertEqual([m.code for m in res.warnings], ["datadictionary_missing"])
 
+    WRONG_DICT = """
+DataDictionary:
+  UnrelatedTable:
+    columns:
+      X: {type: bigint, nullable: false}
+"""
+
+    def wrong_dictionary(self) -> Path:
+        return write_temp_yaml(self.tmp, "wrong_dd.yaml", self.WRONG_DICT)
+
+    def test_every_compiling_route_honours_the_dictionary_path(self):
+        # --export-split once ignored --datadictionary and silently validated
+        # against the bundled copy, so a table added to a dictionary kept
+        # elsewhere was invisible to it.
+        template, recipes = self.write_pair()
+        wrong = self.wrong_dictionary()
+        routes = {
+            "validate_yaml": lambda: validate_yaml(template, recipes, datadictionary_path=wrong),
+            "plan_split_runs": lambda: plan_split_runs(template, recipes, datadictionary_path=wrong),
+            "build_pullmanifest": lambda: build_pullmanifest(
+                template, recipes, output_path=self.tmp / "m.yaml", datadictionary_path=wrong
+            ),
+            "write_split_artifacts": lambda: write_split_artifacts(
+                template, recipes, output_dir=self.tmp / "split", datadictionary_path=wrong
+            ),
+        }
+        for name, route in routes.items():
+            with self.subTest(route=name):
+                self.assertHasError(route(), "unknown_table")
+
+    def test_missing_template_explains_the_example(self):
+        # The bundle ships template.yaml.example, so the default is absent by
+        # design; the error has to say so rather than report a bare errno.
+        (self.tmp / "template.yaml.example").write_text("x: 1\n", encoding="utf-8")
+        res = compile_yaml(self.tmp / "template.yaml", tiny_recipes_path(self.tmp))
+        self.assertHasError(res, "template_not_found")
+        self.assertIn("template.yaml.example", res.errors[0].message)
+
+    def test_missing_template_without_an_example(self):
+        res = compile_yaml(self.tmp / "nope.yaml", tiny_recipes_path(self.tmp))
+        self.assertHasError(res, "template_not_found")
+        self.assertIn("--template", res.errors[0].message)
+
     def test_real_dictionary_accepts_the_bundled_recipes(self):
         # The shipped recipes and dictionary must agree, or every template
         # built from them fails.
@@ -2562,6 +2657,7 @@ def main(argv: list[str] | None = None) -> int:
             template_path=args.template,
             recipes_path=args.recipes,
             output_dir=args.out_dir,
+            datadictionary_path=args.datadictionary,
         )
         print_messages(result)
         if result.ok:

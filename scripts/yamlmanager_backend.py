@@ -20,8 +20,18 @@ def load_document(path: str | Path) -> Any:
     return makeYaml.load_yaml(path)
 
 
-def compile_dashboard(template_path: str | Path, recipes_path: str | Path, write: bool = False) -> CompileResult:
-    return makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=write)
+def compile_dashboard(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    write: bool = False,
+    datadictionary_path: str | Path | None = None,
+) -> CompileResult:
+    return makeYaml.compile_yaml(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        write=write,
+        datadictionary_path=datadictionary_path,
+    )
 
 
 def build_preyaml(
@@ -40,8 +50,16 @@ def build_preyaml(
     )
 
 
-def plan_split_runs(template_path: str | Path, recipes_path: str | Path) -> CompileResult:
-    return makeYaml.plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+def plan_split_runs(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    datadictionary_path: str | Path | None = None,
+) -> CompileResult:
+    return makeYaml.plan_split_runs(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        datadictionary_path=datadictionary_path,
+    )
 
 
 def build_pullmanifest(
@@ -49,12 +67,14 @@ def build_pullmanifest(
     recipes_path: str | Path,
     output_path: str | Path | None = None,
     write: bool = False,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
     return makeYaml.build_pullmanifest(
         template_path=template_path,
         recipes_path=recipes_path,
         output_path=output_path,
         write=write,
+        datadictionary_path=datadictionary_path,
     )
 
 
@@ -62,12 +82,18 @@ def write_split_artifacts(
     template_path: str | Path,
     recipes_path: str | Path,
     output_dir: str | Path | None = None,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
     return makeYaml.write_split_artifacts(
         template_path=template_path,
         recipes_path=recipes_path,
         output_dir=output_dir,
+        datadictionary_path=datadictionary_path,
     )
+
+
+def missing_template_message(template_path: str | Path) -> str | None:
+    return makeYaml.missing_template_message(Path(template_path))
 
 
 def dump_yaml_text(data: Any) -> str:

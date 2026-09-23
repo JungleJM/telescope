@@ -35,6 +35,10 @@ DEFAULT_OUT = PROJECT_ROOT / "UI" / "manager_dashboard.html"
 DEFAULT_DATA_DICTIONARY = Path(
     os.environ.get("YAMLMANAGER_DATA_DICTIONARY", PROJECT_ROOT / "YAMLs" / "datadictionary.yaml")
 )
+# The dictionary actually in use. main() replaces it from --datadictionary, and
+# every compile reads it at call time so validation and the dictionary tab can
+# never disagree about which file they are looking at.
+DATA_DICTIONARY_PATH = DEFAULT_DATA_DICTIONARY
 BACKEND_MODULE = os.environ.get(
     "YAMLMANAGER_BACKEND_MODULE",
     "yamlmanager_backend",
@@ -80,7 +84,8 @@ def yaml_text(value: Any) -> str:
     return backend.dump_yaml_text(value).rstrip()
 
 
-def load_data_dictionary(path: Path = DEFAULT_DATA_DICTIONARY) -> dict[str, Any]:
+def load_data_dictionary(path: Path | None = None) -> dict[str, Any]:
+    path = path or DATA_DICTIONARY_PATH
     try:
         doc = backend.load_document(path) or {}
     except FileNotFoundError:
@@ -596,7 +601,9 @@ def export_preview_block(title: str, artifact_id: str, filename: str, result: An
 def exports_panel(template_path: Path, recipes_path: Path) -> str:
     symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
     expanded = backend.build_preyaml(template_path, recipes_path, mode="expanded-recipes")
-    manifest = backend.build_pullmanifest(template_path, recipes_path)
+    manifest = backend.build_pullmanifest(
+        template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
+    )
     return f"""
       <div class="grid three">
         {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
@@ -2244,7 +2251,12 @@ hydrateBuilder();
 
 
 def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
-    result = backend.compile_dashboard(template_path=template_path, recipes_path=recipes_path, write=False)
+    result = backend.compile_dashboard(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        write=False,
+        datadictionary_path=DATA_DICTIONARY_PATH,
+    )
     return build_html(template_path, recipes_path, result, auto_refresh), result
 
 
@@ -2392,6 +2404,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a static YAML Manager UI.")
     parser.add_argument("--template", default="YAMLs/template.yaml")
     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
+    parser.add_argument(
+        "--datadictionary",
+        default=None,
+        help=f"Data dictionary to validate against. Defaults to {DEFAULT_DATA_DICTIONARY}, "
+             "or YAMLMANAGER_DATA_DICTIONARY.",
+    )
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
@@ -2407,6 +2425,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     raw_argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(raw_argv)
+
+    # A path typed on the command line means "relative to where I am", as it
+    # does for makeYaml and every other CLI tool. Only the built-in defaults are
+    # relative to the install. Previously both resolved against the install, so
+    # from an extracted bundle a template sitting in the working directory had
+    # to be written as ..\template.yaml -- while --out-dir, which was never
+    # routed through the resolver, meant the working directory after all.
+    def typed(flag: str) -> bool:
+        return any(arg == flag or arg.startswith(flag + "=") for arg in raw_argv)
+
+    def from_cwd(value: str) -> str:
+        path = Path(value).expanduser()
+        return str(path if path.is_absolute() else Path.cwd() / path)
+
+    if typed("--template"):
+        args.template = from_cwd(args.template)
+    if typed("--recipes"):
+        args.recipes = from_cwd(args.recipes)
+    if args.datadictionary:
+        global DATA_DICTIONARY_PATH
+        DATA_DICTIONARY_PATH = Path(from_cwd(args.datadictionary))
+
+    missing = backend.missing_template_message(resolve_workspace_path(args.template))
+    if missing:
+        print(f"[yamlmanager] {missing}", file=sys.stderr)
+        return 1
     # These only mean anything to the server, so supplying one is a request to
     # serve. Without this, `--port 0` silently wrote a static file instead --
     # the opposite of what asking for a port means.
@@ -2442,6 +2486,7 @@ def main(argv: list[str] | None = None) -> int:
             template_path=resolve_workspace_path(args.template),
             recipes_path=resolve_workspace_path(args.recipes),
             output_dir=args.out_dir,
+            datadictionary_path=DATA_DICTIONARY_PATH,
         )
         print_messages(result)
         if result.ok:

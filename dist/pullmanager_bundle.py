@@ -300,7 +300,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "cf1de7390680879906ba9b74e5c2aaa2fd4d57892528d8864a0f4f52cbdb7d6f",
+  "content_id": "18aa59e15db2df1a6056b9cad49aab49034e23d84cc81a5d6132e02cc1718732",
   "file_count": 36,
   "files": [
     {
@@ -504,20 +504,20 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "fe1e7dc6b8814dfe844b8d5222eb3dd2300be1b3abf4cbdde8de3b4b98d47470",
-      "size": 98604
+      "sha256": "55a6446aacb1cfde8f8628e15ecd6aebbf76aec3aa2dfcffd2b2e232a1325442",
+      "size": 102262
     },
     {
       "path": "scripts/yamlmanager.py",
       "policy": "replace",
-      "sha256": "21023ceb6a8d6f43fbd0a79eaa94873bbeff099046bd03e711e233fae2686b02",
-      "size": 106333
+      "sha256": "94d6c97d4178b04e96b5e6e6566e93a214e0bbcfa30b4cfa0940b0a5a7c1ef01",
+      "size": 108227
     },
     {
       "path": "scripts/yamlmanager_backend.py",
       "policy": "replace",
-      "sha256": "940c80eea5f71b870ff08d72fce4c405e4ac2950c1c624a7399104681a66f20f",
-      "size": 2307
+      "sha256": "7dbd3c2d0a9f11053fd8169e1c56738e0dbf6507f153bfd1d0ed7cfdd146b7d0",
+      "size": 2926
     }
   ]
 }'''
@@ -9506,7 +9506,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: fe1e7dc6b8814dfe844b8d5222eb3dd2300be1b3abf4cbdde8de3b4b98d47470 SIZE: 98604 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 55a6446aacb1cfde8f8628e15ecd6aebbf76aec3aa2dfcffd2b2e232a1325442 SIZE: 102262 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -9826,6 +9826,25 @@ if __name__ == "__main__":
 #
 # def default_recipes_path() -> Path:
 #     return project_root() / "YAMLs" / "recipes.yaml"
+#
+#
+# def missing_template_message(template_path: Path) -> str | None:
+#     """A useful sentence for a template that does not exist, or None if it does.
+#
+#     The bundle ships the template as template.yaml.example so updates never land
+#     on a real one -- which means running without --template from an extracted
+#     bundle points at a file that is deliberately absent.
+#     """
+#     path = Path(template_path)
+#     if path.is_file():
+#         return None
+#     example = path.with_name(path.name + ".example")
+#     if example.is_file():
+#         return (
+#             f"No template at {path}. Pass --template with your own file, or copy "
+#             f"{example.name} to start one."
+#         )
+#     return f"No template at {path}. Pass --template with the file to use."
 #
 #
 # def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
@@ -10734,6 +10753,10 @@ if __name__ == "__main__":
 #     result = CompileResult()
 #     template_path = Path(template_path) if template_path else default_template_path()
 #     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     missing = missing_template_message(template_path)
+#     if missing:
+#         result.error("template_not_found", missing, str(template_path))
+#         return result
 #     try:
 #         template = normalize_template(load_yaml(template_path), result)
 #         recipes_doc = load_yaml(recipes_path) or {}
@@ -10775,8 +10798,17 @@ if __name__ == "__main__":
 #     return result
 #
 #
-# def validate_yaml(template_path: str | Path | None = None, recipes_path: str | Path | None = None) -> CompileResult:
-#     return compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+# def validate_yaml(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     datadictionary_path: str | Path | None = None,
+# ) -> CompileResult:
+#     return compile_yaml(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         write=False,
+#         datadictionary_path=datadictionary_path,
+#     )
 #
 #
 # def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
@@ -11018,10 +11050,16 @@ if __name__ == "__main__":
 # def plan_split_runs(
 #     template_path: str | Path | None = None,
 #     recipes_path: str | Path | None = None,
+#     datadictionary_path: str | Path | None = None,
 # ) -> CompileResult:
 #     template_path = Path(template_path) if template_path else default_template_path()
 #     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
-#     result = compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+#     result = compile_yaml(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         write=False,
+#         datadictionary_path=datadictionary_path,
+#     )
 #     if result.errors:
 #         return result
 #     plan = build_split_plan_from_finished(result.finished_yaml, template_path, recipes_path, result)
@@ -11034,8 +11072,13 @@ if __name__ == "__main__":
 #     recipes_path: str | Path | None = None,
 #     output_path: str | Path | None = None,
 #     write: bool = False,
+#     datadictionary_path: str | Path | None = None,
 # ) -> CompileResult:
-#     result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+#     result = plan_split_runs(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         datadictionary_path=datadictionary_path,
+#     )
 #     if result.errors:
 #         return result
 #     manifest = result.analysis.get("split_plan", {})
@@ -11154,8 +11197,13 @@ if __name__ == "__main__":
 #     template_path: str | Path | None = None,
 #     recipes_path: str | Path | None = None,
 #     output_dir: str | Path | None = None,
+#     datadictionary_path: str | Path | None = None,
 # ) -> CompileResult:
-#     result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+#     result = plan_split_runs(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         datadictionary_path=datadictionary_path,
+#     )
 #     if result.errors:
 #         return result
 #     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
@@ -11312,6 +11360,10 @@ if __name__ == "__main__":
 #       where:
 #         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 # """
+#
+#
+# def tiny_recipes_path(tmp: Path) -> Path:
+#     return write_temp_yaml(tmp, "recipes.yaml", tiny_recipes())
 #
 #
 # def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
@@ -11954,6 +12006,49 @@ if __name__ == "__main__":
 #         self.assertEqual(res.errors, [])
 #         self.assertEqual([m.code for m in res.warnings], ["datadictionary_missing"])
 #
+#     WRONG_DICT = """
+# DataDictionary:
+#   UnrelatedTable:
+#     columns:
+#       X: {type: bigint, nullable: false}
+# """
+#
+#     def wrong_dictionary(self) -> Path:
+#         return write_temp_yaml(self.tmp, "wrong_dd.yaml", self.WRONG_DICT)
+#
+#     def test_every_compiling_route_honours_the_dictionary_path(self):
+#         # --export-split once ignored --datadictionary and silently validated
+#         # against the bundled copy, so a table added to a dictionary kept
+#         # elsewhere was invisible to it.
+#         template, recipes = self.write_pair()
+#         wrong = self.wrong_dictionary()
+#         routes = {
+#             "validate_yaml": lambda: validate_yaml(template, recipes, datadictionary_path=wrong),
+#             "plan_split_runs": lambda: plan_split_runs(template, recipes, datadictionary_path=wrong),
+#             "build_pullmanifest": lambda: build_pullmanifest(
+#                 template, recipes, output_path=self.tmp / "m.yaml", datadictionary_path=wrong
+#             ),
+#             "write_split_artifacts": lambda: write_split_artifacts(
+#                 template, recipes, output_dir=self.tmp / "split", datadictionary_path=wrong
+#             ),
+#         }
+#         for name, route in routes.items():
+#             with self.subTest(route=name):
+#                 self.assertHasError(route(), "unknown_table")
+#
+#     def test_missing_template_explains_the_example(self):
+#         # The bundle ships template.yaml.example, so the default is absent by
+#         # design; the error has to say so rather than report a bare errno.
+#         (self.tmp / "template.yaml.example").write_text("x: 1\n", encoding="utf-8")
+#         res = compile_yaml(self.tmp / "template.yaml", tiny_recipes_path(self.tmp))
+#         self.assertHasError(res, "template_not_found")
+#         self.assertIn("template.yaml.example", res.errors[0].message)
+#
+#     def test_missing_template_without_an_example(self):
+#         res = compile_yaml(self.tmp / "nope.yaml", tiny_recipes_path(self.tmp))
+#         self.assertHasError(res, "template_not_found")
+#         self.assertIn("--template", res.errors[0].message)
+#
 #     def test_real_dictionary_accepts_the_bundled_recipes(self):
 #         # The shipped recipes and dictionary must agree, or every template
 #         # built from them fails.
@@ -12071,6 +12166,7 @@ if __name__ == "__main__":
 #             template_path=args.template,
 #             recipes_path=args.recipes,
 #             output_dir=args.out_dir,
+#             datadictionary_path=args.datadictionary,
 #         )
 #         print_messages(result)
 #         if result.ok:
@@ -12104,7 +12200,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/makeYaml.py ===
-# === BEGIN FILE: scripts/yamlmanager.py SHA256: 21023ceb6a8d6f43fbd0a79eaa94873bbeff099046bd03e711e233fae2686b02 SIZE: 106333 ===
+# === BEGIN FILE: scripts/yamlmanager.py SHA256: 94d6c97d4178b04e96b5e6e6566e93a214e0bbcfa30b4cfa0940b0a5a7c1ef01 SIZE: 108227 ===
 # #!/usr/bin/env python3
 # """
 # Generate a self-contained HTML prototype UI for YAML Manager.
@@ -12142,6 +12238,10 @@ if __name__ == "__main__":
 # DEFAULT_DATA_DICTIONARY = Path(
 #     os.environ.get("YAMLMANAGER_DATA_DICTIONARY", PROJECT_ROOT / "YAMLs" / "datadictionary.yaml")
 # )
+# # The dictionary actually in use. main() replaces it from --datadictionary, and
+# # every compile reads it at call time so validation and the dictionary tab can
+# # never disagree about which file they are looking at.
+# DATA_DICTIONARY_PATH = DEFAULT_DATA_DICTIONARY
 # BACKEND_MODULE = os.environ.get(
 #     "YAMLMANAGER_BACKEND_MODULE",
 #     "yamlmanager_backend",
@@ -12187,7 +12287,8 @@ if __name__ == "__main__":
 #     return backend.dump_yaml_text(value).rstrip()
 #
 #
-# def load_data_dictionary(path: Path = DEFAULT_DATA_DICTIONARY) -> dict[str, Any]:
+# def load_data_dictionary(path: Path | None = None) -> dict[str, Any]:
+#     path = path or DATA_DICTIONARY_PATH
 #     try:
 #         doc = backend.load_document(path) or {}
 #     except FileNotFoundError:
@@ -12703,7 +12804,9 @@ if __name__ == "__main__":
 # def exports_panel(template_path: Path, recipes_path: Path) -> str:
 #     symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
 #     expanded = backend.build_preyaml(template_path, recipes_path, mode="expanded-recipes")
-#     manifest = backend.build_pullmanifest(template_path, recipes_path)
+#     manifest = backend.build_pullmanifest(
+#         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
+#     )
 #     return f"""
 #       <div class="grid three">
 #         {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
@@ -14351,7 +14454,12 @@ if __name__ == "__main__":
 #
 #
 # def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
-#     result = backend.compile_dashboard(template_path=template_path, recipes_path=recipes_path, write=False)
+#     result = backend.compile_dashboard(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         write=False,
+#         datadictionary_path=DATA_DICTIONARY_PATH,
+#     )
 #     return build_html(template_path, recipes_path, result, auto_refresh), result
 #
 #
@@ -14499,6 +14607,12 @@ if __name__ == "__main__":
 #     parser = argparse.ArgumentParser(description="Generate a static YAML Manager UI.")
 #     parser.add_argument("--template", default="YAMLs/template.yaml")
 #     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
+#     parser.add_argument(
+#         "--datadictionary",
+#         default=None,
+#         help=f"Data dictionary to validate against. Defaults to {DEFAULT_DATA_DICTIONARY}, "
+#              "or YAMLMANAGER_DATA_DICTIONARY.",
+#     )
 #     parser.add_argument("--out", default=str(DEFAULT_OUT))
 #     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
 #     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
@@ -14514,6 +14628,32 @@ if __name__ == "__main__":
 #     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
 #     raw_argv = sys.argv[1:] if argv is None else argv
 #     args = parser.parse_args(raw_argv)
+#
+#     # A path typed on the command line means "relative to where I am", as it
+#     # does for makeYaml and every other CLI tool. Only the built-in defaults are
+#     # relative to the install. Previously both resolved against the install, so
+#     # from an extracted bundle a template sitting in the working directory had
+#     # to be written as ..\template.yaml -- while --out-dir, which was never
+#     # routed through the resolver, meant the working directory after all.
+#     def typed(flag: str) -> bool:
+#         return any(arg == flag or arg.startswith(flag + "=") for arg in raw_argv)
+#
+#     def from_cwd(value: str) -> str:
+#         path = Path(value).expanduser()
+#         return str(path if path.is_absolute() else Path.cwd() / path)
+#
+#     if typed("--template"):
+#         args.template = from_cwd(args.template)
+#     if typed("--recipes"):
+#         args.recipes = from_cwd(args.recipes)
+#     if args.datadictionary:
+#         global DATA_DICTIONARY_PATH
+#         DATA_DICTIONARY_PATH = Path(from_cwd(args.datadictionary))
+#
+#     missing = backend.missing_template_message(resolve_workspace_path(args.template))
+#     if missing:
+#         print(f"[yamlmanager] {missing}", file=sys.stderr)
+#         return 1
 #     # These only mean anything to the server, so supplying one is a request to
 #     # serve. Without this, `--port 0` silently wrote a static file instead --
 #     # the opposite of what asking for a port means.
@@ -14549,6 +14689,7 @@ if __name__ == "__main__":
 #             template_path=resolve_workspace_path(args.template),
 #             recipes_path=resolve_workspace_path(args.recipes),
 #             output_dir=args.out_dir,
+#             datadictionary_path=DATA_DICTIONARY_PATH,
 #         )
 #         print_messages(result)
 #         if result.ok:
@@ -14590,7 +14731,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/yamlmanager.py ===
-# === BEGIN FILE: scripts/yamlmanager_backend.py SHA256: 940c80eea5f71b870ff08d72fce4c405e4ac2950c1c624a7399104681a66f20f SIZE: 2307 ===
+# === BEGIN FILE: scripts/yamlmanager_backend.py SHA256: 7dbd3c2d0a9f11053fd8169e1c56738e0dbf6507f153bfd1d0ed7cfdd146b7d0 SIZE: 2926 ===
 # """
 # Stable Python API for YAML Manager frontends.
 #
@@ -14613,8 +14754,18 @@ if __name__ == "__main__":
 #     return makeYaml.load_yaml(path)
 #
 #
-# def compile_dashboard(template_path: str | Path, recipes_path: str | Path, write: bool = False) -> CompileResult:
-#     return makeYaml.compile_yaml(template_path=template_path, recipes_path=recipes_path, write=write)
+# def compile_dashboard(
+#     template_path: str | Path,
+#     recipes_path: str | Path,
+#     write: bool = False,
+#     datadictionary_path: str | Path | None = None,
+# ) -> CompileResult:
+#     return makeYaml.compile_yaml(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         write=write,
+#         datadictionary_path=datadictionary_path,
+#     )
 #
 #
 # def build_preyaml(
@@ -14633,8 +14784,16 @@ if __name__ == "__main__":
 #     )
 #
 #
-# def plan_split_runs(template_path: str | Path, recipes_path: str | Path) -> CompileResult:
-#     return makeYaml.plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+# def plan_split_runs(
+#     template_path: str | Path,
+#     recipes_path: str | Path,
+#     datadictionary_path: str | Path | None = None,
+# ) -> CompileResult:
+#     return makeYaml.plan_split_runs(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         datadictionary_path=datadictionary_path,
+#     )
 #
 #
 # def build_pullmanifest(
@@ -14642,12 +14801,14 @@ if __name__ == "__main__":
 #     recipes_path: str | Path,
 #     output_path: str | Path | None = None,
 #     write: bool = False,
+#     datadictionary_path: str | Path | None = None,
 # ) -> CompileResult:
 #     return makeYaml.build_pullmanifest(
 #         template_path=template_path,
 #         recipes_path=recipes_path,
 #         output_path=output_path,
 #         write=write,
+#         datadictionary_path=datadictionary_path,
 #     )
 #
 #
@@ -14655,12 +14816,18 @@ if __name__ == "__main__":
 #     template_path: str | Path,
 #     recipes_path: str | Path,
 #     output_dir: str | Path | None = None,
+#     datadictionary_path: str | Path | None = None,
 # ) -> CompileResult:
 #     return makeYaml.write_split_artifacts(
 #         template_path=template_path,
 #         recipes_path=recipes_path,
 #         output_dir=output_dir,
+#         datadictionary_path=datadictionary_path,
 #     )
+#
+#
+# def missing_template_message(template_path: str | Path) -> str | None:
+#     return makeYaml.missing_template_message(Path(template_path))
 #
 #
 # def dump_yaml_text(data: Any) -> str:

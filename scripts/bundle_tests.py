@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -386,6 +387,38 @@ class EndToEndTests(BundleTestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Sessions:", proc.stdout)
+
+    def test_typed_paths_resolve_against_the_working_directory(self):
+        # yamlmanager once resolved --template against its install, so from an
+        # extracted bundle a template in the working directory had to be typed
+        # as ..\\template.yaml, while makeYaml took the same argument literally.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        work = self.tmp / "work"
+        work.mkdir()
+        template = REPO_ROOT / "YAMLs" / "manager_test_cases" / "01_valid_basic.yaml"
+        (work / "IBDTest.yaml").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        shutil.copytree(
+            REPO_ROOT / "YAMLs" / "manager_test_cases" / "fixtures", work / "fixtures"
+        )
+        for script in ("makeYaml.py", "yamlmanager.py"):
+            with self.subTest(script=script):
+                out = work / f"split_{script}"
+                proc = subprocess.run(
+                    [sys.executable, str(target / "scripts" / script),
+                     "--template", "IBDTest.yaml", "--export-split", "--out-dir", str(out)],
+                    capture_output=True, text=True, cwd=work,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertTrue((out / "pullmanifest.yaml").is_file())
+
+    def test_running_without_a_template_explains_the_example(self):
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        proc = self.run_python(str(target / "scripts" / "yamlmanager.py"), "--static")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("template.yaml.example", proc.stdout + proc.stderr)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
 
     def test_runtime_reads_a_batch_product_manifest(self):
         template = REPO_ROOT / "YAMLs" / "manager_test_cases" / "02_valid_multipliers_batching.yaml"
