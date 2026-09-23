@@ -60,67 +60,49 @@ writeLines(paste(ip[, "Package"], ip[, "Version"]), "C:/phewas_offline/vm_packag
 Bring `vm_packages.txt` back to the Mac as `~/phewas_transfer_build/vm_packages.txt`.
 It holds one `name version` pair per line.
 
-If text cannot come off the VM, derive the list from the repo's inventory
-instead. That file is out of date: it still lists `parallel v4.5.1`, from before
-R was upgraded. The check will then be judging against old versions. Run from
-the repo root:
-
-```bash
-mkdir -p ~/phewas_transfer_build
-awk '/^  - name: "R"/{f=1;next} f&&/^  - name:/{f=0} f' "YAMLs/DSVM Plugins.yaml" |
-  sed -n 's/^ *- name: "\(.*\) v\(.*\)"$/\1 \2/p' > ~/phewas_transfer_build/vm_packages.txt
-```
+If text cannot come off the VM, skip this. The build then falls back to the
+repo's inventory, `YAMLs/DSVM Plugins.yaml`. That file is out of date: it still
+lists `parallel v4.5.1`, from before R was upgraded. So the check would be
+judging against old versions.
 
 ## Part 1: Build the library on the Mac
 
 This needs R (any recent version; 4.6 is best), `git` and `python3`. If `python3`
 is missing, `xcode-select --install` provides it.
 
-### 1. Gather the inputs
+### 1. Build `Rlib/`
 
-From the repo root:
-
-```bash
-B=~/phewas_transfer_build
-mkdir -p "$B"
-cp QMDs/sideproject-phewas/check_phewas_lib.R QMDs/sideproject-phewas/build_phewas_lib.R "$B/"
-cd "$B"
-rm -rf PheWAS PheWAS_*.tar.gz
-git clone --depth 1 https://github.com/PheWAS/PheWAS.git
-COPYFILE_DISABLE=1 R CMD build --no-build-vignettes --no-manual PheWAS
-```
-
-`COPYFILE_DISABLE=1` keeps macOS from adding `._` metadata files to the tarball.
-Afterwards `$B` holds `PheWAS_<version>.tar.gz` along with `PheWAS/`,
-`vm_packages.txt` and the two R scripts.
-
-### 2. Assemble `Rlib/`
+In Terminal, from the repo root:
 
 ```bash
-Rscript build_phewas_lib.R
+Rscript QMDs/sideproject-phewas/build_phewas_lib.R
 ```
 
-This starts `Rlib/` afresh. It then:
+It works in `~/phewas_transfer_build`, creating that folder if needed, and starts
+afresh on every run. It:
 
-1. copies in the PheWAS tarball;
+1. clones PheWAS from GitHub and builds a source tarball of it;
 2. finds PheWAS's dependencies, recursively, from CRAN's Windows R 4.6 index;
-3. drops base R and everything in `vm_packages.txt`;
+3. drops base R and everything the VM already has;
 4. downloads the rest as Windows binaries and unzips them into `Rlib/`;
-5. copies in `check_phewas_lib.R`;
+5. adds the PheWAS tarball and `check_phewas_lib.R`;
 6. runs the Mac-side check.
 
-It prints the packages it chose, then either `OK: … dependencies satisfied` or a
-list of problems. The usual problem, and its fix:
+`R CMD build` warns that PheWAS now depends on R >= 3.5.0. That is expected and
+harmless. The run ends with `Shipping as Windows binaries: …`, then either
+`OK: … dependencies satisfied` followed by the pack command, or a list of
+problems:
 
 | Problem | Fix |
 |---|---|
 | `X needs Y >= a, but b is available` | The VM's copy of `Y` is too old. Add `"Y"` to `extra` at the top of `build_phewas_lib.R` and rerun. The shipped copy then shadows the VM's for sessions that use this library. |
-| `X needs Y, which is missing` | `Y` is not on CRAN for Windows (the script stops earlier and names it) or is missing from the list. Investigate before continuing. |
-| `X is not a Windows build` | Something other than a Windows binary got into `Rlib/`. Rerun the script, which starts `Rlib/` afresh. |
+| `X needs Y, which is missing` | `Y` is missing from the VM's list. Investigate before continuing. |
+| `Not on CRAN for Windows R 4.6: …` | A dependency has no Windows binary. Investigate before continuing. |
+| `X is not a Windows build` | Something other than a Windows binary got into `Rlib/`. Rerun the script. |
 
 Do not pack until the check says `OK`.
 
-### 3. Pack it into text parts
+### 2. Pack it into text parts
 
 From the repo root:
 
