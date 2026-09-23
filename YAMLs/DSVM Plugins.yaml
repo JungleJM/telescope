@@ -510,7 +510,7 @@ software:
       - name: "autoCovariateSelection v1.0.0"
       - name: "backports v1.5.0"
       - name: "BART v2.9.9"
-      - name: "base v4.5.1"
+      - name: "base v4.6.1"
       - name: "base64enc v0.1-3"
       - name: "BayesFactor v0.9.12-4.7"
       - name: "bayesm v3.1-6"
