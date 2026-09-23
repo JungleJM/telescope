@@ -661,8 +661,8 @@ pull.
 python pullmanager_bundle.py --verify-bundle
 python pullmanager_bundle.py --extract ./telescope
 
-# author or edit, in a browser
-python telescope/scripts/yamlmanager.py --serve
+# run pulls from a desktop window (the VM cannot use the browser UI)
+python telescope/pullmanager.py --gui
 
 # or straight to the command line
 python telescope/scripts/makeYaml.py --template mytemplate.yaml --export-split --out-dir ./split

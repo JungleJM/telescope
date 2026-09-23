@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run the manifest against live connections, updating it as it goes.",
     )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Open the desktop launcher. Uses tkinter, which ships with Python.",
+    )
     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
     parser.add_argument(
         "--linked-server",
@@ -212,6 +217,18 @@ def main(argv: list[str] | None = None) -> int:
         from .tests import run as run_tests
 
         return run_tests(None if args.tdd == "__all__" else args.tdd)
+
+    if args.gui:
+        try:
+            from .gui import main as gui_main
+        except ImportError as exc:
+            print(
+                f"ERROR the launcher needs tkinter, which this Python lacks ({exc}). "
+                "Everything it does is also available as --dry-run and --execute.",
+                file=sys.stderr,
+            )
+            return 1
+        return gui_main()
 
     if not args.manifest:
         parser.print_help()

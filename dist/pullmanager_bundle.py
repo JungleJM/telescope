@@ -300,8 +300,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "18aa59e15db2df1a6056b9cad49aab49034e23d84cc81a5d6132e02cc1718732",
-  "file_count": 36,
+  "content_id": "24b46726618a6df239de180d1594f964c2c127f35589b6ea35f2155bf3f5de90",
+  "file_count": 40,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -348,8 +348,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "bc2b9888907a0057e8c0cbda85ca2586e6e5240b684d03c13d1559906c1c8258",
-      "size": 8869
+      "sha256": "9fc0f09124ab1fb71a592f5e717d7e3b9a6322cac290528bb8d53919cc4a544d",
+      "size": 9424
     },
     {
       "path": "pullmanager/db.py",
@@ -362,6 +362,18 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "fd658d58f45a49875790f6a119cc8b160cd736fbce5f861331f5f2ae94dd79ea",
       "size": 8444
+    },
+    {
+      "path": "pullmanager/gui.py",
+      "policy": "replace",
+      "sha256": "1866a7b3c41374c18442f9fa4f0e34cfb0b0a3ae8ecb9346963ecafc0e8f977b",
+      "size": 11348
+    },
+    {
+      "path": "pullmanager/launcher.py",
+      "policy": "replace",
+      "sha256": "0962943061a366d8e7233663c1c4389a815737c4f8dade41b73fc0573e9b7e7b",
+      "size": 9798
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -440,6 +452,18 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488",
       "size": 6609
+    },
+    {
+      "path": "pullmanager/tests/test_gui.py",
+      "policy": "replace",
+      "sha256": "11c2577984d550d6aa18168ea6978cc4580ac340386c883ebd2cc554c23adbf8",
+      "size": 7011
+    },
+    {
+      "path": "pullmanager/tests/test_launcher.py",
+      "policy": "replace",
+      "sha256": "2593df5712032ce30fef0ce431afda64cec2e0b3b259f34d11ccaefa8e6d9adb",
+      "size": 10172
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -4201,7 +4225,7 @@ if __name__ == "__main__":
 #     return BatchSelection(sql=sql + ";", params=params)
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: bc2b9888907a0057e8c0cbda85ca2586e6e5240b684d03c13d1559906c1c8258 SIZE: 8869 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 9fc0f09124ab1fb71a592f5e717d7e3b9a6322cac290528bb8d53919cc4a544d SIZE: 9424 ===
 # """Command line entry point.
 #
 # Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
@@ -4376,6 +4400,11 @@ if __name__ == "__main__":
 #         action="store_true",
 #         help="Run the manifest against live connections, updating it as it goes.",
 #     )
+#     parser.add_argument(
+#         "--gui",
+#         action="store_true",
+#         help="Open the desktop launcher. Uses tkinter, which ships with Python.",
+#     )
 #     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
 #     parser.add_argument(
 #         "--linked-server",
@@ -4416,6 +4445,18 @@ if __name__ == "__main__":
 #         from .tests import run as run_tests
 #
 #         return run_tests(None if args.tdd == "__all__" else args.tdd)
+#
+#     if args.gui:
+#         try:
+#             from .gui import main as gui_main
+#         except ImportError as exc:
+#             print(
+#                 f"ERROR the launcher needs tkinter, which this Python lacks ({exc}). "
+#                 "Everything it does is also available as --dry-run and --execute.",
+#                 file=sys.stderr,
+#             )
+#             return 1
+#         return gui_main()
 #
 #     if not args.manifest:
 #         parser.print_help()
@@ -5034,6 +5075,596 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: 1866a7b3c41374c18442f9fa4f0e34cfb0b0a3ae8ecb9346963ecafc0e8f977b SIZE: 11348 ===
+# """Desktop launcher for running pulls.
+#
+# A thin tkinter view over launcher.py. It holds no logic of its own: every
+# button builds a command through the controller and runs it as a subprocess,
+# exactly as it would be typed. Anything worth testing lives in launcher.py.
+#
+# Run with:  python pullmanager.py --gui
+# """
+#
+# from __future__ import annotations
+#
+# import tkinter as tk
+# from pathlib import Path
+# from tkinter import filedialog, messagebox, scrolledtext, ttk
+#
+# from . import launcher
+# from .launcher import LauncherError, Options, Paths
+#
+# POLL_MS = 100
+# STATUS_REFRESH_MS = 3000
+#
+# STATUS_COLOURS = {
+#     "done": "#1a7f37",
+#     "failed": "#cf222e",
+#     "running": "#0969da",
+#     "blocked": "#6e7781",
+#     "skipped": "#6e7781",
+#     "pending": "#24292f",
+# }
+#
+# FIELDS = (
+#     # attribute, label, kind, hint
+#     ("template", "Template", "file", "required"),
+#     ("recipes", "Recipes", "file", "blank = bundled copy"),
+#     ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
+#     ("split_dir", "Split folder", "dir", "written by Export split"),
+#     ("sql_dir", "SQL folder", "dir", "written by Dry run"),
+# )
+#
+#
+# class LauncherApp:
+#     def __init__(self, root: tk.Tk, tools: launcher.Tools, workdir: Path):
+#         self.root = root
+#         self.tools = tools
+#         self.workdir = workdir
+#         self.runner = launcher.CommandRunner()
+#         self.vars: dict[str, tk.StringVar] = {}
+#         self.retry_failed = tk.BooleanVar(value=False)
+#         self.resume_partial = tk.BooleanVar(value=False)
+#         self.action_buttons: list[ttk.Button] = []
+#         self._next_status_refresh = 0
+#
+#         root.title(f"Pullmanager - {workdir}")
+#         root.geometry("1100x760")
+#         root.minsize(820, 520)
+#         root.protocol("WM_DELETE_WINDOW", self.on_close)
+#
+#         self._build_inputs()
+#         self._build_tabs()
+#         self._build_status_bar()
+#         self._load_settings()
+#         self.refresh_status()
+#
+#     # ------------------------------------------------------------- layout
+#
+#     def _build_inputs(self) -> None:
+#         frame = ttk.LabelFrame(self.root, text="Pull inputs", padding=8)
+#         frame.pack(fill="x", padx=10, pady=(10, 4))
+#         frame.columnconfigure(1, weight=1)
+#
+#         for row, (attr, label, kind, hint) in enumerate(FIELDS):
+#             var = tk.StringVar()
+#             self.vars[attr] = var
+#             ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+#             ttk.Entry(frame, textvariable=var).grid(row=row, column=1, sticky="ew", pady=2)
+#             ttk.Button(
+#                 frame, text="Browse", command=lambda a=attr, k=kind: self.browse(a, k)
+#             ).grid(row=row, column=2, padx=(6, 6), pady=2)
+#             ttk.Label(frame, text=hint, foreground="#6e7781").grid(row=row, column=3, sticky="w")
+#
+#         options = ttk.Frame(frame)
+#         options.grid(row=len(FIELDS), column=0, columnspan=4, sticky="w", pady=(8, 4))
+#         ttk.Checkbutton(options, text="Retry failed", variable=self.retry_failed).pack(side="left")
+#         ttk.Checkbutton(
+#             options, text="Resume partial (keep completed transfers)", variable=self.resume_partial
+#         ).pack(side="left", padx=(16, 0))
+#
+#         actions = ttk.Frame(frame)
+#         actions.grid(row=len(FIELDS) + 1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+#         for text, handler in (
+#             ("Validate", self.on_validate),
+#             ("Export split", self.on_export_split),
+#             ("Dry run", self.on_dry_run),
+#             ("Execute", self.on_execute),
+#         ):
+#             button = ttk.Button(actions, text=text, command=handler)
+#             button.pack(side="left", padx=(0, 6))
+#             self.action_buttons.append(button)
+#         self.stop_button = ttk.Button(actions, text="Stop", command=self.on_stop, state="disabled")
+#         self.stop_button.pack(side="right")
+#
+#     def _build_tabs(self) -> None:
+#         notebook = ttk.Notebook(self.root)
+#         notebook.pack(fill="both", expand=True, padx=10, pady=4)
+#
+#         output_tab = ttk.Frame(notebook)
+#         self.output = scrolledtext.ScrolledText(
+#             output_tab, wrap="none", font=("Consolas", 10), state="disabled"
+#         )
+#         self.output.pack(fill="both", expand=True)
+#         notebook.add(output_tab, text="Output")
+#
+#         status_tab = ttk.Frame(notebook)
+#         columns = ("kind", "name", "status", "rows", "duration", "detail")
+#         self.tree = ttk.Treeview(status_tab, columns=columns, show="tree headings")
+#         self.tree.heading("#0", text="Session")
+#         self.tree.column("#0", width=220)
+#         widths = {"kind": 70, "name": 150, "status": 80, "rows": 90, "duration": 80, "detail": 360}
+#         for column in columns:
+#             self.tree.heading(column, text=column.capitalize())
+#             self.tree.column(column, width=widths[column], anchor="w")
+#         for status, colour in STATUS_COLOURS.items():
+#             self.tree.tag_configure(status, foreground=colour)
+#         scroll = ttk.Scrollbar(status_tab, orient="vertical", command=self.tree.yview)
+#         self.tree.configure(yscrollcommand=scroll.set)
+#         self.tree.pack(side="left", fill="both", expand=True)
+#         scroll.pack(side="right", fill="y")
+#
+#         bar = ttk.Frame(status_tab)
+#         bar.pack(side="bottom", fill="x")
+#         ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="right", pady=4)
+#         self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
+#         self.status_message.pack(side="left", pady=4)
+#         notebook.add(status_tab, text="Status")
+#
+#     def _build_status_bar(self) -> None:
+#         self.bar = ttk.Label(self.root, text="Ready.", anchor="w", padding=(10, 4))
+#         self.bar.pack(fill="x", side="bottom")
+#
+#     # ------------------------------------------------------------ settings
+#
+#     def paths(self) -> Paths:
+#         return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS})
+#
+#     def options(self) -> Options:
+#         return Options(
+#             retry_failed=bool(self.retry_failed.get()),
+#             resume_partial=bool(self.resume_partial.get()),
+#         )
+#
+#     def _load_settings(self) -> None:
+#         saved = launcher.load_settings(self.workdir)
+#         for attr, *_ in FIELDS:
+#             self.vars[attr].set(getattr(saved, attr))
+#
+#     def _save_settings(self) -> None:
+#         try:
+#             launcher.save_settings(self.paths(), self.workdir)
+#         except OSError:
+#             pass  # remembering choices is a convenience, not a requirement
+#
+#     def browse(self, attr: str, kind: str) -> None:
+#         start = self.vars[attr].get() or str(self.workdir)
+#         if kind == "dir":
+#             chosen = filedialog.askdirectory(initialdir=start)
+#         else:
+#             chosen = filedialog.askopenfilename(
+#                 initialdir=str(Path(start).parent) if Path(start).suffix else start,
+#                 filetypes=[("YAML", "*.yaml *.yml"), ("All files", "*.*")],
+#             )
+#         if chosen:
+#             self.vars[attr].set(chosen)
+#
+#     # ------------------------------------------------------------- actions
+#
+#     def on_validate(self) -> None:
+#         self.run("Validate", lambda: launcher.command_validate(self.tools, self.paths()))
+#
+#     def on_export_split(self) -> None:
+#         self.run("Export split", lambda: launcher.command_export_split(self.tools, self.paths()))
+#
+#     def on_dry_run(self) -> None:
+#         self.run(
+#             "Dry run",
+#             lambda: launcher.command_dry_run(self.tools, self.paths(), self.options()),
+#         )
+#
+#     def on_execute(self) -> None:
+#         if not messagebox.askokcancel(
+#             "Execute pull",
+#             "This runs against Cosmos and Projects and updates the manifest.\n\nContinue?",
+#         ):
+#             return
+#         self.run(
+#             "Execute",
+#             lambda: launcher.command_execute(self.tools, self.paths(), self.options()),
+#         )
+#
+#     def on_stop(self) -> None:
+#         if not self.runner.running:
+#             return
+#         if messagebox.askyesno(
+#             "Stop",
+#             "Stop the running command?\n\nWhatever it was working on stays 'running' "
+#             "in the manifest, and a resume replays it.",
+#         ):
+#             self.runner.stop()
+#
+#     def run(self, label: str, build) -> None:
+#         try:
+#             command = build()
+#         except LauncherError as exc:
+#             messagebox.showwarning(label, str(exc))
+#             return
+#         self._save_settings()
+#         self.write(f"\n=== {label} ===\n$ {' '.join(command)}\n")
+#         try:
+#             self.runner.start(command, cwd=self.workdir)
+#         except (LauncherError, OSError) as exc:
+#             messagebox.showerror(label, str(exc))
+#             return
+#         self.set_busy(True, f"Running: {label}")
+#         self._next_status_refresh = 0
+#         self.root.after(POLL_MS, self.poll)
+#
+#     def poll(self) -> None:
+#         for line in self.runner.poll():
+#             self.write(line + "\n")
+#         if self.runner.running:
+#             self._next_status_refresh -= POLL_MS
+#             if self._next_status_refresh <= 0:
+#                 self.refresh_status()
+#                 self._next_status_refresh = STATUS_REFRESH_MS
+#             self.root.after(POLL_MS, self.poll)
+#             return
+#         code = self.runner.returncode
+#         self.write(f"--- finished, exit code {code} ---\n")
+#         self.set_busy(False, "Finished." if code == 0 else f"Finished with exit code {code}.")
+#         self.refresh_status()
+#
+#     def set_busy(self, busy: bool, message: str) -> None:
+#         for button in self.action_buttons:
+#             button.configure(state="disabled" if busy else "normal")
+#         self.stop_button.configure(state="normal" if busy else "disabled")
+#         self.bar.configure(text=message)
+#
+#     def write(self, text: str) -> None:
+#         self.output.configure(state="normal")
+#         self.output.insert("end", text)
+#         self.output.see("end")
+#         self.output.configure(state="disabled")
+#
+#     def refresh_status(self) -> None:
+#         manifest = self.workdir / self.paths().manifest()
+#         rows, message = launcher.try_manifest_rows(manifest)
+#         self.tree.delete(*self.tree.get_children())
+#         parents: dict[str, str] = {}
+#         for row in rows:
+#             values = (row.kind, row.name, row.status, row.rows, row.duration, row.detail)
+#             if row.kind == "session":
+#                 parents[row.session] = self.tree.insert(
+#                     "", "end", text=row.session, values=values, open=True, tags=(row.status,)
+#                 )
+#             else:
+#                 self.tree.insert(
+#                     parents.get(row.session, ""), "end", text="",
+#                     values=values, tags=(row.status,),
+#                 )
+#         self.status_message.configure(text=message or f"{manifest}")
+#
+#     def on_close(self) -> None:
+#         if self.runner.running and not messagebox.askyesno(
+#             "Quit", "A command is still running. Stop it and quit?"
+#         ):
+#             return
+#         self.runner.stop()
+#         self._save_settings()
+#         self.root.destroy()
+#
+#
+# def main(workdir: Path | None = None) -> int:
+#     workdir = Path(workdir or Path.cwd())
+#     root = tk.Tk()
+#     try:
+#         tools = launcher.locate_tools()
+#     except LauncherError as exc:
+#         root.withdraw()
+#         messagebox.showerror("Pullmanager", str(exc))
+#         return 1
+#     LauncherApp(root, tools, workdir)
+#     root.mainloop()
+#     return 0
+#
+# === END FILE: pullmanager/gui.py ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: 0962943061a366d8e7233663c1c4389a815737c4f8dade41b73fc0573e9b7e7b SIZE: 9798 ===
+# """Logic behind the desktop launcher, with no tkinter in it.
+#
+# The launcher is a front end over the command line, not a second
+# implementation: every action runs the same command a person would type, as a
+# subprocess. That keeps database work out of the UI thread, means a long pull
+# cannot freeze the window, gives Stop something real to terminate, and
+# guarantees the GUI never behaves differently from the CLI.
+#
+# Everything testable lives here. The tkinter view only wires widgets to it.
+# """
+#
+# from __future__ import annotations
+#
+# import json
+# import os
+# import queue
+# import subprocess
+# import sys
+# import threading
+# from dataclasses import asdict, dataclass, field
+# from pathlib import Path
+#
+# from .manifest import Manifest, ManifestError
+#
+# SETTINGS_FILENAME = ".pullmanager-gui.json"
+# MANIFEST_FILENAME = "pullmanifest.yaml"
+#
+#
+# class LauncherError(RuntimeError):
+#     """Raised when the tools cannot be found or a command cannot be built."""
+#
+#
+# @dataclass
+# class Tools:
+#     """Where the two command-line programs live."""
+#
+#     pullmanager: Path
+#     make_yaml: Path
+#
+#
+# def locate_tools(package_dir: Path | None = None) -> Tools:
+#     """Find pullmanager.py and makeYaml.py from this package's location.
+#
+#     Two layouts are supported: the extracted bundle, where both sit under one
+#     root, and the source tree, where makeYaml is a sibling of pullmanager_src.
+#     """
+#     package_dir = Path(package_dir or Path(__file__).resolve().parent)
+#     root = package_dir.parent
+#     candidates = [
+#         Tools(root / "pullmanager.py", root / "scripts" / "makeYaml.py"),
+#         Tools(root / "pullmanager.py", root.parent / "makeYaml.py"),
+#     ]
+#     for tools in candidates:
+#         if tools.pullmanager.is_file() and tools.make_yaml.is_file():
+#             return tools
+#     raise LauncherError(
+#         "Could not find pullmanager.py and makeYaml.py next to the launcher. "
+#         "Run it from an extracted bundle."
+#     )
+#
+#
+# @dataclass
+# class Paths:
+#     """What the user has chosen. Blank optional fields fall back to defaults."""
+#
+#     template: str = ""
+#     recipes: str = ""
+#     datadictionary: str = ""
+#     split_dir: str = "split"
+#     sql_dir: str = "sql"
+#
+#     def manifest(self) -> Path:
+#         return Path(self.split_dir) / MANIFEST_FILENAME
+#
+#
+# @dataclass
+# class Options:
+#     retry_failed: bool = False
+#     resume_partial: bool = False
+#
+#
+# def _require(value: str, what: str) -> str:
+#     if not str(value).strip():
+#         raise LauncherError(f"Choose a {what} first.")
+#     return str(value).strip()
+#
+#
+# def _yaml_inputs(paths: Paths) -> list[str]:
+#     args = ["--template", _require(paths.template, "template")]
+#     # Optional: blank means the tool's own default, which is the bundled copy.
+#     if paths.recipes.strip():
+#         args += ["--recipes", paths.recipes.strip()]
+#     if paths.datadictionary.strip():
+#         args += ["--datadictionary", paths.datadictionary.strip()]
+#     return args
+#
+#
+# def _resume_flags(options: Options) -> list[str]:
+#     flags = []
+#     if options.retry_failed:
+#         flags.append("--retry-failed")
+#     if options.resume_partial:
+#         flags.append("--resume-partial")
+#     return flags
+#
+#
+# def command_validate(tools: Tools, paths: Paths) -> list[str]:
+#     return [sys.executable, str(tools.make_yaml), *_yaml_inputs(paths), "--validate"]
+#
+#
+# def command_export_split(tools: Tools, paths: Paths) -> list[str]:
+#     return [
+#         sys.executable, str(tools.make_yaml), *_yaml_inputs(paths),
+#         "--export-split", "--out-dir", _require(paths.split_dir, "split folder"),
+#     ]
+#
+#
+# def command_dry_run(tools: Tools, paths: Paths, options: Options) -> list[str]:
+#     return [
+#         sys.executable, str(tools.pullmanager), "--dry-run", str(paths.manifest()),
+#         "--out-dir", _require(paths.sql_dir, "SQL folder"), *_resume_flags(options),
+#     ]
+#
+#
+# def command_execute(tools: Tools, paths: Paths, options: Options) -> list[str]:
+#     return [
+#         sys.executable, str(tools.pullmanager), "--execute", str(paths.manifest()),
+#         *_resume_flags(options),
+#     ]
+#
+#
+# def child_environment() -> dict[str, str]:
+#     """Stream output live, in UTF-8, whatever the console code page is.
+#
+#     Unbuffered, or a long pull would print nothing until it finished. UTF-8,
+#     or a Windows cp1252 console would mangle anything outside ASCII.
+#     """
+#     env = dict(os.environ)
+#     env["PYTHONUNBUFFERED"] = "1"
+#     env["PYTHONIOENCODING"] = "utf-8"
+#     return env
+#
+#
+# class CommandRunner:
+#     """One subprocess at a time, its output delivered through a queue.
+#
+#     A reader thread feeds the queue; the UI drains it with poll(), so tkinter
+#     is only ever touched from its own thread.
+#     """
+#
+#     def __init__(self) -> None:
+#         self._process: subprocess.Popen | None = None
+#         self._queue: queue.Queue[str | None] = queue.Queue()
+#         self._reader: threading.Thread | None = None
+#         self.returncode: int | None = None
+#         self.command: list[str] = []
+#
+#     @property
+#     def running(self) -> bool:
+#         return self._process is not None and self.returncode is None
+#
+#     def start(self, command: list[str], cwd: str | Path | None = None) -> None:
+#         if self.running:
+#             raise LauncherError("A command is already running. Stop it first.")
+#         self.command = list(command)
+#         self.returncode = None
+#         self._queue = queue.Queue()
+#         self._process = subprocess.Popen(
+#             command,
+#             cwd=str(cwd) if cwd else None,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.STDOUT,
+#             text=True,
+#             encoding="utf-8",
+#             errors="replace",
+#             env=child_environment(),
+#         )
+#         self._reader = threading.Thread(target=self._read, daemon=True)
+#         self._reader.start()
+#
+#     def _read(self) -> None:
+#         assert self._process is not None and self._process.stdout is not None
+#         for line in self._process.stdout:
+#             self._queue.put(line.rstrip("\n"))
+#         self._process.wait()
+#         self._queue.put(None)
+#
+#     def poll(self) -> list[str]:
+#         """Lines produced since the last poll; notices when the process ends."""
+#         lines: list[str] = []
+#         while True:
+#             try:
+#                 item = self._queue.get_nowait()
+#             except queue.Empty:
+#                 break
+#             if item is None:
+#                 if self._process is not None:
+#                     self.returncode = self._process.returncode
+#                 break
+#             lines.append(item)
+#         return lines
+#
+#     def stop(self) -> None:
+#         """Terminate the running command.
+#
+#         Abrupt by design. The manifest node it was working on stays `running`,
+#         which a resume already treats as interrupted and replays; SQL Server
+#         rolls back the open transaction when the connection drops.
+#         """
+#         if self._process is not None and self.returncode is None:
+#             self._process.terminate()
+#
+#     def wait(self, timeout: float | None = None) -> int | None:
+#         """Block until the command ends. For tests and scripted use."""
+#         if self._process is None:
+#             return None
+#         self._process.wait(timeout=timeout)
+#         if self._reader is not None:
+#             self._reader.join(timeout=timeout)
+#         return self._process.returncode
+#
+#
+# @dataclass
+# class StatusRow:
+#     session: str
+#     kind: str
+#     name: str
+#     status: str
+#     rows: str = ""
+#     duration: str = ""
+#     detail: str = ""
+#
+#
+# def manifest_rows(manifest_path: Path) -> list[StatusRow]:
+#     """The manifest flattened into one row per phase and run."""
+#     manifest = Manifest.load(manifest_path)
+#     rows: list[StatusRow] = []
+#     for session in manifest.sessions:
+#         rows.append(StatusRow(session.session_id, "session", session.session_id, session.status))
+#         for child in [*session.phases, *session.runs]:
+#             is_phase = child in session.phases
+#             name = child.name if is_phase else (child.batch or {}).get("name") or child.label
+#             duration = (child.data.get("duration") or {}).get("display", "")
+#             detail = (child.error or {}).get("message") or child.note or ""
+#             rows.append(
+#                 StatusRow(
+#                     session=session.session_id,
+#                     kind="phase" if is_phase else "run",
+#                     name=str(name),
+#                     status=child.status,
+#                     rows="" if child.rows is None else f"{child.rows:,}",
+#                     duration=duration,
+#                     detail=str(detail),
+#                 )
+#             )
+#     return rows
+#
+#
+# def try_manifest_rows(manifest_path: Path) -> tuple[list[StatusRow], str]:
+#     """Rows, or a message saying why there are none. Never raises."""
+#     if not manifest_path.is_file():
+#         return [], f"No manifest yet at {manifest_path}. Export a split first."
+#     try:
+#         return manifest_rows(manifest_path), ""
+#     except (ManifestError, OSError, ValueError) as exc:
+#         return [], f"Could not read {manifest_path}: {exc}"
+#
+#
+# def settings_path(directory: Path | None = None) -> Path:
+#     """Remembered choices live in the working directory, beside your files.
+#
+#     Not inside the extracted bundle, which is replaced on every update.
+#     """
+#     return Path(directory or Path.cwd()) / SETTINGS_FILENAME
+#
+#
+# def load_settings(directory: Path | None = None) -> Paths:
+#     path = settings_path(directory)
+#     if not path.is_file():
+#         return Paths()
+#     try:
+#         data = json.loads(path.read_text(encoding="utf-8"))
+#     except (OSError, ValueError):
+#         return Paths()
+#     known = {f for f in Paths.__dataclass_fields__}
+#     return Paths(**{k: str(v) for k, v in data.items() if k in known})
+#
+#
+# def save_settings(paths: Paths, directory: Path | None = None) -> Path:
+#     path = settings_path(directory)
+#     path.write_text(json.dumps(asdict(paths), indent=2) + "\n", encoding="utf-8")
+#     return path
+#
+# === END FILE: pullmanager/launcher.py ===
 # === BEGIN FILE: pullmanager/local_sql.py SHA256: 2effa5f5fc36cbafa0a72c872f3f3e362f6a5d8d9608c356fa6663f1697f3130 SIZE: 7093 ===
 # """Projects-side SQL: destination tables and the transfer from Cosmos.
 #
@@ -7602,6 +8233,455 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 11c2577984d550d6aa18168ea6978cc4580ac340386c883ebd2cc554c23adbf8 SIZE: 7011 ===
+# """The launcher window, built against a fake tkinter.
+#
+# There is no display on the development machine, and tests must never open a
+# real window anyway, so tkinter is replaced with stand-ins: variables behave
+# like variables, widgets accept anything. That exercises the view's own wiring
+# -- handlers, settings, the run-and-poll loop -- but not Tk itself. Option names
+# and layout only a real Tk can check, which means the VM.
+# """
+#
+# from __future__ import annotations
+#
+# import importlib
+# import sys
+# import tempfile
+# import time
+# import types
+# import unittest
+# from pathlib import Path
+# from unittest import mock
+#
+# from ..yaml_io import dump_yaml
+# from .support import SAMPLE_MANIFEST
+#
+#
+# class FakeVar:
+#     def __init__(self, master=None, value=None):
+#         self._value = "" if value is None else value
+#
+#     def get(self):
+#         return self._value
+#
+#     def set(self, value):
+#         self._value = value
+#
+#
+# class FreshWidgets(types.ModuleType):
+#     """Every widget class yields a new mock, as real widgets are distinct.
+#
+#     A plain MagicMock class returns the same object from every call, which
+#     would make every button one button.
+#     """
+#
+#     def __getattr__(self, name):
+#         if name.startswith("__"):
+#             raise AttributeError(name)
+#         return lambda *args, **kwargs: mock.MagicMock(name=name)
+#
+#
+# def fake_tkinter():
+#     tk = types.ModuleType("tkinter")
+#     tk.Tk = mock.MagicMock
+#     tk.StringVar = FakeVar
+#     tk.BooleanVar = FakeVar
+#     modules = {"tkinter": tk}
+#     for name in ("ttk", "scrolledtext"):
+#         sub = FreshWidgets(f"tkinter.{name}")
+#         setattr(tk, name, sub)
+#         modules[f"tkinter.{name}"] = sub
+#     for name in ("filedialog", "messagebox"):
+#         sub = mock.MagicMock(name=f"tkinter.{name}")
+#         setattr(tk, name, sub)
+#         modules[f"tkinter.{name}"] = sub
+#     return modules
+#
+#
+# class GuiTestCase(unittest.TestCase):
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.work = Path(self._tmp.name)
+#
+#         # Swap in only the tkinter entries. patch.dict would restore the whole
+#         # module table on cleanup, dropping anything first imported during the
+#         # test while its parent package kept a stale attribute -- leaving two
+#         # copies of a module, and two exception classes that cannot catch each
+#         # other.
+#         self.modules = fake_tkinter()
+#         saved = {name: sys.modules.get(name) for name in self.modules}
+#         sys.modules.update(self.modules)
+#
+#         def restore():
+#             for name, module in saved.items():
+#                 if module is None:
+#                     sys.modules.pop(name, None)
+#                 else:
+#                     sys.modules[name] = module
+#
+#         self.addCleanup(restore)
+#         package = __name__.rsplit(".", 2)[0]
+#         sys.modules.pop(f"{package}.gui", None)
+#         self.addCleanup(sys.modules.pop, f"{package}.gui", None)
+#         self.gui = importlib.import_module(f"{package}.gui")
+#         self.messagebox = self.modules["tkinter.messagebox"]
+#
+#         from ..launcher import locate_tools
+#         self.app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
+#
+#     def finish(self, timeout=30):
+#         deadline = time.monotonic() + timeout
+#         while self.app.runner.running and time.monotonic() < deadline:
+#             self.app.poll()
+#             time.sleep(0.02)
+#         self.app.poll()
+#         self.assertFalse(self.app.runner.running, "command did not finish")
+#
+#     def written(self):
+#         return "".join(call.args[1] for call in self.app.output.insert.call_args_list)
+#
+#
+# class ConstructionTests(GuiTestCase):
+#     def test_builds_a_field_for_every_input(self):
+#         self.assertEqual(
+#             set(self.app.vars),
+#             {"template", "recipes", "datadictionary", "split_dir", "sql_dir"},
+#         )
+#
+#     def test_starts_from_the_defaults(self):
+#         self.assertEqual(self.app.paths().split_dir, "split")
+#         self.assertEqual(self.app.paths().sql_dir, "sql")
+#
+#     def test_restores_remembered_choices(self):
+#         from ..launcher import Paths, save_settings
+#
+#         save_settings(Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml"), self.work)
+#         from ..launcher import locate_tools
+#         app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
+#         self.assertEqual(app.vars["template"].get(), "IBDTest.yaml")
+#         self.assertEqual(app.vars["recipes"].get(), "../data/recipes.yaml")
+#
+#
+# class ActionTests(GuiTestCase):
+#     def test_validate_without_a_template_warns_instead_of_running(self):
+#         self.app.on_validate()
+#         self.messagebox.showwarning.assert_called_once()
+#         self.assertFalse(self.app.runner.running)
+#
+#     def test_validate_runs_the_real_command_and_streams_its_output(self):
+#         # A template that does not exist still exercises the whole path:
+#         # build the command, start it, stream the output, notice the end.
+#         self.app.vars["template"].set("no_such_template.yaml")
+#         self.app.on_validate()
+#         self.finish()
+#         output = self.written()
+#         self.assertIn("=== Validate ===", output)
+#         self.assertIn("template_not_found", output)
+#         self.assertIn("exit code 1", output)
+#
+#     def test_buttons_are_disabled_while_running_and_restored_after(self):
+#         self.app.vars["template"].set("no_such_template.yaml")
+#         self.app.on_validate()
+#         self.app.action_buttons[0].configure.assert_any_call(state="disabled")
+#         self.finish()
+#         self.app.action_buttons[0].configure.assert_called_with(state="normal")
+#
+#     def test_running_saves_the_choices(self):
+#         from ..launcher import load_settings
+#
+#         self.app.vars["template"].set("IBDTest.yaml")
+#         self.app.on_validate()
+#         self.finish()
+#         self.assertEqual(load_settings(self.work).template, "IBDTest.yaml")
+#
+#     def test_execute_asks_before_touching_the_databases(self):
+#         self.messagebox.askokcancel.return_value = False
+#         self.app.vars["template"].set("x.yaml")
+#         self.app.on_execute()
+#         self.assertFalse(self.app.runner.running)
+#         self.messagebox.askokcancel.assert_called_once()
+#
+#
+# class StatusTests(GuiTestCase):
+#     def test_shows_one_row_per_session_phase_and_run(self):
+#         dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+#         self.app.tree.insert.reset_mock()
+#         self.app.refresh_status()
+#         self.assertEqual(self.app.tree.insert.call_count, 11)
+#
+#     def test_runs_nest_under_their_session(self):
+#         dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+#         self.app.tree.insert.reset_mock()
+#         self.app.refresh_status()
+#         parents = [call.args[0] for call in self.app.tree.insert.call_args_list]
+#         self.assertEqual(parents.count(""), 2)
+#
+#     def test_a_missing_manifest_says_what_to_do(self):
+#         self.app.refresh_status()
+#         message = self.app.status_message.configure.call_args.kwargs["text"]
+#         self.assertIn("Export a split", message)
+#
+# === END FILE: pullmanager/tests/test_gui.py ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 2593df5712032ce30fef0ce431afda64cec2e0b3b259f34d11ccaefa8e6d9adb SIZE: 10172 ===
+# """The launcher's controller: commands, the subprocess runner, and status rows."""
+#
+# from __future__ import annotations
+#
+# import sys
+# import tempfile
+# import time
+# import unittest
+# from pathlib import Path
+#
+# from .. import launcher
+# from ..launcher import (
+#     CommandRunner,
+#     LauncherError,
+#     Options,
+#     Paths,
+#     Tools,
+#     child_environment,
+#     command_dry_run,
+#     command_execute,
+#     command_export_split,
+#     command_validate,
+#     load_settings,
+#     locate_tools,
+#     manifest_rows,
+#     save_settings,
+#     try_manifest_rows,
+# )
+# from ..yaml_io import dump_yaml
+# from .support import SAMPLE_MANIFEST
+#
+# TOOLS = Tools(Path("/rt/pullmanager.py"), Path("/rt/scripts/makeYaml.py"))
+#
+#
+# class TempDirTestCase(unittest.TestCase):
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.tmp = Path(self._tmp.name)
+#
+#
+# class LocateToolsTests(TempDirTestCase):
+#     def make(self, *relative):
+#         for rel in relative:
+#             path = self.tmp / rel
+#             path.parent.mkdir(parents=True, exist_ok=True)
+#             path.write_text("", encoding="utf-8")
+#
+#     def test_finds_the_extracted_bundle_layout(self):
+#         self.make("pullmanager.py", "scripts/makeYaml.py", "pullmanager/__init__.py")
+#         tools = locate_tools(self.tmp / "pullmanager")
+#         self.assertEqual(tools.make_yaml, self.tmp / "scripts" / "makeYaml.py")
+#
+#     def test_finds_the_source_tree_layout(self):
+#         # makeYaml sits beside pullmanager_src rather than inside it.
+#         self.make("pullmanager_src/pullmanager.py", "makeYaml.py",
+#                   "pullmanager_src/pullmanager/__init__.py")
+#         tools = locate_tools(self.tmp / "pullmanager_src" / "pullmanager")
+#         self.assertEqual(tools.make_yaml, self.tmp / "makeYaml.py")
+#
+#     def test_neither_layout_is_an_error(self):
+#         with self.assertRaises(LauncherError):
+#             locate_tools(self.tmp / "pullmanager")
+#
+#     def test_the_real_install_is_found(self):
+#         tools = locate_tools()
+#         self.assertTrue(tools.pullmanager.is_file())
+#         self.assertTrue(tools.make_yaml.is_file())
+#
+#
+# class CommandTests(unittest.TestCase):
+#     def test_validate_passes_every_input(self):
+#         paths = Paths(template="T.yaml", recipes="../data/r.yaml", datadictionary="../data/d.yaml")
+#         command = command_validate(TOOLS, paths)
+#         self.assertEqual(command[0], sys.executable)
+#         self.assertEqual(command[1], str(TOOLS.make_yaml))
+#         self.assertEqual(
+#             command[2:],
+#             ["--template", "T.yaml", "--recipes", "../data/r.yaml",
+#              "--datadictionary", "../data/d.yaml", "--validate"],
+#         )
+#
+#     def test_blank_optional_inputs_fall_back_to_the_bundled_copies(self):
+#         command = command_validate(TOOLS, Paths(template="T.yaml"))
+#         self.assertNotIn("--recipes", command)
+#         self.assertNotIn("--datadictionary", command)
+#
+#     def test_a_template_is_required(self):
+#         for build in (command_validate, command_export_split):
+#             with self.subTest(command=build.__name__):
+#                 with self.assertRaises(LauncherError):
+#                     build(TOOLS, Paths(template="  "))
+#
+#     def test_export_split_writes_to_the_split_folder(self):
+#         command = command_export_split(TOOLS, Paths(template="T.yaml", split_dir="out"))
+#         self.assertEqual(command[-3:], ["--export-split", "--out-dir", "out"])
+#
+#     def test_dry_run_reads_the_manifest_and_writes_sql(self):
+#         command = command_dry_run(TOOLS, Paths(split_dir="s", sql_dir="q"), Options())
+#         self.assertEqual(command[1], str(TOOLS.pullmanager))
+#         self.assertIn("--dry-run", command)
+#         self.assertIn(str(Path("s") / "pullmanifest.yaml"), command)
+#         self.assertEqual(command[command.index("--out-dir") + 1], "q")
+#
+#     def test_execute_carries_the_resume_options(self):
+#         command = command_execute(
+#             TOOLS, Paths(split_dir="s"), Options(retry_failed=True, resume_partial=True)
+#         )
+#         self.assertIn("--execute", command)
+#         self.assertIn("--retry-failed", command)
+#         self.assertIn("--resume-partial", command)
+#
+#     def test_resume_options_are_absent_by_default(self):
+#         command = command_execute(TOOLS, Paths(split_dir="s"), Options())
+#         self.assertNotIn("--retry-failed", command)
+#         self.assertNotIn("--resume-partial", command)
+#
+#     def test_child_output_is_unbuffered_utf8(self):
+#         # Buffered, a long pull prints nothing until it ends; without UTF-8 a
+#         # Windows code page mangles anything outside ASCII.
+#         env = child_environment()
+#         self.assertEqual(env["PYTHONUNBUFFERED"], "1")
+#         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+#
+#
+# class CommandRunnerTests(TempDirTestCase):
+#     def run_to_end(self, runner, code, timeout=15):
+#         runner.start([sys.executable, "-c", code], cwd=self.tmp)
+#         lines = []
+#         deadline = time.monotonic() + timeout
+#         while time.monotonic() < deadline:
+#             lines.extend(runner.poll())
+#             if not runner.running:
+#                 return lines
+#             time.sleep(0.02)
+#         self.fail("command did not finish")
+#
+#     def test_streams_output_and_reports_success(self):
+#         runner = CommandRunner()
+#         lines = self.run_to_end(runner, "print('one'); print('two')")
+#         self.assertEqual(lines, ["one", "two"])
+#         self.assertEqual(runner.returncode, 0)
+#
+#     def test_reports_failure(self):
+#         runner = CommandRunner()
+#         self.run_to_end(runner, "import sys; sys.exit(3)")
+#         self.assertEqual(runner.returncode, 3)
+#
+#     def test_merges_stderr_into_the_log(self):
+#         runner = CommandRunner()
+#         lines = self.run_to_end(runner, "import sys; print('err', file=sys.stderr)")
+#         self.assertIn("err", lines)
+#
+#     def test_non_ascii_survives(self):
+#         runner = CommandRunner()
+#         lines = self.run_to_end(runner, "print('Crohn’s – café')")
+#         self.assertEqual(lines, ["Crohn’s – café"])
+#
+#     def test_runs_in_the_given_directory(self):
+#         runner = CommandRunner()
+#         lines = self.run_to_end(runner, "import os; print(os.getcwd())")
+#         self.assertEqual(Path(lines[0]).resolve(), self.tmp.resolve())
+#
+#     def test_stop_terminates_a_long_command(self):
+#         runner = CommandRunner()
+#         runner.start([sys.executable, "-c", "import time; time.sleep(60)"], cwd=self.tmp)
+#         self.assertTrue(runner.running)
+#         runner.stop()
+#         runner.wait(timeout=10)
+#         runner.poll()
+#         self.assertFalse(runner.running)
+#         self.assertNotEqual(runner.returncode, 0)
+#
+#     def test_one_command_at_a_time(self):
+#         runner = CommandRunner()
+#         runner.start([sys.executable, "-c", "import time; time.sleep(5)"], cwd=self.tmp)
+#         self.addCleanup(runner.stop)
+#         with self.assertRaises(LauncherError):
+#             runner.start([sys.executable, "-c", "pass"], cwd=self.tmp)
+#
+#
+# class StatusRowTests(TempDirTestCase):
+#     def write_manifest(self, data=None):
+#         path = self.tmp / "split" / "pullmanifest.yaml"
+#         dump_yaml(data if data is not None else SAMPLE_MANIFEST, path)
+#         return path
+#
+#     def test_one_row_per_session_phase_and_run(self):
+#         rows = manifest_rows(self.write_manifest())
+#         kinds = [row.kind for row in rows]
+#         self.assertEqual(kinds.count("session"), 2)
+#         self.assertEqual(kinds.count("phase"), 6)
+#         self.assertEqual(kinds.count("run"), 3)
+#
+#     def test_runs_are_named_for_their_batch(self):
+#         rows = manifest_rows(self.write_manifest())
+#         self.assertIn("LA-Female", [row.name for row in rows if row.kind == "run"])
+#
+#     def test_failure_detail_is_shown(self):
+#         import copy
+#
+#         data = copy.deepcopy(SAMPLE_MANIFEST)
+#         run = data["sessions"][0]["runs"][0]
+#         run["status"] = "failed"
+#         run["error"] = {"message": "OPENQUERY failed", "detail": "Msg 7321"}
+#         rows = manifest_rows(self.write_manifest(data))
+#         failed = [row for row in rows if row.status == "failed"]
+#         self.assertEqual(failed[0].detail, "OPENQUERY failed")
+#
+#     def test_rows_are_formatted(self):
+#         import copy
+#
+#         data = copy.deepcopy(SAMPLE_MANIFEST)
+#         pk = data["sessions"][0]["phases"]["pk"]
+#         pk["rows"] = 1234567
+#         pk["duration"] = {"seconds": 312, "display": "5m 12s"}
+#         row = next(r for r in manifest_rows(self.write_manifest(data)) if r.name == "pk")
+#         self.assertEqual(row.rows, "1,234,567")
+#         self.assertEqual(row.duration, "5m 12s")
+#
+#     def test_a_missing_manifest_explains_itself(self):
+#         rows, message = try_manifest_rows(self.tmp / "nope" / "pullmanifest.yaml")
+#         self.assertEqual(rows, [])
+#         self.assertIn("Export a split", message)
+#
+#     def test_an_unreadable_manifest_does_not_raise(self):
+#         path = self.tmp / "pullmanifest.yaml"
+#         path.write_text("manifest_version: 99\nsessions: []\n", encoding="utf-8")
+#         rows, message = try_manifest_rows(path)
+#         self.assertEqual(rows, [])
+#         self.assertIn("Could not read", message)
+#
+#
+# class SettingsTests(TempDirTestCase):
+#     def test_round_trips(self):
+#         paths = Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml", split_dir="out")
+#         save_settings(paths, self.tmp)
+#         self.assertEqual(load_settings(self.tmp), paths)
+#
+#     def test_live_in_the_working_directory_not_the_bundle(self):
+#         # The extracted bundle is replaced on update, so remembered choices
+#         # kept inside it would be lost every time.
+#         path = save_settings(Paths(template="x"), self.tmp)
+#         self.assertEqual(path.parent, self.tmp)
+#
+#     def test_absent_or_corrupt_settings_give_defaults(self):
+#         self.assertEqual(load_settings(self.tmp), Paths())
+#         (self.tmp / launcher.SETTINGS_FILENAME).write_text("{not json", encoding="utf-8")
+#         self.assertEqual(load_settings(self.tmp), Paths())
+#
+#     def test_unknown_keys_are_ignored(self):
+#         (self.tmp / launcher.SETTINGS_FILENAME).write_text(
+#             '{"template": "a.yaml", "from_a_later_version": 1}', encoding="utf-8"
+#         )
+#         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
+#
+# === END FILE: pullmanager/tests/test_launcher.py ===
 # === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7 SIZE: 14639 ===
 # """Manifest loading, validation, status transitions, and round-tripping."""
 #

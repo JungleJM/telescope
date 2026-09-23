@@ -567,6 +567,37 @@ defaults and the database names come from the manifest — so shipping an
 example would only suggest otherwise. The `PULLMANAGER_*` variables still work
 for an override.
 
+### D44. The VM gets a desktop launcher over the CLI, not a port of the web UI
+
+**Context.** The VM will not load a page from a Python-served localhost, and
+opening a static HTML file is blocked too. It has no Python desktop toolkit
+installed except tkinter; the `shiny` and `tcltk` entries in its package list
+are R, not Python.
+
+**Decision.** A tkinter launcher for *running* pulls: choose inputs, then
+Validate, Export split, Dry run, Execute and Stop, with a live log and a status
+table read from the manifest. Authoring stays on the Mac, where the browser
+works.
+
+It is a front end, not a second implementation. Every button runs the same
+command a person would type, as a subprocess. That keeps database work out of
+the UI thread, means a long pull cannot freeze the window, gives Stop something
+real to terminate, and guarantees the GUI never behaves differently from the
+CLI.
+
+**Consequences.** All logic sits in `launcher.py`, which has no tkinter in it
+and is tested against real subprocesses. `gui.py` only wires widgets. It is
+tested against a fake tkinter, which checks its own wiring but not Tk itself —
+the development machine has no tkinter and no display, so option names and
+layout are first exercised on the VM.
+
+Stop is abrupt by design. The node it interrupts stays `running`, which resume
+already treats as interrupted and replays, and SQL Server rolls back the open
+transaction when the connection drops.
+
+Chosen paths are remembered in the working directory, not the extracted
+bundle, which is replaced on every update.
+
 ## Still Open
 
 Recorded so the absence of a decision is visible.
