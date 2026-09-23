@@ -1,15 +1,27 @@
 """Command line entry point.
 
-Phase 2 scope: load and inspect a manifest. Execution arrives in Phase 5.
+Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
+arrives in Phase 6.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import __version__
+from .executor import (
+    RESUME_FULL,
+    RESUME_PARTIAL,
+    PlanError,
+    excluded_units,
+    plan,
+    write_sql,
+)
 from .manifest import Manifest, ManifestError
+from .naming import NamingError
+from .normalize import NormalizationError
 
 
 def summarize(manifest: Manifest) -> None:
@@ -19,17 +31,77 @@ def summarize(manifest: Manifest) -> None:
     print(f"Sessions: {len(manifest.sessions)}")
     print()
     for session in manifest.sessions:
-        pk_source = next(
-            (phase.pk_source for phase in session.phases if phase.pk_source), None
-        )
+        pk_source = next((p.pk_source for p in session.phases if p.pk_source), None)
         kind = pk_source.get("kind") if pk_source else "none"
+        epoch = session.epoch or "-"
         print(f"  {session.session_id}  [{session.status}]  pk={session.pk_table} ({kind})")
+        print(f"    epoch {epoch}")
         for phase in session.phases:
-            print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}")
+            stale = "  STALE" if phase.is_stale(session.epoch) else ""
+            print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}{stale}")
         for run in session.runs:
             batch = run.batch.get("name") if run.batch else "-"
-            print(f"    run   {batch:<15} {run.status:<8} {run.yaml}")
+            stale = "  STALE" if run.is_stale(session.epoch) else ""
+            print(f"    run   {batch:<15} {run.status:<8} {run.yaml}{stale}")
         print()
+
+
+def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
+    mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+    units = plan(
+        manifest,
+        linked_server=args.linked_server,
+        retry_failed=args.retry_failed,
+        include_settled=args.all,
+        mode=mode,
+    )
+    left_out = excluded_units(manifest, mode=mode, retry_failed=args.retry_failed)
+    failures = [row for row in left_out if row[1] == "failed"]
+
+    if not units:
+        print("Nothing to do.")
+        print("Every phase and run is either complete for this session or deliberately")
+        print("skipped. Use --retry-failed to reopen failures, or --all to render")
+        print("everything regardless of status.")
+        _report_exclusions(left_out, failures)
+        return 0
+
+    total_blocks = 0
+    for unit in units:
+        server, local = len(unit.server_blocks), len(unit.local_blocks)
+        total_blocks += server + local
+        print(f"{unit.unit_id}  [{unit.node.status}]  server={server} local={local}")
+        print(f"    why:  {unit.reason}")
+        for note in unit.notes:
+            print(f"    note: {note}")
+        if args.verbose:
+            for block in unit.blocks:
+                print(f"    {block.side:<6} {block.block_id}")
+
+    print(f"\n{len(units)} unit(s), {total_blocks} SQL block(s).")
+    print(f"Resume mode: {mode}")
+    print(f"Linked server placeholder: {args.linked_server}")
+    print("Nothing was executed and the manifest was not modified.")
+    _report_exclusions(left_out, failures)
+
+    if args.out_dir:
+        written = write_sql(units, Path(args.out_dir))
+        print(f"\nWrote {len(written)} file(s) to {Path(args.out_dir).resolve()}")
+    return 0
+
+
+def _report_exclusions(left_out, failures) -> None:
+    if not left_out:
+        return
+    print(f"\nExcluded {len(left_out)} unit(s):")
+    for label, status, reason in left_out:
+        print(f"  {label:<40} [{status}]  {reason}")
+    if failures:
+        print(
+            f"\n{len(failures)} unit(s) failed previously and are NOT included. Rebuilding "
+            "the\nserver side without them would finish with nothing transferred. Fix the "
+            "cause,\nthen add --retry-failed."
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,11 +112,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("manifest", nargs="?", help="Path to pullmanifest.yaml")
     parser.add_argument("--version", action="version", version=f"pullmanager {__version__}")
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Render the SQL each phase implies without touching a database.",
+    )
+    parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
+    parser.add_argument(
+        "--linked-server",
+        default=None,
+        help="Cosmos instance to render OPENQUERY against. Captured per connection at "
+             "run time; supply one only for a dry run.",
+    )
+    parser.add_argument("--retry-failed", action="store_true", help="Reopen failed work.")
+    parser.add_argument(
+        "--resume-partial",
+        action="store_true",
+        help="Keep completed local transfers and replay only the server side. Server "
+             "state is gone either way; this trades a guard for not re-pulling.",
+    )
+    parser.add_argument("--all", action="store_true", help="Include already-settled work.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")
+    parser.add_argument(
         "--tdd",
         nargs="?",
         const="__all__",
-        metavar="GROUP",
-        help="Run the embedded test suite, optionally limited to one module (e.g. manifest).",
+        metavar="MODULE",
+        help="Run the embedded test suite, optionally limited to one module.",
     )
     return parser
 
@@ -62,13 +155,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
+    if args.linked_server is None:
+        from .executor import DRY_RUN_LINKED_SERVER
+
+        args.linked_server = DRY_RUN_LINKED_SERVER
+
     try:
         manifest = Manifest.load(args.manifest)
-    except ManifestError as exc:
-        print(f"ERROR {exc}", file=sys.stderr)
+        if args.dry_run:
+            return dry_run(manifest, args)
+        summarize(manifest)
+    except (ManifestError, PlanError, NamingError, NormalizationError) as exc:
+        print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
-
-    summarize(manifest)
     return 0
 
 

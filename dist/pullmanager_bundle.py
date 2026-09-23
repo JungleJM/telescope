@@ -278,8 +278,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "90b456f90eb8a41beb2bf89cf42a835d32072b4c544d19abeeb82bd0b4bb084e",
-  "file_count": 20,
+  "content_id": "9fa2cec832dd6cf53380fbdda333a58b44d9838d8ead50d8ec69609683961e10",
+  "file_count": 22,
   "files": [
     {
       "path": "pullmanager.py",
@@ -298,8 +298,13 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/cli.py",
-      "sha256": "3cb1797c796b584993ddab8ea2b56b3e7a80965fb7ec633bf2dfce4f327e1deb",
-      "size": 2303
+      "sha256": "44c18978b46a38ed06b4ea378204ae27fd210d28a67b8ed987c6db5f6782897a",
+      "size": 6251
+    },
+    {
+      "path": "pullmanager/executor.py",
+      "sha256": "fd658d58f45a49875790f6a119cc8b160cd736fbce5f861331f5f2ae94dd79ea",
+      "size": 8444
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -345,6 +350,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/tests/support.py",
       "sha256": "5c88b19c05ea4b105763db67d73e42d88cbe1c3897b2ece74c9f287b60403398",
       "size": 4541
+    },
+    {
+      "path": "pullmanager/tests/test_executor.py",
+      "sha256": "f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488",
+      "size": 6609
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -423,19 +433,31 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 3cb1797c796b584993ddab8ea2b56b3e7a80965fb7ec633bf2dfce4f327e1deb SIZE: 2303 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 44c18978b46a38ed06b4ea378204ae27fd210d28a67b8ed987c6db5f6782897a SIZE: 6251 ===
 # """Command line entry point.
 #
-# Phase 2 scope: load and inspect a manifest. Execution arrives in Phase 5.
+# Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
+# arrives in Phase 6.
 # """
 #
 # from __future__ import annotations
 #
 # import argparse
 # import sys
+# from pathlib import Path
 #
 # from . import __version__
+# from .executor import (
+#     RESUME_FULL,
+#     RESUME_PARTIAL,
+#     PlanError,
+#     excluded_units,
+#     plan,
+#     write_sql,
+# )
 # from .manifest import Manifest, ManifestError
+# from .naming import NamingError
+# from .normalize import NormalizationError
 #
 #
 # def summarize(manifest: Manifest) -> None:
@@ -445,17 +467,77 @@ if __name__ == "__main__":
 #     print(f"Sessions: {len(manifest.sessions)}")
 #     print()
 #     for session in manifest.sessions:
-#         pk_source = next(
-#             (phase.pk_source for phase in session.phases if phase.pk_source), None
-#         )
+#         pk_source = next((p.pk_source for p in session.phases if p.pk_source), None)
 #         kind = pk_source.get("kind") if pk_source else "none"
+#         epoch = session.epoch or "-"
 #         print(f"  {session.session_id}  [{session.status}]  pk={session.pk_table} ({kind})")
+#         print(f"    epoch {epoch}")
 #         for phase in session.phases:
-#             print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}")
+#             stale = "  STALE" if phase.is_stale(session.epoch) else ""
+#             print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}{stale}")
 #         for run in session.runs:
 #             batch = run.batch.get("name") if run.batch else "-"
-#             print(f"    run   {batch:<15} {run.status:<8} {run.yaml}")
+#             stale = "  STALE" if run.is_stale(session.epoch) else ""
+#             print(f"    run   {batch:<15} {run.status:<8} {run.yaml}{stale}")
 #         print()
+#
+#
+# def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
+#     mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+#     units = plan(
+#         manifest,
+#         linked_server=args.linked_server,
+#         retry_failed=args.retry_failed,
+#         include_settled=args.all,
+#         mode=mode,
+#     )
+#     left_out = excluded_units(manifest, mode=mode, retry_failed=args.retry_failed)
+#     failures = [row for row in left_out if row[1] == "failed"]
+#
+#     if not units:
+#         print("Nothing to do.")
+#         print("Every phase and run is either complete for this session or deliberately")
+#         print("skipped. Use --retry-failed to reopen failures, or --all to render")
+#         print("everything regardless of status.")
+#         _report_exclusions(left_out, failures)
+#         return 0
+#
+#     total_blocks = 0
+#     for unit in units:
+#         server, local = len(unit.server_blocks), len(unit.local_blocks)
+#         total_blocks += server + local
+#         print(f"{unit.unit_id}  [{unit.node.status}]  server={server} local={local}")
+#         print(f"    why:  {unit.reason}")
+#         for note in unit.notes:
+#             print(f"    note: {note}")
+#         if args.verbose:
+#             for block in unit.blocks:
+#                 print(f"    {block.side:<6} {block.block_id}")
+#
+#     print(f"\n{len(units)} unit(s), {total_blocks} SQL block(s).")
+#     print(f"Resume mode: {mode}")
+#     print(f"Linked server placeholder: {args.linked_server}")
+#     print("Nothing was executed and the manifest was not modified.")
+#     _report_exclusions(left_out, failures)
+#
+#     if args.out_dir:
+#         written = write_sql(units, Path(args.out_dir))
+#         print(f"\nWrote {len(written)} file(s) to {Path(args.out_dir).resolve()}")
+#     return 0
+#
+#
+# def _report_exclusions(left_out, failures) -> None:
+#     if not left_out:
+#         return
+#     print(f"\nExcluded {len(left_out)} unit(s):")
+#     for label, status, reason in left_out:
+#         print(f"  {label:<40} [{status}]  {reason}")
+#     if failures:
+#         print(
+#             f"\n{len(failures)} unit(s) failed previously and are NOT included. Rebuilding "
+#             "the\nserver side without them would finish with nothing transferred. Fix the "
+#             "cause,\nthen add --retry-failed."
+#         )
 #
 #
 # def build_parser() -> argparse.ArgumentParser:
@@ -466,11 +548,32 @@ if __name__ == "__main__":
 #     parser.add_argument("manifest", nargs="?", help="Path to pullmanifest.yaml")
 #     parser.add_argument("--version", action="version", version=f"pullmanager {__version__}")
 #     parser.add_argument(
+#         "--dry-run",
+#         action="store_true",
+#         help="Render the SQL each phase implies without touching a database.",
+#     )
+#     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
+#     parser.add_argument(
+#         "--linked-server",
+#         default=None,
+#         help="Cosmos instance to render OPENQUERY against. Captured per connection at "
+#              "run time; supply one only for a dry run.",
+#     )
+#     parser.add_argument("--retry-failed", action="store_true", help="Reopen failed work.")
+#     parser.add_argument(
+#         "--resume-partial",
+#         action="store_true",
+#         help="Keep completed local transfers and replay only the server side. Server "
+#              "state is gone either way; this trades a guard for not re-pulling.",
+#     )
+#     parser.add_argument("--all", action="store_true", help="Include already-settled work.")
+#     parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")
+#     parser.add_argument(
 #         "--tdd",
 #         nargs="?",
 #         const="__all__",
-#         metavar="GROUP",
-#         help="Run the embedded test suite, optionally limited to one module (e.g. manifest).",
+#         metavar="MODULE",
+#         help="Run the embedded test suite, optionally limited to one module.",
 #     )
 #     return parser
 #
@@ -488,13 +591,19 @@ if __name__ == "__main__":
 #         parser.print_help()
 #         return 1
 #
+#     if args.linked_server is None:
+#         from .executor import DRY_RUN_LINKED_SERVER
+#
+#         args.linked_server = DRY_RUN_LINKED_SERVER
+#
 #     try:
 #         manifest = Manifest.load(args.manifest)
-#     except ManifestError as exc:
-#         print(f"ERROR {exc}", file=sys.stderr)
+#         if args.dry_run:
+#             return dry_run(manifest, args)
+#         summarize(manifest)
+#     except (ManifestError, PlanError, NamingError, NormalizationError) as exc:
+#         print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)
 #         return 1
-#
-#     summarize(manifest)
 #     return 0
 #
 #
@@ -502,6 +611,253 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
+# === BEGIN FILE: pullmanager/executor.py SHA256: fd658d58f45a49875790f6a119cc8b160cd736fbce5f861331f5f2ae94dd79ea SIZE: 8444 ===
+# """Traversal and planning.
+#
+# Walks a manifest in order and produces the work a session implies. Nothing
+# here touches a database; Phase 6 supplies an adapter that executes what this
+# plans, so the ordering is testable on its own.
+# """
+#
+# from __future__ import annotations
+#
+# from dataclasses import dataclass, field
+# from pathlib import Path
+# from typing import Any, Iterator
+#
+# from . import local_sql, server_sql
+# from .manifest import Manifest, Node, Phase, Run, Session
+# from .models import BLOCKED, DONE, FAILED, RUNNING, SKIPPED
+# from .normalize import normalize_bool
+# from .sql import SqlBlock
+# from .yaml_io import load_yaml
+#
+# DRY_RUN_LINKED_SERVER = "DRY-RUN-INSTANCE"
+#
+#
+# class PlanError(ValueError):
+#     """Raised when a manifest cannot be turned into work."""
+#
+#
+# @dataclass
+# class Unit:
+#     """One phase or run, with the SQL it implies."""
+#
+#     session_id: str
+#     node: Node
+#     kind: str  # "setup" | "upload_cohorts" | "pk" | "run"
+#     yaml_path: Path
+#     server_blocks: list[SqlBlock] = field(default_factory=list)
+#     local_blocks: list[SqlBlock] = field(default_factory=list)
+#     notes: list[str] = field(default_factory=list)
+#     reason: str = "pending"
+#
+#     @property
+#     def unit_id(self) -> str:
+#         return f"{self.session_id}/{self.kind}" if isinstance(self.node, Phase) else self.node.label
+#
+#     @property
+#     def blocks(self) -> list[SqlBlock]:
+#         return [*self.server_blocks, *self.local_blocks]
+#
+#
+# def iter_units(manifest: Manifest, session: Session) -> Iterator[tuple[str, Node, Path]]:
+#     """Phases in routine order, then runs in manifest order."""
+#     for phase in session.phases:
+#         yield phase.name, phase, manifest.resolve(phase)
+#     for run in session.runs:
+#         yield "run", run, manifest.resolve(run)
+#
+#
+# RESUME_FULL = "full"
+# RESUME_PARTIAL = "partial"
+#
+#
+# def should_execute(
+#     node: Node,
+#     kind: str,
+#     *,
+#     current_epoch: str | None = None,
+#     mode: str = RESUME_FULL,
+#     retry_failed: bool = False,
+# ) -> tuple[bool, str]:
+#     """Decide whether one unit runs, and say why.
+#
+#     `done` does not mean "its output still exists". Global temps die with the
+#     connection, so work completed under a previous epoch has left nothing on
+#     the server even though the status still reads done. A run is different: its
+#     durable result is rows in a Projects table, which survive, so it is the one
+#     kind of unit a partial resume can skip.
+#     """
+#     status = node.status
+#     if status == FAILED:
+#         if retry_failed:
+#             return True, "retrying a failure"
+#         return False, "failed; --retry-failed reopens it"
+#     if status == RUNNING:
+#         return True, "interrupted while running"
+#     if status == BLOCKED:
+#         return True, "was blocked; upstream may succeed this time"
+#     if status == SKIPPED:
+#         return False, "skipped deliberately"
+#     if status == DONE:
+#         if not node.is_stale(current_epoch):
+#             return False, "already done in this session"
+#         if kind == "run" and mode == RESUME_PARTIAL:
+#             return False, "done; its rows are in a Projects table and survive"
+#         return True, "done under a previous connection; server state is gone"
+#     return True, "pending"
+#
+#
+# def session_cohorts(manifest: Manifest, session: Session) -> list[dict[str, Any]]:
+#     """Every cohort the session will write, gathered for the setup shells."""
+#     seen: dict[str, dict[str, Any]] = {}
+#     for _, node, path in iter_units(manifest, session):
+#         if not path.is_file():
+#             continue
+#         doc = load_yaml(path) or {}
+#         for cohort in doc.get("cohorts") or []:
+#             if not isinstance(cohort, dict) or not cohort.get("dest_table"):
+#                 continue
+#             if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
+#                 continue
+#             seen.setdefault(str(cohort["dest_table"]), cohort)
+#     return list(seen.values())
+#
+#
+# def plan_unit(
+#     manifest: Manifest,
+#     session: Session,
+#     kind: str,
+#     node: Node,
+#     path: Path,
+#     linked_server: str,
+# ) -> Unit:
+#     """Render the SQL one phase or run implies."""
+#     if not path.is_file():
+#         raise PlanError(f"{node.label}: phase YAML not found at {path}")
+#     doc = load_yaml(path) or {}
+#     unit = Unit(session_id=session.session_id, node=node, kind=kind, yaml_path=path)
+#
+#     if kind == "setup":
+#         unit.server_blocks = server_sql.render_setup(doc, unit.unit_id)
+#         cohorts = session_cohorts(manifest, session)
+#         unit.local_blocks = local_sql.render_setup(doc, cohorts, unit.unit_id)
+#         unit.notes.append(
+#             f"setup creates {len(cohorts)} destination table(s); runs append to them"
+#         )
+#         return unit
+#
+#     if kind == "upload_cohorts":
+#         uploads = doc.get("upload_cohorts") or []
+#         enabled = [
+#             u for u in uploads
+#             if isinstance(u, dict) and normalize_bool(u.get("push_this_cycle"), default=True)
+#         ]
+#         unit.notes.append(
+#             f"{len(enabled)} upload cohort(s); uploaded through the client, since there is "
+#             "no linked server from Cosmos back to Projects"
+#             if enabled else "no upload cohorts"
+#         )
+#         return unit
+#
+#     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
+#     unit.server_blocks = server_blocks
+#     unit.notes.extend(notes)
+#     unit.local_blocks = local_sql.render_phase(doc, unit.unit_id, linked_server)
+#     return unit
+#
+#
+# def plan_session(
+#     manifest: Manifest,
+#     session: Session,
+#     *,
+#     linked_server: str = DRY_RUN_LINKED_SERVER,
+#     retry_failed: bool = False,
+#     include_settled: bool = False,
+#     mode: str = RESUME_FULL,
+#     current_epoch: str | None = None,
+# ) -> list[Unit]:
+#     """Every unit this session would execute, in order.
+#
+#     `current_epoch` defaults to None, which models opening a fresh connection:
+#     anything completed under a previous epoch is stale.
+#     """
+#     units: list[Unit] = []
+#     for kind, node, path in iter_units(manifest, session):
+#         execute, reason = should_execute(
+#             node, kind, current_epoch=current_epoch, mode=mode, retry_failed=retry_failed
+#         )
+#         if not execute and not include_settled:
+#             continue
+#         unit = plan_unit(manifest, session, kind, node, path, linked_server)
+#         unit.reason = reason if execute else f"included anyway ({reason})"
+#         units.append(unit)
+#     return units
+#
+#
+# def plan(
+#     manifest: Manifest,
+#     *,
+#     linked_server: str = DRY_RUN_LINKED_SERVER,
+#     retry_failed: bool = False,
+#     include_settled: bool = False,
+#     mode: str = RESUME_FULL,
+# ) -> list[Unit]:
+#     units: list[Unit] = []
+#     for session in manifest.sessions:
+#         units.extend(
+#             plan_session(
+#                 manifest,
+#                 session,
+#                 linked_server=linked_server,
+#                 retry_failed=retry_failed,
+#                 include_settled=include_settled,
+#                 mode=mode,
+#             )
+#         )
+#     return units
+#
+#
+# def excluded_units(
+#     manifest: Manifest,
+#     *,
+#     mode: str = RESUME_FULL,
+#     retry_failed: bool = False,
+#     current_epoch: str | None = None,
+# ) -> list[tuple[str, str, str]]:
+#     """Units the plan leaves out, as (id, status, reason).
+#
+#     Reported rather than silently dropped: a resume that rebuilds the server
+#     side but omits the run that failed would finish with nothing transferred,
+#     which should not look like success.
+#     """
+#     left_out: list[tuple[str, str, str]] = []
+#     for session in manifest.sessions:
+#         for kind, node, _ in iter_units(manifest, session):
+#             execute, reason = should_execute(
+#                 node, kind, current_epoch=current_epoch, mode=mode, retry_failed=retry_failed
+#             )
+#             if not execute:
+#                 label = f"{session.session_id}/{kind}" if isinstance(node, Phase) else node.label
+#                 left_out.append((label, node.status, reason))
+#     return left_out
+#
+#
+# def write_sql(units: list[Unit], out_dir: Path) -> list[Path]:
+#     """Write every block to an inspectable file named after its manifest id."""
+#     out_dir = Path(out_dir)
+#     written: list[Path] = []
+#     for unit in units:
+#         for block in unit.blocks:
+#             safe = block.block_id.replace("/", "__")
+#             path = out_dir / unit.session_id / f"{safe}.{block.side}.sql"
+#             path.parent.mkdir(parents=True, exist_ok=True)
+#             path.write_text(block.sql.rstrip("\n") + "\n", encoding="utf-8")
+#             written.append(path)
+#     return written
+#
+# === END FILE: pullmanager/executor.py ===
 # === BEGIN FILE: pullmanager/local_sql.py SHA256: 2effa5f5fc36cbafa0a72c872f3f3e362f6a5d8d9608c356fa6663f1697f3130 SIZE: 7093 ===
 # """Projects-side SQL: destination tables and the transfer from Cosmos.
 #
@@ -1974,6 +2330,182 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
+# === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488 SIZE: 6609 ===
+# """Traversal order and resume policy."""
+#
+# from __future__ import annotations
+#
+# import shutil
+# import tempfile
+# import unittest
+# from pathlib import Path
+#
+# from ..executor import (
+#     RESUME_FULL,
+#     RESUME_PARTIAL,
+#     PlanError,
+#     excluded_units,
+#     iter_units,
+#     plan,
+#     plan_session,
+#     session_cohorts,
+#     should_execute,
+#     write_sql,
+# )
+# from ..manifest import Manifest
+# from .support import sample_manifest
+#
+# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+#
+#
+# class TraversalTests(unittest.TestCase):
+#     def test_phases_come_in_routine_order_then_runs(self):
+#         manifest = sample_manifest()
+#         kinds = [kind for kind, _, _ in iter_units(manifest, manifest.sessions[0])]
+#         self.assertEqual(kinds, ["setup", "upload_cohorts", "pk", "run", "run"])
+#
+#     def test_runs_keep_manifest_order(self):
+#         manifest = sample_manifest()
+#         labels = [
+#             node.label for kind, node, _ in iter_units(manifest, manifest.sessions[0])
+#             if kind == "run"
+#         ]
+#         self.assertEqual(labels, ["UCblackPatients__LA-Female", "UCblackPatients__LA-Male"])
+#
+#
+# class ShouldExecuteTests(unittest.TestCase):
+#     def node(self, status, epoch=None):
+#         manifest = sample_manifest()
+#         node = manifest.sessions[0].phases[0]
+#         node.data["status"] = status
+#         if epoch:
+#             node.data["epoch"] = epoch
+#         return node
+#
+#     def test_pending_runs(self):
+#         run, _ = should_execute(self.node("pending"), "setup")
+#         self.assertTrue(run)
+#
+#     def test_skipped_does_not_run(self):
+#         run, why = should_execute(self.node("skipped"), "setup")
+#         self.assertFalse(run)
+#         self.assertIn("deliberately", why)
+#
+#     def test_interrupted_running_is_resumed(self):
+#         run, why = should_execute(self.node("running"), "setup")
+#         self.assertTrue(run)
+#         self.assertIn("interrupted", why)
+#
+#     def test_blocked_is_retried(self):
+#         run, _ = should_execute(self.node("blocked"), "setup")
+#         self.assertTrue(run)
+#
+#     def test_failed_needs_an_explicit_retry(self):
+#         node = self.node("failed")
+#         self.assertFalse(should_execute(node, "run")[0])
+#         self.assertTrue(should_execute(node, "run", retry_failed=True)[0])
+#
+#     def test_done_in_this_session_is_skipped(self):
+#         node = self.node("done", epoch="e1")
+#         run, why = should_execute(node, "setup", current_epoch="e1")
+#         self.assertFalse(run)
+#         self.assertIn("already done", why)
+#
+#     def test_done_under_a_previous_connection_replays(self):
+#         # Global temps died with that connection, so the status is true but the
+#         # output is gone.
+#         node = self.node("done", epoch="e1")
+#         run, why = should_execute(node, "setup", current_epoch="e2")
+#         self.assertTrue(run)
+#         self.assertIn("server state is gone", why)
+#
+#     def test_partial_resume_keeps_completed_runs(self):
+#         # A run's durable result is rows in a Projects table, which survive.
+#         node = self.node("done", epoch="e1")
+#         run, why = should_execute(node, "run", current_epoch="e2", mode=RESUME_PARTIAL)
+#         self.assertFalse(run)
+#         self.assertIn("survive", why)
+#
+#     def test_partial_resume_still_replays_phases(self):
+#         node = self.node("done", epoch="e1")
+#         run, _ = should_execute(node, "pk", current_epoch="e2", mode=RESUME_PARTIAL)
+#         self.assertTrue(run)
+#
+#     def test_manifest_without_epochs_is_not_treated_as_stale(self):
+#         node = self.node("done")
+#         self.assertFalse(should_execute(node, "setup", current_epoch="e9")[0])
+#
+#
+# class PlanningTests(unittest.TestCase):
+#     def setUp(self):
+#         if not FIXTURES.is_dir():
+#             self.skipTest(f"fixtures not found at {FIXTURES}")
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.root = Path(self._tmp.name) / "split"
+#         shutil.copytree(FIXTURES, self.root)
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#
+#     def test_plans_every_unit_of_a_fresh_manifest(self):
+#         units = plan(self.manifest)
+#         self.assertEqual(
+#             [u.kind for u in units], ["setup", "upload_cohorts", "pk", "run"]
+#         )
+#
+#     def test_setup_creates_a_shell_for_every_destination(self):
+#         setup = plan(self.manifest)[0]
+#         shells = [b for b in setup.local_blocks if "shell" in b.block_id]
+#         self.assertEqual(len(shells), len(session_cohorts(self.manifest, self.manifest.sessions[0])))
+#         self.assertTrue(all("CREATE TABLE" in b.sql for b in shells))
+#
+#     def test_session_cohorts_are_deduplicated(self):
+#         names = [c["dest_table"] for c in session_cohorts(self.manifest, self.manifest.sessions[0])]
+#         self.assertEqual(len(names), len(set(names)))
+#
+#     def test_run_units_render_both_sides(self):
+#         run = [u for u in plan(self.manifest) if u.kind == "run"][0]
+#         self.assertTrue(run.server_blocks)
+#         self.assertTrue(run.local_blocks)
+#
+#     def test_completed_work_is_excluded_and_reported(self):
+#         session = self.manifest.sessions[0]
+#         session.begin_epoch(linked_server="ls")
+#         for phase in session.phases:
+#             phase.start()
+#             phase.finish()
+#         session.runs[0].start()
+#         session.runs[0].fail("boom")
+#         self.manifest.save()
+#
+#         reloaded = Manifest.load(self.root / "pullmanifest.yaml")
+#         left_out = excluded_units(reloaded)
+#         statuses = {label.split("/")[-1]: status for label, status, _ in left_out}
+#         self.assertIn("failed", statuses.values())
+#
+#         units = plan(reloaded)
+#         # A new connection means the phases replay even though they are done.
+#         self.assertTrue(any(u.kind == "pk" for u in units))
+#
+#     def test_missing_phase_yaml_is_refused(self):
+#         (self.root / "sessions" / "Patients" / "pk.yaml").unlink()
+#         with self.assertRaises(PlanError):
+#             plan(self.manifest)
+#
+#     def test_writes_one_file_per_block(self):
+#         units = plan(self.manifest)
+#         with tempfile.TemporaryDirectory() as out:
+#             written = write_sql(units, Path(out))
+#             self.assertEqual(len(written), sum(len(u.blocks) for u in units))
+#             self.assertTrue(all(p.read_text(encoding="utf-8").strip() for p in written))
+#             self.assertTrue(all(p.suffix == ".sql" for p in written))
+#
+#     def test_plan_is_empty_when_nothing_needs_doing(self):
+#         session = self.manifest.sessions[0]
+#         for child in session.children:
+#             child.skip("not wanted")
+#         self.assertEqual(plan_session(self.manifest, session), [])
+#
+# === END FILE: pullmanager/tests/test_executor.py ===
 # === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7 SIZE: 14639 ===
 # """Manifest loading, validation, status transitions, and round-tripping."""
 #
