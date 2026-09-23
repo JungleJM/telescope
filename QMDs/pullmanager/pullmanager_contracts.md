@@ -703,17 +703,20 @@ Execution and telemetry (Phases 6–9):
   `scripts/bundle_extractor.py`, `dist/pullmanager_bundle.py`).
 - Phase 2 — Core models and manifest I/O: **done**
   (`pullmanager/models.py`, `pullmanager/manifest.py`).
-- Phase 3 — Normalization and naming: next. Carries the data dictionary
-  check (in `makeYaml.py`) and the settled authoring rules above.
+- Phase 3 — Normalization and naming: **done** for the Pullmanager side
+  (`pullmanager/naming.py`, `pullmanager/normalize.py`). The data dictionary
+  check belongs in `makeYaml.py` and is still to do.
+- Phase 4 — SQL rendering without database execution: next.
 
 ## Running The Tests
 
 ```bash
-python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (38)
+python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (94)
 python3 scripts/pullmanager_src/pullmanager.py --tdd manifest   # one module
 python3 scripts/bundle_pullmanager.py --tdd                     # bundler (31)
 python3 scripts/bundle_pullmanager.py --tdd tamper              # one class
 python3 scripts/makeYaml.py --tdd                               # YAML Manager (35)
+python3 scripts/pullmanager_src/pullmanager.py --tdd naming     # one module
 ```
 
 Pullmanager's suites use stdlib `unittest`, so they stay dependency-free and

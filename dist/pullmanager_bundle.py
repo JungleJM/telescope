@@ -278,8 +278,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "a0b0f3f031bdf360b150fcc0fb25d22adbed56c83bcec2732cb3b3b9afc868d2",
-  "file_count": 11,
+  "content_id": "87bdb9b38d36c9c20776fba08703e497da9b5c74c05ac7f46a587660214c5088",
+  "file_count": 15,
   "files": [
     {
       "path": "pullmanager.py",
@@ -312,6 +312,16 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 2154
     },
     {
+      "path": "pullmanager/naming.py",
+      "sha256": "45595539e6045bcc4b431379e8adebb7556793d3246cf7921a79eb16e5afc7c4",
+      "size": 3764
+    },
+    {
+      "path": "pullmanager/normalize.py",
+      "sha256": "dee580d39bedc3b6fd2bbcb5ed79c4a86e2914bc4b49558d9fc4c582fd89891e",
+      "size": 7036
+    },
+    {
       "path": "pullmanager/tests/__init__.py",
       "sha256": "4f70b04f739db1fd4fdae89aa3b2dd3ac8afea47a8dc6b8d5eb7fcda8ed717a2",
       "size": 1508
@@ -330,6 +340,16 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/tests/test_models.py",
       "sha256": "9293f87dcebe251868ceb465460b0067c9642790941c6e26250a6cb8d47044a8",
       "size": 2221
+    },
+    {
+      "path": "pullmanager/tests/test_naming.py",
+      "sha256": "52969558fa458ea931e5baf62abbb75426294cdc3cc854a8f867fefbad0c5d5f",
+      "size": 5298
+    },
+    {
+      "path": "pullmanager/tests/test_normalize.py",
+      "sha256": "7f8df67188a3032b297e0c22ce7e20861ce4e526c1b710bab86b2bd3d56d2f10",
+      "size": 5859
     },
     {
       "path": "pullmanager/yaml_io.py",
@@ -861,6 +881,317 @@ if __name__ == "__main__":
 #     return {"seconds": int(round(seconds)), "display": format_duration(seconds)}
 #
 # === END FILE: pullmanager/models.py ===
+# === BEGIN FILE: pullmanager/naming.py SHA256: 45595539e6045bcc4b431379e8adebb7556793d3246cf7921a79eb16e5afc7c4 SIZE: 3764 ===
+# """Table naming rules.
+#
+# These come from the old generator and are invariants, not preferences: the
+# server, the staging table and the destination must agree or a transfer fails.
+# Every function here is idempotent, so applying a rule to an already-correct
+# name is a no-op rather than a double prefix.
+# """
+#
+# from __future__ import annotations
+#
+# import re
+#
+# GLOBAL_TEMP_PREFIX = "##JVM_"
+# LOCAL_STAGING_PREFIX = "#Local_"
+# DEFAULT_SCHEMA = "dbo"
+#
+# # A bare identifier, optionally bracketed: PatientDim, [PatientDim], ##JVM_X
+# _IDENTIFIER = r"(?:\[[^\]]+\]|[A-Za-z_#@][\w@$#]*)"
+# # A possibly-qualified reference, matched whole so `dbo.PatientDim` is never
+# # mistaken for the bare identifier `dbo` and qualified a second time.
+# _REFERENCE = rf"{_IDENTIFIER}(?:\.{_IDENTIFIER})*"
+# _FROM_OR_JOIN = re.compile(
+#     rf"(?P<lead>\b(?:FROM|JOIN)\s+)(?P<table>{_REFERENCE})",
+#     re.IGNORECASE,
+# )
+# _LEADING_TABLE = re.compile(rf"^(?P<ws>\s*)(?P<table>{_REFERENCE})")
+#
+#
+# class NamingError(ValueError):
+#     """Raised when a name cannot be derived."""
+#
+#
+# def _require(dest_table: str | None) -> str:
+#     if dest_table is None or not str(dest_table).strip():
+#         raise NamingError("dest_table is required to derive a table name.")
+#     return str(dest_table).strip()
+#
+#
+# def base_name(dest_table: str | None) -> str:
+#     """Strip any temp marker and generator prefix down to the bare name."""
+#     name = _require(dest_table).lstrip("#")
+#     for prefix in ("JVM_", "Local_"):
+#         if name.upper().startswith(prefix.upper()):
+#             name = name[len(prefix):]
+#             break
+#     return name
+#
+#
+# def global_temp(dest_table: str | None) -> str:
+#     """Cosmos session-scoped output: PKTable -> ##JVM_PKTable.
+#
+#     A dest_table that already starts with JVM_ is not prefixed twice, which is
+#     the `##JVM_JVM_Foo` bug the old generator guarded against.
+#     """
+#     return GLOBAL_TEMP_PREFIX + base_name(dest_table)
+#
+#
+# def local_staging(dest_table: str | None) -> str:
+#     """Projects session-scoped staging: PKTable -> #Local_PKTable."""
+#     return LOCAL_STAGING_PREFIX + base_name(dest_table)
+#
+#
+# def destination(project_db: str | None, dest_table: str | None) -> str:
+#     """Durable Projects table, always fully qualified.
+#
+#     Generated SQL gets run from tools with ambiguous database context, so the
+#     destination never relies on USE.
+#     """
+#     if not project_db or not str(project_db).strip():
+#         raise NamingError("project_db is required to qualify a destination table.")
+#     return f"{str(project_db).strip()}.{DEFAULT_SCHEMA}.{base_name(dest_table)}"
+#
+#
+# def is_temp_table(token: str) -> bool:
+#     return token.lstrip("[").startswith("#")
+#
+#
+# def is_schema_qualified(token: str) -> bool:
+#     """True when a reference already names a schema.
+#
+#     Dots inside brackets do not count, so `[My.Table]` is still unqualified.
+#     """
+#     return "." in re.sub(r"\[[^\]]*\]", "", token)
+#
+#
+# def qualify(token: str) -> str:
+#     """Add the default schema to a bare table reference.
+#
+#     Left alone: temp tables, which live in tempdb and must stay unqualified,
+#     and anything already carrying a schema, which is what prevents `dbo.dbo.`.
+#     """
+#     if is_temp_table(token) or is_schema_qualified(token):
+#         return token
+#     return f"{DEFAULT_SCHEMA}.{token}"
+#
+#
+# def qualify_table_ref(ref: str) -> str:
+#     """Qualify the leading table of a `from` entry: `PatientDim AS p`."""
+#     match = _LEADING_TABLE.match(ref)
+#     if not match:
+#         return ref
+#     table = match.group("table")
+#     return ref[: match.start("table")] + qualify(table) + ref[match.end("table"):]
+#
+#
+# def qualify_join_clause(clause: str) -> str:
+#     """Qualify every table named after FROM or JOIN in a clause."""
+#     return _FROM_OR_JOIN.sub(
+#         lambda m: m.group("lead") + qualify(m.group("table")), clause
+#     )
+#
+# === END FILE: pullmanager/naming.py ===
+# === BEGIN FILE: pullmanager/normalize.py SHA256: dee580d39bedc3b6fd2bbcb5ed79c4a86e2914bc4b49558d9fc4c582fd89891e SIZE: 7036 ===
+# """Compatibility rules for hand-authored cohort YAML.
+#
+# Each function returns its result alongside any notes worth surfacing, because
+# the failure these rules guard against is silence: the old generator accepted
+# only `dedup_keys` and, given `dedup_key`, emitted no deduplication at all and
+# said nothing, changing row counts invisibly.
+# """
+#
+# from __future__ import annotations
+#
+# from typing import Any
+#
+# from .naming import global_temp
+#
+# TRUTHY = {"true", "yes", "y", "1", "on", "t"}
+# FALSY = {"false", "no", "n", "0", "off", "f", ""}
+#
+# DEAD_TEST_OPTIONS = {
+#     "stop_at_for_non_pk_tables": (
+#         "no longer used; row limits now apply only to the root PK cohort"
+#     ),
+#     "print_md": "reporting is the manifest's job; no markdown run report is written",
+#     "printout_md": "reporting is the manifest's job; no markdown run report is written",
+# }
+#
+#
+# class NormalizationError(ValueError):
+#     """Raised when a value cannot be interpreted."""
+#
+#
+# def normalize_bool(value: Any, *, default: bool = False) -> bool:
+#     """Accept the YAML and human spellings of a boolean."""
+#     if value is None:
+#         return default
+#     if isinstance(value, bool):
+#         return value
+#     if isinstance(value, (int, float)):
+#         return bool(value)
+#     text = str(value).strip().lower()
+#     if text in TRUTHY:
+#         return True
+#     if text in FALSY:
+#         return False
+#     raise NormalizationError(f"Cannot interpret {value!r} as a boolean.")
+#
+#
+# def normalize_dedup_keys(cohort: dict[str, Any]) -> tuple[list[list[str]], list[str]]:
+#     """Return dedup keys as a list of key sets, plus any notes.
+#
+#     Canonical form is `dedup_keys`, a list of lists. The legacy singular
+#     `dedup_key` is accepted and normalized rather than rejected: refusing the
+#     file only relocates the friction, while accepting it loudly removes the
+#     silent-no-dedup outcome entirely.
+#     """
+#     notes: list[str] = []
+#     raw = cohort.get("dedup_keys")
+#     legacy = cohort.get("dedup_key")
+#
+#     if raw is not None and legacy is not None:
+#         raise NormalizationError(
+#             f"Cohort {cohort.get('dest_table') or cohort.get('name')!r} sets both "
+#             "`dedup_keys` and legacy `dedup_key`. Keep only `dedup_keys`."
+#         )
+#
+#     if raw is None and legacy is None:
+#         return [], notes
+#
+#     if raw is None:
+#         raw = legacy
+#         notes.append(
+#             f"`dedup_key` is legacy; normalized to `dedup_keys` for "
+#             f"{cohort.get('dest_table') or cohort.get('name')!r}. Update the template."
+#         )
+#
+#     if isinstance(raw, str):
+#         key_sets = [[raw]]
+#     elif isinstance(raw, list):
+#         if not raw:
+#             raise NormalizationError("`dedup_keys` was supplied but is empty.")
+#         # A flat list is one key set; a list of lists is several.
+#         if all(isinstance(item, list) for item in raw):
+#             key_sets = [[str(col) for col in item] for item in raw]
+#         elif any(isinstance(item, list) for item in raw):
+#             raise NormalizationError(
+#                 "`dedup_keys` mixes bare columns and key sets. Use either "
+#                 "[[a, b]] for one key set or [[a], [b]] for two."
+#             )
+#         else:
+#             key_sets = [[str(col) for col in raw]]
+#     else:
+#         raise NormalizationError(f"Cannot interpret dedup keys from {raw!r}.")
+#
+#     for key_set in key_sets:
+#         if not key_set:
+#             raise NormalizationError("`dedup_keys` contains an empty key set.")
+#     return key_sets, notes
+#
+#
+# def validate_dedup_columns(
+#     key_sets: list[list[str]], cohort: dict[str, Any]
+# ) -> list[str]:
+#     """Check dedup keys name columns the cohort actually produces."""
+#     produced = {
+#         str(col.get("name"))
+#         for col in cohort.get("columns") or []
+#         if isinstance(col, dict) and col.get("name")
+#     }
+#     problems = []
+#     for key_set in key_sets:
+#         unknown = [col for col in key_set if col not in produced]
+#         if unknown:
+#             problems.append(
+#                 f"dedup key(s) {', '.join(unknown)} are not columns of "
+#                 f"{cohort.get('dest_table') or cohort.get('name')!r}"
+#             )
+#     return problems
+#
+#
+# def dead_options(test_options: dict[str, Any] | None) -> list[str]:
+#     """Notes for retired `test_options` keys that are still present."""
+#     if not test_options:
+#         return []
+#     return [
+#         f"`test_options.{key}` is ignored: {why}"
+#         for key, why in DEAD_TEST_OPTIONS.items()
+#         if key in test_options
+#     ]
+#
+#
+# def is_pk(cohort: dict[str, Any]) -> bool:
+#     return str(cohort.get("type", "")).strip().lower() == "pk"
+#
+#
+# def pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#     return [c for c in cohorts if isinstance(c, dict) and is_pk(c)]
+#
+#
+# def joined_generated_tables(cohort: dict[str, Any]) -> set[str]:
+#     """Global temp names this cohort joins, found in its filter text."""
+#     filter_block = cohort.get("filter") or {}
+#     text_parts: list[str] = []
+#     for key in ("from", "join", "where"):
+#         value = filter_block.get(key)
+#         if isinstance(value, str):
+#             text_parts.append(value)
+#         elif isinstance(value, list):
+#             text_parts.extend(str(item) for item in value)
+#     haystack = " ".join(text_parts).upper()
+#     return {token for token in _global_temp_tokens(haystack)}
+#
+#
+# def _global_temp_tokens(haystack: str) -> set[str]:
+#     tokens: set[str] = set()
+#     marker = "##JVM_"
+#     start = haystack.find(marker)
+#     while start != -1:
+#         end = start + len(marker)
+#         while end < len(haystack) and (haystack[end].isalnum() or haystack[end] == "_"):
+#             end += 1
+#         tokens.add(haystack[start:end])
+#         start = haystack.find(marker, end)
+#     return tokens
+#
+#
+# def root_pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#     """PK cohorts that do not depend on another PK cohort's global temp.
+#
+#     A chained PK (patients -> diagnosis events for those patients) has exactly
+#     one root. Row limits apply there, because limiting a downstream PK as well
+#     compounds the restriction into an unrepresentative sample.
+#     """
+#     pks = pk_cohorts(cohorts)
+#     sibling_temps = {global_temp(c.get("dest_table")).upper() for c in pks if c.get("dest_table")}
+#     roots = []
+#     for cohort in pks:
+#         own = global_temp(cohort.get("dest_table")).upper() if cohort.get("dest_table") else None
+#         depends_on = joined_generated_tables(cohort) & sibling_temps
+#         depends_on.discard(own)
+#         if not depends_on:
+#             roots.append(cohort)
+#     return roots
+#
+#
+# def root_pk_cohort(cohorts: list[dict[str, Any]]) -> dict[str, Any] | None:
+#     """The single root PK cohort, or None when there is no PK at all."""
+#     roots = root_pk_cohorts(cohorts)
+#     if not roots:
+#         return None
+#     if len(roots) > 1:
+#         names = ", ".join(str(c.get("dest_table") or c.get("name")) for c in roots)
+#         raise NormalizationError(
+#             f"Several PK cohorts depend on nothing ({names}), so the root PK is "
+#             "ambiguous. Chain them, or mark one as canonical."
+#         )
+#     return roots[0]
+#
+# === END FILE: pullmanager/normalize.py ===
 # === BEGIN FILE: pullmanager/tests/__init__.py SHA256: 4f70b04f739db1fd4fdae89aa3b2dd3ac8afea47a8dc6b8d5eb7fcda8ed717a2 SIZE: 1508 ===
 # """Test suite for the Pullmanager runtime.
 #
@@ -1485,6 +1816,317 @@ if __name__ == "__main__":
 #         self.assertEqual(set(SETTLED_STATUSES), {DONE, SKIPPED})
 #
 # === END FILE: pullmanager/tests/test_models.py ===
+# === BEGIN FILE: pullmanager/tests/test_naming.py SHA256: 52969558fa458ea931e5baf62abbb75426294cdc3cc854a8f867fefbad0c5d5f SIZE: 5298 ===
+# """Naming invariants: server, staging and destination must agree."""
+#
+# from __future__ import annotations
+#
+# import unittest
+#
+# from ..naming import (
+#     NamingError,
+#     base_name,
+#     destination,
+#     global_temp,
+#     is_schema_qualified,
+#     is_temp_table,
+#     local_staging,
+#     qualify,
+#     qualify_join_clause,
+#     qualify_table_ref,
+# )
+#
+#
+# class GlobalTempTests(unittest.TestCase):
+#     def test_prefixes_a_plain_name(self):
+#         self.assertEqual(global_temp("PKTable"), "##JVM_PKTable")
+#
+#     def test_never_doubles_the_jvm_prefix(self):
+#         # The old generator's ##JVM_JVM_Foo bug.
+#         for given in ("JVM_PKTable", "jvm_PKTable", "##JVM_PKTable"):
+#             with self.subTest(given=given):
+#                 self.assertEqual(global_temp(given), "##JVM_PKTable")
+#
+#     def test_is_idempotent(self):
+#         once = global_temp("PKTable")
+#         self.assertEqual(global_temp(once), once)
+#
+#
+# class LocalStagingTests(unittest.TestCase):
+#     def test_prefixes_a_plain_name(self):
+#         self.assertEqual(local_staging("PKTable"), "#Local_PKTable")
+#
+#     def test_is_idempotent(self):
+#         self.assertEqual(local_staging("#Local_PKTable"), "#Local_PKTable")
+#
+#     def test_derives_from_a_global_temp_name(self):
+#         self.assertEqual(local_staging("##JVM_PKTable"), "#Local_PKTable")
+#
+#
+# class DestinationTests(unittest.TestCase):
+#     def test_is_always_fully_qualified(self):
+#         self.assertEqual(
+#             destination("PROJECTD93A5E7", "PKTable"),
+#             "PROJECTD93A5E7.dbo.PKTable",
+#         )
+#
+#     def test_strips_generator_prefixes(self):
+#         self.assertEqual(
+#             destination("PROJECTD93A5E7", "##JVM_PKTable"),
+#             "PROJECTD93A5E7.dbo.PKTable",
+#         )
+#
+#     def test_requires_a_project_db(self):
+#         with self.assertRaises(NamingError):
+#             destination("", "PKTable")
+#
+#
+# class MissingNameTests(unittest.TestCase):
+#     def test_blank_dest_table_is_rejected(self):
+#         for given in (None, "", "   "):
+#             with self.subTest(given=given):
+#                 for fn in (base_name, global_temp, local_staging):
+#                     with self.assertRaises(NamingError):
+#                         fn(given)
+#
+#
+# class PredicateTests(unittest.TestCase):
+#     def test_identifies_temp_tables(self):
+#         self.assertTrue(is_temp_table("#Local_X"))
+#         self.assertTrue(is_temp_table("##JVM_X"))
+#         self.assertFalse(is_temp_table("PatientDim"))
+#
+#     def test_dots_inside_brackets_do_not_qualify(self):
+#         self.assertTrue(is_schema_qualified("dbo.PatientDim"))
+#         self.assertFalse(is_schema_qualified("[My.Table]"))
+#         self.assertTrue(is_schema_qualified("[dbo].[PatientDim]"))
+#
+#
+# class QualifyTests(unittest.TestCase):
+#     def test_adds_the_default_schema(self):
+#         self.assertEqual(qualify("PatientDim"), "dbo.PatientDim")
+#         self.assertEqual(qualify("[PatientDim]"), "dbo.[PatientDim]")
+#
+#     def test_never_produces_dbo_dbo(self):
+#         for given in ("dbo.PatientDim", "[dbo].[PatientDim]", "COSMOS.dbo.PatientDim"):
+#             with self.subTest(given=given):
+#                 self.assertEqual(qualify(given), given)
+#
+#     def test_leaves_temp_tables_unqualified(self):
+#         # Global temps live in tempdb; qualifying them would break the reference.
+#         self.assertEqual(qualify("##JVM_PKTable2"), "##JVM_PKTable2")
+#         self.assertEqual(qualify("#Local_PKTable"), "#Local_PKTable")
+#
+#
+# class QualifyTableRefTests(unittest.TestCase):
+#     def test_qualifies_a_from_entry_keeping_the_alias(self):
+#         self.assertEqual(qualify_table_ref("PatientDim AS p"), "dbo.PatientDim AS p")
+#
+#     def test_is_idempotent(self):
+#         once = qualify_table_ref("PatientDim AS p")
+#         self.assertEqual(qualify_table_ref(once), once)
+#
+#     def test_leaves_generated_temps_alone(self):
+#         self.assertEqual(
+#             qualify_table_ref("##JVM_PKTable2 AS p"), "##JVM_PKTable2 AS p"
+#         )
+#
+#
+# class QualifyJoinClauseTests(unittest.TestCase):
+#     def test_qualifies_the_joined_table(self):
+#         self.assertEqual(
+#             qualify_join_clause(
+#                 "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+#             ),
+#             "INNER JOIN dbo.DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey",
+#         )
+#
+#     def test_handles_every_join_flavour(self):
+#         for kind in ("INNER JOIN", "LEFT JOIN", "LEFT OUTER JOIN", "CROSS JOIN", "join"):
+#             with self.subTest(kind=kind):
+#                 self.assertIn(
+#                     "dbo.EncounterFact",
+#                     qualify_join_clause(f"{kind} EncounterFact AS e ON 1 = 1"),
+#                 )
+#
+#     def test_leaves_generated_temps_alone(self):
+#         clause = "INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey"
+#         self.assertEqual(qualify_join_clause(clause), clause)
+#
+#     def test_does_not_touch_the_on_predicate(self):
+#         # Column references are aliases, not tables, and must be left alone.
+#         clause = "INNER JOIN Foo AS f ON f.Bar = baz.Qux"
+#         self.assertEqual(
+#             qualify_join_clause(clause),
+#             "INNER JOIN dbo.Foo AS f ON f.Bar = baz.Qux",
+#         )
+#
+#     def test_is_idempotent(self):
+#         once = qualify_join_clause("INNER JOIN Foo AS f ON 1 = 1")
+#         self.assertEqual(qualify_join_clause(once), once)
+#
+# === END FILE: pullmanager/tests/test_naming.py ===
+# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: 7f8df67188a3032b297e0c22ce7e20861ce4e526c1b710bab86b2bd3d56d2f10 SIZE: 5859 ===
+# """Compatibility rules for hand-authored cohort YAML."""
+#
+# from __future__ import annotations
+#
+# import unittest
+#
+# from ..normalize import (
+#     NormalizationError,
+#     dead_options,
+#     joined_generated_tables,
+#     normalize_bool,
+#     normalize_dedup_keys,
+#     root_pk_cohort,
+#     root_pk_cohorts,
+#     validate_dedup_columns,
+# )
+#
+# # The chained PK from inputSimple.yaml: a patient list, then diagnosis events
+# # for those patients.
+# PATIENTS = {
+#     "name": "PKTable",
+#     "type": "PK",
+#     "dest_table": "PKTable2",
+#     "columns": [{"name": "PatientDurableKey"}],
+#     "filter": {"from": "PatientDim AS p", "join": []},
+# }
+# EVENTS = {
+#     "name": "PKTable",
+#     "type": "PK",
+#     "dest_table": "PKTable",
+#     "dedup_key": ["DiagnosisEventKey"],
+#     "columns": [{"name": "DiagnosisEventKey"}, {"name": "PatientDurableKey"}],
+#     "filter": {
+#         "from": "DiagnosisEventFact AS def",
+#         "join": [
+#             "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey",
+#             "INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey",
+#         ],
+#     },
+# }
+# FACT = {"name": "OtherDx", "type": "fact", "dest_table": "OtherDx", "filter": {}}
+#
+#
+# class BooleanTests(unittest.TestCase):
+#     def test_accepts_truthy_spellings(self):
+#         for given in (True, 1, "true", "True", "YES", "y", "1", "on", "t"):
+#             with self.subTest(given=given):
+#                 self.assertTrue(normalize_bool(given))
+#
+#     def test_accepts_falsy_spellings(self):
+#         for given in (False, 0, "false", "No", "n", "0", "off", ""):
+#             with self.subTest(given=given):
+#                 self.assertFalse(normalize_bool(given))
+#
+#     def test_none_takes_the_default(self):
+#         self.assertFalse(normalize_bool(None))
+#         self.assertTrue(normalize_bool(None, default=True))
+#
+#     def test_rejects_nonsense(self):
+#         with self.assertRaises(NormalizationError):
+#             normalize_bool("maybe")
+#
+#
+# class DedupKeyTests(unittest.TestCase):
+#     def test_legacy_singular_is_accepted_with_a_note(self):
+#         # The old generator accepted only `dedup_keys` and silently skipped
+#         # deduplication entirely, changing row counts with no warning.
+#         keys, notes = normalize_dedup_keys(EVENTS)
+#         self.assertEqual(keys, [["DiagnosisEventKey"]])
+#         self.assertEqual(len(notes), 1)
+#         self.assertIn("dedup_key", notes[0])
+#
+#     def test_canonical_form_produces_no_note(self):
+#         keys, notes = normalize_dedup_keys({"dedup_keys": [["A", "B"], ["C"]]})
+#         self.assertEqual(keys, [["A", "B"], ["C"]])
+#         self.assertEqual(notes, [])
+#
+#     def test_flat_list_is_one_key_set(self):
+#         keys, _ = normalize_dedup_keys({"dedup_keys": ["A", "B"]})
+#         self.assertEqual(keys, [["A", "B"]])
+#
+#     def test_bare_string_is_one_key_set(self):
+#         keys, _ = normalize_dedup_keys({"dedup_keys": "A"})
+#         self.assertEqual(keys, [["A"]])
+#
+#     def test_absent_means_no_dedup(self):
+#         keys, notes = normalize_dedup_keys({"dest_table": "X"})
+#         self.assertEqual(keys, [])
+#         self.assertEqual(notes, [])
+#
+#     def test_both_spellings_at_once_is_an_error(self):
+#         with self.assertRaises(NormalizationError):
+#             normalize_dedup_keys({"dedup_key": ["A"], "dedup_keys": [["A"]]})
+#
+#     def test_empty_is_an_error(self):
+#         with self.assertRaises(NormalizationError):
+#             normalize_dedup_keys({"dedup_keys": []})
+#         with self.assertRaises(NormalizationError):
+#             normalize_dedup_keys({"dedup_keys": [[]]})
+#
+#     def test_mixed_shapes_are_an_error(self):
+#         with self.assertRaises(NormalizationError):
+#             normalize_dedup_keys({"dedup_keys": ["A", ["B"]]})
+#
+#
+# class DedupColumnTests(unittest.TestCase):
+#     def test_keys_must_name_produced_columns(self):
+#         self.assertEqual(validate_dedup_columns([["DiagnosisEventKey"]], EVENTS), [])
+#
+#     def test_unknown_column_is_reported(self):
+#         problems = validate_dedup_columns([["Nope"]], EVENTS)
+#         self.assertEqual(len(problems), 1)
+#         self.assertIn("Nope", problems[0])
+#
+#
+# class DeadOptionTests(unittest.TestCase):
+#     def test_retired_options_are_named(self):
+#         notes = dead_options({"printout_md": True, "stop_at_for_pk_table": 500})
+#         self.assertEqual(len(notes), 1)
+#         self.assertIn("printout_md", notes[0])
+#
+#     def test_live_options_are_silent(self):
+#         self.assertEqual(dead_options({"stop_at_for_pk_table": 500}), [])
+#         self.assertEqual(dead_options(None), [])
+#
+#
+# class DependencyTests(unittest.TestCase):
+#     def test_finds_joined_global_temps(self):
+#         self.assertEqual(joined_generated_tables(EVENTS), {"##JVM_PKTABLE2"})
+#
+#     def test_reports_none_for_an_independent_cohort(self):
+#         self.assertEqual(joined_generated_tables(PATIENTS), set())
+#
+#
+# class RootPkTests(unittest.TestCase):
+#     def test_chained_pks_have_one_root(self):
+#         # Row limits apply here only; limiting the downstream PK too would
+#         # compound 500 patients x 500 events into an unrepresentative sample.
+#         root = root_pk_cohort([PATIENTS, EVENTS, FACT])
+#         self.assertEqual(root["dest_table"], "PKTable2")
+#
+#     def test_order_does_not_matter(self):
+#         root = root_pk_cohort([EVENTS, FACT, PATIENTS])
+#         self.assertEqual(root["dest_table"], "PKTable2")
+#
+#     def test_single_pk_is_its_own_root(self):
+#         self.assertEqual(root_pk_cohort([PATIENTS, FACT])["dest_table"], "PKTable2")
+#
+#     def test_no_pk_cohorts_gives_none(self):
+#         self.assertIsNone(root_pk_cohort([FACT]))
+#
+#     def test_fact_cohorts_are_never_roots(self):
+#         self.assertEqual(len(root_pk_cohorts([PATIENTS, EVENTS, FACT])), 1)
+#
+#     def test_ambiguous_roots_are_an_error(self):
+#         other = dict(PATIENTS, dest_table="OtherPK", name="OtherPK")
+#         with self.assertRaises(NormalizationError):
+#             root_pk_cohort([PATIENTS, other])
+#
+# === END FILE: pullmanager/tests/test_normalize.py ===
 # === BEGIN FILE: pullmanager/yaml_io.py SHA256: dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18 SIZE: 1844 ===
 # """YAML load/dump for Pullmanager.
 #
