@@ -2789,4 +2789,48 @@ DataDictionary:
           Problem type category (e.g., medical, surgical, social), depending on local
           configuration.
 
-
+  TerminologyConceptDim:
+    description: >
+      Terminology concept dimension table. One row per concept in a terminology
+      (e.g., a code or concept in ICD-10-CM, SNOMED CT, RxNorm, ATC, internal
+      value set). Serves as a generic concept backbone that other terminology-
+      specific dimensions (such as DiagnosisTerminologyDim or MedicationCodeDim)
+      reference via TerminologyConceptKey.
+    granularity: >
+      One row per terminology concept (concept-level dimension).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the terminology concept record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the terminology concept record has been inferred rather than
+          directly sourced; useful for lineage and data quality checks.
+      Concept:
+        type: string
+        nullable: true
+        description: >
+          Concept identifier string as used within the terminology or value set
+          (for example, a code or concept ID).
+      Name:
+        type: string
+        nullable: true
+        description: >
+          Human-readable name or label for the terminology concept.
+      StandardName:
+        type: string
+        nullable: true
+        description: >
+          Standardized or normalized name for the concept, used to harmonize
+          naming across contributors and terminologies.
+      TerminologyConceptKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the terminology concept dimension row. Referenced by
+          other terminology tables such as DiagnosisTerminologyDim and
+          TerminologyConceptSetDim.
