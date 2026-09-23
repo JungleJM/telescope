@@ -9,9 +9,13 @@ every result set, and keeping server messages on the failure path.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from ..db import (
     DEFAULT_DRIVER,
+    find_env_file,
+    load_env_file,
+    parse_env_file,
     DatabaseError,
     ResultSet,
     Settings,
@@ -134,6 +138,69 @@ class SettingsTests(unittest.TestCase):
             Settings(projects_server="", projects_database="D").projects_connection_string()
         with self.assertRaises(DatabaseError):
             Settings(projects_server="S", projects_database="").projects_connection_string()
+
+
+class EnvFileTests(unittest.TestCase):
+    def setUp(self):
+        import os
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+        self._saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self._saved)))
+
+    def write(self, text):
+        path = self.dir / ".env"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_parses_the_usual_shapes(self):
+        parsed = parse_env_file(
+            "# a comment\n"
+            "PULLMANAGER_COSMOS_SERVER=COSMOS\n"
+            "export PULLMANAGER_PROJECTS_SERVER=\"PROJ SRV\"\n"
+            "PULLMANAGER_UPLOAD_CHUNK = 5000\n"
+            "\n"
+            "EMPTY=\n"
+            "not-an-assignment\n"
+        )
+        self.assertEqual(parsed["PULLMANAGER_COSMOS_SERVER"], "COSMOS")
+        self.assertEqual(parsed["PULLMANAGER_PROJECTS_SERVER"], "PROJ SRV")
+        self.assertEqual(parsed["PULLMANAGER_UPLOAD_CHUNK"], "5000")
+        self.assertEqual(parsed["EMPTY"], "")
+        self.assertNotIn("not-an-assignment", parsed)
+
+    def test_loads_into_the_environment(self):
+        import os
+
+        os.environ.pop("PULLMANAGER_COSMOS_SERVER", None)
+        path = self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n")
+        load_env_file(path)
+        self.assertEqual(Settings.from_env().cosmos_server, "FROMFILE")
+
+    def test_a_real_environment_variable_wins(self):
+        import os
+
+        os.environ["PULLMANAGER_COSMOS_SERVER"] = "FROMENV"
+        load_env_file(self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n"))
+        self.assertEqual(os.environ["PULLMANAGER_COSMOS_SERVER"], "FROMENV")
+
+    def test_override_lets_the_file_win(self):
+        import os
+
+        os.environ["PULLMANAGER_COSMOS_SERVER"] = "FROMENV"
+        load_env_file(self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n"), override=True)
+        self.assertEqual(os.environ["PULLMANAGER_COSMOS_SERVER"], "FROMFILE")
+
+    def test_a_named_file_that_is_missing_is_an_error(self):
+        # Silently ignoring it would surface later as "No server configured".
+        with self.assertRaises(DatabaseError):
+            find_env_file(self.dir / "nope.env")
+
+    def test_no_env_file_anywhere_is_not_an_error(self):
+        self.assertEqual(load_env_file(None), {}) if find_env_file() is None else None
 
 
 class BatchSplitTests(unittest.TestCase):

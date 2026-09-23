@@ -278,7 +278,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "3be18c88bac88645ac178279890bc3bf5966fbb3810bd57b87593c771629c875",
+  "content_id": "f1902ca8db2345a8ede1df35fd2906e67b716bf8e4fa095f904ced6ccbe1b803",
   "file_count": 30,
   "files": [
     {
@@ -303,13 +303,13 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/cli.py",
-      "sha256": "f2aea944b837d352eb7b6caf1bdd065966146348b1454e0d4e5af96aefd87820",
-      "size": 8276
+      "sha256": "bc2b9888907a0057e8c0cbda85ca2586e6e5240b684d03c13d1559906c1c8258",
+      "size": 8869
     },
     {
       "path": "pullmanager/db.py",
-      "sha256": "0e2306de7b9f2a6ffebda577a21c24b4478a38e518eba9ea90de4187307756d9",
-      "size": 9394
+      "sha256": "4c6e9bdaec4763054b4311d327766780989eb35649e1ead94235dc6a38a0b8ca",
+      "size": 11345
     },
     {
       "path": "pullmanager/executor.py",
@@ -373,8 +373,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/tests/test_db.py",
-      "sha256": "1e39f445c46b0952540a09c0887b210ad566223b239be4ed607065ade5987be7",
-      "size": 10152
+      "sha256": "5d570f7802a7d4da112c7049fa9890102a741efd7de3eb35cd47df6174fd8b5d",
+      "size": 12645
     },
     {
       "path": "pullmanager/tests/test_executor.py",
@@ -620,7 +620,7 @@ if __name__ == "__main__":
 #     return BatchSelection(sql=sql + ";", params=params)
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: f2aea944b837d352eb7b6caf1bdd065966146348b1454e0d4e5af96aefd87820 SIZE: 8276 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: bc2b9888907a0057e8c0cbda85ca2586e6e5240b684d03c13d1559906c1c8258 SIZE: 8869 ===
 # """Command line entry point.
 #
 # Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
@@ -728,9 +728,18 @@ if __name__ == "__main__":
 #
 #
 # def execute(manifest: Manifest, args: argparse.Namespace) -> int:
-#     from .db import DatabaseError, Settings
+#     from .db import DatabaseError, Settings, find_env_file, load_env_file
 #     from .session import SessionRunner
 #
+#     try:
+#         loaded = load_env_file(args.env)
+#     except DatabaseError as exc:
+#         print(f"ERROR {exc}", file=sys.stderr)
+#         return 1
+#     if loaded:
+#         print(f"Loaded {len(loaded)} setting(s) from {find_env_file(args.env)}")
+#     elif not args.env:
+#         print("No .env found; using environment variables and defaults.")
 #     settings = Settings.from_env()
 #     mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
 #     reports = []
@@ -793,6 +802,12 @@ if __name__ == "__main__":
 #         help="Cosmos instance to render OPENQUERY against. Captured per connection at "
 #              "run time; supply one only for a dry run.",
 #     )
+#     parser.add_argument(
+#         "--env",
+#         default=None,
+#         help="Path to a .env holding host and database names. Searched in the working "
+#              "directory and beside the runtime when not given.",
+#     )
 #     parser.add_argument("--retry-failed", action="store_true", help="Reopen failed work.")
 #     parser.add_argument(
 #         "--resume-partial",
@@ -850,7 +865,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/db.py SHA256: 0e2306de7b9f2a6ffebda577a21c24b4478a38e518eba9ea90de4187307756d9 SIZE: 9394 ===
+# === BEGIN FILE: pullmanager/db.py SHA256: 4c6e9bdaec4763054b4311d327766780989eb35649e1ead94235dc6a38a0b8ca SIZE: 11345 ===
 # """Database adapter.
 #
 # pyodbc is imported lazily so the rest of the package -- planning, rendering,
@@ -864,6 +879,7 @@ if __name__ == "__main__":
 #
 # import os
 # from dataclasses import dataclass, field
+# from pathlib import Path
 # from typing import Any, Iterable, Iterator, Sequence
 #
 # DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
@@ -886,6 +902,65 @@ if __name__ == "__main__":
 #             return base
 #         detail = "\n".join(f"  [SQL MESSAGE] {m}" for m in self.server_messages)
 #         return f"{base}\n{detail}"
+#
+#
+# ENV_FILENAME = ".env"
+#
+#
+# def parse_env_file(text: str) -> dict[str, str]:
+#     """Parse KEY=VALUE lines. Deliberately small: the bundle stays stdlib-only."""
+#     values: dict[str, str] = {}
+#     for raw in text.splitlines():
+#         line = raw.strip()
+#         if not line or line.startswith("#"):
+#             continue
+#         if line.lower().startswith("export "):
+#             line = line[len("export "):].lstrip()
+#         if "=" not in line:
+#             continue
+#         key, _, value = line.partition("=")
+#         key = key.strip()
+#         if not key:
+#             continue
+#         value = value.strip()
+#         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+#             value = value[1:-1]
+#         values[key] = value
+#     return values
+#
+#
+# def find_env_file(explicit: str | Path | None = None, *extra: Path) -> Path | None:
+#     """Locate a .env: an explicit path, then the usual places."""
+#     if explicit:
+#         path = Path(explicit)
+#         if not path.is_file():
+#             raise DatabaseError(f"No .env file at {path}")
+#         return path
+#     candidates = [
+#         Path.cwd() / ENV_FILENAME,
+#         Path(__file__).resolve().parent.parent / ENV_FILENAME,
+#         *[Path(p) / ENV_FILENAME for p in extra],
+#     ]
+#     for candidate in candidates:
+#         if candidate.is_file():
+#             return candidate
+#     return None
+#
+#
+# def load_env_file(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]:
+#     """Read a .env into the process environment.
+#
+#     A real environment variable wins over the file unless `override`, which is
+#     what lets a one-off run be redirected without editing the file.
+#     """
+#     found = find_env_file(path)
+#     if found is None:
+#         return {}
+#     values = parse_env_file(found.read_text(encoding="utf-8"))
+#     for key, value in values.items():
+#         if override or key not in os.environ:
+#             os.environ[key] = value
+#     return values
 #
 #
 # @dataclass
@@ -3344,7 +3419,7 @@ if __name__ == "__main__":
 #         self.assertEqual(selection.params, ["Male"])
 #
 # === END FILE: pullmanager/tests/test_batches.py ===
-# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 1e39f445c46b0952540a09c0887b210ad566223b239be4ed607065ade5987be7 SIZE: 10152 ===
+# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 5d570f7802a7d4da112c7049fa9890102a741efd7de3eb35cd47df6174fd8b5d SIZE: 12645 ===
 # """Adapter behaviour, exercised against a fake cursor.
 #
 # pyodbc is not installed on the development machine and there is no database to
@@ -3356,9 +3431,13 @@ if __name__ == "__main__":
 # from __future__ import annotations
 #
 # import unittest
+# from pathlib import Path
 #
 # from ..db import (
 #     DEFAULT_DRIVER,
+#     find_env_file,
+#     load_env_file,
+#     parse_env_file,
 #     DatabaseError,
 #     ResultSet,
 #     Settings,
@@ -3481,6 +3560,69 @@ if __name__ == "__main__":
 #             Settings(projects_server="", projects_database="D").projects_connection_string()
 #         with self.assertRaises(DatabaseError):
 #             Settings(projects_server="S", projects_database="").projects_connection_string()
+#
+#
+# class EnvFileTests(unittest.TestCase):
+#     def setUp(self):
+#         import os
+#         import tempfile
+#
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.dir = Path(self._tmp.name)
+#         self._saved = dict(os.environ)
+#         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self._saved)))
+#
+#     def write(self, text):
+#         path = self.dir / ".env"
+#         path.write_text(text, encoding="utf-8")
+#         return path
+#
+#     def test_parses_the_usual_shapes(self):
+#         parsed = parse_env_file(
+#             "# a comment\n"
+#             "PULLMANAGER_COSMOS_SERVER=COSMOS\n"
+#             "export PULLMANAGER_PROJECTS_SERVER=\"PROJ SRV\"\n"
+#             "PULLMANAGER_UPLOAD_CHUNK = 5000\n"
+#             "\n"
+#             "EMPTY=\n"
+#             "not-an-assignment\n"
+#         )
+#         self.assertEqual(parsed["PULLMANAGER_COSMOS_SERVER"], "COSMOS")
+#         self.assertEqual(parsed["PULLMANAGER_PROJECTS_SERVER"], "PROJ SRV")
+#         self.assertEqual(parsed["PULLMANAGER_UPLOAD_CHUNK"], "5000")
+#         self.assertEqual(parsed["EMPTY"], "")
+#         self.assertNotIn("not-an-assignment", parsed)
+#
+#     def test_loads_into_the_environment(self):
+#         import os
+#
+#         os.environ.pop("PULLMANAGER_COSMOS_SERVER", None)
+#         path = self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n")
+#         load_env_file(path)
+#         self.assertEqual(Settings.from_env().cosmos_server, "FROMFILE")
+#
+#     def test_a_real_environment_variable_wins(self):
+#         import os
+#
+#         os.environ["PULLMANAGER_COSMOS_SERVER"] = "FROMENV"
+#         load_env_file(self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n"))
+#         self.assertEqual(os.environ["PULLMANAGER_COSMOS_SERVER"], "FROMENV")
+#
+#     def test_override_lets_the_file_win(self):
+#         import os
+#
+#         os.environ["PULLMANAGER_COSMOS_SERVER"] = "FROMENV"
+#         load_env_file(self.write("PULLMANAGER_COSMOS_SERVER=FROMFILE\n"), override=True)
+#         self.assertEqual(os.environ["PULLMANAGER_COSMOS_SERVER"], "FROMFILE")
+#
+#     def test_a_named_file_that_is_missing_is_an_error(self):
+#         # Silently ignoring it would surface later as "No server configured".
+#         with self.assertRaises(DatabaseError):
+#             find_env_file(self.dir / "nope.env")
+#
+#     def test_no_env_file_anywhere_is_not_an_error(self):
+#         self.assertEqual(load_env_file(None), {}) if find_env_file() is None else None
 #
 #
 # class BatchSplitTests(unittest.TestCase):

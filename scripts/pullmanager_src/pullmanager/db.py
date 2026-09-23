@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
@@ -33,6 +34,65 @@ class DatabaseError(RuntimeError):
             return base
         detail = "\n".join(f"  [SQL MESSAGE] {m}" for m in self.server_messages)
         return f"{base}\n{detail}"
+
+
+ENV_FILENAME = ".env"
+
+
+def parse_env_file(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE lines. Deliberately small: the bundle stays stdlib-only."""
+    values: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("export "):
+            line = line[len("export "):].lstrip()
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def find_env_file(explicit: str | Path | None = None, *extra: Path) -> Path | None:
+    """Locate a .env: an explicit path, then the usual places."""
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise DatabaseError(f"No .env file at {path}")
+        return path
+    candidates = [
+        Path.cwd() / ENV_FILENAME,
+        Path(__file__).resolve().parent.parent / ENV_FILENAME,
+        *[Path(p) / ENV_FILENAME for p in extra],
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_env_file(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]:
+    """Read a .env into the process environment.
+
+    A real environment variable wins over the file unless `override`, which is
+    what lets a one-off run be redirected without editing the file.
+    """
+    found = find_env_file(path)
+    if found is None:
+        return {}
+    values = parse_env_file(found.read_text(encoding="utf-8"))
+    for key, value in values.items():
+        if override or key not in os.environ:
+            os.environ[key] = value
+    return values
 
 
 @dataclass

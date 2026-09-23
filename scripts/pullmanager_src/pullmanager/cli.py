@@ -105,9 +105,18 @@ def _report_exclusions(left_out, failures) -> None:
 
 
 def execute(manifest: Manifest, args: argparse.Namespace) -> int:
-    from .db import DatabaseError, Settings
+    from .db import DatabaseError, Settings, find_env_file, load_env_file
     from .session import SessionRunner
 
+    try:
+        loaded = load_env_file(args.env)
+    except DatabaseError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    if loaded:
+        print(f"Loaded {len(loaded)} setting(s) from {find_env_file(args.env)}")
+    elif not args.env:
+        print("No .env found; using environment variables and defaults.")
     settings = Settings.from_env()
     mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
     reports = []
@@ -169,6 +178,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Cosmos instance to render OPENQUERY against. Captured per connection at "
              "run time; supply one only for a dry run.",
+    )
+    parser.add_argument(
+        "--env",
+        default=None,
+        help="Path to a .env holding host and database names. Searched in the working "
+             "directory and beside the runtime when not given.",
     )
     parser.add_argument("--retry-failed", action="store_true", help="Reopen failed work.")
     parser.add_argument(
