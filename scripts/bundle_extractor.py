@@ -36,6 +36,10 @@ DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 MANIFEST_FILENAME = ".bundle-manifest.json"
 
+# What a re-extraction does to a file that is already there.
+POLICY_REPLACE = "replace"
+POLICY_SEED = "seed"
+
 
 class BundleError(Exception):
     """Raised when a bundle is malformed, tampered with, or unsafe."""
@@ -210,19 +214,47 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if scratch.exists():
             shutil.rmtree(scratch)
 
+    policies = {entry["path"]: entry.get("policy", POLICY_REPLACE) for entry in manifest["files"]}
+    kept: list[str] = []
+    preserved: list[str] = []
+
     try:
         for section in sections:
-            out_path = staging / section["path"]
+            rel = section["path"]
+            out_path = staging / rel
             out_path.parent.mkdir(parents=True, exist_ok=True)
+            existing = target / rel
+            policy = policies.get(rel, POLICY_REPLACE)
+            shipped = section["content"].encode("utf-8")
+
+            if existing.is_file():
+                current = existing.read_bytes()
+                if policy == POLICY_SEED:
+                    # Yours once it exists. Carry it forward untouched.
+                    out_path.write_bytes(current)
+                    if current != shipped:
+                        kept.append(rel)
+                    continue
+                if current != shipped:
+                    # Replaced, but an edit made here is not simply destroyed.
+                    aside = staging / (rel + ".local")
+                    aside.parent.mkdir(parents=True, exist_ok=True)
+                    aside.write_bytes(current)
+                    preserved.append(rel)
+
             # Explicit bytes so Windows does not translate newlines and break hashes.
-            out_path.write_bytes(section["content"].encode("utf-8"))
+            out_path.write_bytes(shipped)
 
         (staging / MANIFEST_FILENAME).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
 
         # Re-read from disk: proves what landed matches, not just what we held.
+        # Files kept from a previous extraction are exempt, since they are
+        # deliberately not the shipped bytes.
         for section in sections:
+            if section["path"] in kept:
+                continue
             written = (staging / section["path"]).read_bytes()
             if hashlib.sha256(written).hexdigest() != section["sha256"]:
                 raise BundleError(f"Post-write verification failed for {section['path']!r}")
@@ -240,6 +272,10 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if previous.exists() and target.exists():
             shutil.rmtree(previous, ignore_errors=True)
 
+    for rel in kept:
+        print(f"kept       {rel}  (yours; the shipped copy was not applied)")
+    for rel in preserved:
+        print(f"replaced   {rel}  (your previous copy saved as {rel}.local)")
     return [section["path"] for section in sections]
 
 

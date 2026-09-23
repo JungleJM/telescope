@@ -605,38 +605,64 @@ It should not rely solely on planned YAML because partial completion is possible
 The VM cannot pull from git, so everything it needs travels as one file:
 `dist/pullmanager_bundle.py`, built by `scripts/bundle_pullmanager.py`.
 
-Because the split step runs on the VM (walkthrough steps 5 and 6), the bundle
-carries YAML Manager as well as the Pullmanager runtime:
+The bundle is the whole unit, not just the runtime: the split step and the
+authoring UI both run on the VM.
 
 ```text
-runtime/
-  pullmanager.py            entry point
-  pullmanager/              the runtime package and its tests
-  scripts/makeYaml.py       YAML Manager, for validating and splitting
+telescope/
+  pullmanager.py                    Pullmanager entry point
+  pullmanager/                      runtime package and its tests
+  scripts/makeYaml.py               compiler, validator, splitter
+  scripts/yamlmanager.py            the UI
+  scripts/yamlmanager_backend.py
   YAMLs/recipes.yaml
   YAMLs/datadictionary.yaml
-  YAMLs/template.yaml       a starting point
-  .env.example
+  YAMLs/template.yaml
+  .bundle-manifest.json
 ```
 
-The published paths matter: `makeYaml` resolves `YAMLs/` as a sibling of
-`scripts/`, so that layout lets it find its own recipes and dictionary with no
-flags and no knowledge that it was bundled.
+The published paths matter: both `makeYaml` and `yamlmanager` compute their
+project root as the parent of `scripts/`, so this layout lets them find their
+own recipes and dictionary with no flags and no knowledge that they were
+bundled.
 
-Whole pathway on the VM, from one copied file:
+No `.env` ships and none is needed. Both hosts are DNS aliases with defaults
+and the database names come from the manifest, so there is nothing to
+configure. `COSMOS` versus `COSMOS_SneakPeek` versus `Dual` is chosen in the
+template's `cosmos_vars`. Overrides exist as `PULLMANAGER_*` environment
+variables if a host ever changes.
+
+### Updating Is One Way, And Never Destroys Work
+
+The bundle flows Mac to VM only. Each bundled file carries a policy that
+decides what a re-extraction does when the file is already there:
+
+| Policy | Applies to | On re-extract |
+| --- | --- | --- |
+| `replace` | all code, `recipes.yaml`, `datadictionary.yaml` | shipped copy wins; a locally modified file is first saved as `<name>.local` |
+| `seed` | `YAMLs/template.yaml` | written only when absent; yours thereafter |
+
+So recipes and the dictionary stay authoritative on the Mac, but an edit made
+on the VM is never simply gone — it is set aside and reported. Extraction
+prints exactly what it kept and what it replaced.
+
+Anything not in the bundle is untouched, so **your own templates and split
+folders should live outside the extracted tree**.
+
+### Whole Pathway On The VM
 
 ```bash
 python pullmanager_bundle.py --verify-bundle
-python pullmanager_bundle.py --extract ./runtime
+python pullmanager_bundle.py --extract ./telescope
 
-python runtime/scripts/makeYaml.py --template mytemplate.yaml --export-split --out-dir ./split
-python runtime/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
-python runtime/pullmanager.py --execute  split/pullmanifest.yaml
+# author or edit, in a browser
+python telescope/scripts/yamlmanager.py --serve
+
+# or straight to the command line
+python telescope/scripts/makeYaml.py --template mytemplate.yaml --export-split --out-dir ./split
+python telescope/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
+python telescope/pullmanager.py --execute  split/pullmanifest.yaml
 ```
-
-No `.env` is required: both hosts are DNS aliases with defaults, and the
-database names come from the manifest. `COSMOS` versus `COSMOS_SneakPeek`
-versus `Dual` is chosen in the template's `cosmos_vars`, not on the VM.
 
 ### Upload Files Travel With The Split Folder
 
@@ -647,8 +673,7 @@ and repoints `file_loc` at it. The split folder is therefore self-contained,
 and is the unit to copy or archive.
 
 The **pre-YAML is not** self-contained in the same way: it still references
-upload files relative to wherever it was written. Moving a pre-YAML means
-moving its upload files alongside it.
+upload files relative to wherever it was written.
 
 ## Implementation Phases
 

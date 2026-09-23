@@ -530,6 +530,36 @@ The bundle grows from 211 KB to 451 KB, most of it the data dictionary. Worth
 it: the alternative is a second delivery mechanism for the files without which
 the first one cannot be used.
 
+### D42. Re-extraction never destroys VM-side work
+
+**Context.** The bundle now carries the authoring UI, and the user edits YAML
+on the VM. Extraction replaces its target directory wholesale, so an update
+would have silently deleted that work.
+
+**Decision.** Every bundled file carries a policy. `replace` files are updated,
+but a locally modified one is first set aside as `<name>.local`. `seed` files
+— currently only `template.yaml` — are written when absent and left alone
+after. Extraction reports both.
+
+**Consequences.** Updates stay one-way and recipes and the dictionary stay
+authoritative on the Mac, without an edit made on the VM being lost. It also
+suits the documented VM patch workflow, where a file is hand-fixed on the VM
+and copied back: the fix survives the next update as `.local`.
+
+Anything not bundled is untouched, so user templates and split folders belong
+outside the extracted tree.
+
+### D43. Do not ship a `.env` example
+
+**Context.** `.env.example` was bundled alongside the runtime.
+
+**Decision.** Removed.
+
+**Consequences.** Nothing needs configuring — both hosts are DNS aliases with
+defaults and the database names come from the manifest — so shipping an
+example would only suggest otherwise. The `PULLMANAGER_*` variables still work
+for an override.
+
 ## Still Open
 
 Recorded so the absence of a decision is visible.

@@ -45,13 +45,23 @@ DEFAULT_OUTPUT = REPO_ROOT / "dist" / "pullmanager_bundle.py"
 # makeYaml's own default paths resolve inside the extracted tree without it
 # knowing it was bundled: it expects <root>/scripts/makeYaml.py alongside
 # <root>/YAMLs/.
-COMPANION_FILES: tuple[tuple[Path, str], ...] = (
-    (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py"),
-    (REPO_ROOT / "YAMLs" / "recipes.yaml", "YAMLs/recipes.yaml"),
-    (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml"),
-    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml"),
-    (REPO_ROOT / ".env.example", ".env.example"),
+# Policies decide what a re-extraction does to a file that already exists:
+#   replace  the shipped copy wins, but a locally modified one is kept aside
+#            first, so an edit made on the VM is never simply destroyed
+#   seed     written only when absent; yours thereafter
+COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
+    (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
+    (REPO_ROOT / "scripts" / "yamlmanager.py", "scripts/yamlmanager.py", "replace"),
+    (REPO_ROOT / "scripts" / "yamlmanager_backend.py", "scripts/yamlmanager_backend.py", "replace"),
+    # Authored on the Mac and flowing one way, so the shipped copy wins.
+    (REPO_ROOT / "YAMLs" / "recipes.yaml", "YAMLs/recipes.yaml", "replace"),
+    (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml", "replace"),
+    # A starting point, not a managed file. Edit it on either side.
+    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml", "seed"),
 )
+# .env is deliberately not shipped. Both hosts are DNS aliases with defaults
+# and the database names come from the manifest, so there is nothing to
+# configure; shipping an example would only suggest otherwise.
 
 BUNDLE_FORMAT_VERSION = 1
 FUTURE_IMPORT = "from __future__ import annotations"
@@ -98,33 +108,33 @@ def encode_payload_lines(text: str) -> list[str]:
     return ["# " + line if line else "#" for line in text.split("\n")]
 
 
-def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str]]:
-    """Every file the bundle carries, as (source, published path)."""
+def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str, str]]:
+    """Every file the bundle carries, as (source, published path, policy)."""
     files = source_files(root)
     if not files:
         raise BundleError(f"No Python sources found under {root}")
-    pairs = [(path, path.relative_to(root).as_posix()) for path in files]
-    for source, published in COMPANION_FILES:
+    triples = [(path, path.relative_to(root).as_posix(), "replace") for path in files]
+    for source, published, policy in COMPANION_FILES:
         if not source.is_file():
             raise BundleError(f"Companion file missing: {source}")
-        pairs.append((source, published))
+        triples.append((source, published, policy))
     seen: set[str] = set()
-    for _, published in pairs:
+    for _, published, _policy in triples:
         if published in seen:
             raise BundleError(f"Two files would publish to {published}")
         seen.add(published)
-    return sorted(pairs, key=lambda pair: pair[1])
+    return sorted(triples, key=lambda item: item[1])
 
 
 def build_sections(root: Path = SOURCE_ROOT) -> tuple[list[dict], list[str]]:
     entries: list[dict] = []
     lines: list[str] = []
-    for path, published in bundled_files(root):
+    for path, published, policy in bundled_files(root):
         rel = safe_relpath(published)
         text = read_source(path)
         raw = text.encode("utf-8")
         sha = hashlib.sha256(raw).hexdigest()
-        entries.append({"path": rel, "sha256": sha, "size": len(raw)})
+        entries.append({"path": rel, "sha256": sha, "size": len(raw), "policy": policy})
         lines.append(f"# === BEGIN FILE: {rel} SHA256: {sha} SIZE: {len(raw)} ===")
         lines.extend(encode_payload_lines(text))
         lines.append(f"# === END FILE: {rel} ===")

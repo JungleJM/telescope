@@ -37,7 +37,7 @@ from bundle_pullmanager import (  # noqa: E402
 
 # Published path -> the file it came from. Companion files live outside the
 # source tree, so a published path no longer implies SOURCE_ROOT / path.
-SOURCES = {published: source for source, published in bundled_files()}
+SOURCES = {published: source for source, published, _policy in bundled_files()}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -122,14 +122,14 @@ class BuildTests(BundleTestCase):
         # reads travel with the runtime.
         sections, _ = read_bundle(self.bundle)
         published = {section["path"] for section in sections}
-        for _, expected in COMPANION_FILES:
+        for _, expected, _policy in COMPANION_FILES:
             with self.subTest(path=expected):
                 self.assertIn(expected, published)
 
     def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
         # makeYaml resolves YAMLs/ as a sibling of scripts/, so the published
         # layout has to preserve that or its defaults break once extracted.
-        published = {p for _, p in COMPANION_FILES}
+        published = {p for _, p, _policy in COMPANION_FILES}
         self.assertIn("scripts/makeYaml.py", published)
         self.assertTrue(any(p.startswith("YAMLs/") for p in published))
 
@@ -147,6 +147,46 @@ class BuildTests(BundleTestCase):
                     section["content"].encode("utf-8"),
                     SOURCES[section["path"]].read_bytes(),
                 )
+
+
+class ExtractionPolicyTests(BundleTestCase):
+    """A re-extraction must never quietly destroy work done on the VM."""
+
+    def extract_twice(self, rel, edited):
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        (target / rel).write_text(edited, encoding="utf-8")
+        extract(self.bundle, target)
+        return target
+
+    def test_a_seed_file_is_yours_once_it_exists(self):
+        target = self.extract_twice("YAMLs/template.yaml", "# my edited template\n")
+        self.assertEqual(
+            (target / "YAMLs/template.yaml").read_text(encoding="utf-8"),
+            "# my edited template\n",
+        )
+
+    def test_a_replaced_file_is_updated_but_the_old_one_is_kept(self):
+        target = self.extract_twice("YAMLs/datadictionary.yaml", "# edited on the VM\n")
+        shipped = (SOURCES["YAMLs/datadictionary.yaml"]).read_bytes()
+        self.assertEqual((target / "YAMLs/datadictionary.yaml").read_bytes(), shipped)
+        self.assertEqual(
+            (target / "YAMLs/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            "# edited on the VM\n",
+        )
+
+    def test_unmodified_files_leave_no_local_copy(self):
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        extract(self.bundle, target)
+        self.assertEqual(list(target.rglob("*.local")), [])
+
+    def test_code_is_always_replaced(self):
+        target = self.extract_twice("pullmanager/models.py", "# tampered\n")
+        self.assertEqual(
+            (target / "pullmanager/models.py").read_bytes(),
+            SOURCES["pullmanager/models.py"].read_bytes(),
+        )
 
 
 class TamperTests(BundleTestCase):
