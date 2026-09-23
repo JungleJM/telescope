@@ -1,9 +1,12 @@
+-- NOTE: transcribed from the real generated script. Earlier copies of this
+-- fixture carried OCR damage that was mistaken for generator bugs; see
+-- pullmanager_contracts.md.
 -- Note: Cosmos-side OPENQUERY staging script written by generative AI
 
 USE COSMOS;  -- COSMOS or COSMOS_SneakPeek as chosen in YAML
 
 -- Server name for use in OPENQUERY (Projects script)
--- SELECT @@SERVERNAME AS CosmosServerName;
+SELECT @@SERVERNAME AS CosmosServerName;
 
 -- No upload_cohorts defined; no upload switch variables declared.
 
@@ -58,7 +61,7 @@ BEGIN
         COUNT_BIG(1) AS [PKTable2RowCount]
     FROM dbo.PatientDim AS p;
 
-    -- No dedup keys configured; using raw staged cohort rows as-is.
+    -- No dedup_keys configured; using raw staged cohort rows as-is.
 
     -- Raw staging from Cosmos (no deduplication)
     INSERT INTO ##JVM_PKTable2 (PatientDurableKey)
@@ -112,7 +115,7 @@ BEGIN
         COUNT_BIG(1) AS [PKTableRowCount]
     FROM dbo.DiagnosisEventFact AS def;
 
-    -- No dedup keys configured; using raw staged cohort rows as-is.
+    -- No dedup_keys configured; using raw staged cohort rows as-is.
 
     -- Raw staging from Cosmos (no deduplication)
     INSERT INTO ##JVM_PKTable (DiagnosisEventKey, PatientDurableKey, EncounterKey,
@@ -134,8 +137,9 @@ BEGIN
         AND dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')
         AND (
             dt.Value LIKE 'K50.%'
+            OR dt.Value = 'K50'
             OR dt.Value LIKE 'K51.%'
-            OR dt.Value LIKE 'K51'
+            OR dt.Value = 'K51'
         )
         AND def.DiagnosisEventKey IS NOT NULL
         AND def.PatientDurableKey IS NOT NULL

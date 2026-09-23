@@ -194,12 +194,16 @@ class Session(Node):
         return self.runtime.get("epoch")
 
     def begin_epoch(self, linked_server: str | None = None) -> str:
-        """Open a new server connection scope for this session."""
+        """Open a new server connection scope for this session.
+
+        `linked_server` is always overwritten, never left in place: the Cosmos
+        instance name changes on every connection, so carrying the previous
+        one forward would point later SQL at a server that is no longer ours.
+        """
         epoch = new_epoch()
         self.runtime["epoch"] = epoch
         self.runtime["opened_at"] = now_iso()
-        if linked_server is not None:
-            self.runtime["linked_server"] = linked_server
+        self.runtime["linked_server"] = linked_server
         return epoch
 
     def stale_children(self) -> list[Node]:

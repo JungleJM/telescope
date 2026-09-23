@@ -1,5 +1,35 @@
 # YAML Processing Notes
 
+> **Retraction, and why this document is now mostly about one real bug.**
+>
+> This note was written against transcriptions of `inputSimple.yaml`,
+> `examplecos.sql` and `exampleproj.sql` that carried OCR damage. Comparing
+> them against the real files showed that nearly every "mismatch" recorded
+> here was a transcription artifact, not generator behavior. The fixtures have
+> since been corrected. Retracted findings:
+>
+> | Was recorded as | Actually |
+> | --- | --- |
+> | `USE COSMOS` vs `cosmos_db: COSMOS_Sneak` | YAML says `COSMOS`. No mismatch. |
+> | `TOP (500)` vs `stop_at_for_pk_table: 50` | YAML says `500`. No mismatch. |
+> | `min_date_key` 20210101 rendered as 20200101 | YAML says `20200101`. Substitution is correct. |
+> | YAML `IsDeleted` rewritten to `_IsDeleted` | YAML says `_IsDeleted`. No column rewriting exists. |
+> | `p.Type` silently corrected to `dt.Type`, `ICD-10-CA` added | YAML says `dt.Type` with all three codes. No correction. |
+> | Exact `K50` dropped; `K51` became a wildcard-less `LIKE` | The full four-term group is preserved verbatim. |
+> | `print_md` as a legacy option name | The option is `printout_md`. The legacy-name problem does not exist. |
+> | `#UVM_` as a possible legacy temp prefix | OCR damage. `##JVM_` is the only prefix. |
+> | Runtime server discovery commented out | `SELECT @@SERVERNAME` is live in the real script. |
+> | `exampleproj.sql` unrelated to this YAML | Replaced with the real matching script. |
+>
+> What survives is the dedup finding below, which is real and confirmed in two
+> places in the generated SQL. The renderer analysis (grouped `WHERE` handling,
+> non-null injection, placeholder substitution, staging pattern, dual row
+> counts) also stands, and is now better supported: the generator turned out to
+> be faithful, so its output is a usable specification.
+>
+> Current contracts live in `pullmanager_contracts.md`.
+
+
 This note analyzes `inputSimple.yaml` and the currently available example SQL files in `QMDs/pullmanager/`.
 
 At the time of the first read, both `examplecos.sql` and `exampleproj.sql` were empty. Both have now been populated/analyzed, with `exampleproj.sql` treated as a structural specimen from another project rather than a matching pair for `inputSimple.yaml`.
@@ -68,7 +98,7 @@ The old system likely keyed much practical behavior off `dest_table`, not `name`
 
 For manifest/session IDs, `dest_table` or explicit stable IDs are safer than `name` alone.
 
-### `dedup_key` versus `dedup_keys`
+### `dedup_key` versus `dedup_keys` (CONFIRMED REAL)
 
 The example uses:
 
@@ -92,7 +122,7 @@ Recommended behavior:
 - Emit a warning or migration note.
 - Keep canonical output using `dedup_keys`.
 
-### `print_md` versus `printout_md`
+### `printout_md` (retracted finding)
 
 The example uses:
 
@@ -111,7 +141,7 @@ This is another likely legacy/schema mismatch.
 
 Because markdown run reports are now less central, this may not matter operationally. But if old templates are imported, YAML Manager should either normalize both names or clearly report that `print_md` is legacy/ignored.
 
-### `#UVM_PKTable2` join target
+### `##JVM_PKTable2` join target (retracted finding)
 
 The second cohort joins:
 
@@ -232,7 +262,7 @@ This confirms that the actual temp table convention in this example is `##JVM_`,
 
 ## Concrete YAML to Cosmos SQL comparison
 
-### Database selection
+### Database selection (retracted finding)
 
 YAML says:
 
@@ -265,7 +295,7 @@ Pullmanager should decide where server identity is captured:
 
 It should not be an accidental commented line.
 
-### Row limits
+### Row limits (retracted finding)
 
 YAML says:
 
@@ -313,7 +343,7 @@ def.StartDateKey BETWEEN 20200101 AND 20260601
 
 The max date matches; the min date does not. This again points to either manual edits or stale generator state. Date placeholder substitution should be validated by tests because it is easy to miss in visual review.
 
-### Deletion column names
+### Deletion column names (retracted finding)
 
 YAML uses:
 
@@ -333,7 +363,7 @@ dt._IsDeleted = 0
 
 This may be an intentional schema correction, but it is not a direct rendering of the YAML. If this kind of column-name normalization exists, it should be explicit. If not, this is a sign the SQL example was manually adjusted.
 
-### Diagnosis terminology type filter
+### Diagnosis terminology type filter (retracted finding)
 
 YAML says:
 
@@ -354,7 +384,7 @@ The refactor should not silently rewrite arbitrary aliases. It should either:
 - Render exactly what the YAML says.
 - Or perform explicit recipe/schema validation and report a correction.
 
-### Diagnosis code value filter
+### Diagnosis code value filter (retracted finding)
 
 YAML says:
 
@@ -399,7 +429,7 @@ def.StartDateKey IS NOT NULL
 
 This matches the old generator behavior for `nullable: false` columns and should be retained.
 
-### Dependency temp table naming
+### Dependency temp table naming (retracted finding)
 
 YAML references:
 
@@ -426,7 +456,7 @@ join_generated:
 
 The exact syntax can differ, but the core idea is that the renderer should own generated temp-table names.
 
-### Dedup behavior
+### Dedup behavior (CONFIRMED REAL)
 
 YAML contains:
 

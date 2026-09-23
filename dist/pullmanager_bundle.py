@@ -278,7 +278,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "254454b77f6d25d96c3d3980a2e2ad7dab6df2844535e3938b126e3a79150422",
+  "content_id": "a0b0f3f031bdf360b150fcc0fb25d22adbed56c83bcec2732cb3b3b9afc868d2",
   "file_count": 11,
   "files": [
     {
@@ -303,8 +303,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/manifest.py",
-      "sha256": "a7080258227bc2635cc7c78a6e211354c70b0717c118a29187135eafac3a539b",
-      "size": 11009
+      "sha256": "1ccaab95c26ba0f76151c64e58e2b5988e60558ae06a9ec1f4e082df23ca4508",
+      "size": 11210
     },
     {
       "path": "pullmanager/models.py",
@@ -323,8 +323,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
-      "sha256": "33e49a044e8d1ec3d82c66ff1a221a08de8db4b05e1866ab0bba220e791452ad",
-      "size": 14238
+      "sha256": "78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7",
+      "size": 14639
     },
     {
       "path": "pullmanager/tests/test_models.py",
@@ -457,7 +457,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/manifest.py SHA256: a7080258227bc2635cc7c78a6e211354c70b0717c118a29187135eafac3a539b SIZE: 11009 ===
+# === BEGIN FILE: pullmanager/manifest.py SHA256: 1ccaab95c26ba0f76151c64e58e2b5988e60558ae06a9ec1f4e082df23ca4508 SIZE: 11210 ===
 # """Load, mutate, and write back `pullmanifest.yaml`.
 #
 # The manifest is YAML Manager's plan on the way in and Pullmanager's status
@@ -654,12 +654,16 @@ if __name__ == "__main__":
 #         return self.runtime.get("epoch")
 #
 #     def begin_epoch(self, linked_server: str | None = None) -> str:
-#         """Open a new server connection scope for this session."""
+#         """Open a new server connection scope for this session.
+#
+#         `linked_server` is always overwritten, never left in place: the Cosmos
+#         instance name changes on every connection, so carrying the previous
+#         one forward would point later SQL at a server that is no longer ours.
+#         """
 #         epoch = new_epoch()
 #         self.runtime["epoch"] = epoch
 #         self.runtime["opened_at"] = now_iso()
-#         if linked_server is not None:
-#             self.runtime["linked_server"] = linked_server
+#         self.runtime["linked_server"] = linked_server
 #         return epoch
 #
 #     def stale_children(self) -> list[Node]:
@@ -1034,7 +1038,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 33e49a044e8d1ec3d82c66ff1a221a08de8db4b05e1866ab0bba220e791452ad SIZE: 14238 ===
+# === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7 SIZE: 14639 ===
 # """Manifest loading, validation, status transitions, and round-tripping."""
 #
 # from __future__ import annotations
@@ -1275,6 +1279,14 @@ if __name__ == "__main__":
 #         self.assertEqual(session.epoch, epoch)
 #         self.assertEqual(session.runtime["linked_server"], "et4003vpdsq1032")
 #         self.assertIsNotNone(session.runtime["opened_at"])
+#
+#     def test_new_epoch_clears_a_stale_linked_server(self):
+#         # The Cosmos instance name changes every connection, so a value from a
+#         # previous epoch must never survive into the next one.
+#         session = sample_manifest().sessions[0]
+#         session.begin_epoch(linked_server="et4003vpdsql032")
+#         session.begin_epoch()
+#         self.assertIsNone(session.runtime["linked_server"])
 #
 #     def test_each_epoch_is_distinct(self):
 #         session = sample_manifest().sessions[0]

@@ -1,18 +1,20 @@
+# NOTE: transcribed from the real file. Earlier copies of this fixture carried
+# OCR damage that was mistaken for generator bugs; see pullmanager_contracts.md.
 # Cosmos variables
 project_db: PROJECTD93A5E7  # Must start with 'PROJECTD...'
-cosmos_db: COSMOS_Sneak    # COSMOS or COSMOS_Sneak
+cosmos_db: COSMOS          # COSMOS or COSMOS_SneakPeek
 
 # Initial variables, in format YYYYMMDD
-min_date_key: 20210101     # matches @minDiagStartDateKey in HaT_info.sql
+min_date_key: 20200101     # matches @minDiagStartDateKey in HaT_info.sql
 max_date_key: 20260601
 
 # Test Vars
 test_options:
-  smallest: true            # If true, will just make a table up to 'stop_at' number
+  smallset: true            # If true, will just make a table up to 'stop_at' number
   # of rows for the PKTable
-  stop_at_for_pk_table: 50  # limits to SELECT TOP(value)
+  stop_at_for_pk_table: 500  # limits to SELECT TOP(value)
   stop_at_for_non_pk_tables: 0  # 0 or blank means 'don't stop at'
-  print_md: true            # Can print out a Markdown of the run and its result
+  printout_md: true            # Can print out a Markdown of the run and its result
                             # (rows, time, etc). in the QueryGenerator root
 
 # Data Science Variables
@@ -46,7 +48,7 @@ cohorts:
       from: "PatientDim AS p"
       join: []
       where:
-        - "p.IsDeleted = 0"
+        - "p._IsDeleted = 0"
         - "p.IsCurrent = 1"
         - "p.UseInCosmosAnalytics_X = 1"
 
@@ -93,12 +95,12 @@ cohorts:
       from: "DiagnosisEventFact AS def"
       join:
         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
-        - "INNER JOIN #UVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey"
+        - "INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey"
       where:
-        - "def.IsDeleted = 0"
-        - "dt.IsDeleted = 0"
+        - "def._IsDeleted = 0"
+        - "dt._IsDeleted = 0"
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-        - "p.Type IN ('ICD-10-AM', 'ICD-10-CM')"  # restrict to ICD-10
+        - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM')"  # restrict to ICD-10
         - "( dt.Value LIKE 'K50.%'"
         - "  OR dt.Value = 'K50'"
         - "  OR dt.Value LIKE 'K51.%'"

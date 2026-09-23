@@ -239,6 +239,14 @@ class EpochTests(unittest.TestCase):
         self.assertEqual(session.runtime["linked_server"], "et4003vpdsq1032")
         self.assertIsNotNone(session.runtime["opened_at"])
 
+    def test_new_epoch_clears_a_stale_linked_server(self):
+        # The Cosmos instance name changes every connection, so a value from a
+        # previous epoch must never survive into the next one.
+        session = sample_manifest().sessions[0]
+        session.begin_epoch(linked_server="et4003vpdsql032")
+        session.begin_epoch()
+        self.assertIsNone(session.runtime["linked_server"])
+
     def test_each_epoch_is_distinct(self):
         session = sample_manifest().sessions[0]
         self.assertNotEqual(session.begin_epoch(), session.begin_epoch())

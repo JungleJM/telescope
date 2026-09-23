@@ -475,6 +475,81 @@ Row counts were recovered by inspecting result-set column names
 result sets, with a warning if none appeared. Pullmanager reads telemetry from
 a declared contract tied to manifest ids instead.
 
+## Getting Data Up To Cosmos
+
+There is **no linked server from Cosmos back to Projects**. Cosmos can be read
+from Projects (`OPENQUERY([<runtime instance>], ...)`) but not the reverse, so
+every upload — CSV cohorts, `dbtable` cohorts, and PK restoration on resume —
+has to go up through the client.
+
+### Not Literal INSERT ... VALUES
+
+The old upload path built one enormous statement:
+
+```sql
+INSERT INTO ##JVM_IBDMedicationKeys ([MedicationKey], ...) VALUES
+('46', 'RISANKIZUMAB-RZAA', ...),
+('403', 'HUMIRA(CF) PEDIATRIC CROHN''S STARTER ...', ...),
+```
+
+T-SQL caps a table value constructor at **1000 rows**, which is the "can't do
+more than 1000" error. Chunking the literal SQL into 1000-row statements works
+but means megabytes of generated text, hand-rolled quote escaping, and a
+separate `NULL` special case.
+
+### Use Parameterized Bulk Insert
+
+`pyodbc` sends parameter arrays instead, which is not a table value constructor
+and so is not subject to the 1000-row cap:
+
+```python
+cursor.fast_executemany = True
+cursor.executemany(
+    "INSERT INTO ##JVM_ClientPK (PatientDurableKey) VALUES (?)",
+    rows,                       # an iterable of tuples
+)
+```
+
+This is faster than row-by-row by roughly an order of magnitude, and because
+values are bound rather than interpolated there is no quote escaping to get
+wrong, no injection surface, and `None` maps to `NULL` without a special case.
+
+Two things to respect:
+
+- **Chunk anyway**, at roughly 10k-50k rows per call. `fast_executemany`
+  pre-allocates buffers sized by the *declared* column width times the batch
+  size, so memory grows with both.
+- That allocation is a second, concrete cost of over-wide columns: a blanket
+  `VARCHAR(900)` multiplies the buffer for every string column in every upload
+  batch, whatever the data actually contains.
+
+### PK Restoration On Resume
+
+This is also how a resume rebuilds the PK without re-querying Cosmos: select
+the needed keys from the permanent Projects table, and push them up with the
+same bulk insert.
+
+```text
+SELECT <keys> FROM <project_db>.dbo.<pk_table>
+    WHERE <batch predicate> ORDER BY <keys> OFFSET n ROWS FETCH NEXT m ROWS ONLY
+  -> client
+  -> executemany into ##JVM_<pk_table>
+```
+
+The batch predicate is still evaluated locally against a stable, permanent
+table, so only the keys for the batch being run move. The loss versus a linked
+server is that rows transit the client; PK tables are key columns only, so this
+is small.
+
+## Runtime Instance Name Is Never Cached
+
+The Cosmos instance that `SELECT @@SERVERNAME` returns **changes on every
+connection**. It is therefore captured per epoch and stored in
+`session.runtime.linked_server`, and `begin_epoch()` always overwrites it —
+including to `None` when no value is supplied — so a name from a previous
+connection can never be read back and used to build `OPENQUERY` SQL pointing
+at a server that is no longer ours.
+
 ## Data Dictionary Validation
 
 `YAMLs/datadictionary.yaml` is the source of truth for column types. Authoring
@@ -538,9 +613,22 @@ settled above.
 
 Settled authoring rules:
 
-- Legacy `dedup_key` (singular) is a hard error, not a silent normalization.
-  The old generator accepted only `dedup_keys` and quietly emitted no dedup,
-  which changes row counts invisibly.
+- `dedup_keys` is canonical and is a list of lists, so a single key is
+  `dedup_keys: [[DiagnosisEventKey]]`. Legacy `dedup_key` is **accepted and
+  normalized with a warning**, not rejected. Reversed from an earlier decision
+  to hard-error: the failure being guarded against is the old generator
+  silently emitting no dedup at all, and accepting the typo while saying so
+  prevents that outcome, where refusing the file only moves the friction.
+- `stop_at_for_pk_table` limits the **root** PK cohort only — the one that
+  establishes the key population and joins no other generated temp. Downstream
+  PK-typed cohorts inherit the restriction by joining it, so applying the limit
+  to them as well compounds it into an unrepresentative sample. The old
+  generator applied it to every PK-typed cohort.
+- `stop_at_for_non_pk_tables` is dead and should warn if present.
+- Schema qualification is applied consistently to `from` and `join`, and only
+  where absent: a reference that already contains a dot, or begins with `#` or
+  `##`, is left alone, so `dbo.dbo.` and a qualified temp table are both
+  impossible.
 - `#UVM_` in `inputSimple.yaml` is OCR damage. The only temp prefix is `##JVM_`.
 - `print_md` / `printout_md` are dead: the manifest is the status system and
   Pullmanager writes no markdown run report. Importing a template that sets
