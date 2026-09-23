@@ -930,6 +930,211 @@ def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], resu
     return normalized
 
 
+# =============================================================================
+# Data dictionary validation
+# =============================================================================
+
+
+def default_datadictionary_path() -> Path:
+    return project_root() / "YAMLs" / "datadictionary.yaml"
+
+
+# Dictionary types are abstract and annotated ("bigint (foreign key to ...)");
+# cohorts declare T-SQL. Compare families, not literals. Widening is accepted
+# because it cannot lose data; narrowing is not.
+TYPE_FAMILIES: dict[str, set[str]] = {
+    "bigint": {"BIGINT"},
+    "integer": {"INT", "SMALLINT", "TINYINT", "BIGINT"},
+    "string": {"VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "TEXT", "NTEXT"},
+    "boolean": {"BIT"},
+    "numeric": {"DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY", "SMALLMONEY"},
+    "datetime": {"DATETIME", "DATETIME2", "SMALLDATETIME", "DATE"},
+    "date/datetime": {"DATE", "DATETIME", "DATETIME2", "SMALLDATETIME"},
+    "date": {"DATE", "DATETIME", "DATETIME2"},
+    "time": {"TIME"},
+}
+
+# `PatientDim AS p`, `INNER JOIN X AS y ON ...`, `BirthFact as bf`
+_ALIAS_PATTERN = re.compile(
+    # Braces are allowed so an unsubstituted `##JVM_{{PKTable}}` still binds
+    # its alias, rather than looking like an undeclared one.
+    r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
+    re.IGNORECASE,
+)
+# Only a bare `alias.Column` source can be resolved to a dictionary entry.
+_SIMPLE_SOURCE = re.compile(r"^(?P<alias>\w+)\.(?P<column>\w+)$")
+
+
+def dictionary_family(raw_type: Any) -> str:
+    """`bigint (foreign key to PatientDim.DurableKey)` -> `bigint`."""
+    return str(raw_type or "").split("(")[0].strip().lower()
+
+
+def tsql_base_type(declared: Any) -> str:
+    """`VARCHAR(400)` -> `VARCHAR`."""
+    return str(declared or "").split("(")[0].strip().upper()
+
+
+def is_generated_reference(table: str) -> bool:
+    """Temp tables and unresolved placeholders are not dictionary entries."""
+    return table.startswith("#") or "{{" in table
+
+
+def filter_text_parts(cohort: dict[str, Any]) -> list[str]:
+    block = cohort.get("filter") or {}
+    parts: list[str] = []
+    for key in ("from", "join"):
+        value = block.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, list):
+            parts.extend(str(item) for item in value)
+    return parts
+
+
+def cohort_aliases(cohort: dict[str, Any]) -> dict[str, str]:
+    """Map each alias declared in `from`/`join` to its table."""
+    aliases: dict[str, str] = {}
+    for part in filter_text_parts(cohort):
+        for match in _ALIAS_PATTERN.finditer(part):
+            table = match.group("table").strip("[]")
+            aliases[match.group("alias")] = table
+    return aliases
+
+
+def validate_data_dictionary(
+    cohorts: list[dict[str, Any]],
+    dictionary: dict[str, Any] | None,
+    result: CompileResult,
+) -> None:
+    """Check every cohort column against the data dictionary.
+
+    An unknown table is a hard error rather than a warning: it usually means a
+    table name was invented or left as pseudocode, and the dictionary is meant
+    to stay complete, so the fix is to add the table rather than route around
+    the check.
+    """
+    if not dictionary:
+        return
+
+    for cohort in cohorts:
+        if not isinstance(cohort, dict):
+            continue
+        label = str(cohort.get("dest_table") or cohort.get("name") or "cohort")
+        aliases = cohort_aliases(cohort)
+
+        for table in sorted(set(aliases.values())):
+            if is_generated_reference(table):
+                continue
+            if table not in dictionary:
+                result.error(
+                    "unknown_table",
+                    f"Table `{table}` is not in the data dictionary. Add it to "
+                    f"YAMLs/datadictionary.yaml, or correct the name.",
+                    label,
+                )
+
+        for column in cohort.get("columns") or []:
+            if not isinstance(column, dict):
+                continue
+            source = str(column.get("source") or "").strip()
+            if not source:
+                continue
+            match = _SIMPLE_SOURCE.match(source)
+            if not match:
+                result.warn(
+                    "dd_source_not_checked",
+                    f"Source `{source}` is not a plain `alias.Column`, so its type "
+                    f"cannot be checked against the data dictionary.",
+                    label,
+                )
+                continue
+
+            alias, column_name = match.group("alias"), match.group("column")
+            table = aliases.get(alias)
+            if table is None:
+                result.error(
+                    "unknown_alias",
+                    f"Source `{source}` uses alias `{alias}`, which is not declared "
+                    f"in this cohort's `from` or `join`.",
+                    label,
+                )
+                continue
+            if is_generated_reference(table) or table not in dictionary:
+                continue
+
+            dd_columns = (dictionary[table] or {}).get("columns") or {}
+            if column_name not in dd_columns:
+                result.error(
+                    "unknown_column",
+                    f"Column `{column_name}` is not listed under `{table}` in the "
+                    f"data dictionary. Check the alias and the spelling.",
+                    label,
+                )
+                continue
+
+            declared = column.get("type")
+            if not declared:
+                continue
+            family = dictionary_family((dd_columns[column_name] or {}).get("type"))
+            accepted = TYPE_FAMILIES.get(family)
+            if accepted is None:
+                result.warn(
+                    "dd_unknown_family",
+                    f"Data dictionary type `{family}` for `{table}.{column_name}` is "
+                    f"not a family this checker knows, so `{declared}` was not verified.",
+                    label,
+                )
+                continue
+            if tsql_base_type(declared) not in accepted:
+                result.error(
+                    "dd_type_mismatch",
+                    f"`{source}` is declared `{declared}`, but the data dictionary "
+                    f"says `{table}.{column_name}` is "
+                    f"`{(dd_columns[column_name] or {}).get('type')}`.",
+                    label,
+                )
+
+
+_DATADICT_CACHE: dict[tuple[str, float], dict[str, Any]] = {}
+
+
+def load_datadictionary(path: str | Path | None, result: CompileResult) -> dict[str, Any] | None:
+    """Load the dictionary, warning rather than failing when it is absent.
+
+    Cached by path and mtime: it is a few thousand lines and is otherwise
+    reparsed on every compile, including once per test.
+    """
+    dict_path = Path(path) if path else default_datadictionary_path()
+    if not dict_path.is_file():
+        result.warn(
+            "datadictionary_missing",
+            f"No data dictionary at {dict_path}; column types were not verified.",
+            str(dict_path),
+        )
+        return None
+    cache_key = (str(dict_path.resolve()), dict_path.stat().st_mtime)
+    cached = _DATADICT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        doc = load_yaml(dict_path) or {}
+    except Exception as exc:
+        result.warn("datadictionary_unreadable", str(exc), str(dict_path))
+        return None
+    entries = doc.get("DataDictionary") if isinstance(doc, dict) else None
+    if not isinstance(entries, dict):
+        result.warn(
+            "datadictionary_malformed",
+            f"{dict_path} has no `DataDictionary` mapping; column types were not verified.",
+            str(dict_path),
+        )
+        return None
+    _DATADICT_CACHE[cache_key] = entries
+    return entries
+
+
+
 def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
@@ -1014,6 +1219,7 @@ def compile_yaml(
     suffix: str = OUTPUT_SUFFIX,
     write: bool = False,
     report_path: str | Path | None = None,
+    datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
     result = CompileResult()
     template_path = Path(template_path) if template_path else default_template_path()
@@ -1034,6 +1240,12 @@ def compile_yaml(
         rendered_cohorts = [{k: v for k, v in cohort.items() if not k.startswith("_")} for cohort in cohorts]
     else:
         rendered_cohorts = render_cohorts(cohorts, result)
+        # Checked after rendering so template variables are already substituted,
+        # and before expansion so each real cohort reports once rather than once
+        # per multiplier and Cosmos variant.
+        validate_data_dictionary(
+            rendered_cohorts, load_datadictionary(datadictionary_path, result), result
+        )
         rendered_cohorts = expand_batching(template, recipes_doc, rendered_cohorts, result)
         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
@@ -1520,6 +1732,7 @@ recipes:
         - DiagnosisEventFact AS dxf
       join:
         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+        - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
       where:
         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
         - "{{sql_condition('dt.Value', ICD_Value)}}"
@@ -2067,6 +2280,128 @@ class UploadedPkTests(MakeYamlTest):
         self.assertHasError(res, "uploaded_pk_missing_keys")
 
 
+class DataDictionaryTests(MakeYamlTest):
+    DICT = {
+        "PatientDim": {
+            "columns": {
+                "DurableKey": {"type": "bigint", "nullable": False},
+                "Sex": {"type": "string", "nullable": True},
+                "BirthDate": {"type": "date/datetime", "nullable": True},
+                "IsCurrent": {"type": "boolean (flag)", "nullable": False},
+                "StartDateKey": {"type": "integer (DateKey)", "nullable": True},
+                "Weight": {"type": "numeric", "nullable": True},
+            }
+        }
+    }
+
+    def cohort(self, source, declared="BIGINT", join=None):
+        return {
+            "dest_table": "T",
+            "columns": [{"source": source, "name": "C", "type": declared}],
+            "filter": {"from": "PatientDim AS p", "join": join or []},
+        }
+
+    def check(self, cohort, dictionary=None):
+        res = CompileResult()
+        validate_data_dictionary([cohort], self.DICT if dictionary is None else dictionary, res)
+        return res
+
+    def codes(self, res):
+        return [m.code for m in res.errors] + [m.code for m in res.warnings]
+
+    def test_valid_column_passes(self):
+        res = self.check(self.cohort("p.DurableKey", "BIGINT"))
+        self.assertEqual(self.codes(res), [])
+
+    def test_unknown_table_is_an_error(self):
+        cohort = self.cohort("h.Whatever")
+        cohort["filter"]["from"] = "HallucinatedTable AS h"
+        self.assertIn("unknown_table", self.codes(self.check(cohort)))
+
+    def test_unknown_column_is_an_error(self):
+        self.assertIn("unknown_column", self.codes(self.check(self.cohort("p.NoSuchColumn"))))
+
+    def test_undeclared_alias_is_an_error(self):
+        # Referencing an alias that no from/join declares produces SQL that
+        # fails to bind at runtime.
+        self.assertIn("unknown_alias", self.codes(self.check(self.cohort("q.DurableKey"))))
+
+    def test_type_family_mismatch_is_an_error(self):
+        self.assertIn(
+            "dd_type_mismatch", self.codes(self.check(self.cohort("p.Sex", "BIGINT")))
+        )
+
+    def test_families_accept_their_members(self):
+        cases = [
+            ("p.DurableKey", "BIGINT"),
+            ("p.Sex", "VARCHAR(400)"),
+            ("p.Sex", "NVARCHAR(50)"),
+            ("p.IsCurrent", "BIT"),
+            ("p.BirthDate", "DATETIME2(7)"),
+            ("p.StartDateKey", "INT"),
+            ("p.Weight", "FLOAT"),
+        ]
+        for source, declared in cases:
+            with self.subTest(source=source, declared=declared):
+                self.assertEqual(self.codes(self.check(self.cohort(source, declared))), [])
+
+    def test_widening_is_accepted_but_narrowing_is_not(self):
+        # An integer fits in a BIGINT; a bigint does not fit in an INT.
+        self.assertEqual(self.codes(self.check(self.cohort("p.StartDateKey", "BIGINT"))), [])
+        self.assertIn(
+            "dd_type_mismatch", self.codes(self.check(self.cohort("p.DurableKey", "INT")))
+        )
+
+    def test_length_is_not_checked(self):
+        # The dictionary carries no lengths, so VARCHAR(50) and VARCHAR(400)
+        # are indistinguishable to it.
+        for declared in ("VARCHAR(50)", "VARCHAR(4000)"):
+            with self.subTest(declared=declared):
+                self.assertEqual(self.codes(self.check(self.cohort("p.Sex", declared))), [])
+
+    def test_generated_temps_are_skipped(self):
+        cohort = self.cohort("pk.PatientDurableKey")
+        cohort["filter"]["join"] = ["INNER JOIN ##JVM_PKTable AS pk ON 1 = 1"]
+        self.assertEqual(self.codes(self.check(cohort)), [])
+
+    def test_unresolved_placeholder_tables_are_skipped(self):
+        cohort = self.cohort("pk.Anything")
+        cohort["filter"]["join"] = ["INNER JOIN ##JVM_{{PKTable}} AS pk ON 1 = 1"]
+        self.assertEqual(self.codes(self.check(cohort)), [])
+
+    def test_computed_source_warns_rather_than_failing(self):
+        res = self.check(self.cohort("CASE WHEN p.Sex = 'F' THEN 1 ELSE 0 END", "BIT"))
+        self.assertEqual([m.code for m in res.errors], [])
+        self.assertIn("dd_source_not_checked", [m.code for m in res.warnings])
+
+    def test_lowercase_as_is_recognized(self):
+        cohort = self.cohort("p.DurableKey", "BIGINT")
+        cohort["filter"]["from"] = "PatientDim as p"
+        self.assertEqual(self.codes(self.check(cohort)), [])
+
+    def test_absent_dictionary_checks_nothing(self):
+        self.assertEqual(self.codes(self.check(self.cohort("p.NoSuchColumn"), {})), [])
+
+    def test_missing_dictionary_file_warns_but_does_not_fail(self):
+        res = CompileResult()
+        self.assertIsNone(load_datadictionary(self.tmp / "nope.yaml", res))
+        self.assertEqual(res.errors, [])
+        self.assertEqual([m.code for m in res.warnings], ["datadictionary_missing"])
+
+    def test_real_dictionary_accepts_the_bundled_recipes(self):
+        # The shipped recipes and dictionary must agree, or every template
+        # built from them fails.
+        res = compile_yaml(
+            project_root() / "YAMLs" / "manager_test_cases" / "01_valid_basic.yaml",
+            project_root() / "YAMLs" / "recipes.yaml",
+        )
+        offenders = [
+            m for m in res.errors
+            if m.code in ("unknown_table", "unknown_column", "unknown_alias", "dd_type_mismatch")
+        ]
+        self.assertEqual(offenders, [], summarize_result(res))
+
+
 TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "loading": LoadingTests,
     "recipes": RecipeTests,
@@ -2083,6 +2418,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "manifest": ManifestTests,
     "split_artifacts": SplitArtifactTests,
     "uploaded_pk": UploadedPkTests,
+    "datadictionary": DataDictionaryTests,
 }
 
 
@@ -2119,6 +2455,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--template", default=str(default_template_path()))
     parser.add_argument("--recipes", default=str(default_recipes_path()))
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--datadictionary",
+        default=None,
+        help="Data dictionary to validate column types against.",
+    )
     parser.add_argument("--suffix", default=OUTPUT_SUFFIX)
     parser.add_argument("--write", action="store_true", help="Write finished YAML if validation passes.")
     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
@@ -2181,6 +2522,7 @@ def main(argv: list[str] | None = None) -> int:
         suffix=args.suffix,
         write=args.write and not args.validate,
         report_path=report_path,
+        datadictionary_path=args.datadictionary,
     )
     print_messages(result)
     if result.ok:

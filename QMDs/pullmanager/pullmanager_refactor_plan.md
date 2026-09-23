@@ -512,6 +512,41 @@ agreed during planning:
 
 The batch cross-product fix already landed in `makeYaml.py`.
 
+## To Do: Needs Research
+
+Parked, not scheduled. Each needs a decision or outside information before it
+can be planned.
+
+### Primary And Foreign Keys In The Data Dictionary
+
+The dictionary already carries key relationships, but only as prose inside the
+type string:
+
+```yaml
+PatientDurableKey:
+  type: bigint (foreign key to PatientDim.DurableKey)
+TerminologyConceptKey:
+  type: bigint          # described in its own table as the primary key
+```
+
+That is machine-readable enough to validate **joins**, not just columns:
+`ON tc.TerminologyConceptKey = dt.DiagnosisKey` is a plausible-looking mistake
+that column-level checking cannot catch, because both columns exist.
+
+Open questions before this is worth building:
+
+- Should the relationship move into structured fields (`primary_key: true`,
+  `references: PatientDim.DurableKey`) rather than being parsed out of a type
+  annotation? Parsing prose is brittle; restructuring touches every entry.
+- Some annotations name a table without a column (`foreign key to
+  EncounterFact`), and some name alternatives (`foreign key to
+  DiagnosisDim/DiagnosisTerminologyDim`). Both need a rule.
+- Is a join that does not follow a declared key relationship an error, a
+  warning, or acceptable? Deliberate non-key joins exist.
+- Does Cosmos actually enforce these relationships, or are they documentation?
+
+Needs research before scheduling.
+
 ## When To Use The Old Code
 
 Do not start by porting the old code. It is a reference quarry, not the
