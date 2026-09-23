@@ -698,20 +698,47 @@ Execution and telemetry (Phases 6–9):
 
 ## Phase Status
 
-- Phase 0 — Contracts and fixtures: **done** (this document plus `fixtures/`).
-- Phase 1 — Bundle infrastructure: **done** (`scripts/bundle_pullmanager.py`,
-  `scripts/bundle_extractor.py`, `dist/pullmanager_bundle.py`).
-- Phase 2 — Core models and manifest I/O: **done**
-  (`pullmanager/models.py`, `pullmanager/manifest.py`).
-- Phase 3 — Normalization and naming: **done** for the Pullmanager side
-  (`pullmanager/naming.py`, `pullmanager/normalize.py`). The data dictionary
-  check belongs in `makeYaml.py` and is still to do.
-- Phase 4 — SQL rendering without database execution: next.
+- Phases 0-3 — contracts, bundle, manifest I/O, naming and normalization: **done**.
+- Phase 4 — SQL rendering: **done** (`sql.py`, `server_sql.py`, `local_sql.py`).
+- Phase 5 — dry-run orchestration: **done** (`executor.py`, `cli.py --dry-run`).
+  Resume policy landed here rather than Phase 9, because a planner that ignores
+  epoch staleness produces a wrong plan.
+- Phase 6 — pyodbc adapter: **written** (`db.py`), exercised against a fake
+  cursor. Not yet run against a database, and cannot be from the development
+  machine, which has no driver and no reachable server.
+- Phase 7 — server session execution: **next**, and blocked on the batch
+  materialization question below.
+
+### Blocking Question: How A Batch Narrows The PK
+
+There is no linked server from Cosmos back to Projects, so batch keys must
+travel through the client. The cohort SQL in a run YAML joins the session's PK
+temp by name (`INNER JOIN ##JVM_Patients AS pk`), which suggests the simplest
+approach is to leave that SQL alone and change what the temp contains:
+
+```text
+for each batch run:
+    recreate ##JVM_<pk_table>
+    select that batch's rows from <project_db>.dbo.<pk_table>   (local, stable)
+    bulk insert them into ##JVM_<pk_table>
+    run the fact cohort SQL unchanged
+    append the result to the destination table
+```
+
+The run SQL then needs no knowledge of batching at all. It also means batch
+selection always reads the durable Projects copy, so a fresh run and a resume
+take the same path and the recovery path is exercised nightly.
+
+Whole PK rows are uploaded, not just key columns, because batching dimensions
+select on PK attributes (`Sex`, `StateOrProvinceAbbreviation`) and cohort joins
+may use them.
+
+Needs confirmation before Phase 7 proceeds.
 
 ## Running The Tests
 
 ```bash
-python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (94)
+python3 scripts/pullmanager_src/pullmanager.py --tdd            # runtime (182)
 python3 scripts/pullmanager_src/pullmanager.py --tdd manifest   # one module
 python3 scripts/bundle_pullmanager.py --tdd                     # bundler (31)
 python3 scripts/bundle_pullmanager.py --tdd tamper              # one class

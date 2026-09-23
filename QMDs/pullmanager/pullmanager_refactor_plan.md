@@ -1,6 +1,6 @@
 # Pullmanager Refactor Plan
 
-> **Status:** Phases 0-3 are implemented. The verified schema, naming rules,
+> **Status:** Phases 0-6 are implemented. The verified schema, naming rules,
 > and open questions now live in `pullmanager_contracts.md`, which corrects
 > several details this plan and `yamlmanagerDesign.qmd` got wrong. Read that
 > first; this document remains the phase roadmap.
@@ -298,7 +298,7 @@ Exit criteria:
 
 - Edge cases from `yamlprocessing.md` have tests.
 
-### Phase 4: SQL Rendering Without Database Execution `[next]`
+### Phase 4: SQL Rendering Without Database Execution `[done]`
 
 Build the server-side and local-side renderers.
 
@@ -354,7 +354,7 @@ Exit criteria:
   `examplecos.sql` and `exampleproj.sql`.
 - Every executable block is addressed by manifest id. No SQL text is searched.
 
-### Phase 5: Dry-Run Pullmanager `[planned]`
+### Phase 5: Dry-Run Pullmanager `[done]`
 
 CLI orchestration with no database access.
 
@@ -371,7 +371,7 @@ Exit criteria:
 - Execution order is visible and testable.
 - Every statement can be read before pyodbc exists.
 
-### Phase 6: PyODBC Execution Adapter `[planned]`
+### Phase 6: PyODBC Execution Adapter `[done]` (written, not yet run against a database)
 
 The mechanical answers are already harvested; see "Connection And Execution
 Facts" in `pullmanager_contracts.md`.
@@ -401,7 +401,7 @@ Exit criteria:
 - A known statement runs and updates manifest telemetry.
 - A failed `OPENQUERY` reports its inner error, not just the outer failure.
 
-### Phase 7: Server Session Execution `[planned]`
+### Phase 7: Server Session Execution `[next]`
 
 Execute setup, uploads, PK and runs while the session's global temps live.
 
