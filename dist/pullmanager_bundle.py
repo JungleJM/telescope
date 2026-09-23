@@ -278,8 +278,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "9fa2cec832dd6cf53380fbdda333a58b44d9838d8ead50d8ec69609683961e10",
-  "file_count": 22,
+  "content_id": "bbe771356c7f6872916607be8f81957566c36bc0471cadf553ad652b8cad8015",
+  "file_count": 24,
   "files": [
     {
       "path": "pullmanager.py",
@@ -300,6 +300,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/cli.py",
       "sha256": "44c18978b46a38ed06b4ea378204ae27fd210d28a67b8ed987c6db5f6782897a",
       "size": 6251
+    },
+    {
+      "path": "pullmanager/db.py",
+      "sha256": "0e2306de7b9f2a6ffebda577a21c24b4478a38e518eba9ea90de4187307756d9",
+      "size": 9394
     },
     {
       "path": "pullmanager/executor.py",
@@ -350,6 +355,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/tests/support.py",
       "sha256": "5c88b19c05ea4b105763db67d73e42d88cbe1c3897b2ece74c9f287b60403398",
       "size": 4541
+    },
+    {
+      "path": "pullmanager/tests/test_db.py",
+      "sha256": "1e39f445c46b0952540a09c0887b210ad566223b239be4ed607065ade5987be7",
+      "size": 10152
     },
     {
       "path": "pullmanager/tests/test_executor.py",
@@ -611,6 +621,283 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
+# === BEGIN FILE: pullmanager/db.py SHA256: 0e2306de7b9f2a6ffebda577a21c24b4478a38e518eba9ea90de4187307756d9 SIZE: 9394 ===
+# """Database adapter.
+#
+# pyodbc is imported lazily so the rest of the package -- planning, rendering,
+# the dry run -- works on a machine without a driver.
+#
+# The behaviours here were harvested from the old generator rather than invented;
+# see "Connection And Execution Facts" in pullmanager_contracts.md.
+# """
+#
+# from __future__ import annotations
+#
+# import os
+# from dataclasses import dataclass, field
+# from typing import Any, Iterable, Iterator, Sequence
+#
+# DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
+# DEFAULT_UPLOAD_CHUNK = 20_000
+#
+# # `GO` is a client batch separator, not T-SQL. The driver rejects it.
+# BATCH_SEPARATOR = "GO"
+#
+#
+# class DatabaseError(RuntimeError):
+#     """A SQL failure, carrying the server messages that explain it."""
+#
+#     def __init__(self, message: str, server_messages: Sequence[str] = ()):
+#         super().__init__(message)
+#         self.server_messages = list(server_messages)
+#
+#     def __str__(self) -> str:
+#         base = super().__str__()
+#         if not self.server_messages:
+#             return base
+#         detail = "\n".join(f"  [SQL MESSAGE] {m}" for m in self.server_messages)
+#         return f"{base}\n{detail}"
+#
+#
+# @dataclass
+# class Settings:
+#     """Connection settings. Windows auth, so never credentials."""
+#
+#     cosmos_server: str = "COSMOS"
+#     cosmos_database: str = "COSMOS"
+#     projects_server: str = ""
+#     projects_database: str = ""
+#     driver: str = DEFAULT_DRIVER
+#     login_timeout: int = 10
+#     query_timeout: int = 0
+#     upload_chunk: int = DEFAULT_UPLOAD_CHUNK
+#
+#     @classmethod
+#     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
+#         source = os.environ if env is None else env
+#
+#         def get(name: str, fallback: str) -> str:
+#             return str(source.get(f"PULLMANAGER_{name}", fallback) or fallback)
+#
+#         def get_int(name: str, fallback: int) -> int:
+#             try:
+#                 return int(source.get(f"PULLMANAGER_{name}", fallback))
+#             except (TypeError, ValueError):
+#                 return fallback
+#
+#         return cls(
+#             cosmos_server=get("COSMOS_SERVER", "COSMOS"),
+#             cosmos_database=get("COSMOS_DATABASE", "COSMOS"),
+#             projects_server=str(source.get("PULLMANAGER_PROJECTS_SERVER", "") or ""),
+#             projects_database=str(source.get("PULLMANAGER_PROJECTS_DATABASE", "") or ""),
+#             driver=get("ODBC_DRIVER", DEFAULT_DRIVER),
+#             login_timeout=get_int("LOGIN_TIMEOUT", 10),
+#             query_timeout=get_int("QUERY_TIMEOUT", 0),
+#             upload_chunk=get_int("UPLOAD_CHUNK", DEFAULT_UPLOAD_CHUNK),
+#         )
+#
+#     def connection_string(self, server: str, database: str) -> str:
+#         if not server:
+#             raise DatabaseError("No server configured. Set it in .env.")
+#         if not database:
+#             raise DatabaseError("No database configured. Set it in .env.")
+#         return (
+#             f"Driver={{{self.driver}}};"
+#             f"Server=tcp:{server};"
+#             f"Database={database};"
+#             "Trusted_Connection=yes;"
+#         )
+#
+#     def cosmos_connection_string(self, database: str | None = None) -> str:
+#         return self.connection_string(self.cosmos_server, database or self.cosmos_database)
+#
+#     def projects_connection_string(self, database: str | None = None) -> str:
+#         return self.connection_string(
+#             self.projects_server, database or self.projects_database
+#         )
+#
+#
+# @dataclass
+# class ResultSet:
+#     columns: list[str]
+#     rows: list[tuple]
+#
+#     def as_dicts(self) -> list[dict[str, Any]]:
+#         return [dict(zip(self.columns, row)) for row in self.rows]
+#
+#
+# @dataclass
+# class ExecutionResult:
+#     result_sets: list[ResultSet] = field(default_factory=list)
+#     messages: list[str] = field(default_factory=list)
+#
+#     def rows_of(self, *columns: str) -> list[dict[str, Any]]:
+#         """Result sets carrying a declared telemetry shape."""
+#         wanted = set(columns)
+#         out: list[dict[str, Any]] = []
+#         for result in self.result_sets:
+#             if wanted.issubset(set(result.columns)):
+#                 out.extend(result.as_dicts())
+#         return out
+#
+#
+# def split_batches(script: str) -> list[str]:
+#     """Split on lines consisting solely of GO, which the driver cannot execute."""
+#     batches: list[str] = []
+#     current: list[str] = []
+#     for line in script.splitlines():
+#         if line.strip().upper() == BATCH_SEPARATOR:
+#             if current:
+#                 batches.append("\n".join(current))
+#                 current = []
+#             continue
+#         current.append(line)
+#     if current:
+#         batches.append("\n".join(current))
+#     return [b for b in batches if b.strip()]
+#
+#
+# def collect_messages(cursor: Any) -> list[str]:
+#     """Server PRINT output and nested engine errors.
+#
+#     This is what surfaces the inner error of a failed OPENQUERY; without it the
+#     caller sees only a generic outer failure.
+#     """
+#     try:
+#         raw = list(cursor.messages or [])
+#     except Exception:
+#         return []
+#     return [" | ".join(str(part) for part in message) for message in raw]
+#
+#
+# def drain(cursor: Any) -> list[ResultSet]:
+#     """Consume every result set a batch produced.
+#
+#     A generated script interleaves DDL, inserts and telemetry SELECTs, so a
+#     batch yields a mixture of row-producing and silent statements.
+#     """
+#     results: list[ResultSet] = []
+#     while True:
+#         if cursor.description is not None:
+#             columns = [column[0] for column in cursor.description]
+#             try:
+#                 rows = list(cursor.fetchall())
+#             except Exception:
+#                 rows = []
+#             results.append(ResultSet(columns=columns, rows=rows))
+#         else:
+#             try:
+#                 cursor.fetchall()
+#             except Exception:
+#                 pass  # statement produced no rows
+#         try:
+#             if not cursor.nextset():
+#                 break
+#         except Exception:
+#             break
+#     return results
+#
+#
+# def execute_script(connection: Any, script: str, *, label: str = "script") -> ExecutionResult:
+#     """Run every batch of a script, failing fast with server messages."""
+#     outcome = ExecutionResult()
+#     batches = split_batches(script)
+#     cursor = connection.cursor()
+#     for index, batch in enumerate(batches, start=1):
+#         try:
+#             cursor.execute(batch)
+#             outcome.messages.extend(collect_messages(cursor))
+#             outcome.result_sets.extend(drain(cursor))
+#         except Exception as exc:
+#             messages = collect_messages(cursor)
+#             raise DatabaseError(
+#                 f"{label}: batch {index}/{len(batches)} failed: {exc}", messages
+#             ) from exc
+#     return outcome
+#
+#
+# def capture_server_name(connection: Any) -> str:
+#     """The Cosmos instance name, which changes on every connection."""
+#     cursor = connection.cursor()
+#     cursor.execute("SELECT @@SERVERNAME;")
+#     row = cursor.fetchone()
+#     if not row or not row[0]:
+#         raise DatabaseError(
+#             "Could not determine the Cosmos instance via @@SERVERNAME. Local SQL "
+#             "cannot build OPENQUERY without it."
+#         )
+#     return str(row[0])
+#
+#
+# def chunked(rows: Iterable[Sequence[Any]], size: int) -> Iterator[list[Sequence[Any]]]:
+#     batch: list[Sequence[Any]] = []
+#     for row in rows:
+#         batch.append(row)
+#         if len(batch) >= size:
+#             yield batch
+#             batch = []
+#     if batch:
+#         yield batch
+#
+#
+# def bulk_insert(
+#     connection: Any,
+#     table: str,
+#     columns: Sequence[str],
+#     rows: Iterable[Sequence[Any]],
+#     *,
+#     chunk_size: int = DEFAULT_UPLOAD_CHUNK,
+# ) -> int:
+#     """Insert rows with parameter arrays rather than a literal VALUES list.
+#
+#     A table value constructor is capped at 1000 rows; parameter arrays are not,
+#     because the statement stays single-row and only its bindings repeat. Values
+#     are bound rather than interpolated, so quotes and NULLs need no escaping.
+#
+#     Chunked because fast_executemany allocates buffers from declared column
+#     width times batch size, so memory grows with both.
+#     """
+#     if not columns:
+#         raise DatabaseError(f"Cannot insert into {table}: no columns given.")
+#     placeholders = ", ".join("?" for _ in columns)
+#     column_list = ", ".join(f"[{c}]" for c in columns)
+#     statement = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+#
+#     cursor = connection.cursor()
+#     try:
+#         cursor.fast_executemany = True
+#     except Exception:
+#         pass  # older drivers fall back to per-row inserts
+#
+#     inserted = 0
+#     for batch in chunked(rows, max(1, chunk_size)):
+#         try:
+#             cursor.executemany(statement, batch)
+#         except Exception as exc:
+#             raise DatabaseError(
+#                 f"Bulk insert into {table} failed after {inserted} row(s): {exc}",
+#                 collect_messages(cursor),
+#             ) from exc
+#         inserted += len(batch)
+#     return inserted
+#
+#
+# def connect(connection_string: str, *, login_timeout: int = 10, query_timeout: int = 0) -> Any:
+#     """Open a connection. pyodbc is imported here so the package loads without it."""
+#     try:
+#         import pyodbc
+#     except ImportError as exc:
+#         raise DatabaseError(
+#             "pyodbc is not installed. It is needed only to execute; planning, "
+#             "rendering and --dry-run work without it."
+#         ) from exc
+#
+#     connection = pyodbc.connect(connection_string, timeout=login_timeout)
+#     if query_timeout:
+#         connection.timeout = query_timeout
+#     return connection
+#
+# === END FILE: pullmanager/db.py ===
 # === BEGIN FILE: pullmanager/executor.py SHA256: fd658d58f45a49875790f6a119cc8b160cd736fbce5f861331f5f2ae94dd79ea SIZE: 8444 ===
 # """Traversal and planning.
 #
@@ -2330,6 +2617,282 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
+# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 1e39f445c46b0952540a09c0887b210ad566223b239be4ed607065ade5987be7 SIZE: 10152 ===
+# """Adapter behaviour, exercised against a fake cursor.
+#
+# pyodbc is not installed on the development machine and there is no database to
+# reach, so the DB-API interactions are faked. What is tested is the logic the
+# old generator got right and that is easy to get wrong: GO splitting, draining
+# every result set, and keeping server messages on the failure path.
+# """
+#
+# from __future__ import annotations
+#
+# import unittest
+#
+# from ..db import (
+#     DEFAULT_DRIVER,
+#     DatabaseError,
+#     ResultSet,
+#     Settings,
+#     bulk_insert,
+#     capture_server_name,
+#     chunked,
+#     collect_messages,
+#     drain,
+#     execute_script,
+#     split_batches,
+# )
+#
+#
+# class FakeCursor:
+#     """Enough of the DB-API to exercise the drain loop.
+#
+#     `statements` is one entry per statement in the current batch: None for a
+#     statement that returns no rows, or (columns, rows) for one that does.
+#     """
+#
+#     def __init__(self, statements=None, messages=(), fail_on=None):
+#         self._template = statements if statements is not None else [None]
+#         self._messages = list(messages)
+#         self._fail_on = fail_on
+#         self.executed: list[str] = []
+#         self.executemany_calls: list[tuple[str, list]] = []
+#         self.fast_executemany = False
+#         self._pending: list = []
+#         self._current = None
+#
+#     @property
+#     def messages(self):
+#         return self._messages
+#
+#     def execute(self, sql, params=None):
+#         self.executed.append(sql)
+#         if self._fail_on is not None and self._fail_on in sql:
+#             raise RuntimeError("simulated SQL failure")
+#         self._pending = list(self._template)
+#         self._advance()
+#
+#     def executemany(self, sql, seq):
+#         self.executemany_calls.append((sql, list(seq)))
+#
+#     def _advance(self):
+#         self._current = self._pending.pop(0) if self._pending else None
+#
+#     @property
+#     def description(self):
+#         if self._current is None:
+#             return None
+#         return [(name,) for name in self._current[0]]
+#
+#     def fetchall(self):
+#         if self._current is None:
+#             raise RuntimeError("no result set")
+#         return list(self._current[1])
+#
+#     def fetchone(self):
+#         if self._current is None:
+#             return None
+#         rows = self._current[1]
+#         return rows[0] if rows else None
+#
+#     def nextset(self):
+#         if not self._pending:
+#             return False
+#         self._advance()
+#         return True
+#
+#
+# class FakeConnection:
+#     def __init__(self, cursor):
+#         self._cursor = cursor
+#         self.committed = False
+#         self.closed = False
+#
+#     def cursor(self):
+#         return self._cursor
+#
+#     def commit(self):
+#         self.committed = True
+#
+#     def close(self):
+#         self.closed = True
+#
+#
+# class SettingsTests(unittest.TestCase):
+#     def test_connection_string_matches_the_shape_in_use(self):
+#         settings = Settings(cosmos_server="COSMOS", cosmos_database="COSMOS")
+#         self.assertEqual(
+#             settings.cosmos_connection_string(),
+#             "Driver={ODBC Driver 17 for SQL Server};Server=tcp:COSMOS;"
+#             "Database=COSMOS;Trusted_Connection=yes;",
+#         )
+#
+#     def test_windows_auth_means_no_credentials_appear(self):
+#         rendered = Settings(projects_server="S", projects_database="D").projects_connection_string()
+#         self.assertIn("Trusted_Connection=yes", rendered)
+#         for secret in ("UID=", "PWD=", "Password"):
+#             self.assertNotIn(secret, rendered)
+#
+#     def test_reads_environment_with_defaults(self):
+#         settings = Settings.from_env({})
+#         self.assertEqual(settings.driver, DEFAULT_DRIVER)
+#         self.assertEqual(settings.cosmos_server, "COSMOS")
+#
+#         settings = Settings.from_env({
+#             "PULLMANAGER_COSMOS_SERVER": "OTHER",
+#             "PULLMANAGER_UPLOAD_CHUNK": "500",
+#         })
+#         self.assertEqual(settings.cosmos_server, "OTHER")
+#         self.assertEqual(settings.upload_chunk, 500)
+#
+#     def test_nonsense_numbers_fall_back(self):
+#         self.assertEqual(Settings.from_env({"PULLMANAGER_UPLOAD_CHUNK": "lots"}).upload_chunk, 20_000)
+#
+#     def test_missing_server_or_database_is_refused(self):
+#         with self.assertRaises(DatabaseError):
+#             Settings(projects_server="", projects_database="D").projects_connection_string()
+#         with self.assertRaises(DatabaseError):
+#             Settings(projects_server="S", projects_database="").projects_connection_string()
+#
+#
+# class BatchSplitTests(unittest.TestCase):
+#     def test_splits_on_go(self):
+#         self.assertEqual(split_batches("SELECT 1\nGO\nSELECT 2"), ["SELECT 1", "SELECT 2"])
+#
+#     def test_go_is_case_insensitive_and_may_be_indented(self):
+#         self.assertEqual(len(split_batches("SELECT 1\n  go  \nSELECT 2")), 2)
+#
+#     def test_go_inside_a_statement_is_not_a_separator(self):
+#         self.assertEqual(len(split_batches("SELECT 'GO' AS x")), 1)
+#
+#     def test_empty_batches_are_dropped(self):
+#         self.assertEqual(split_batches("GO\n\nGO\nSELECT 1\nGO\n"), ["SELECT 1"])
+#
+#     def test_script_without_go_is_one_batch(self):
+#         self.assertEqual(len(split_batches("SELECT 1\nSELECT 2")), 1)
+#
+#
+# class DrainTests(unittest.TestCase):
+#     def test_collects_every_result_set(self):
+#         cursor = FakeCursor([(["A"], [(1,)]), (["B"], [(2,), (3,)])])
+#         cursor.execute("x")
+#         results = drain(cursor)
+#         self.assertEqual([r.columns for r in results], [["A"], ["B"]])
+#         self.assertEqual(results[1].rows, [(2,), (3,)])
+#
+#     def test_skips_statements_that_return_nothing(self):
+#         # A generated script interleaves DDL and inserts with telemetry SELECTs.
+#         cursor = FakeCursor([None, (["A"], [(1,)]), None])
+#         cursor.execute("x")
+#         results = drain(cursor)
+#         self.assertEqual(len(results), 1)
+#         self.assertEqual(results[0].columns, ["A"])
+#
+#     def test_result_rows_convert_to_dicts(self):
+#         self.assertEqual(
+#             ResultSet(["A", "B"], [(1, 2)]).as_dicts(), [{"A": 1, "B": 2}]
+#         )
+#
+#
+# class ExecuteScriptTests(unittest.TestCase):
+#     def test_runs_every_batch(self):
+#         cursor = FakeCursor([(["A"], [(1,)])])
+#         outcome = execute_script(FakeConnection(cursor), "SELECT 1\nGO\nSELECT 2")
+#         self.assertEqual(len(cursor.executed), 2)
+#         self.assertEqual(len(outcome.result_sets), 2)
+#
+#     def test_failure_names_the_batch_and_keeps_server_messages(self):
+#         # Without the messages, a failed OPENQUERY reports only a generic outer
+#         # error and the actual cause is lost.
+#         cursor = FakeCursor(
+#             messages=[("42000", "OLE DB provider returned message: Login timeout expired")],
+#             fail_on="BOOM",
+#         )
+#         with self.assertRaises(DatabaseError) as caught:
+#             execute_script(FakeConnection(cursor), "SELECT 1\nGO\nBOOM\nGO\nSELECT 3", label="pk")
+#         text = str(caught.exception)
+#         self.assertIn("batch 2/3", text)
+#         self.assertIn("pk", text)
+#         self.assertIn("Login timeout expired", text)
+#
+#     def test_telemetry_is_selected_by_declared_shape(self):
+#         cursor = FakeCursor([
+#             (["Unrelated"], [("x",)]),
+#             (["DestTable", "RowCount"], [("PKTable", 12345)]),
+#         ])
+#         outcome = execute_script(FakeConnection(cursor), "SELECT 1")
+#         self.assertEqual(
+#             outcome.rows_of("DestTable", "RowCount"),
+#             [{"DestTable": "PKTable", "RowCount": 12345}],
+#         )
+#
+#     def test_messages_are_formatted_as_text(self):
+#         cursor = FakeCursor(messages=[("01000", "row count"), ("01000", "done")])
+#         self.assertEqual(collect_messages(cursor), ["01000 | row count", "01000 | done"])
+#
+#
+# class ServerNameTests(unittest.TestCase):
+#     def test_captures_the_instance_name(self):
+#         cursor = FakeCursor([(["CosmosServerName"], [("et4003vpdsql032",)])])
+#         self.assertEqual(capture_server_name(FakeConnection(cursor)), "et4003vpdsql032")
+#
+#     def test_absent_name_is_a_hard_error(self):
+#         # Local SQL cannot build OPENQUERY without it, so a silent fallback
+#         # would aim the transfer at nothing.
+#         with self.assertRaises(DatabaseError):
+#             capture_server_name(FakeConnection(FakeCursor([(["x"], [])])))
+#
+#
+# class BulkInsertTests(unittest.TestCase):
+#     def rows(self, count):
+#         return [(i,) for i in range(count)]
+#
+#     def test_uses_parameter_binding_not_a_values_list(self):
+#         # A table value constructor is capped at 1000 rows; parameter arrays
+#         # are not, because the statement stays single-row.
+#         cursor = FakeCursor()
+#         bulk_insert(FakeConnection(cursor), "##JVM_X", ["Key"], self.rows(5))
+#         statement, batch = cursor.executemany_calls[0]
+#         self.assertEqual(statement, "INSERT INTO ##JVM_X ([Key]) VALUES (?)")
+#         self.assertEqual(len(batch), 5)
+#
+#     def test_enables_fast_executemany(self):
+#         cursor = FakeCursor()
+#         bulk_insert(FakeConnection(cursor), "##JVM_X", ["Key"], self.rows(1))
+#         self.assertTrue(cursor.fast_executemany)
+#
+#     def test_chunks_beyond_the_thousand_row_limit(self):
+#         cursor = FakeCursor()
+#         inserted = bulk_insert(
+#             FakeConnection(cursor), "##JVM_X", ["Key"], self.rows(2500), chunk_size=1000
+#         )
+#         self.assertEqual(inserted, 2500)
+#         self.assertEqual([len(b) for _, b in cursor.executemany_calls], [1000, 1000, 500])
+#
+#     def test_multi_column_placeholders(self):
+#         cursor = FakeCursor()
+#         bulk_insert(FakeConnection(cursor), "T", ["A", "B", "C"], [(1, 2, 3)])
+#         self.assertEqual(cursor.executemany_calls[0][0], "INSERT INTO T ([A], [B], [C]) VALUES (?, ?, ?)")
+#
+#     def test_no_columns_is_refused(self):
+#         with self.assertRaises(DatabaseError):
+#             bulk_insert(FakeConnection(FakeCursor()), "T", [], [])
+#
+#     def test_empty_input_inserts_nothing(self):
+#         cursor = FakeCursor()
+#         self.assertEqual(bulk_insert(FakeConnection(cursor), "T", ["A"], []), 0)
+#         self.assertEqual(cursor.executemany_calls, [])
+#
+#
+# class ChunkTests(unittest.TestCase):
+#     def test_splits_into_even_chunks_with_a_remainder(self):
+#         self.assertEqual([len(c) for c in chunked(range(7), 3)], [3, 3, 1])
+#
+#     def test_empty_input_yields_nothing(self):
+#         self.assertEqual(list(chunked([], 3)), [])
+#
+# === END FILE: pullmanager/tests/test_db.py ===
 # === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488 SIZE: 6609 ===
 # """Traversal order and resume policy."""
 #

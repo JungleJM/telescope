@@ -1,3 +1,9 @@
 __pycache__/
 *.pyc
 cleanup/
+
+# Connection settings. Trusted_Connection means these are host and database
+# names only, never credentials, but they are environment-specific.
+.env
+.env.*
+!.env.example
