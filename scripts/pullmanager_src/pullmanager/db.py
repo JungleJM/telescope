@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
+# Both hosts are DNS aliases, not machine names. The real Cosmos instance is
+# discovered per connection with @@SERVERNAME, because it changes every time.
+DEFAULT_COSMOS_SERVER = "COSMOS"
+DEFAULT_PROJECTS_SERVER = "PROJECTS"
 DEFAULT_UPLOAD_CHUNK = 20_000
 
 # `GO` is a client batch separator, not T-SQL. The driver rejects it.
@@ -99,9 +103,9 @@ def load_env_file(path: str | Path | None = None, *, override: bool = False) -> 
 class Settings:
     """Connection settings. Windows auth, so never credentials."""
 
-    cosmos_server: str = "COSMOS"
+    cosmos_server: str = DEFAULT_COSMOS_SERVER
     cosmos_database: str = "COSMOS"
-    projects_server: str = ""
+    projects_server: str = DEFAULT_PROJECTS_SERVER
     projects_database: str = ""
     driver: str = DEFAULT_DRIVER
     login_timeout: int = 10
@@ -122,9 +126,9 @@ class Settings:
                 return fallback
 
         return cls(
-            cosmos_server=get("COSMOS_SERVER", "COSMOS"),
+            cosmos_server=get("COSMOS_SERVER", DEFAULT_COSMOS_SERVER),
             cosmos_database=get("COSMOS_DATABASE", "COSMOS"),
-            projects_server=str(source.get("PULLMANAGER_PROJECTS_SERVER", "") or ""),
+            projects_server=get("PROJECTS_SERVER", DEFAULT_PROJECTS_SERVER),
             projects_database=str(source.get("PULLMANAGER_PROJECTS_DATABASE", "") or ""),
             driver=get("ODBC_DRIVER", DEFAULT_DRIVER),
             login_timeout=get_int("LOGIN_TIMEOUT", 10),

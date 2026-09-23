@@ -278,7 +278,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "f1902ca8db2345a8ede1df35fd2906e67b716bf8e4fa095f904ced6ccbe1b803",
+  "content_id": "27bf02d52eaed77bdfeeafd142cbf68bd270adac07ab20f97e45ed28af7f011d",
   "file_count": 30,
   "files": [
     {
@@ -308,8 +308,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/db.py",
-      "sha256": "4c6e9bdaec4763054b4311d327766780989eb35649e1ead94235dc6a38a0b8ca",
-      "size": 11345
+      "sha256": "95bf2e090578a6160ac5259be25e6a7d3604df2a33eb9cbfc570774ecb547085",
+      "size": 11608
     },
     {
       "path": "pullmanager/executor.py",
@@ -373,8 +373,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/tests/test_db.py",
-      "sha256": "5d570f7802a7d4da112c7049fa9890102a741efd7de3eb35cd47df6174fd8b5d",
-      "size": 12645
+      "sha256": "e542b71d46f8493d9d45c1ec2d68d2adc73ebb180551a71e810f9a6ce784905c",
+      "size": 13107
     },
     {
       "path": "pullmanager/tests/test_executor.py",
@@ -865,7 +865,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/db.py SHA256: 4c6e9bdaec4763054b4311d327766780989eb35649e1ead94235dc6a38a0b8ca SIZE: 11345 ===
+# === BEGIN FILE: pullmanager/db.py SHA256: 95bf2e090578a6160ac5259be25e6a7d3604df2a33eb9cbfc570774ecb547085 SIZE: 11608 ===
 # """Database adapter.
 #
 # pyodbc is imported lazily so the rest of the package -- planning, rendering,
@@ -883,6 +883,10 @@ if __name__ == "__main__":
 # from typing import Any, Iterable, Iterator, Sequence
 #
 # DEFAULT_DRIVER = "ODBC Driver 17 for SQL Server"
+# # Both hosts are DNS aliases, not machine names. The real Cosmos instance is
+# # discovered per connection with @@SERVERNAME, because it changes every time.
+# DEFAULT_COSMOS_SERVER = "COSMOS"
+# DEFAULT_PROJECTS_SERVER = "PROJECTS"
 # DEFAULT_UPLOAD_CHUNK = 20_000
 #
 # # `GO` is a client batch separator, not T-SQL. The driver rejects it.
@@ -967,9 +971,9 @@ if __name__ == "__main__":
 # class Settings:
 #     """Connection settings. Windows auth, so never credentials."""
 #
-#     cosmos_server: str = "COSMOS"
+#     cosmos_server: str = DEFAULT_COSMOS_SERVER
 #     cosmos_database: str = "COSMOS"
-#     projects_server: str = ""
+#     projects_server: str = DEFAULT_PROJECTS_SERVER
 #     projects_database: str = ""
 #     driver: str = DEFAULT_DRIVER
 #     login_timeout: int = 10
@@ -990,9 +994,9 @@ if __name__ == "__main__":
 #                 return fallback
 #
 #         return cls(
-#             cosmos_server=get("COSMOS_SERVER", "COSMOS"),
+#             cosmos_server=get("COSMOS_SERVER", DEFAULT_COSMOS_SERVER),
 #             cosmos_database=get("COSMOS_DATABASE", "COSMOS"),
-#             projects_server=str(source.get("PULLMANAGER_PROJECTS_SERVER", "") or ""),
+#             projects_server=get("PROJECTS_SERVER", DEFAULT_PROJECTS_SERVER),
 #             projects_database=str(source.get("PULLMANAGER_PROJECTS_DATABASE", "") or ""),
 #             driver=get("ODBC_DRIVER", DEFAULT_DRIVER),
 #             login_timeout=get_int("LOGIN_TIMEOUT", 10),
@@ -3419,7 +3423,7 @@ if __name__ == "__main__":
 #         self.assertEqual(selection.params, ["Male"])
 #
 # === END FILE: pullmanager/tests/test_batches.py ===
-# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 5d570f7802a7d4da112c7049fa9890102a741efd7de3eb35cd47df6174fd8b5d SIZE: 12645 ===
+# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: e542b71d46f8493d9d45c1ec2d68d2adc73ebb180551a71e810f9a6ce784905c SIZE: 13107 ===
 # """Adapter behaviour, exercised against a fake cursor.
 #
 # pyodbc is not installed on the development machine and there is no database to
@@ -3541,9 +3545,18 @@ if __name__ == "__main__":
 #             self.assertNotIn(secret, rendered)
 #
 #     def test_reads_environment_with_defaults(self):
+#         # Both hosts are DNS aliases, so an empty .env still connects.
 #         settings = Settings.from_env({})
 #         self.assertEqual(settings.driver, DEFAULT_DRIVER)
 #         self.assertEqual(settings.cosmos_server, "COSMOS")
+#         self.assertEqual(settings.projects_server, "PROJECTS")
+#
+#     def test_no_configuration_at_all_still_builds_both_strings(self):
+#         settings = Settings.from_env({})
+#         self.assertIn("Server=tcp:COSMOS;", settings.cosmos_connection_string())
+#         self.assertIn(
+#             "Server=tcp:PROJECTS;", settings.projects_connection_string("PROJECTD33A929")
+#         )
 #
 #         settings = Settings.from_env({
 #             "PULLMANAGER_COSMOS_SERVER": "OTHER",
@@ -3555,7 +3568,7 @@ if __name__ == "__main__":
 #     def test_nonsense_numbers_fall_back(self):
 #         self.assertEqual(Settings.from_env({"PULLMANAGER_UPLOAD_CHUNK": "lots"}).upload_chunk, 20_000)
 #
-#     def test_missing_server_or_database_is_refused(self):
+#     def test_an_explicitly_blank_server_or_database_is_refused(self):
 #         with self.assertRaises(DatabaseError):
 #             Settings(projects_server="", projects_database="D").projects_connection_string()
 #         with self.assertRaises(DatabaseError):

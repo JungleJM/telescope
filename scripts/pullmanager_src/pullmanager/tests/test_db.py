@@ -119,9 +119,18 @@ class SettingsTests(unittest.TestCase):
             self.assertNotIn(secret, rendered)
 
     def test_reads_environment_with_defaults(self):
+        # Both hosts are DNS aliases, so an empty .env still connects.
         settings = Settings.from_env({})
         self.assertEqual(settings.driver, DEFAULT_DRIVER)
         self.assertEqual(settings.cosmos_server, "COSMOS")
+        self.assertEqual(settings.projects_server, "PROJECTS")
+
+    def test_no_configuration_at_all_still_builds_both_strings(self):
+        settings = Settings.from_env({})
+        self.assertIn("Server=tcp:COSMOS;", settings.cosmos_connection_string())
+        self.assertIn(
+            "Server=tcp:PROJECTS;", settings.projects_connection_string("PROJECTD33A929")
+        )
 
         settings = Settings.from_env({
             "PULLMANAGER_COSMOS_SERVER": "OTHER",
@@ -133,7 +142,7 @@ class SettingsTests(unittest.TestCase):
     def test_nonsense_numbers_fall_back(self):
         self.assertEqual(Settings.from_env({"PULLMANAGER_UPLOAD_CHUNK": "lots"}).upload_chunk, 20_000)
 
-    def test_missing_server_or_database_is_refused(self):
+    def test_an_explicitly_blank_server_or_database_is_refused(self):
         with self.assertRaises(DatabaseError):
             Settings(projects_server="", projects_database="D").projects_connection_string()
         with self.assertRaises(DatabaseError):

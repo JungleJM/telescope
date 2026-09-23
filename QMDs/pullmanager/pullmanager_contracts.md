@@ -388,10 +388,21 @@ f"Database={project_db_name};"
 "Trusted_Connection=yes;"
 ```
 
-`.env` therefore holds host and database names only. Driver 17 is what is
-installed; it defaults to `Encrypt=no`, so no certificate handling is needed.
+Both server names are **DNS aliases**, not machine names, confirmed in the old
+Python and in the R script that builds parquet files. Neither varies by
+project, and the database names come from the manifest, so **no `.env` is
+required at all**: Pullmanager reproduces both connection strings from its
+defaults. The file exists to override, not to enable.
 
-Projects connections are opened with `timeout=10`. Cosmos uses the default.
+Driver 17 is what is installed and defaults to `Encrypt=no`, so no certificate
+handling is needed. Driver 18 flips that default.
+
+Projects connections are opened with `timeout=10`; the R side uses the same.
+
+The one value that genuinely cannot be defaulted is the Cosmos **instance**,
+which is not the alias: `@@SERVERNAME` returns something like
+`et4003vpdsql032`, it changes on every connection, and local `OPENQUERY` needs
+it. Hence the per-epoch capture.
 
 ### The Cosmos Connection Is Held Open
 
