@@ -1,0 +1,18 @@
+
+Most of the time a template.yaml I'll change and give it a name. I'm planning on running multiple yamls/pulls at a time, as they take so long. So my plan right now is to make pull-specific folders, which woulud bethe "project_folder" var. Then all the different run parts can go there (the multiplication/batch yamls, the cosmos and project scripts, and then the parquets eveutally). 
+
+Before I test, let's see if I can make like a manageable routing system. I've had issues with this before. 
+
+For now I imagine in the projects folder -> 
+
+(Project_folder)
+├── load_parquets.py     ← simple 'load all in the /parquets folder', probably handled in phase 10. For the client to load into R Studio or VSCodium's system. Probably using that non-ram open-database or whatever
+├── contents.yaml    ← a yaml of all the items. basically a simplified template.yaml with just the downloaded cohorts and their descriptions, and the colums with  type and description. Don't really need the nullable or the metadata stuff. For wherever I copy this file into, the client to use. 
+├── server\                ← everything for the server pulling - yamls, sql scripts
+│   ├── UCPatients.yaml <- a copy of the template I run, renamed for the specific project
+│   ├── Manifest.yaml <- the manifest that gets updated. Eventually a UI can read this and I can see how it's going at a glance, or add a bunch in to a single dashboard
+│   ├── yamls\                <- the splits of the yamls
+│   ├── sql\                    <- the cosmos and projects sqls. Can be split in smaller folders - probably a good idea for legibility
+├── parquets\                    ← 
+│   └── SneakPeek.          <- I often do 'dual' so this should be all the sneakPeek files, which should be pulled as parquets as soon as all teh sneakpeek cohorts are done, before running the Cosmos cohorts
+ │   └── Cosmos          <- parquets filled in whatever manner we decide (per-cohort I believe is what we have now)

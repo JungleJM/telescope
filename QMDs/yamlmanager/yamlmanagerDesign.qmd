@@ -617,7 +617,7 @@ telescope/
   scripts/yamlmanager_backend.py
   YAMLs/recipes.yaml
   YAMLs/datadictionary.yaml
-  YAMLs/template.yaml
+  YAMLs/template.yaml.example       copy and rename to start a pull
   .bundle-manifest.json
 ```
 
@@ -634,20 +634,26 @@ variables if a host ever changes.
 
 ### Updating Is One Way, And Never Destroys Work
 
-The bundle flows Mac to VM only. Each bundled file carries a policy that
-decides what a re-extraction does when the file is already there:
+The bundle flows Mac to VM only. The extracted tree is **wholly managed**: it
+is swapped, not merged, so a file of your own placed inside it is gone on the
+next update. Your templates, uploads and split folders belong *beside* the
+tree, never in it.
 
-| Policy | Applies to | On re-extract |
-| --- | --- | --- |
-| `replace` | all code, `recipes.yaml`, `datadictionary.yaml` | shipped copy wins; a locally modified file is first saved as `<name>.local` |
-| `seed` | `YAMLs/template.yaml` | written only when absent; yours thereafter |
+Every bundled file is updated on re-extraction, but one that was modified
+locally is first set aside as `<name>.local` and reported:
 
-So recipes and the dictionary stay authoritative on the Mac, but an edit made
-on the VM is never simply gone — it is set aside and reported. Extraction
-prints exactly what it kept and what it replaced.
+```text
+replaced   YAMLs/datadictionary.yaml  (your previous copy saved as YAMLs/datadictionary.yaml.local)
+```
 
-Anything not in the bundle is untouched, so **your own templates and split
-folders should live outside the extracted tree**.
+So recipes and the dictionary stay authoritative on the Mac, without an edit
+made on the VM being lost. It also suits the VM patch workflow, where a file is
+hand-fixed there and copied back.
+
+Nothing you author is bundled. `template.yaml` ships as
+**`template.yaml.example`** precisely so improvements to it keep arriving with
+no chance of landing on a real template. Copy it and rename when starting a
+pull.
 
 ### Whole Pathway On The VM
 

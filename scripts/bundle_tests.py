@@ -159,12 +159,33 @@ class ExtractionPolicyTests(BundleTestCase):
         extract(self.bundle, target)
         return target
 
-    def test_a_seed_file_is_yours_once_it_exists(self):
-        target = self.extract_twice("YAMLs/template.yaml", "# my edited template\n")
-        self.assertEqual(
-            (target / "YAMLs/template.yaml").read_text(encoding="utf-8"),
-            "# my edited template\n",
-        )
+    def test_the_template_ships_only_as_an_example(self):
+        # Nothing the user authors is bundled, so improvements to the template
+        # keep arriving with no chance of landing on a real one.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        self.assertTrue((target / "YAMLs/template.yaml.example").is_file())
+        self.assertFalse((target / "YAMLs/template.yaml").exists())
+
+    def test_unbundled_files_inside_the_tree_do_not_survive(self):
+        # The extracted tree is wholly managed: it is swapped, not merged. A
+        # file of your own placed inside it is gone on the next update, which
+        # is why your templates belong beside the tree rather than in it.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        stray = target / "YAMLs" / "UCPatients.yaml"
+        stray.write_text("# my pull\n", encoding="utf-8")
+        extract(self.bundle, target)
+        self.assertFalse(stray.exists())
+
+    def test_files_beside_the_tree_are_untouched(self):
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        mine = self.tmp / "YAMLs"
+        mine.mkdir(exist_ok=True)
+        (mine / "UCPatients.yaml").write_text("# my pull\n", encoding="utf-8")
+        extract(self.bundle, target)
+        self.assertEqual((mine / "UCPatients.yaml").read_text(encoding="utf-8"), "# my pull\n")
 
     def test_a_replaced_file_is_updated_but_the_old_one_is_kept(self):
         target = self.extract_twice("YAMLs/datadictionary.yaml", "# edited on the VM\n")

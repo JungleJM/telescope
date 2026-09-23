@@ -45,10 +45,14 @@ DEFAULT_OUTPUT = REPO_ROOT / "dist" / "pullmanager_bundle.py"
 # makeYaml's own default paths resolve inside the extracted tree without it
 # knowing it was bundled: it expects <root>/scripts/makeYaml.py alongside
 # <root>/YAMLs/.
-# Policies decide what a re-extraction does to a file that already exists:
-#   replace  the shipped copy wins, but a locally modified one is kept aside
-#            first, so an edit made on the VM is never simply destroyed
-#   seed     written only when absent; yours thereafter
+# Everything bundled is managed, and a re-extraction updates it. A locally
+# modified copy is kept aside as <name>.local first, so an edit made on the VM
+# is never simply destroyed -- which also suits hand-patching a file there and
+# copying it back.
+#
+# Nothing the user authors is bundled. template.yaml ships as
+# template.yaml.example precisely so improvements to it keep arriving without
+# any chance of landing on a real template.
 COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
     (REPO_ROOT / "scripts" / "yamlmanager.py", "scripts/yamlmanager.py", "replace"),
@@ -56,8 +60,7 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     # Authored on the Mac and flowing one way, so the shipped copy wins.
     (REPO_ROOT / "YAMLs" / "recipes.yaml", "YAMLs/recipes.yaml", "replace"),
     (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml", "replace"),
-    # A starting point, not a managed file. Edit it on either side.
-    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml", "seed"),
+    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml.example", "replace"),
 )
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to

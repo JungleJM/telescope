@@ -36,9 +36,10 @@ DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 MANIFEST_FILENAME = ".bundle-manifest.json"
 
-# What a re-extraction does to a file that is already there.
+# What a re-extraction does to a file that is already there. Everything
+# bundled is managed and gets updated; a locally modified copy is set aside
+# rather than overwritten.
 POLICY_REPLACE = "replace"
-POLICY_SEED = "seed"
 
 
 class BundleError(Exception):
@@ -214,8 +215,6 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if scratch.exists():
             shutil.rmtree(scratch)
 
-    policies = {entry["path"]: entry.get("policy", POLICY_REPLACE) for entry in manifest["files"]}
-    kept: list[str] = []
     preserved: list[str] = []
 
     try:
@@ -224,17 +223,10 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
             out_path = staging / rel
             out_path.parent.mkdir(parents=True, exist_ok=True)
             existing = target / rel
-            policy = policies.get(rel, POLICY_REPLACE)
             shipped = section["content"].encode("utf-8")
 
             if existing.is_file():
                 current = existing.read_bytes()
-                if policy == POLICY_SEED:
-                    # Yours once it exists. Carry it forward untouched.
-                    out_path.write_bytes(current)
-                    if current != shipped:
-                        kept.append(rel)
-                    continue
                 if current != shipped:
                     # Replaced, but an edit made here is not simply destroyed.
                     aside = staging / (rel + ".local")
@@ -250,11 +242,7 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         )
 
         # Re-read from disk: proves what landed matches, not just what we held.
-        # Files kept from a previous extraction are exempt, since they are
-        # deliberately not the shipped bytes.
         for section in sections:
-            if section["path"] in kept:
-                continue
             written = (staging / section["path"]).read_bytes()
             if hashlib.sha256(written).hexdigest() != section["sha256"]:
                 raise BundleError(f"Post-write verification failed for {section['path']!r}")
@@ -272,8 +260,6 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if previous.exists() and target.exists():
             shutil.rmtree(previous, ignore_errors=True)
 
-    for rel in kept:
-        print(f"kept       {rel}  (yours; the shipped copy was not applied)")
     for rel in preserved:
         print(f"replaced   {rel}  (your previous copy saved as {rel}.local)")
     return [section["path"] for section in sections]

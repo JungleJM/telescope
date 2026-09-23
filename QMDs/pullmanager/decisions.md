@@ -536,10 +536,17 @@ the first one cannot be used.
 on the VM. Extraction replaces its target directory wholesale, so an update
 would have silently deleted that work.
 
-**Decision.** Every bundled file carries a policy. `replace` files are updated,
-but a locally modified one is first set aside as `<name>.local`. `seed` files
-— currently only `template.yaml` — are written when absent and left alone
-after. Extraction reports both.
+**Decision.** Every bundled file is updated, but a locally modified one is
+first set aside as `<name>.local` and reported.
+
+Nothing the user authors is bundled at all. `template.yaml` ships as
+`template.yaml.example`, so improvements to it keep flowing without any chance
+of landing on a real template. That removed the need for a second "write only
+if absent" policy, which had existed only to protect the template.
+
+The extracted tree is swapped rather than merged, so an unbundled file placed
+inside it does not survive. Pinned by a test, because it is the thing most
+likely to cost someone work.
 
 **Consequences.** Updates stay one-way and recipes and the dictionary stay
 authoritative on the Mac, without an edit made on the VM being lost. It also
