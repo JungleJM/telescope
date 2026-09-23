@@ -2406,8 +2406,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-open", action="store_true", help="Do not try to open a browser when serving with no arguments.")
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     raw_argv = sys.argv[1:] if argv is None else argv
-    open_by_default = not raw_argv
     args = parser.parse_args(raw_argv)
+    # These only mean anything to the server, so supplying one is a request to
+    # serve. Without this, `--port 0` silently wrote a static file instead --
+    # the opposite of what asking for a port means.
+    serve_only = ("--host", "--port", "--public", "--browser-host", "--no-open")
+    asked_to_serve = any(
+        arg == flag or arg.startswith(flag + "=")
+        for arg in raw_argv
+        for flag in serve_only
+    )
+    open_by_default = not raw_argv
     explicit_host = any(arg == "--host" or arg.startswith("--host=") for arg in raw_argv)
     explicit_out = any(arg == "--out" or arg.startswith("--out=") for arg in raw_argv)
     if args.public and not explicit_host:
@@ -2442,7 +2451,7 @@ def main(argv: list[str] | None = None) -> int:
             print("FAILED: errors block split export")
         return 0 if result.ok else 1
 
-    if args.serve or (open_by_default and not args.static):
+    if not args.static and (args.serve or asked_to_serve or open_by_default):
         return serve_dashboard(
             args.host,
             args.port,

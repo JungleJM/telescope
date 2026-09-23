@@ -300,7 +300,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "37f7ec5d6d1f71f968701d1ba1c4a14e84677733c829343c4918b8cc0a979cae",
+  "content_id": "cf1de7390680879906ba9b74e5c2aaa2fd4d57892528d8864a0f4f52cbdb7d6f",
   "file_count": 36,
   "files": [
     {
@@ -510,8 +510,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/yamlmanager.py",
       "policy": "replace",
-      "sha256": "f898ed308eec285127782aa66f305507691e722f9166e8363b321f44c9879f22",
-      "size": 105884
+      "sha256": "21023ceb6a8d6f43fbd0a79eaa94873bbeff099046bd03e711e233fae2686b02",
+      "size": 106333
     },
     {
       "path": "scripts/yamlmanager_backend.py",
@@ -12104,7 +12104,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/makeYaml.py ===
-# === BEGIN FILE: scripts/yamlmanager.py SHA256: f898ed308eec285127782aa66f305507691e722f9166e8363b321f44c9879f22 SIZE: 105884 ===
+# === BEGIN FILE: scripts/yamlmanager.py SHA256: 21023ceb6a8d6f43fbd0a79eaa94873bbeff099046bd03e711e233fae2686b02 SIZE: 106333 ===
 # #!/usr/bin/env python3
 # """
 # Generate a self-contained HTML prototype UI for YAML Manager.
@@ -14513,8 +14513,17 @@ if __name__ == "__main__":
 #     parser.add_argument("--no-open", action="store_true", help="Do not try to open a browser when serving with no arguments.")
 #     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
 #     raw_argv = sys.argv[1:] if argv is None else argv
-#     open_by_default = not raw_argv
 #     args = parser.parse_args(raw_argv)
+#     # These only mean anything to the server, so supplying one is a request to
+#     # serve. Without this, `--port 0` silently wrote a static file instead --
+#     # the opposite of what asking for a port means.
+#     serve_only = ("--host", "--port", "--public", "--browser-host", "--no-open")
+#     asked_to_serve = any(
+#         arg == flag or arg.startswith(flag + "=")
+#         for arg in raw_argv
+#         for flag in serve_only
+#     )
+#     open_by_default = not raw_argv
 #     explicit_host = any(arg == "--host" or arg.startswith("--host=") for arg in raw_argv)
 #     explicit_out = any(arg == "--out" or arg.startswith("--out=") for arg in raw_argv)
 #     if args.public and not explicit_host:
@@ -14549,7 +14558,7 @@ if __name__ == "__main__":
 #             print("FAILED: errors block split export")
 #         return 0 if result.ok else 1
 #
-#     if args.serve or (open_by_default and not args.static):
+#     if not args.static and (args.serve or asked_to_serve or open_by_default):
 #         return serve_dashboard(
 #             args.host,
 #             args.port,
