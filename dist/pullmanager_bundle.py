@@ -300,7 +300,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "24b46726618a6df239de180d1594f964c2c127f35589b6ea35f2155bf3f5de90",
+  "content_id": "1e88d769240c7aebc5088a89f07d00f19049ba2c0c0b8fbdbce22878ce964020",
   "file_count": 40,
   "files": [
     {
@@ -312,14 +312,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "YAMLs/recipes.yaml",
       "policy": "replace",
-      "sha256": "974d2fed63e4b6449dc544cbc0559d3b5c4163ff6dfba28595b1cc65b770f3fb",
-      "size": 12725
+      "sha256": "7b9cd0b6659af2b197542b8efadac197090b6193d29a1428aca51221cb35e014",
+      "size": 12723
     },
     {
       "path": "YAMLs/template.yaml.example",
       "policy": "replace",
-      "sha256": "4100e43555a828a435c6f6bbab33dc5231d40d956c70b8a5e0ae1cafa37966b8",
-      "size": 8155
+      "sha256": "708e8ee0e094bc19ceeb0507183057c50b210529c19f00944425d3fba6f569a3",
+      "size": 8152
     },
     {
       "path": "pullmanager.py",
@@ -528,8 +528,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "55a6446aacb1cfde8f8628e15ecd6aebbf76aec3aa2dfcffd2b2e232a1325442",
-      "size": 102262
+      "sha256": "3477283ea74721402addb5a73ed1966f87cc2d819ee18e1a731f33d1bcf667b2",
+      "size": 110255
     },
     {
       "path": "scripts/yamlmanager.py",
@@ -3389,7 +3389,7 @@ if __name__ == "__main__":
 #           TerminologyConceptSetDim.
 #
 # === END FILE: YAMLs/datadictionary.yaml ===
-# === BEGIN FILE: YAMLs/recipes.yaml SHA256: 974d2fed63e4b6449dc544cbc0559d3b5c4163ff6dfba28595b1cc65b770f3fb SIZE: 12725 ===
+# === BEGIN FILE: YAMLs/recipes.yaml SHA256: 7b9cd0b6659af2b197542b8efadac197090b6193d29a1428aca51221cb35e014 SIZE: 12723 ===
 # batching_recipes:
 #   - name: state
 #     description: Split each expanded PK table by patient state abbreviation.
@@ -3655,8 +3655,6 @@ if __name__ == "__main__":
 #         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 #         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
 #
-#
-#
 #   - name: OtherDiagnoses
 #     description: Patient's diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions
 #     dedup_keys:
@@ -3875,7 +3873,7 @@ if __name__ == "__main__":
 #         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
 #
 # === END FILE: YAMLs/recipes.yaml ===
-# === BEGIN FILE: YAMLs/template.yaml.example SHA256: 4100e43555a828a435c6f6bbab33dc5231d40d956c70b8a5e0ae1cafa37966b8 SIZE: 8155 ===
+# === BEGIN FILE: YAMLs/template.yaml.example SHA256: 708e8ee0e094bc19ceeb0507183057c50b210529c19f00944425d3fba6f569a3 SIZE: 8152 ===
 # # Cosmos variables
 # cosmos_vars:
 #   project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
@@ -3899,9 +3897,6 @@ if __name__ == "__main__":
 # # Generates R scripts to run in R Studio to make Parquet files of what you just pulled
 # project_vars:
 #   project_folder: "Test Run"     # Folder within QueryGenerator. 
-#
-#
-#
 #
 # multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
 #   - name: IBDType
@@ -10586,7 +10581,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 55a6446aacb1cfde8f8628e15ecd6aebbf76aec3aa2dfcffd2b2e232a1325442 SIZE: 102262 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 3477283ea74721402addb5a73ed1966f87cc2d819ee18e1a731f33d1bcf667b2 SIZE: 110255 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11183,6 +11178,67 @@ if __name__ == "__main__":
 #     return str(upload.get("dest_table") or upload.get("name"))
 #
 #
+# MAX_LISTED_CANDIDATES = 6
+#
+#
+# def unbound_table_input_message(
+#     cohort: dict[str, Any],
+#     table_var: str,
+#     meta: dict[str, Any],
+#     table_schemas: dict[str, list[str] | None],
+#     upload_tables: set[str],
+# ) -> str:
+#     """Explain an unbound table input and name what could fill it.
+#
+#     It suggests; it never picks. Binding the wrong table would produce SQL that
+#     runs and returns the wrong rows, so the choice stays with the author. The
+#     candidates are what makes the error actionable: tables in this template
+#     whose known columns cover everything the recipe reads through the alias.
+#     """
+#     name = cohort.get("name")
+#     alias = meta.get("alias")
+#     needed = list(meta.get("required_columns") or [])
+#     own = cohort.get("dest_table") or name
+#
+#     def label(table: str) -> str:
+#         return f"{table} ({'upload' if table in upload_tables else 'cohort'})"
+#
+#     fits: list[str] = []
+#     unknown: list[str] = []
+#     for table, columns in sorted(table_schemas.items()):
+#         if table == own:
+#             continue
+#         if columns is None:
+#             unknown.append(label(table))
+#         elif all(col in columns for col in needed):
+#             fits.append(label(table))
+#
+#     def listing(items: list[str]) -> str:
+#         shown = ", ".join(items[:MAX_LISTED_CANDIDATES])
+#         extra = len(items) - MAX_LISTED_CANDIDATES
+#         return shown + (f", and {extra} more" if extra > 0 else "")
+#
+#     columns_text = f"column(s) {', '.join(needed)}" if needed else "no particular columns"
+#     parts = [
+#         f"Cohort `{name}` joins a table through `{table_var}` (as `{alias}`) and reads "
+#         f"{columns_text} from it, but nothing binds `{table_var}`."
+#     ]
+#     if fits:
+#         parts.append(f"Tables in this template that fit: {listing(fits)}.")
+#     if unknown:
+#         parts.append(f"Schema unknown, so they may fit: {listing(unknown)}.")
+#     if not fits and not unknown:
+#         parts.append(
+#             "No table in this template provides those columns; add an upload "
+#             "cohort or a cohort that produces them."
+#         )
+#     example = (fits or unknown or ["<table>"])[0].split(" (")[0]
+#     recipe = cohort.get("_recipe")
+#     where = f"the cohort using recipe `{recipe}`" if recipe else "this cohort"
+#     parts.append(f"Bind it on {where}: `vars: {{{table_var}: {example}}}`.")
+#     return " ".join(parts)
+#
+#
 # def validate_and_resolve(
 #     template: dict[str, Any],
 #     recipes_doc: dict[str, Any],
@@ -11211,8 +11267,21 @@ if __name__ == "__main__":
 #         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
 #             auto_vars["PKTable"] = pk_table
 #         vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+#         table_inputs = analysis["table_inputs"].get(name, {})
 #         for var, paths in required.items():
-#             if var not in vars_for_cohort:
+#             if var in vars_for_cohort:
+#                 continue
+#             if var in table_inputs:
+#                 # A table input is not a plain value: say what kind of table it
+#                 # needs and which ones in this template could supply it.
+#                 result.error(
+#                     "unbound_table_input",
+#                     unbound_table_input_message(
+#                         cohort, var, table_inputs[var], table_schemas, set(uploads)
+#                     ),
+#                     ", ".join(paths),
+#                 )
+#             else:
 #                 result.error(
 #                     "missing_variable",
 #                     f"Cohort `{name}` requires variable `{var}`, but no value was provided.",
@@ -11299,10 +11368,15 @@ if __name__ == "__main__":
 #             schema = upload.get("columns") or upload.get("schema") or []
 #             if schema and isinstance(schema[0], dict):
 #                 schemas[dest] = [str(c.get("name")) for c in schema if c.get("name")]
+#             elif schema:
+#                 schemas[dest] = [str(c) for c in schema]
 #             else:
-#                 schemas[dest] = [str(c) for c in schema] if schema else []
-#                 if not schema:
-#                     result.warn("upload_schema_unknown", f"Upload `{dest}` has no locally discoverable schema.", dest)
+#                 # Unknown, not empty. An empty list would claim the table has no
+#                 # columns, so binding a recipe to it reported every column it
+#                 # reads as missing -- when the truth is only that nothing
+#                 # locally can check.
+#                 schemas[dest] = None
+#                 result.warn("upload_schema_unknown", f"Upload `{dest}` has no locally discoverable schema.", dest)
 #         else:
 #             schemas[dest] = []
 #     return schemas
@@ -13143,6 +13217,120 @@ if __name__ == "__main__":
 #         self.assertEqual(offenders, [], summarize_result(res))
 #
 #
+# class TableBindingTests(MakeYamlTest):
+#     """A recipe that joins a table through a placeholder must say what it needs.
+#
+#     It suggests candidates but never picks one: binding the wrong table would
+#     produce SQL that runs and returns the wrong rows.
+#     """
+#
+#     TEMPLATE = """
+# project_folder: Bind Test
+# cosmos_db: COSMOS
+# vars: {{min_date_key: 20200101, max_date_key: 20240101{extra_vars}}}
+# upload_cohorts:
+#   - name: Codes
+#     dest_table: Codes
+#     file_type: csv
+#     file_loc: codes.csv
+#   - name: Unrelated
+#     dest_table: Unrelated
+#     file_type: csv
+#     file_loc: unrelated.csv
+# {extra_uploads}
+# cohorts:
+#   - name: Patients
+#     type: PK
+#     dest_table: Patients
+#     columns: [{{source: p.DurableKey, name: PatientDurableKey, type: BIGINT, nullable: false}}]
+#     filter: {{from: PatientDim AS p}}
+#   - name: Visits
+#     type: fact
+#     dest_table: Visits
+#     columns: [{{source: e.EncounterKey, name: EncounterKey, type: BIGINT}}]
+# {cohort_vars}
+#     filter:
+#       from: EncounterFact AS e
+#       join:
+#         - "INNER JOIN ##JVM_{{{{CodesTable}}}} AS c ON c.Code = e.EncounterKey"
+# """
+#
+#     def compile(self, extra_vars="", extra_uploads="", cohort_vars=""):
+#         (self.tmp / "codes.csv").write_text("Code,Label\nK50,Crohns\n", encoding="utf-8")
+#         (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+#         text = self.TEMPLATE.format(
+#             extra_vars=extra_vars, extra_uploads=extra_uploads, cohort_vars=cohort_vars
+#         )
+#         return self.compile_template(text)
+#
+#     def binding_error(self, res):
+#         errors = [m for m in res.errors if m.code == "unbound_table_input"]
+#         self.assertTrue(errors, summarize_result(res))
+#         return errors[0].message
+#
+#     def test_an_unbound_table_input_is_named_as_a_table(self):
+#         message = self.binding_error(self.compile())
+#         self.assertIn("`CodesTable`", message)
+#         self.assertIn("as `c`", message)
+#         self.assertIn("Code", message)
+#
+#     def test_suggests_only_tables_that_have_the_columns(self):
+#         message = self.binding_error(self.compile())
+#         self.assertIn("Codes (upload)", message)
+#         self.assertNotIn("Unrelated (upload)", message)
+#
+#     def test_never_binds_on_its_own(self):
+#         # Even with exactly one fitting table, the author has to choose it.
+#         self.assertFalse(self.compile().ok)
+#
+#     def test_tables_of_unknown_shape_are_offered_as_possible(self):
+#         extra = """  - name: FromProjects
+#     dest_table: FromProjects
+#     file_type: dbtable
+# """
+#         message = self.binding_error(self.compile(extra_uploads=extra))
+#         self.assertIn("Schema unknown", message)
+#         self.assertIn("FromProjects (upload)", message)
+#
+#     def test_says_so_when_nothing_fits(self):
+#         (self.tmp / "codes.csv").write_text("Wrong\nx\n", encoding="utf-8")
+#         text = self.TEMPLATE.format(extra_vars="", extra_uploads="", cohort_vars="")
+#         (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+#         message = self.binding_error(self.compile_template(text))
+#         self.assertIn("No table in this template provides those columns", message)
+#
+#     def test_shows_how_to_bind_it(self):
+#         message = self.binding_error(self.compile())
+#         self.assertIn("vars: {CodesTable: Codes}", message)
+#
+#     def test_binding_on_the_cohort_resolves_it(self):
+#         # The recommended place: next to the recipe that needs it, rather than
+#         # as a global that reads like unexplained metadata.
+#         res = self.compile(cohort_vars="    vars: {CodesTable: Codes}")
+#         self.assertEqual([m for m in res.errors if m.code == "unbound_table_input"], [])
+#
+#     def test_binding_globally_still_works(self):
+#         res = self.compile(extra_vars=", CodesTable: Codes")
+#         self.assertEqual([m for m in res.errors if m.code == "unbound_table_input"], [])
+#
+#     def test_binding_to_a_table_of_unknown_shape_is_not_a_column_error(self):
+#         # An upload with no discoverable schema is unknown, not empty. Treating
+#         # it as empty reported every column the recipe reads as missing.
+#         extra = """  - name: FromProjects
+#     dest_table: FromProjects
+#     file_type: dbtable
+# """
+#         res = self.compile(extra_uploads=extra, cohort_vars="    vars: {CodesTable: FromProjects}")
+#         self.assertNotIn("missing_input_column", [m.code for m in res.errors])
+#         self.assertIn("upload_schema_unknown", [m.code for m in res.warnings])
+#
+#     def test_a_plain_value_is_still_a_missing_variable(self):
+#         template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
+#         res = self.compile_template(template)
+#         self.assertHasError(res, "missing_variable")
+#         self.assertNotIn("unbound_table_input", [m.code for m in res.errors])
+#
+#
 # TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
 #     "loading": LoadingTests,
 #     "recipes": RecipeTests,
@@ -13160,6 +13348,7 @@ if __name__ == "__main__":
 #     "split_artifacts": SplitArtifactTests,
 #     "uploaded_pk": UploadedPkTests,
 #     "datadictionary": DataDictionaryTests,
+#     "table_binding": TableBindingTests,
 # }
 #
 #

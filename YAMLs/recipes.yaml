@@ -263,8 +263,6 @@ recipes:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
 
-
-
   - name: OtherDiagnoses
     description: Patient's diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions
     dedup_keys:

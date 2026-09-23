@@ -22,9 +22,6 @@ test_options:
 project_vars:
   project_folder: "Test Run"     # Folder within QueryGenerator. 
 
-
-
-
 multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
   - name: IBDType
     stage: during_build
