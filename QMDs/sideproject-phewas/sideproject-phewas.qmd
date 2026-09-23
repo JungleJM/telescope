@@ -57,7 +57,7 @@ ip <- installed.packages()
 writeLines(paste(ip[, "Package"], ip[, "Version"]), "C:/phewas_offline/vm_packages.txt")
 ```
 
-Bring `vm_packages.txt` back to the Mac as `~/phewas_transfer_build/vm_packages.txt`.
+Bring `vm_packages.txt` back to the Mac as `QMDs/sideproject-phewas/build/vm_packages.txt`.
 It holds one `name version` pair per line.
 
 If text cannot come off the VM, skip this. The build then falls back to the
@@ -78,8 +78,9 @@ In Terminal, from the repo root:
 Rscript QMDs/sideproject-phewas/build_phewas_lib.R
 ```
 
-It works in `~/phewas_transfer_build`, creating that folder if needed, and starts
-afresh on every run. It:
+It works in `QMDs/sideproject-phewas/build/`, which git ignores. Each run
+starts `Rlib/`, `zips/`, the PheWAS clone and its tarball afresh, and leaves
+`vm_packages.txt` alone. It:
 
 1. clones PheWAS from GitHub and builds a source tarball of it;
 2. finds PheWAS's dependencies, recursively, from CRAN's Windows R 4.6 index;
@@ -107,9 +108,10 @@ Do not pack until the check says `OK`.
 From the repo root:
 
 ```bash
-python3 QMDs/sideproject-phewas/phewas_transfer.py pack \
-  ~/phewas_transfer_build/Rlib ~/phewas_transfer_build/parts
+python3 QMDs/sideproject-phewas/phewas_transfer.py pack
 ```
+
+This reads `build/Rlib` and writes the parts to `build/parts/`.
 
 It prints the number of parts, the zip size and its SHA-256. With the current
 contents that is about 3.6 MB of zip in five parts of about 1 MB each. If the

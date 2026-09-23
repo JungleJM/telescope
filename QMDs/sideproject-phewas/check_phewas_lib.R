@@ -2,8 +2,8 @@
 #
 # Mac, before packing. Nothing is loaded: the answer comes from the DESCRIPTION
 # files, the source tarballs and the VM's exported package list.
-#   check_phewas_lib("~/phewas_transfer_build/Rlib",
-#                    vm_packages = "~/phewas_transfer_build/vm_packages.txt",
+#   check_phewas_lib("QMDs/sideproject-phewas/build/Rlib",
+#                    vm_packages = "QMDs/sideproject-phewas/build/vm_packages.txt",
 #                    r_version = "4.6.1")
 #
 # VM, after unpacking and installing the source tarballs. Puts the library

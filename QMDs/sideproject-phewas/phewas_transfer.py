@@ -3,7 +3,9 @@
 
 On the Mac:
 
-    python3 phewas_transfer.py pack ~/phewas_transfer_build/Rlib ~/phewas_transfer_build/parts
+    python3 QMDs/sideproject-phewas/phewas_transfer.py pack
+
+which reads build/Rlib and writes build/parts, both next to this script.
 
 On the VM:
 
@@ -41,6 +43,7 @@ END_RE = re.compile(r"^# END part (\d+)/(\d+)$")
 B64_RE = re.compile(r"^[A-Za-z0-9+/=]+$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 CHECK_MARKER = ".check-passed"
+BUILD_DIR = Path(__file__).resolve().parent / "build"
 
 
 LINE_WIDTH = 76
@@ -216,8 +219,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     p_pack = sub.add_parser("pack", help="zip and encode a library into text parts")
-    p_pack.add_argument("lib", type=Path)
-    p_pack.add_argument("out", type=Path)
+    p_pack.add_argument("lib", type=Path, nargs="?", default=BUILD_DIR / "Rlib")
+    p_pack.add_argument("out", type=Path, nargs="?", default=BUILD_DIR / "parts")
     p_pack.add_argument("--lines-per-part", type=int, default=LINES_PER_PART)
     p_unpack = sub.add_parser("unpack", help="verify the parts and extract into <lib>.new")
     p_unpack.add_argument("parts_dir", type=Path)

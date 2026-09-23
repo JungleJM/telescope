@@ -4,21 +4,22 @@
 #
 #   Rscript QMDs/sideproject-phewas/build_phewas_lib.R
 #
-# Works in ~/phewas_transfer_build and leaves Rlib/ there ready to pack. Uses
-# ~/phewas_transfer_build/vm_packages.txt as the VM's package list when it
+# Works in build/ next to this script (ignored by git) and leaves Rlib/ there
+# ready to pack. Uses build/vm_packages.txt as the VM's package list when it
 # exists, and falls back to the (possibly stale) DSVM Plugins.yaml otherwise.
 
-build_dir   <- path.expand("~/phewas_transfer_build")
+file_arg   <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+script_dir <- if (length(file_arg)) dirname(normalizePath(file_arg)) else "QMDs/sideproject-phewas"
+repo_root  <- normalizePath(file.path(script_dir, "..", ".."))
+check_file <- file.path(script_dir, "check_phewas_lib.R")
+
+build_dir   <- file.path(script_dir, "build")
 library_dir <- file.path(build_dir, "Rlib")
 zips_dir    <- file.path(build_dir, "zips")
 contrib     <- "https://cloud.r-project.org/bin/windows/contrib/4.6"
 phewas_repo <- "https://github.com/PheWAS/PheWAS.git"
 extra       <- character()  # packages the VM has but check_phewas_lib() says are too old
 
-file_arg   <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
-script_dir <- if (length(file_arg)) dirname(normalizePath(file_arg)) else "QMDs/sideproject-phewas"
-repo_root  <- normalizePath(file.path(script_dir, "..", ".."))
-check_file <- file.path(script_dir, "check_phewas_lib.R")
 source(check_file)
 
 dir.create(build_dir, showWarnings = FALSE)
@@ -82,5 +83,4 @@ for (z in got[, 2]) unzip(z, exdir = library_dir)
 invisible(file.copy(check_file, library_dir))
 
 check_phewas_lib(library_dir, vm_packages = vm_file, r_version = "4.6.1")
-message("Next, from the repo root:\n  python3 QMDs/sideproject-phewas/phewas_transfer.py pack ",
-        library_dir, " ", file.path(build_dir, "parts"))
+message("Next, from the repo root:\n  python3 QMDs/sideproject-phewas/phewas_transfer.py pack")
