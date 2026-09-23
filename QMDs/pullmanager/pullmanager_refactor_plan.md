@@ -1,6 +1,6 @@
 # Pullmanager Refactor Plan
 
-> **Status:** Phases 0-2 are implemented. The verified schema, naming rules,
+> **Status:** Phases 0-3 are implemented. The verified schema, naming rules,
 > and open questions now live in `pullmanager_contracts.md`, which corrects
 > several details this plan and `yamlmanagerDesign.qmd` got wrong. Read that
 > first; this document remains the phase roadmap.
@@ -27,14 +27,20 @@ Pullmanager owns execution and status:
 
 - Read `pullmanifest.yaml`.
 - Execute sessions in manifest order.
-- Keep server/session resources alive while global temp tables are needed.
+- Keep the Cosmos connection open for a whole session, because global temp
+  tables die with it.
 - Run setup, uploads, PK, and run phases.
-- Generate/render server SQL and local transfer SQL from the phase YAML.
+- Render server SQL and local transfer SQL from the phase YAML. No separate
+  generator exists to delegate this to; Pullmanager owns it.
 - Execute SQL through adapters.
 - Update manifest status after each phase/table/run.
 - Support retry/resume from manifest state.
 
-YAML Manager remains the planner and authoring tool. Pullmanager is the VM-side executor.
+YAML Manager remains the planner and authoring tool. Pullmanager is the
+VM-side executor.
+
+Settled contracts, verified schema and open questions live in
+`pullmanager_contracts.md`. This document is the phase roadmap.
 
 ## Portability Constraint
 
@@ -224,7 +230,7 @@ These old patterns should not drive the new architecture:
 
 ## Project Phases
 
-### Phase 0: Contracts And Fixtures
+### Phase 0: Contracts And Fixtures `[done]`
 
 Create the initial Pullmanager docs, sample manifests, and fixtures.
 
@@ -241,7 +247,7 @@ Exit criteria:
 - We can describe what Pullmanager expects before writing executor code.
 - The bundle strategy is documented.
 
-### Phase 1: Bundle Infrastructure
+### Phase 1: Bundle Infrastructure `[done]`
 
 Build the source layout and deterministic bundle/extractor.
 
@@ -259,7 +265,7 @@ Exit criteria:
 - One generated file can be copied to the VM.
 - Extraction is deterministic and refuses tampered/malformed bundles.
 
-### Phase 2: Core Models And Manifest I/O
+### Phase 2: Core Models And Manifest I/O `[done]`
 
 Implement manifest/session/phase/run models and safe YAML read/write.
 
@@ -275,7 +281,7 @@ Exit criteria:
 - Pullmanager can load a manifest, mark a phase running/done/failed, and write it back.
 - Timing fields are written consistently.
 
-### Phase 3: Normalization And Naming
+### Phase 3: Normalization And Naming `[done]`
 
 Implement old compatibility rules as explicit normalization.
 
@@ -292,128 +298,239 @@ Exit criteria:
 
 - Edge cases from `yamlprocessing.md` have tests.
 
-### Phase 4: SQL Rendering Without Database Execution
+### Phase 4: SQL Rendering Without Database Execution `[next]`
 
-Build server-side and local-side SQL renderers.
+Build the server-side and local-side renderers.
+
+**There is no existing renderer to call.** `makeServer`, `makeLocal`,
+`makeCosmos`, `makeProjects` and `generator.py` exist nowhere in this repo or
+its history, only in the analysis documents. Earlier drafts of this plan said
+Pullmanager would delegate SQL generation to them; it has to write it.
+
+The corrected fixtures are the specification. `inputSimple.yaml`,
+`examplecos.sql` and `exampleproj.sql` are now a verified matching triple, and
+the old generator turned out to be faithful to its input, so its output is a
+usable target rather than a cautionary tale.
 
 Outputs:
 
-- Server/Cosmos SQL for setup/upload/PK/run phases.
-- Projects/local transfer SQL using `OPENQUERY`.
-- Structured SQL blocks keyed by manifest phase/table IDs.
-- Rendered SQL files saved under manifest-defined output paths.
+- Cosmos SQL for the setup, PK and run phases, rendering from the Phase 3
+  naming and normalization helpers rather than re-deriving names.
+- Projects transfer SQL: `OPENQUERY` into `#Local_<dest>`, then insert into
+  `<project_db>.dbo.<dest>`.
+- Table shell DDL for the setup phase (see write mode below).
+- Structured SQL blocks keyed by manifest phase and run ids.
+- A declared telemetry contract, not result sets identified by column name.
+
+Write mode, decided:
+
+```text
+setup           DROP + CREATE  <project_db>.dbo.<dest>   once per session
+run LA-Female   INSERT
+run LA-Male     INSERT
+```
+
+The old generator dropped and recreated inside every transfer block, which with
+batching leaves only the last batch. Moving the drop into setup is what lets
+batches accumulate into one complete cohort table.
+
+Column widths are measured, not guessed. `#Local_<dest>` already holds the
+transferred data before the destination table is created, so
+`MAX(LEN(col)) + 50` is free there and no pre-scan is needed.
+
+Not carried over:
+
+- The unfiltered `source_raw` row count. It was a full scan of a fact table for
+  an approximate number, and the cheap metadata alternative
+  (`sys.partitions`, `sys.dm_db_partition_stats`) is not readable with the
+  permissions available on Cosmos.
+- `GO` batch separators in generated SQL. Pullmanager controls batching.
+- Schema qualification applied to `from` but not `join`; Phase 3 applies it
+  consistently and cannot produce `dbo.dbo.`.
 
 Exit criteria:
 
-- Given fixtures, Pullmanager renders predictable SQL.
-- No substring matching is needed to select executable blocks.
+- Given the fixture YAML, the renderer reproduces the structure of
+  `examplecos.sql` and `exampleproj.sql`.
+- Every executable block is addressed by manifest id. No SQL text is searched.
 
-### Phase 5: Dry-Run Pullmanager
+### Phase 5: Dry-Run Pullmanager `[planned]`
 
-Implement CLI orchestration without live database execution.
+CLI orchestration with no database access.
 
 Outputs:
 
 - `pullmanager --dry-run split/pullmanifest.yaml`
-- Ordered session/phase/run traversal.
-- Rendered SQL artifact output.
-- Manifest status can remain unchanged or record dry-run metadata.
+- Ordered session, phase and run traversal.
+- Rendered SQL written to inspectable files.
+- The batch materialization plan made visible before anything runs.
+- Manifest either untouched or annotated with dry-run metadata.
 
 Exit criteria:
 
-- The planned execution order is visible and testable.
-- The generated SQL can be manually inspected before pyodbc exists.
+- Execution order is visible and testable.
+- Every statement can be read before pyodbc exists.
 
-### Phase 6: PyODBC Execution Adapter
+### Phase 6: PyODBC Execution Adapter `[planned]`
 
-Bring in the old database lessons narrowly.
+The mechanical answers are already harvested; see "Connection And Execution
+Facts" in `pullmanager_contracts.md`.
+
+Known:
+
+- `ODBC Driver 17 for SQL Server`, which defaults to `Encrypt=no`.
+- `Trusted_Connection=yes` on both sides, so **there are no credentials**. The
+  `.env` holds host and database names only.
+- `cursor.messages` read on both the success and failure paths, which is what
+  surfaces the inner error of a failed `OPENQUERY`.
+- Scripts split on lines equal to `GO`, then every result set drained through
+  `nextset()`.
+- `autocommit=False` by default, so a block is already one transaction.
 
 Outputs:
 
-- Connection management.
-- Cursor message capture.
-- `nextset()` handling.
+- Connection management for Cosmos (held open) and Projects (per table).
+- Message capture, `nextset()` drain, error reporting with server messages.
 - Runtime server identity capture.
-- SQL error reporting.
-- Transaction/commit policy.
+- Parameterized bulk insert via `fast_executemany`, chunked, for every upload
+  path.
 - Timeout policy.
 
 Exit criteria:
 
-- A small known SQL command can run and update manifest telemetry.
-- Errors preserve useful server messages.
+- A known statement runs and updates manifest telemetry.
+- A failed `OPENQUERY` reports its inner error, not just the outer failure.
 
-### Phase 7: Server Session Execution
+### Phase 7: Server Session Execution `[planned]`
 
-Execute setup/upload/PK/run server SQL while preserving session-scoped global temps.
-
-Outputs:
-
-- Session connection lifecycle.
-- Global temp table creation.
-- Per-table/per-cohort timing.
-- Server row-count telemetry.
-
-Exit criteria:
-
-- Pullmanager can create global temps and record timing/rows in the manifest.
-
-### Phase 8: Local Projects Transfer
-
-Execute local transfer SQL.
+Execute setup, uploads, PK and runs while the session's global temps live.
 
 Outputs:
 
-- Runtime linked-server value passed to local SQL rendering.
-- `#Local_<dest>` staging.
-- Final table drop/recreate or configured write mode.
-- Cosmos count and Projects count comparison.
+- Session connection lifecycle. The Cosmos connection is held open across every
+  phase of a session, because `##JVM_*` dies with it.
+- An epoch minted per connection, and `@@SERVERNAME` captured into it. The
+  instance name **changes on every connection**, so it is never cached.
+- Upload cohorts materialized through the client, since there is no linked
+  server from Cosmos back to Projects.
+- PK construction, then transfer of the PK table to Projects, which is what
+  makes resume possible at all.
+- PK uniqueness verification (`COUNT(*)` against `COUNT(DISTINCT keys)`).
+  Non-unique keys make `ORDER BY` non-deterministic, so batch 3 would not be
+  the same rows twice.
+- Batch materialization against the **local** PK table, not Cosmos: the batch
+  predicate and `OFFSET/FETCH` run inside the `OPENQUERY` string on the
+  Projects side, so only the keys for the batch in hand move.
+- Per-table timing and row-count telemetry.
 
 Exit criteria:
 
-- Rows transfer from `##JVM_<dest>` to `<project_db>.dbo.<dest>`.
-- Manifest records both counts and duration.
+- A session creates its global temps, records timing and rows, and keeps them
+  alive across phases.
+- Batch key sets are reproducible across runs given the same PK table.
 
-### Phase 9: Resume, Retry, And Failure Behavior
-
-Make manifest status operational.
+### Phase 8: Local Projects Transfer `[planned]`
 
 Outputs:
 
-- Skip done phases by default.
-- Retry failed phases when requested.
-- Mark dependent work blocked/skipped when needed.
-- Preserve partial completion.
+- The runtime linked-server value injected into local SQL from the current
+  epoch.
+- `OPENQUERY` into `#Local_<dest>`, then insert into the destination.
+- Destination column widths measured from the staging table.
+- The final insert wrapped in a transaction, so a failure partway through
+  cannot duplicate rows when the run is retried.
+- Cosmos and Projects row counts captured separately and compared.
+- Large row-count warnings.
 
 Exit criteria:
 
-- Pullmanager can restart from a partially completed manifest without redoing successful work unless requested.
+- Rows land in `<project_db>.dbo.<dest>` and the manifest records both counts
+  and a duration.
+- Re-running a failed batch does not duplicate rows.
 
-### Phase 10: Artifact Handoff
+### Phase 9: Resume, Retry, And Failure Behavior `[planned]`
 
-Prepare clean handoff to `makeArtifacts`.
+Failure policy, decided:
+
+| Failure | Effect |
+| --- | --- |
+| A run fails | Siblings continue. Batches are disjoint appends. |
+| A phase fails | Everything downstream in that session is blocked. |
+| A session fails | The next session still runs. |
+
+One night therefore produces one list of every failure, rather than one failure
+per night.
 
 Outputs:
 
-- Manifest fields describing actual completed local tables.
-- Optional summary command.
-- Clear contract for parquet export based on actual data.
+- Settled work (`done`, `skipped`) skipped on a plain resume.
+- Stale work detected by epoch. `is_stale()` means the **server-side** output
+  is gone, which is all there is for setup, uploads and PK; a run's durable
+  result is rows in a Projects table and survives.
+- Default resume replays the whole session and drops its Projects tables.
+- `--resume-partial` keeps completed local transfers and replays only the
+  server side, restoring the PK by uploading the saved Projects table rather
+  than re-querying Cosmos. Guarded by comparing the restored PK against the row
+  count recorded when it was first built: Cosmos is a refreshing snapshot, and
+  appending later batches onto earlier ones drawn from a different population
+  would stitch one table from two cohort definitions, silently.
+- Retry of a single failed run without dropping the destination table.
 
 Exit criteria:
 
-- `makeArtifacts` can inspect completed outputs without trusting planned-but-failed work.
+- A partially completed manifest restarts without redoing successful work,
+  unless asked.
+- A resume across a Cosmos refresh is refused rather than silently mixed.
+
+### Phase 10: Artifact Handoff `[planned]`
+
+Outputs:
+
+- Manifest fields describing the local tables that actually completed.
+- A summary command.
+- A contract for parquet export based on real data, including the
+  `separate_parquets` batching flag.
+- Measured column widths surfaced so templates can be tuned from data.
+
+Exit criteria:
+
+- `makeArtifacts` can inspect completed outputs without trusting
+  planned-but-failed work.
+
+## Adjacent Work: YAML Manager
+
+Not part of these phases, and on the other side of the file boundary, but
+agreed during planning:
+
+- **Data dictionary validation.** `YAMLs/datadictionary.yaml` is the source of
+  truth for column types. Cohort columns are checked against it by type family,
+  with alias resolution; an unknown table is a hard stop so the dictionary stays
+  complete. Belongs in `makeYaml.py`.
+- `dedup_key` accepted and normalized with a warning at authoring time.
+- `stop_at_for_pk_table` applied to the root PK cohort only.
+- `stop_at_for_non_pk_tables`, `print_md` and `printout_md` warned as ignored.
+
+The batch cross-product fix already landed in `makeYaml.py`.
 
 ## When To Use The Old Code
 
-Do not start by porting the old code.
+Do not start by porting the old code. It is a reference quarry, not the
+architecture.
 
-Use the old code later for narrow questions:
+Most of what was wanted from it has now been extracted and written down in
+`pullmanager_contracts.md`: connection strings, `cursor.messages` behavior,
+`OPENQUERY` error surfacing, `GO` splitting, the `nextset()` drain, transaction
+and timeout policy, and the shape of the CSV upload.
 
-- pyodbc connection strings.
-- cursor message behavior.
-- `OPENQUERY` error handling.
-- transaction/commit behavior.
-- timeout handling.
-- CSV upload implementation details if needed.
+Still worth asking it about, if it surfaces:
 
-The old code should be a reference quarry, not the architecture.
+- Whether any upload path other than literal `INSERT ... VALUES` was ever tried.
+- How `parquet` upload cohorts were meant to behave, given Cosmos cannot read
+  them directly.
+- Anything about `makeR` or artifact export, for Phase 10.
+
+Two patterns from it must not be reproduced, and both are documented with the
+reasons: selecting SQL blocks by substring-matching a table name, which is
+broken on prefix names and demonstrably mis-fires on this project's own
+`PKTable` / `PKTable2` pair; and recovering row counts by inspecting result-set
+column names instead of a declared contract.
