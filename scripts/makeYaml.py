@@ -1369,7 +1369,10 @@ def resolved_dimension(dim: dict[str, Any], bucket: dict[str, Any]) -> dict[str,
         "column": dim.get("column"),
     }
     if bucket.get("is_other"):
+        # The catch-all is defined by what it is not, so it has to carry the
+        # named values; a predicate for it cannot be built from `is_other` alone.
         resolved["is_other"] = True
+        resolved["excludes"] = [v for v in (dim.get("values") or [])]
     else:
         resolved["value"] = bucket.get("value")
     return resolved
@@ -2057,8 +2060,11 @@ batching:
       include_other: true
 """)
         self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "sex-other"])
-        self.assertTrue(runs[1]["batch"]["dimensions"][0]["is_other"])
-        self.assertNotIn("value", runs[1]["batch"]["dimensions"][0])
+        other = runs[1]["batch"]["dimensions"][0]
+        self.assertTrue(other["is_other"])
+        self.assertNotIn("value", other)
+        # The catch-all is defined by exclusion, so it carries the named values.
+        self.assertEqual(other["excludes"], ["Female"])
 
     def test_unresolvable_dimensions_stay_logical(self):
         # `values: all` needs a DISTINCT and chunking needs a row count, so

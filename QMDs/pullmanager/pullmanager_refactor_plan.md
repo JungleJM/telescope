@@ -1,6 +1,8 @@
 # Pullmanager Refactor Plan
 
-> **Status:** Phases 0-6 are implemented. The verified schema, naming rules,
+> **Status:** Phases 0-8 are implemented; Phase 9's policy landed with them.
+> Phases 6-8 have never run against a database and cannot from the
+> development machine, which has no driver and no reachable server. The verified schema, naming rules,
 > and open questions now live in `pullmanager_contracts.md`, which corrects
 > several details this plan and `yamlmanagerDesign.qmd` got wrong. Read that
 > first; this document remains the phase roadmap.
@@ -401,7 +403,7 @@ Exit criteria:
 - A known statement runs and updates manifest telemetry.
 - A failed `OPENQUERY` reports its inner error, not just the outer failure.
 
-### Phase 7: Server Session Execution `[next]`
+### Phase 7: Server Session Execution `[done]` (written, not yet run against a database)
 
 Execute setup, uploads, PK and runs while the session's global temps live.
 
@@ -429,7 +431,7 @@ Exit criteria:
   alive across phases.
 - Batch key sets are reproducible across runs given the same PK table.
 
-### Phase 8: Local Projects Transfer `[planned]`
+### Phase 8: Local Projects Transfer `[done]` (written, not yet run against a database)
 
 Outputs:
 
@@ -448,7 +450,7 @@ Exit criteria:
   and a duration.
 - Re-running a failed batch does not duplicate rows.
 
-### Phase 9: Resume, Retry, And Failure Behavior `[planned]`
+### Phase 9: Resume, Retry, And Failure Behavior `[mostly done]`
 
 Failure policy, decided:
 

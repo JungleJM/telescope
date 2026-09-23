@@ -104,6 +104,48 @@ def _report_exclusions(left_out, failures) -> None:
         )
 
 
+def execute(manifest: Manifest, args: argparse.Namespace) -> int:
+    from .db import DatabaseError, Settings
+    from .session import SessionRunner
+
+    settings = Settings.from_env()
+    mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+    reports = []
+    for session in manifest.sessions:
+        print(f"=== {session.session_id} ===")
+        runner = SessionRunner(
+            manifest, session, settings, mode=mode, retry_failed=args.retry_failed
+        )
+        try:
+            with runner:
+                report = runner.execute()
+        except DatabaseError as exc:
+            print(f"  could not open the session: {exc}", file=sys.stderr)
+            # Sessions have independent connections and PKs, so the next one
+            # still gets its chance.
+            reports.append(None)
+            continue
+        reports.append(report)
+        print(f"  epoch {report.epoch} on {report.linked_server}")
+        for label in report.completed:
+            print(f"  done     {label}")
+        for label in report.skipped:
+            print(f"  skipped  {label}")
+        for label, message in report.failed:
+            print(f"  FAILED   {label}: {message}")
+        for warning in report.warnings:
+            print(f"  warning  {warning}")
+        print()
+
+    failures = [r for r in reports if r is None or not r.ok]
+    print(f"{len(reports) - len(failures)}/{len(reports)} session(s) completed.")
+    if any(r is not None for r in reports):
+        print(f"Manifest updated: {manifest.path}")
+    else:
+        print("No session opened, so the manifest was not modified.")
+    return 1 if failures else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pullmanager",
@@ -115,6 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Render the SQL each phase implies without touching a database.",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Run the manifest against live connections, updating it as it goes.",
     )
     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
     parser.add_argument(
@@ -162,8 +209,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         manifest = Manifest.load(args.manifest)
+        if args.dry_run and args.execute:
+            print("--dry-run and --execute are mutually exclusive.", file=sys.stderr)
+            return 1
         if args.dry_run:
             return dry_run(manifest, args)
+        if args.execute:
+            return execute(manifest, args)
         summarize(manifest)
     except (ManifestError, PlanError, NamingError, NormalizationError) as exc:
         print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)

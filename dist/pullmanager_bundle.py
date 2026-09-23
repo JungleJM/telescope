@@ -278,8 +278,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "bbe771356c7f6872916607be8f81957566c36bc0471cadf553ad652b8cad8015",
-  "file_count": 24,
+  "content_id": "3be18c88bac88645ac178279890bc3bf5966fbb3810bd57b87593c771629c875",
+  "file_count": 30,
   "files": [
     {
       "path": "pullmanager.py",
@@ -297,9 +297,14 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 79
     },
     {
+      "path": "pullmanager/batches.py",
+      "sha256": "dc90271523a5145924ab101adf6119f716d790d33395b68a3baef905a8f04e17",
+      "size": 5412
+    },
+    {
       "path": "pullmanager/cli.py",
-      "sha256": "44c18978b46a38ed06b4ea378204ae27fd210d28a67b8ed987c6db5f6782897a",
-      "size": 6251
+      "sha256": "f2aea944b837d352eb7b6caf1bdd065966146348b1454e0d4e5af96aefd87820",
+      "size": 8276
     },
     {
       "path": "pullmanager/db.py",
@@ -342,6 +347,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 7865
     },
     {
+      "path": "pullmanager/session.py",
+      "sha256": "468393abe864ec22f8915d6f3e29a077050f10571749d6c689e56c4e320238ee",
+      "size": 14875
+    },
+    {
       "path": "pullmanager/sql.py",
       "sha256": "35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0",
       "size": 5255
@@ -355,6 +365,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/tests/support.py",
       "sha256": "5c88b19c05ea4b105763db67d73e42d88cbe1c3897b2ece74c9f287b60403398",
       "size": 4541
+    },
+    {
+      "path": "pullmanager/tests/test_batches.py",
+      "sha256": "e9162918f0020a69ea8b94bb61a1d761863d05e752306e28aa0bdbfe914b3719",
+      "size": 5122
     },
     {
       "path": "pullmanager/tests/test_db.py",
@@ -392,9 +407,24 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 8919
     },
     {
+      "path": "pullmanager/tests/test_session.py",
+      "sha256": "98a71c5383ac3eee9711dce20de58e349f78246f3bf021f7b018f2dc6b976a90",
+      "size": 10227
+    },
+    {
       "path": "pullmanager/tests/test_sql.py",
       "sha256": "70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35",
       "size": 5285
+    },
+    {
+      "path": "pullmanager/tests/test_uploads.py",
+      "sha256": "433529c848a599c7348f5fa202e1b551fa9cb3dc2d66351e7cd37103a7d2f669",
+      "size": 5626
+    },
+    {
+      "path": "pullmanager/uploads.py",
+      "sha256": "9698807e77ee5ecf179a2478f9fb4ae53e6b5d702caf8126a27cbc0b6fadb4e9",
+      "size": 7077
     },
     {
       "path": "pullmanager/yaml_io.py",
@@ -443,7 +473,154 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 44c18978b46a38ed06b4ea378204ae27fd210d28a67b8ed987c6db5f6782897a SIZE: 6251 ===
+# === BEGIN FILE: pullmanager/batches.py SHA256: dc90271523a5145924ab101adf6119f716d790d33395b68a3baef905a8f04e17 SIZE: 5412 ===
+# """Turning a logical batch into the rows it selects.
+#
+# Batch membership is decided against the durable Projects copy of the PK table,
+# never against Cosmos. That copy does not change under a refresh, so a batch
+# means the same rows on a resume as it did on the night it first ran -- and a
+# fresh run and a resume take the same path, so recovery is exercised nightly.
+# """
+#
+# from __future__ import annotations
+#
+# from dataclasses import dataclass, field
+# from typing import Any
+#
+# from .naming import destination
+#
+#
+# class BatchError(ValueError):
+#     """Raised when a batch cannot be turned into a selection."""
+#
+#
+# @dataclass
+# class BatchSelection:
+#     """A parameterized SELECT over the local PK table."""
+#
+#     sql: str
+#     params: list[Any] = field(default_factory=list)
+#     description: str = ""
+#
+#
+# def dimension_predicate(dimension: dict[str, Any]) -> tuple[str, list[Any]]:
+#     column = dimension.get("column")
+#     if not column:
+#         raise BatchError(f"Batch dimension {dimension.get('name')!r} names no column.")
+#     if dimension.get("is_other"):
+#         excludes = dimension.get("excludes") or []
+#         if not excludes:
+#             raise BatchError(
+#                 f"Batch dimension {dimension.get('name')!r} is the catch-all but lists "
+#                 "nothing to exclude, so it would select every row."
+#             )
+#         placeholders = ", ".join("?" for _ in excludes)
+#         # NULL is not 'not in' anything in SQL, so include it explicitly or the
+#         # catch-all silently drops rows with no value.
+#         return f"([{column}] NOT IN ({placeholders}) OR [{column}] IS NULL)", list(excludes)
+#     if "value" not in dimension:
+#         raise BatchError(f"Batch dimension {dimension.get('name')!r} has no value.")
+#     return f"[{column}] = ?", [dimension["value"]]
+#
+#
+# def chunk_clause(batch: dict[str, Any], key_columns: list[str]) -> tuple[str, str]:
+#     """OFFSET/FETCH for a row chunk, plus the ordering that makes it stable.
+#
+#     A chunk is only reproducible if the ordering is a total order, which is why
+#     the PK's uniqueness is verified before any batch runs.
+#     """
+#     runtime = batch.get("runtime") or []
+#     chunks = [d for d in runtime if str(d.get("kind", "")).lower() == "row_chunk"]
+#     if not chunks:
+#         return "", ""
+#     if len(chunks) > 1:
+#         raise BatchError("More than one row_chunk dimension in a single batch.")
+#     unresolved = [
+#         d for d in runtime
+#         if str(d.get("kind", "")).lower() == "column_values"
+#     ]
+#     if unresolved:
+#         names = ", ".join(str(d.get("name")) for d in unresolved)
+#         raise BatchError(
+#             f"Batch dimension(s) {names} use `values: all`, which has to be resolved "
+#             "against real data before the batch set is known. Not yet supported; "
+#             "list the values explicitly in the template."
+#         )
+#     if not key_columns:
+#         raise BatchError("Row chunking needs the PK key columns to order by.")
+#     order = ", ".join(f"[{c}]" for c in key_columns)
+#     size = chunks[0].get("rows_per_batch")
+#     try:
+#         size = int(size)
+#     except (TypeError, ValueError):
+#         raise BatchError(f"row_chunk has a non-numeric rows_per_batch: {size!r}") from None
+#     if size <= 0:
+#         raise BatchError(f"row_chunk rows_per_batch must be positive, got {size}.")
+#     return order, str(size)
+#
+#
+# def select_batch_rows(
+#     project_db: str,
+#     pk_table: str,
+#     batch: dict[str, Any] | None,
+#     key_columns: list[str],
+#     *,
+#     chunk_index: int = 0,
+# ) -> BatchSelection:
+#     """Every PK row belonging to one batch.
+#
+#     Whole rows, not just keys: batching selects on PK attributes such as Sex
+#     and StateOrProvinceAbbreviation, and cohort joins may use them too.
+#     """
+#     table = destination(project_db, pk_table)
+#     if not batch:
+#         return BatchSelection(sql=f"SELECT * FROM {table};", description="whole PK table")
+#
+#     predicates: list[str] = []
+#     params: list[Any] = []
+#     described: list[str] = []
+#     for dimension in batch.get("dimensions") or []:
+#         clause, values = dimension_predicate(dimension)
+#         predicates.append(clause)
+#         params.extend(values)
+#         described.append(
+#             f"{dimension.get('column')}="
+#             + ("other" if dimension.get("is_other") else str(dimension.get("value")))
+#         )
+#
+#     sql = f"SELECT * FROM {table}"
+#     if predicates:
+#         sql += "\nWHERE " + "\n  AND ".join(predicates)
+#
+#     order, size = chunk_clause(batch, key_columns)
+#     if order:
+#         offset = chunk_index * int(size)
+#         sql += f"\nORDER BY {order}\nOFFSET {offset} ROWS FETCH NEXT {size} ROWS ONLY"
+#         described.append(f"rows {offset}-{offset + int(size)}")
+#
+#     return BatchSelection(
+#         sql=sql + ";",
+#         params=params,
+#         description=", ".join(described) or "whole PK table",
+#     )
+#
+#
+# def count_batch_rows(project_db: str, pk_table: str, batch: dict[str, Any] | None) -> BatchSelection:
+#     """How many PK rows a batch's predicate matches, before chunking."""
+#     table = destination(project_db, pk_table)
+#     predicates: list[str] = []
+#     params: list[Any] = []
+#     for dimension in (batch or {}).get("dimensions") or []:
+#         clause, values = dimension_predicate(dimension)
+#         predicates.append(clause)
+#         params.extend(values)
+#     sql = f"SELECT COUNT_BIG(1) FROM {table}"
+#     if predicates:
+#         sql += " WHERE " + " AND ".join(predicates)
+#     return BatchSelection(sql=sql + ";", params=params)
+#
+# === END FILE: pullmanager/batches.py ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: f2aea944b837d352eb7b6caf1bdd065966146348b1454e0d4e5af96aefd87820 SIZE: 8276 ===
 # """Command line entry point.
 #
 # Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
@@ -550,6 +727,48 @@ if __name__ == "__main__":
 #         )
 #
 #
+# def execute(manifest: Manifest, args: argparse.Namespace) -> int:
+#     from .db import DatabaseError, Settings
+#     from .session import SessionRunner
+#
+#     settings = Settings.from_env()
+#     mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+#     reports = []
+#     for session in manifest.sessions:
+#         print(f"=== {session.session_id} ===")
+#         runner = SessionRunner(
+#             manifest, session, settings, mode=mode, retry_failed=args.retry_failed
+#         )
+#         try:
+#             with runner:
+#                 report = runner.execute()
+#         except DatabaseError as exc:
+#             print(f"  could not open the session: {exc}", file=sys.stderr)
+#             # Sessions have independent connections and PKs, so the next one
+#             # still gets its chance.
+#             reports.append(None)
+#             continue
+#         reports.append(report)
+#         print(f"  epoch {report.epoch} on {report.linked_server}")
+#         for label in report.completed:
+#             print(f"  done     {label}")
+#         for label in report.skipped:
+#             print(f"  skipped  {label}")
+#         for label, message in report.failed:
+#             print(f"  FAILED   {label}: {message}")
+#         for warning in report.warnings:
+#             print(f"  warning  {warning}")
+#         print()
+#
+#     failures = [r for r in reports if r is None or not r.ok]
+#     print(f"{len(reports) - len(failures)}/{len(reports)} session(s) completed.")
+#     if any(r is not None for r in reports):
+#         print(f"Manifest updated: {manifest.path}")
+#     else:
+#         print("No session opened, so the manifest was not modified.")
+#     return 1 if failures else 0
+#
+#
 # def build_parser() -> argparse.ArgumentParser:
 #     parser = argparse.ArgumentParser(
 #         prog="pullmanager",
@@ -561,6 +780,11 @@ if __name__ == "__main__":
 #         "--dry-run",
 #         action="store_true",
 #         help="Render the SQL each phase implies without touching a database.",
+#     )
+#     parser.add_argument(
+#         "--execute",
+#         action="store_true",
+#         help="Run the manifest against live connections, updating it as it goes.",
 #     )
 #     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
 #     parser.add_argument(
@@ -608,8 +832,13 @@ if __name__ == "__main__":
 #
 #     try:
 #         manifest = Manifest.load(args.manifest)
+#         if args.dry_run and args.execute:
+#             print("--dry-run and --execute are mutually exclusive.", file=sys.stderr)
+#             return 1
 #         if args.dry_run:
 #             return dry_run(manifest, args)
+#         if args.execute:
+#             return execute(manifest, args)
 #         summarize(manifest)
 #     except (ManifestError, PlanError, NamingError, NormalizationError) as exc:
 #         print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -2282,6 +2511,374 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 468393abe864ec22f8915d6f3e29a077050f10571749d6c689e56c4e320238ee SIZE: 14875 ===
+# """Executing one session.
+#
+# The Cosmos connection is held open for the whole session, because every
+# `##JVM_*` table dies with it. That single fact shapes everything here: the
+# epoch, what a resume must replay, and why uploads travel through the client.
+# """
+#
+# from __future__ import annotations
+#
+# from dataclasses import dataclass, field
+# from pathlib import Path
+# from typing import Any, Callable
+#
+# from . import local_sql, server_sql, uploads
+# from .batches import BatchError, select_batch_rows
+# from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
+# from .executor import RESUME_FULL, Unit, iter_units, plan_unit, session_cohorts, should_execute
+# from .manifest import Manifest, Phase, Session
+# from .naming import destination, global_temp
+# from .uploads import UploadError
+# from .yaml_io import load_yaml
+#
+# # The old generator warned past this; a pull this size is usually a mistake in
+# # the filter rather than an intention.
+# LARGE_ROW_WARNING = 80_000_000
+#
+#
+# class SessionError(RuntimeError):
+#     """Raised when a session cannot proceed."""
+#
+#
+# @dataclass
+# class SessionReport:
+#     session_id: str
+#     epoch: str = ""
+#     linked_server: str = ""
+#     completed: list[str] = field(default_factory=list)
+#     failed: list[tuple[str, str]] = field(default_factory=list)
+#     skipped: list[str] = field(default_factory=list)
+#     warnings: list[str] = field(default_factory=list)
+#
+#     @property
+#     def ok(self) -> bool:
+#         return not self.failed
+#
+#
+# class SessionRunner:
+#     """Runs one session's phases and runs against live connections."""
+#
+#     def __init__(
+#         self,
+#         manifest: Manifest,
+#         session: Session,
+#         settings: Settings,
+#         *,
+#         connect_fn: Callable[..., Any] = connect,
+#         mode: str = RESUME_FULL,
+#         retry_failed: bool = False,
+#         upload_root: Path | None = None,
+#     ):
+#         self.manifest = manifest
+#         self.session = session
+#         self.settings = settings
+#         self._connect = connect_fn
+#         self.mode = mode
+#         self.retry_failed = retry_failed
+#         self.upload_root = upload_root or manifest.root
+#         self.cosmos: Any = None
+#         self.projects: Any = None
+#         self.report = SessionReport(session_id=session.session_id)
+#
+#     # ----------------------------------------------------------- lifecycle
+#
+#     def open(self) -> None:
+#         """Open the connection whose lifetime defines the session."""
+#         doc = self._phase_doc("setup")
+#         self.cosmos = self._connect(
+#             self.settings.cosmos_connection_string(doc.get("cosmos_db")),
+#             login_timeout=self.settings.login_timeout,
+#             query_timeout=self.settings.query_timeout,
+#         )
+#         # Captured per connection: the instance name changes every time, so a
+#         # cached one would aim OPENQUERY at a server that is no longer ours.
+#         linked_server = capture_server_name(self.cosmos)
+#         epoch = self.session.begin_epoch(linked_server=linked_server)
+#         self.report.epoch = epoch
+#         self.report.linked_server = linked_server
+#
+#         project_db = doc.get("project_db")
+#         if not project_db:
+#             raise SessionError(f"{self.session.session_id}: setup.yaml has no project_db.")
+#         self.project_db = str(project_db)
+#         self.projects = self._connect(
+#             self.settings.projects_connection_string(self.project_db),
+#             login_timeout=self.settings.login_timeout,
+#             query_timeout=self.settings.query_timeout,
+#         )
+#         self.manifest.save()
+#
+#     def close(self) -> None:
+#         for connection in (self.projects, self.cosmos):
+#             if connection is None:
+#                 continue
+#             try:
+#                 connection.close()
+#             except Exception:
+#                 pass
+#         self.projects = self.cosmos = None
+#
+#     def __enter__(self) -> "SessionRunner":
+#         self.open()
+#         return self
+#
+#     def __exit__(self, *exc_info) -> None:
+#         self.close()
+#
+#     # --------------------------------------------------------------- units
+#
+#     def _phase_doc(self, kind: str) -> dict[str, Any]:
+#         for name, node, path in iter_units(self.manifest, self.session):
+#             if name == kind:
+#                 return load_yaml(path) or {}
+#         raise SessionError(f"{self.session.session_id}: no {kind} phase in the manifest.")
+#
+#     def execute(self) -> SessionReport:
+#         """Run every unit that needs running, in order.
+#
+#         A failed run does not stop its siblings: batches are disjoint appends
+#         and independent once the PK exists, so one night produces one list of
+#         every failure. A failed phase does block what follows it, since setup,
+#         uploads and PK are prerequisites.
+#         """
+#         blocked = False
+#         for kind, node, path in iter_units(self.manifest, self.session):
+#             label = node.label
+#             if blocked:
+#                 node.block("an earlier phase in this session failed")
+#                 self.report.skipped.append(label)
+#                 self.manifest.save()
+#                 continue
+#
+#             execute, reason = should_execute(
+#                 node,
+#                 kind,
+#                 current_epoch=self.session.epoch,
+#                 mode=self.mode,
+#                 retry_failed=self.retry_failed,
+#             )
+#             if not execute:
+#                 self.report.skipped.append(f"{label} ({reason})")
+#                 continue
+#
+#             node.start()
+#             self.manifest.save()
+#             try:
+#                 rows = self._run_unit(kind, node, path)
+#             except Exception as exc:
+#                 node.fail(str(exc), detail=type(exc).__name__)
+#                 self.report.failed.append((label, str(exc)))
+#                 self.manifest.save()
+#                 if isinstance(node, Phase):
+#                     blocked = True
+#                 continue
+#             node.finish(rows=rows)
+#             self.report.completed.append(label)
+#             self.manifest.save()
+#         return self.report
+#
+#     def _run_unit(self, kind: str, node: Any, path: Path) -> int | None:
+#         if kind == "setup":
+#             self._run_setup(path)
+#             return None
+#         if kind == "upload_cohorts":
+#             return self._run_uploads(path)
+#         if kind == "pk":
+#             return self._run_pk(node, path)
+#         return self._run_run(node, path)
+#
+#     # --------------------------------------------------------------- setup
+#
+#     def _run_setup(self, path: Path) -> None:
+#         """Create the destination tables once; runs then append to them."""
+#         doc = load_yaml(path) or {}
+#         cohorts = session_cohorts(self.manifest, self.session)
+#         for block in local_sql.render_setup(doc, cohorts, f"{self.session.session_id}/setup"):
+#             execute_script(self.projects, block.sql, label=block.block_id)
+#         self.projects.commit()
+#         node_outputs = {"linked_server": self.report.linked_server, "tables": len(cohorts)}
+#         self.session.phases[0].outputs.update(node_outputs)
+#
+#     # ------------------------------------------------------------- uploads
+#
+#     def _run_uploads(self, path: Path) -> int | None:
+#         doc = load_yaml(path) or {}
+#         enabled = uploads.enabled_uploads(doc)
+#         if not enabled:
+#             return None
+#         uploaded = 0
+#         for cohort in enabled:
+#             kind = uploads.upload_kind(cohort)
+#             if kind == "csv":
+#                 plan = uploads.plan_csv_upload(cohort, self.upload_root)
+#             else:
+#                 plan = uploads.plan_dbtable_upload(self.projects, cohort, self.project_db)
+#             self.report.warnings.extend(plan.notes)
+#             uploaded += uploads.materialize(
+#                 self.cosmos, plan, chunk_size=self.settings.upload_chunk
+#             )
+#             self.cosmos.commit()
+#         return uploaded
+#
+#     # ------------------------------------------------------------------ pk
+#
+#     def _run_pk(self, node: Any, path: Path) -> int | None:
+#         """Build the PK, land it in Projects, and prove its key is unique."""
+#         doc = load_yaml(path) or {}
+#         unit = plan_unit(
+#             self.manifest, self.session, "pk", node, path, self.report.linked_server
+#         )
+#         rows = self._run_pair(unit)
+#         node.outputs["global_temp"] = global_temp(self.session.pk_table or "")
+#         node.outputs["local_table"] = destination(self.project_db, self.session.pk_table or "")
+#         self._verify_pk_uniqueness(doc)
+#         return rows
+#
+#     def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> None:
+#         """A non-unique key makes ORDER BY arbitrary, so chunks stop being stable."""
+#         keys = self._pk_key_columns(doc)
+#         if not keys:
+#             self.report.warnings.append(
+#                 "PK declares no key_column, so chunk ordering cannot be verified as stable."
+#             )
+#             return
+#         table = destination(self.project_db, self.session.pk_table or "")
+#         columns = ", ".join(f"[{k}]" for k in keys)
+#         cursor = self.projects.cursor()
+#         cursor.execute(f"SELECT COUNT_BIG(1), COUNT_BIG(DISTINCT {columns}) FROM {table};")
+#         row = cursor.fetchone()
+#         if not row:
+#             return
+#         total, distinct = int(row[0]), int(row[1])
+#         if total != distinct:
+#             raise SessionError(
+#                 f"PK {table} has {total} rows but only {distinct} distinct "
+#                 f"{', '.join(keys)}. Row chunking orders by that key, so duplicates make "
+#                 "a chunk mean different rows each run. Add dedup_keys to the PK cohort."
+#             )
+#         if total >= LARGE_ROW_WARNING:
+#             self.report.warnings.append(
+#                 f"PK {table} has {total:,} rows, past the {LARGE_ROW_WARNING:,} warning "
+#                 "threshold. Check the filter before running the fact pulls."
+#             )
+#
+#     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
+#         for cohort in doc.get("cohorts") or []:
+#             if not isinstance(cohort, dict):
+#                 continue
+#             key = cohort.get("key_column") or cohort.get("key_columns")
+#             if isinstance(key, str):
+#                 return [key]
+#             if isinstance(key, list) and key:
+#                 return [str(k) for k in key]
+#         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
+#         if pk_source and pk_source.get("key_columns"):
+#             return [str(k) for k in pk_source["key_columns"]]
+#         return []
+#
+#     # ----------------------------------------------------------------- run
+#
+#     def _run_run(self, node: Any, path: Path) -> int | None:
+#         self._materialize_batch(node)
+#         unit = plan_unit(
+#             self.manifest, self.session, "run", node, path, self.report.linked_server
+#         )
+#         return self._run_pair(unit)
+#
+#     def _materialize_batch(self, node: Any) -> None:
+#         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
+#
+#         The run YAML joins the PK temp by name, so replacing its contents is
+#         enough; nothing in the rendered SQL needs to know about batching.
+#         """
+#         batch = node.batch
+#         if not batch:
+#             return
+#         pk_table = self.session.pk_table
+#         if not pk_table:
+#             raise SessionError(f"{node.label}: the session has no pk_table to narrow.")
+#
+#         doc = self._phase_doc("pk")
+#         keys = self._pk_key_columns(doc)
+#         try:
+#             selection = select_batch_rows(self.project_db, pk_table, batch, keys)
+#         except BatchError as exc:
+#             raise SessionError(f"{node.label}: {exc}") from exc
+#
+#         cursor = self.projects.cursor()
+#         cursor.execute(selection.sql, selection.params)
+#         columns = [column[0] for column in cursor.description or []]
+#         rows = [tuple(row) for row in cursor.fetchall()]
+#         if not rows:
+#             self.report.warnings.append(
+#                 f"{node.label}: batch ({selection.description}) matched no PK rows."
+#             )
+#
+#         temp = global_temp(pk_table)
+#         pk_doc_cohort = next(
+#             (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
+#              and c.get("dest_table") == pk_table),
+#             None,
+#         )
+#         if pk_doc_cohort is None:
+#             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
+#         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc, None)
+#         create_only = shell.split("INSERT INTO")[0]
+#         execute_script(self.cosmos, create_only, label=f"{node.label} batch shell")
+#         if rows:
+#             bulk_insert(
+#                 self.cosmos, temp, columns, rows, chunk_size=self.settings.upload_chunk
+#             )
+#         self.cosmos.commit()
+#         node.outputs["batch_pk_rows"] = len(rows)
+#         node.outputs["batch"] = selection.description
+#
+#     # ------------------------------------------------------------- helpers
+#
+#     def _run_pair(self, unit: Unit) -> int | None:
+#         """Server blocks, then the local transfer, then compare both counts."""
+#         server_rows: dict[str, int] = {}
+#         for block in unit.server_blocks:
+#             outcome = execute_script(self.cosmos, block.sql, label=block.block_id)
+#             for row in outcome.rows_of("DestTable", "RowCount"):
+#                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
+#         self.cosmos.commit()
+#
+#         local_rows: dict[str, int] = {}
+#         for block in unit.local_blocks:
+#             outcome = execute_script(self.projects, block.sql, label=block.block_id)
+#             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
+#                 if row["Side"] == "projects":
+#                     local_rows[str(row["DestTable"])] = int(row["RowCount"])
+#             for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
+#                 if row["MaxLength"] is None:
+#                     continue
+#                 self.report.warnings.append(
+#                     f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
+#                     f"widest value {row['MaxLength']}"
+#                     if row.get("DeclaredType") else
+#                     f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
+#                 )
+#         self.projects.commit()
+#
+#         for dest, count in server_rows.items():
+#             if count >= LARGE_ROW_WARNING:
+#                 self.report.warnings.append(
+#                     f"{dest} produced {count:,} rows, past the "
+#                     f"{LARGE_ROW_WARNING:,} warning threshold."
+#                 )
+#             landed = local_rows.get(dest)
+#             if landed is not None and landed != count:
+#                 self.report.warnings.append(
+#                     f"{dest}: Cosmos reported {count:,} rows but {landed:,} landed in "
+#                     "Projects. The transfer did not carry everything."
+#                 )
+#         return next(iter(server_rows.values()), None)
+#
+# === END FILE: pullmanager/session.py ===
 # === BEGIN FILE: pullmanager/sql.py SHA256: 35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0 SIZE: 5255 ===
 # """Shared SQL construction helpers.
 #
@@ -2617,6 +3214,136 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
+# === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: e9162918f0020a69ea8b94bb61a1d761863d05e752306e28aa0bdbfe914b3719 SIZE: 5122 ===
+# """Turning a logical batch into a selection over the local PK table."""
+#
+# from __future__ import annotations
+#
+# import unittest
+#
+# from ..batches import BatchError, count_batch_rows, dimension_predicate, select_batch_rows
+#
+# PROJECT_DB = "PROJECTD93A5E7"
+# KEYS = ["PatientDurableKey"]
+#
+#
+# def batch(dimensions=None, runtime=None, name="B"):
+#     return {"name": name, "dimensions": dimensions or [], "runtime": runtime or []}
+#
+#
+# def value_dim(column, value, name="d"):
+#     return {"name": name, "kind": "column_values", "column": column, "value": value}
+#
+#
+# class PredicateTests(unittest.TestCase):
+#     def test_value_dimension_binds_its_value(self):
+#         clause, params = dimension_predicate(value_dim("Sex", "Female"))
+#         self.assertEqual(clause, "[Sex] = ?")
+#         self.assertEqual(params, ["Female"])
+#
+#     def test_catch_all_excludes_the_named_values_and_keeps_nulls(self):
+#         # NULL is not 'not in' anything in SQL, so without the explicit test the
+#         # catch-all would silently drop rows with no value.
+#         clause, params = dimension_predicate(
+#             {"name": "sex", "column": "Sex", "is_other": True, "excludes": ["Female", "Male"]}
+#         )
+#         self.assertEqual(clause, "([Sex] NOT IN (?, ?) OR [Sex] IS NULL)")
+#         self.assertEqual(params, ["Female", "Male"])
+#
+#     def test_catch_all_without_exclusions_is_refused(self):
+#         # It would otherwise select every row.
+#         with self.assertRaises(BatchError):
+#             dimension_predicate({"name": "sex", "column": "Sex", "is_other": True})
+#
+#     def test_dimension_without_a_column_is_refused(self):
+#         with self.assertRaises(BatchError):
+#             dimension_predicate({"name": "sex", "value": "Female"})
+#
+#
+# class SelectionTests(unittest.TestCase):
+#     def test_no_batch_selects_the_whole_pk(self):
+#         selection = select_batch_rows(PROJECT_DB, "Patients", None, KEYS)
+#         self.assertEqual(selection.sql, "SELECT * FROM PROJECTD93A5E7.dbo.Patients;")
+#         self.assertEqual(selection.params, [])
+#
+#     def test_selects_whole_rows_not_just_keys(self):
+#         # Batching selects on PK attributes, and cohort joins may use them.
+#         selection = select_batch_rows(
+#             PROJECT_DB, "Patients", batch([value_dim("Sex", "Female")]), KEYS
+#         )
+#         self.assertTrue(selection.sql.startswith("SELECT * FROM"))
+#
+#     def test_combines_dimensions_with_and(self):
+#         selection = select_batch_rows(
+#             PROJECT_DB,
+#             "Patients",
+#             batch([value_dim("StateOrProvinceAbbreviation", "LA"), value_dim("Sex", "Female")]),
+#             KEYS,
+#         )
+#         self.assertIn("[StateOrProvinceAbbreviation] = ?", selection.sql)
+#         self.assertIn("AND [Sex] = ?", selection.sql)
+#         self.assertEqual(selection.params, ["LA", "Female"])
+#
+#     def test_chunking_orders_by_the_key(self):
+#         selection = select_batch_rows(
+#             PROJECT_DB,
+#             "Patients",
+#             batch(runtime=[{"name": "chunk", "kind": "row_chunk", "rows_per_batch": 2000}]),
+#             KEYS,
+#             chunk_index=2,
+#         )
+#         self.assertIn("ORDER BY [PatientDurableKey]", selection.sql)
+#         self.assertIn("OFFSET 4000 ROWS FETCH NEXT 2000 ROWS ONLY", selection.sql)
+#
+#     def test_chunking_needs_key_columns(self):
+#         # Without a total order a chunk means different rows each run.
+#         with self.assertRaises(BatchError):
+#             select_batch_rows(
+#                 PROJECT_DB,
+#                 "Patients",
+#                 batch(runtime=[{"name": "chunk", "kind": "row_chunk", "rows_per_batch": 10}]),
+#                 [],
+#             )
+#
+#     def test_values_all_is_refused_with_an_explanation(self):
+#         with self.assertRaises(BatchError) as caught:
+#             select_batch_rows(
+#                 PROJECT_DB,
+#                 "Patients",
+#                 batch(runtime=[
+#                     {"name": "state", "kind": "column_values", "values": "all"},
+#                     {"name": "chunk", "kind": "row_chunk", "rows_per_batch": 10},
+#                 ]),
+#                 KEYS,
+#             )
+#         self.assertIn("values: all", str(caught.exception))
+#
+#     def test_bad_chunk_size_is_refused(self):
+#         for size in (0, -1, "lots"):
+#             with self.subTest(size=size):
+#                 with self.assertRaises(BatchError):
+#                     select_batch_rows(
+#                         PROJECT_DB,
+#                         "Patients",
+#                         batch(runtime=[{"name": "c", "kind": "row_chunk", "rows_per_batch": size}]),
+#                         KEYS,
+#                     )
+#
+#     def test_describes_itself_for_the_manifest(self):
+#         selection = select_batch_rows(
+#             PROJECT_DB, "Patients", batch([value_dim("Sex", "Female")]), KEYS
+#         )
+#         self.assertIn("Sex=Female", selection.description)
+#
+#
+# class CountTests(unittest.TestCase):
+#     def test_counts_before_chunking(self):
+#         selection = count_batch_rows(PROJECT_DB, "Patients", batch([value_dim("Sex", "Male")]))
+#         self.assertIn("COUNT_BIG(1)", selection.sql)
+#         self.assertNotIn("OFFSET", selection.sql)
+#         self.assertEqual(selection.params, ["Male"])
+#
+# === END FILE: pullmanager/tests/test_batches.py ===
 # === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 1e39f445c46b0952540a09c0887b210ad566223b239be4ed607065ade5987be7 SIZE: 10152 ===
 # """Adapter behaviour, exercised against a fake cursor.
 #
@@ -4031,6 +4758,277 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 98a71c5383ac3eee9711dce20de58e349f78246f3bf021f7b018f2dc6b976a90 SIZE: 10227 ===
+# """Session execution, against scripted fake connections.
+#
+# There is no database reachable from the development machine, so the
+# connections are faked. What this proves is the orchestration: ordering, what a
+# failure blocks, what the manifest records, and that the epoch and instance name
+# are captured per connection.
+# """
+#
+# from __future__ import annotations
+#
+# import re
+# import shutil
+# import tempfile
+# import unittest
+# from pathlib import Path
+#
+# from ..db import Settings
+# from ..manifest import Manifest
+# from ..session import LARGE_ROW_WARNING, SessionError, SessionRunner
+#
+# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+# INSTANCE = "et4003vpdsql032"
+#
+#
+# class ScriptedCursor:
+#     """Answers by matching the SQL, so one fake serves the whole flow."""
+#
+#     def __init__(self, owner):
+#         self.owner = owner
+#         self._sets: list = []
+#         self._current = None
+#
+#     def execute(self, sql, params=None):
+#         self.owner.executed.append(sql)
+#         for pattern, action in self.owner.failures.items():
+#             if re.search(pattern, sql, re.I):
+#                 raise RuntimeError(action)
+#         self._sets = list(self.owner.results_for(sql))
+#         self._advance()
+#
+#     def executemany(self, sql, seq):
+#         self.owner.inserted.append((sql, list(seq)))
+#
+#     def _advance(self):
+#         self._current = self._sets.pop(0) if self._sets else None
+#
+#     @property
+#     def messages(self):
+#         return []
+#
+#     @property
+#     def description(self):
+#         return None if self._current is None else [(c,) for c in self._current[0]]
+#
+#     def fetchall(self):
+#         if self._current is None:
+#             raise RuntimeError("no rows")
+#         return list(self._current[1])
+#
+#     def fetchone(self):
+#         if self._current is None:
+#             return None
+#         rows = self._current[1]
+#         return rows[0] if rows else None
+#
+#     def nextset(self):
+#         if not self._sets:
+#             return False
+#         self._advance()
+#         return True
+#
+#     fast_executemany = False
+#
+#
+# class FakeConnection:
+#     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None):
+#         self.side = side
+#         self.rows = rows
+#         self.distinct = rows if distinct is None else distinct
+#         self.landed = rows if landed is None else landed
+#         self.failures = failures or {}
+#         self.executed: list[str] = []
+#         self.inserted: list = []
+#         self.commits = 0
+#         self.closed = False
+#
+#     def cursor(self):
+#         return ScriptedCursor(self)
+#
+#     def commit(self):
+#         self.commits += 1
+#
+#     def close(self):
+#         self.closed = True
+#
+#     def results_for(self, sql):
+#         if "@@SERVERNAME" in sql:
+#             return [(["CosmosServerName"], [(INSTANCE,)])]
+#         if "COUNT_BIG(DISTINCT" in sql:
+#             return [(["total", "distinct"], [(self.rows, self.distinct)])]
+#         if "SELECT * FROM" in sql:
+#             return [(["PatientDurableKey", "Sex"], [(i, "Female") for i in range(3)])]
+#         sets = []
+#         for match in re.finditer(r"'([^']+)' AS \[DestTable\]", sql):
+#             dest = match.group(1)
+#             if "'cosmos' AS [Side]" in sql:
+#                 sets.append((["DestTable", "Side", "RowCount"],
+#                              [(dest, "cosmos", self.rows)]))
+#                 sets.append((["DestTable", "Side", "RowCount"],
+#                              [(dest, "projects", self.landed)]))
+#             else:
+#                 sets.append((["CohortName", "DestTable", "RowCount"],
+#                              [(dest, dest, self.rows)]))
+#         return sets
+#
+#
+# class SessionTestCase(unittest.TestCase):
+#     def setUp(self):
+#         if not FIXTURES.is_dir():
+#             self.skipTest(f"fixtures not found at {FIXTURES}")
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.root = Path(self._tmp.name) / "split"
+#         shutil.copytree(FIXTURES, self.root)
+#         (self.root / "fixtures").mkdir(exist_ok=True)
+#         (self.root / "fixtures" / "hospital_icd_codes.csv").write_text(
+#             "DiagnosisCode,Label\nK50.0,Crohn's\nK51.0,UC\n", encoding="utf-8"
+#         )
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#
+#     def declare_pk_key(self, column="PatientDurableKey"):
+#         """The fixture's PK declares no key_column; some checks need one."""
+#         from ..yaml_io import dump_yaml, load_yaml
+#
+#         path = self.root / "sessions" / "Patients" / "pk.yaml"
+#         doc = load_yaml(path)
+#         doc["cohorts"][0]["key_column"] = column
+#         dump_yaml(doc, path)
+#
+#     def runner(self, **kwargs):
+#         cosmos = FakeConnection("cosmos", **kwargs.pop("cosmos", {}))
+#         projects = FakeConnection("projects", **kwargs.pop("projects", {}))
+#         self.cosmos, self.projects = cosmos, projects
+#         order = [cosmos, projects]
+#
+#         def connect_fn(conn_str, **_):
+#             return order.pop(0)
+#
+#         return SessionRunner(
+#             self.manifest,
+#             self.manifest.sessions[0],
+#             Settings(projects_server="PROJ", projects_database="PROJECTD33A929"),
+#             connect_fn=connect_fn,
+#             upload_root=self.root,
+#             **kwargs,
+#         )
+#
+#
+# class HappyPathTests(SessionTestCase):
+#     def test_runs_every_unit_and_records_it(self):
+#         with self.runner() as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(len(report.completed), 4)
+#
+#     def test_captures_the_instance_name_per_connection(self):
+#         # It changes every connection, so it is never cached.
+#         with self.runner() as runner:
+#             runner.execute()
+#             self.assertEqual(runner.session.runtime["linked_server"], INSTANCE)
+#             self.assertTrue(runner.session.epoch)
+#
+#     def test_manifest_is_saved_as_it_goes(self):
+#         with self.runner() as runner:
+#             runner.execute()
+#         reloaded = Manifest.load(self.root / "pullmanifest.yaml")
+#         session = reloaded.sessions[0]
+#         self.assertEqual(session.status, "done")
+#         self.assertTrue(all(p.status == "done" for p in session.phases))
+#         self.assertTrue(all(p.epoch for p in session.phases))
+#
+#     def test_rows_are_recorded(self):
+#         with self.runner(cosmos={"rows": 4242}) as runner:
+#             runner.execute()
+#         pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+#         self.assertEqual(pk.rows, 4242)
+#
+#     def test_csv_upload_is_bound_not_interpolated(self):
+#         with self.runner() as runner:
+#             runner.execute()
+#         statements = [sql for sql, _ in self.cosmos.inserted]
+#         self.assertTrue(any("VALUES (?, ?)" in s for s in statements))
+#
+#     def test_connections_are_closed(self):
+#         runner = self.runner()
+#         with runner:
+#             runner.execute()
+#         self.assertTrue(self.cosmos.closed)
+#         self.assertTrue(self.projects.closed)
+#
+#
+# class FailureTests(SessionTestCase):
+#     def test_a_failed_phase_blocks_what_follows(self):
+#         # setup, uploads and PK are prerequisites.
+#         with self.runner(projects={"failures": {r"CREATE TABLE PROJECTD": "disk full"}}) as runner:
+#             report = runner.execute()
+#         self.assertFalse(report.ok)
+#         session = Manifest.load(self.root / "pullmanifest.yaml").sessions[0]
+#         self.assertEqual(session.phases[0].status, "failed")
+#         self.assertEqual(session.phases[1].status, "blocked")
+#         self.assertEqual(session.runs[0].status, "blocked")
+#
+#     def test_failure_detail_is_kept(self):
+#         with self.runner(projects={"failures": {r"CREATE TABLE PROJECTD": "disk full"}}) as runner:
+#             runner.execute()
+#         phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[0]
+#         self.assertIn("disk full", phase.error["message"])
+#
+#     def test_a_pk_without_a_key_column_warns_instead_of_checking(self):
+#         # Nothing to order by means chunk stability cannot be verified.
+#         with self.runner() as runner:
+#             report = runner.execute()
+#         self.assertTrue(any("key_column" in w for w in report.warnings))
+#
+#     def test_a_non_unique_pk_is_refused(self):
+#         # Chunking orders by the key; duplicates make a chunk mean different
+#         # rows each run.
+#         self.declare_pk_key()
+#         with self.runner(projects={"rows": 100, "distinct": 90}) as runner:
+#             report = runner.execute()
+#         self.assertFalse(report.ok)
+#         self.assertTrue(any("distinct" in message for _, message in report.failed))
+#
+#     def test_row_count_mismatch_warns(self):
+#         with self.runner(cosmos={"rows": 1000}, projects={"rows": 1000, "landed": 998}) as runner:
+#             report = runner.execute()
+#         self.assertTrue(any("did not carry everything" in w for w in report.warnings))
+#
+#     def test_very_large_pull_warns(self):
+#         big = LARGE_ROW_WARNING + 1
+#         with self.runner(cosmos={"rows": big}, projects={"rows": big, "landed": big}) as runner:
+#             report = runner.execute()
+#         self.assertTrue(any("warning threshold" in w for w in report.warnings))
+#
+#
+# class ResumeTests(SessionTestCase):
+#     def test_a_second_run_replays_stale_server_work(self):
+#         with self.runner() as runner:
+#             runner.execute()
+#         first_epoch = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].epoch
+#
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         with self.runner() as runner:
+#             report = runner.execute()
+#         # A new connection means the global temps are gone, so the phases run
+#         # again even though their status said done.
+#         self.assertIn("Patients/setup", report.completed)
+#         self.assertIn("Patients/pk", report.completed)
+#         self.assertNotEqual(self.manifest.sessions[0].epoch, first_epoch)
+#
+#     def test_partial_resume_keeps_completed_runs(self):
+#         with self.runner() as runner:
+#             runner.execute()
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         with self.runner(mode="partial") as runner:
+#             report = runner.execute()
+#         # The run's rows are in a Projects table and survive the lost connection.
+#         self.assertTrue(any("survive" in s for s in report.skipped))
+#
+# === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
 # """SQL construction, with the WHERE builder as the main risk."""
 #
@@ -4174,6 +5172,371 @@ if __name__ == "__main__":
 #         self.assertIn("[B] VARCHAR(400) NULL", body)
 #
 # === END FILE: pullmanager/tests/test_sql.py ===
+# === BEGIN FILE: pullmanager/tests/test_uploads.py SHA256: 433529c848a599c7348f5fa202e1b551fa9cb3dc2d66351e7cd37103a7d2f669 SIZE: 5626 ===
+# """CSV and dbtable uploads."""
+#
+# from __future__ import annotations
+#
+# import tempfile
+# import unittest
+# from pathlib import Path
+#
+# from ..uploads import (
+#     LENGTH_HEADROOM,
+#     MAX_COLUMN_WIDTH,
+#     MIN_COLUMN_WIDTH,
+#     UploadError,
+#     enabled_uploads,
+#     measure_widths,
+#     plan_csv_upload,
+#     read_csv,
+#     render_create,
+#     safe_identifier,
+#     upload_kind,
+# )
+#
+#
+# class IdentifierTests(unittest.TestCase):
+#     def test_normalizes_awkward_headers(self):
+#         cases = [
+#             ("Medication Key", "Medication_Key"),
+#             ("Therapeutic-Class", "Therapeutic_Class"),
+#             ("2ndCode", "_2ndCode"),
+#             ("  spaced  ", "spaced"),
+#             ("a.b.c", "a_b_c"),
+#         ]
+#         for raw, expected in cases:
+#             with self.subTest(raw=raw):
+#                 self.assertEqual(safe_identifier(raw, 0), expected)
+#
+#     def test_blank_header_gets_a_position_name(self):
+#         self.assertEqual(safe_identifier("", 3), "Column4")
+#
+#
+# class CsvTests(unittest.TestCase):
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.root = Path(self._tmp.name)
+#
+#     def write(self, text, name="codes.csv", encoding="utf-8"):
+#         path = self.root / name
+#         path.write_text(text, encoding=encoding)
+#         return path
+#
+#     def test_reads_headers_and_rows(self):
+#         path = self.write("Key,Name\n46,RISANKIZUMAB\n403,HUMIRA\n")
+#         columns, rows = read_csv(path)
+#         self.assertEqual(columns, ["Key", "Name"])
+#         self.assertEqual(rows, [("46", "RISANKIZUMAB"), ("403", "HUMIRA")])
+#
+#     def test_strips_a_byte_order_mark(self):
+#         # A BOM otherwise becomes part of the first column name and silently
+#         # breaks every reference to it.
+#         path = self.write("Key,Name\n1,x\n", encoding="utf-8-sig")
+#         columns, _ = read_csv(path)
+#         self.assertEqual(columns[0], "Key")
+#
+#     def test_empty_cells_become_null(self):
+#         path = self.write("Key,Name\n1,\n")
+#         _, rows = read_csv(path)
+#         self.assertEqual(rows, [("1", None)])
+#
+#     def test_short_rows_are_padded(self):
+#         path = self.write("A,B,C\n1,2\n")
+#         _, rows = read_csv(path)
+#         self.assertEqual(rows, [("1", "2", None)])
+#
+#     def test_blank_lines_are_dropped(self):
+#         path = self.write("A\n1\n\n2\n")
+#         _, rows = read_csv(path)
+#         self.assertEqual(rows, [("1",), ("2",)])
+#
+#     def test_duplicate_headers_are_made_unique(self):
+#         path = self.write("Name,Name\n1,2\n")
+#         columns, _ = read_csv(path)
+#         self.assertEqual(columns, ["Name", "Name_1"])
+#
+#     def test_quotes_survive_binding(self):
+#         # Values are bound, not interpolated, so an apostrophe needs no escaping.
+#         path = self.write("Name\n\"HUMIRA(CF) CROHN'S STARTER\"\n")
+#         _, rows = read_csv(path)
+#         self.assertEqual(rows[0][0], "HUMIRA(CF) CROHN'S STARTER")
+#
+#     def test_missing_file_is_refused(self):
+#         with self.assertRaises(UploadError):
+#             read_csv(self.root / "nope.csv")
+#
+#     def test_empty_file_is_refused(self):
+#         with self.assertRaises(UploadError):
+#             read_csv(self.write(""))
+#
+#     def test_header_only_uploads_an_empty_table_with_a_note(self):
+#         self.write("Key,Name\n")
+#         plan = plan_csv_upload(
+#             {"name": "U", "dest_table": "U", "file_type": "csv", "file_loc": "codes.csv"},
+#             self.root,
+#         )
+#         self.assertEqual(plan.rows, [])
+#         self.assertTrue(plan.notes)
+#
+#
+# class WidthTests(unittest.TestCase):
+#     def test_sizes_from_the_data_with_headroom(self):
+#         # The whole file is in hand before the table exists, so measuring works
+#         # here even though it cannot for a batched pull.
+#         widths = measure_widths(["A"], [("x" * 100,)])
+#         self.assertEqual(widths["A"], 150)
+#
+#     def test_width_is_the_longest_value_plus_headroom(self):
+#         self.assertEqual(measure_widths(["A"], [("x",)])["A"], 1 + LENGTH_HEADROOM)
+#
+#     def test_an_all_null_column_falls_back_to_the_floor(self):
+#         # The floor only binds when there is nothing to measure.
+#         self.assertEqual(measure_widths(["A"], [(None,)])["A"], MIN_COLUMN_WIDTH)
+#
+#     def test_width_is_capped(self):
+#         self.assertEqual(measure_widths(["A"], [("x" * 9000,)])["A"], MAX_COLUMN_WIDTH)
+#
+#     def test_create_uses_the_measured_widths(self):
+#         from ..uploads import UploadPlan
+#
+#         plan = UploadPlan(
+#             name="U", dest_table="U", global_temp="##JVM_U",
+#             columns=["A"], rows=[("x" * 100,)], widths={"A": 150},
+#         )
+#         sql = render_create(plan)
+#         self.assertIn("DROP TABLE IF EXISTS ##JVM_U;", sql)
+#         self.assertIn("[A] NVARCHAR(150) NULL", sql)
+#
+#
+# class KindTests(unittest.TestCase):
+#     def test_accepts_csv_and_dbtable(self):
+#         self.assertEqual(upload_kind({"file_type": "csv"}), "csv")
+#         self.assertEqual(upload_kind({"file_type": "DBTable"}), "dbtable")
+#
+#     def test_parquet_is_refused_with_guidance(self):
+#         with self.assertRaises(UploadError) as caught:
+#             upload_kind({"name": "U", "file_type": "parquet"})
+#         self.assertIn("Cosmos cannot read", str(caught.exception))
+#
+#     def test_unknown_kind_is_refused(self):
+#         with self.assertRaises(UploadError):
+#             upload_kind({"name": "U", "file_type": "xlsx"})
+#
+#     def test_push_this_cycle_gates_uploads(self):
+#         doc = {"upload_cohorts": [
+#             {"name": "A", "push_this_cycle": True},
+#             {"name": "B", "push_this_cycle": False},
+#             {"name": "C"},
+#         ]}
+#         self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["A", "C"])
+#
+# === END FILE: pullmanager/tests/test_uploads.py ===
+# === BEGIN FILE: pullmanager/uploads.py SHA256: 9698807e77ee5ecf179a2478f9fb4ae53e6b5d702caf8126a27cbc0b6fadb4e9 SIZE: 7077 ===
+# """Upload cohorts: getting local data up into a Cosmos global temp.
+#
+# There is no linked server from Cosmos back to Projects, so everything here
+# travels through the client and lands via parameter binding.
+# """
+#
+# from __future__ import annotations
+#
+# import csv
+# import re
+# from dataclasses import dataclass, field
+# from pathlib import Path
+# from typing import Any, Sequence
+#
+# from .db import DatabaseError, bulk_insert, execute_script
+# from .naming import global_temp
+# from .normalize import normalize_bool
+#
+# # Room above the widest value seen, so a later file with slightly longer
+# # values does not immediately fail.
+# LENGTH_HEADROOM = 50
+# MIN_COLUMN_WIDTH = 50
+# MAX_COLUMN_WIDTH = 4000
+#
+# _LEADING_DIGIT = re.compile(r"^\d")
+# _UNSAFE = re.compile(r"[^\w]+")
+#
+#
+# class UploadError(ValueError):
+#     """Raised when an upload cohort cannot be materialized."""
+#
+#
+# @dataclass
+# class UploadPlan:
+#     name: str
+#     dest_table: str
+#     global_temp: str
+#     columns: list[str]
+#     rows: list[tuple]
+#     widths: dict[str, int] = field(default_factory=dict)
+#     notes: list[str] = field(default_factory=list)
+#
+#     @property
+#     def row_count(self) -> int:
+#         return len(self.rows)
+#
+#
+# def safe_identifier(header: str, position: int) -> str:
+#     """Turn a CSV header into something SQL can name."""
+#     cleaned = _UNSAFE.sub("_", str(header or "").strip()).strip("_")
+#     if not cleaned:
+#         cleaned = f"Column{position + 1}"
+#     if _LEADING_DIGIT.match(cleaned):
+#         cleaned = f"_{cleaned}"
+#     return cleaned
+#
+#
+# def read_csv(path: Path) -> tuple[list[str], list[tuple]]:
+#     """Read a CSV, BOM-safe, with headers normalized to SQL identifiers."""
+#     if not path.is_file():
+#         raise UploadError(f"Upload file not found: {path}")
+#     # utf-8-sig strips a byte order mark, which otherwise becomes part of the
+#     # first column name and silently breaks every reference to it.
+#     with path.open("r", encoding="utf-8-sig", newline="") as handle:
+#         reader = csv.reader(handle)
+#         try:
+#             header = next(reader)
+#         except StopIteration:
+#             raise UploadError(f"Upload file is empty: {path}") from None
+#         columns = [safe_identifier(name, i) for i, name in enumerate(header)]
+#         if not columns:
+#             raise UploadError(f"Upload file has no header columns: {path}")
+#         seen: dict[str, int] = {}
+#         for index, name in enumerate(columns):
+#             if name in seen:
+#                 seen[name] += 1
+#                 columns[index] = f"{name}_{seen[name]}"
+#             else:
+#                 seen[name] = 0
+#         width = len(columns)
+#         rows: list[tuple] = []
+#         for record in reader:
+#             if not any(str(cell).strip() for cell in record):
+#                 continue
+#             padded = list(record[:width]) + [None] * max(0, width - len(record))
+#             rows.append(tuple(cell if str(cell) != "" else None for cell in padded))
+#     return columns, rows
+#
+#
+# def measure_widths(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> dict[str, int]:
+#     """Size each column from the data actually present.
+#
+#     This works for an upload because the whole file is in hand before the table
+#     is created. It does not work for a batched pull, where the table exists
+#     before any batch runs.
+#     """
+#     widths = {name: MIN_COLUMN_WIDTH for name in columns}
+#     for row in rows:
+#         for name, value in zip(columns, row):
+#             if value is None:
+#                 continue
+#             widths[name] = max(widths[name], len(str(value)) + LENGTH_HEADROOM)
+#     return {name: min(width, MAX_COLUMN_WIDTH) for name, width in widths.items()}
+#
+#
+# def resolve_path(file_loc: str, root: Path) -> Path:
+#     candidate = Path(file_loc)
+#     return candidate if candidate.is_absolute() else (root / candidate)
+#
+#
+# def plan_csv_upload(cohort: dict[str, Any], root: Path) -> UploadPlan:
+#     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
+#     if not dest:
+#         raise UploadError("Upload cohort has neither dest_table nor name.")
+#     file_loc = cohort.get("file_loc")
+#     if not file_loc:
+#         raise UploadError(f"Upload cohort {dest!r} is file_type csv but has no file_loc.")
+#     path = resolve_path(str(file_loc), root)
+#     columns, rows = read_csv(path)
+#     plan = UploadPlan(
+#         name=str(cohort.get("name") or dest),
+#         dest_table=dest,
+#         global_temp=global_temp(dest),
+#         columns=columns,
+#         rows=rows,
+#         widths=measure_widths(columns, rows),
+#     )
+#     if not rows:
+#         plan.notes.append(f"{path.name} has a header but no data rows; uploading an empty table.")
+#     return plan
+#
+#
+# def render_create(plan: UploadPlan) -> str:
+#     body = ",\n".join(
+#         f"    [{name}] NVARCHAR({plan.widths.get(name, MIN_COLUMN_WIDTH)}) NULL"
+#         for name in plan.columns
+#     )
+#     return (
+#         f"DROP TABLE IF EXISTS {plan.global_temp};\n\n"
+#         f"CREATE TABLE {plan.global_temp}\n(\n{body}\n);"
+#     )
+#
+#
+# def materialize(connection: Any, plan: UploadPlan, *, chunk_size: int) -> int:
+#     """Create the temp table and bind the rows into it."""
+#     execute_script(connection, render_create(plan), label=f"upload {plan.dest_table}")
+#     if not plan.rows:
+#         return 0
+#     try:
+#         return bulk_insert(
+#             connection,
+#             plan.global_temp,
+#             plan.columns,
+#             plan.rows,
+#             chunk_size=chunk_size,
+#         )
+#     except DatabaseError as exc:
+#         raise UploadError(f"Upload of {plan.dest_table!r} failed: {exc}") from exc
+#
+#
+# def plan_dbtable_upload(
+#     projects_connection: Any, cohort: dict[str, Any], project_db: str
+# ) -> UploadPlan:
+#     """Read an existing Projects table and carry it up through the client."""
+#     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
+#     source = str(cohort.get("source_table") or dest)
+#     cursor = projects_connection.cursor()
+#     cursor.execute(f"SELECT * FROM {project_db}.dbo.{source};")
+#     columns = [column[0] for column in cursor.description or []]
+#     rows = [tuple(row) for row in cursor.fetchall()]
+#     return UploadPlan(
+#         name=str(cohort.get("name") or dest),
+#         dest_table=dest,
+#         global_temp=global_temp(dest),
+#         columns=columns,
+#         rows=rows,
+#         widths=measure_widths(columns, rows),
+#     )
+#
+#
+# def enabled_uploads(doc: dict[str, Any]) -> list[dict[str, Any]]:
+#     return [
+#         upload for upload in doc.get("upload_cohorts") or []
+#         if isinstance(upload, dict)
+#         and normalize_bool(upload.get("push_this_cycle"), default=True)
+#     ]
+#
+#
+# def upload_kind(cohort: dict[str, Any]) -> str:
+#     kind = str(cohort.get("file_type") or "").strip().lower()
+#     if kind == "parquet":
+#         raise UploadError(
+#             f"Upload cohort {cohort.get('name')!r} is file_type parquet, which Cosmos "
+#             "cannot read. Convert it to CSV, or load it into Projects and use dbtable."
+#         )
+#     if kind not in ("csv", "dbtable"):
+#         raise UploadError(
+#             f"Upload cohort {cohort.get('name')!r} has unsupported file_type "
+#             f"{cohort.get('file_type')!r}. Expected csv or dbtable."
+#         )
+#     return kind
+#
+# === END FILE: pullmanager/uploads.py ===
 # === BEGIN FILE: pullmanager/yaml_io.py SHA256: dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18 SIZE: 1844 ===
 # """YAML load/dump for Pullmanager.
 #
