@@ -6,6 +6,8 @@ import unittest
 
 from ..normalize import (
     NormalizationError,
+    cosmos_database,
+    is_dual,
     dead_options,
     joined_generated_tables,
     normalize_bool,
@@ -39,6 +41,41 @@ EVENTS = {
     },
 }
 FACT = {"name": "OtherDx", "type": "fact", "dest_table": "OtherDx", "filter": {}}
+
+
+class CosmosDatabaseTests(unittest.TestCase):
+    def test_maps_every_accepted_spelling(self):
+        cases = [
+            ("COSMOS", "COSMOS"),
+            ("cosmos", "COSMOS"),
+            ("COSMOS_SneakPeek", "COSMOS_SneakPeek"),
+            ("sneakpeek", "COSMOS_SneakPeek"),
+            ("sp", "COSMOS_SneakPeek"),
+        ]
+        for given, expected in cases:
+            with self.subTest(given=given):
+                self.assertEqual(cosmos_database(given), expected)
+
+    def test_dual_is_a_directive_not_a_database(self):
+        # Connecting with Database=Dual would simply fail; under Dual the
+        # SneakPeek cohorts qualify their own tables instead.
+        for given in ("Dual", "both", "BOTH"):
+            with self.subTest(given=given):
+                self.assertEqual(cosmos_database(given), "COSMOS")
+                self.assertTrue(is_dual(given))
+
+    def test_single_database_modes_are_not_dual(self):
+        for given in ("COSMOS", "sp", None):
+            with self.subTest(given=given):
+                self.assertFalse(is_dual(given))
+
+    def test_absent_falls_back(self):
+        self.assertEqual(cosmos_database(None), "COSMOS")
+        self.assertEqual(cosmos_database("  "), "COSMOS")
+
+    def test_unknown_value_is_refused(self):
+        with self.assertRaises(NormalizationError):
+            cosmos_database("Mars")
 
 
 class BooleanTests(unittest.TestCase):

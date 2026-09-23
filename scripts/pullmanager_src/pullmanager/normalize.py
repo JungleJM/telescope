@@ -15,6 +15,18 @@ from .naming import global_temp
 TRUTHY = {"true", "yes", "y", "1", "on", "t"}
 FALSY = {"false", "no", "n", "0", "off", "f", ""}
 
+# `cosmos_db` accepts several spellings and two of them are directives rather
+# than database names: `Dual`/`both` means render both variants, and the
+# per-cohort `cosmos_db` says which database each one reads.
+COSMOS_DATABASES = {
+    "cosmos": "COSMOS",
+    "dual": "COSMOS",
+    "both": "COSMOS",
+    "cosmos_sneakpeek": "COSMOS_SneakPeek",
+    "sneakpeek": "COSMOS_SneakPeek",
+    "sp": "COSMOS_SneakPeek",
+}
+
 DEAD_TEST_OPTIONS = {
     "stop_at_for_non_pk_tables": (
         "no longer used; row limits now apply only to the root PK cohort"
@@ -125,6 +137,28 @@ def dead_options(test_options: dict[str, Any] | None) -> list[str]:
         for key, why in DEAD_TEST_OPTIONS.items()
         if key in test_options
     ]
+
+
+def cosmos_database(value: Any, default: str = "COSMOS") -> str:
+    """The database to connect to, from a `cosmos_db` setting.
+
+    `Dual` and `both` are expansion directives, not database names; connecting
+    with `Database=Dual` would simply fail. Under those the connection goes to
+    COSMOS and the SneakPeek cohorts qualify their own tables instead.
+    """
+    if value is None or not str(value).strip():
+        return default
+    key = str(value).strip().lower()
+    if key in COSMOS_DATABASES:
+        return COSMOS_DATABASES[key]
+    raise NormalizationError(
+        f"Unsupported cosmos_db {value!r}. Expected one of: "
+        + ", ".join(sorted(COSMOS_DATABASES))
+    )
+
+
+def is_dual(value: Any) -> bool:
+    return str(value or "").strip().lower() in ("dual", "both")
 
 
 def is_pk(cohort: dict[str, Any]) -> bool:

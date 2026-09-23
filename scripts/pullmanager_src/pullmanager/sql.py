@@ -142,14 +142,16 @@ def render_where(predicates: list[str], indent: str = "    ") -> str:
     return "\n".join(rendered)
 
 
-def render_source_clause(filter_block: dict[str, Any], indent: str = "") -> str:
+def render_source_clause(
+    filter_block: dict[str, Any], indent: str = "", database: str | None = None
+) -> str:
     """FROM and JOIN lines, schema-qualified consistently."""
     lines: list[str] = []
     froms = from_entries(filter_block)
     if froms:
-        lines.append(f"{indent}FROM {qualify_table_ref(froms[0]).strip()}")
+        lines.append(f"{indent}FROM {qualify_table_ref(froms[0], database).strip()}")
         for extra in froms[1:]:
-            lines.append(f"{indent}    , {qualify_table_ref(extra).strip()}")
+            lines.append(f"{indent}    , {qualify_table_ref(extra, database).strip()}")
     for join in join_entries(filter_block):
-        lines.append(f"{indent}{qualify_join_clause(join.strip())}")
+        lines.append(f"{indent}{qualify_join_clause(join.strip(), database)}")
     return "\n".join(lines)

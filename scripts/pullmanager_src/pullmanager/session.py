@@ -17,6 +17,7 @@ from .db import DatabaseError, Settings, bulk_insert, capture_server_name, conne
 from .executor import RESUME_FULL, Unit, iter_units, plan_unit, session_cohorts, should_execute
 from .manifest import Manifest, Phase, Session
 from .naming import destination, global_temp
+from .normalize import cosmos_database
 from .uploads import UploadError
 from .yaml_io import load_yaml
 
@@ -75,7 +76,7 @@ class SessionRunner:
         """Open the connection whose lifetime defines the session."""
         doc = self._phase_doc("setup")
         self.cosmos = self._connect(
-            self.settings.cosmos_connection_string(doc.get("cosmos_db")),
+            self.settings.cosmos_connection_string(cosmos_database(doc.get("cosmos_db"))),
             login_timeout=self.settings.login_timeout,
             query_timeout=self.settings.query_timeout,
         )
@@ -311,7 +312,7 @@ class SessionRunner:
         )
         if pk_doc_cohort is None:
             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
-        shell, _ = server_sql.render_cohort(pk_doc_cohort, doc, None)
+        shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
         create_only = shell.split("INSERT INTO")[0]
         execute_script(self.cosmos, create_only, label=f"{node.label} batch shell")
         if rows:

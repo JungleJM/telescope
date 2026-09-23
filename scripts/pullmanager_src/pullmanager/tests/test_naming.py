@@ -99,6 +99,31 @@ class QualifyTests(unittest.TestCase):
         self.assertEqual(qualify("#Local_PKTable"), "#Local_PKTable")
 
 
+class QualifyWithDatabaseTests(unittest.TestCase):
+    """Three-part names, for a cohort reading a database it is not connected to."""
+
+    def test_adds_the_database_when_given(self):
+        self.assertEqual(
+            qualify("PatientDim", "COSMOS_SneakPeek"),
+            "COSMOS_SneakPeek.dbo.PatientDim",
+        )
+
+    def test_already_qualified_names_are_left_alone(self):
+        self.assertEqual(
+            qualify("dbo.PatientDim", "COSMOS_SneakPeek"), "dbo.PatientDim"
+        )
+
+    def test_temp_tables_are_never_database_qualified(self):
+        # Global temps live in tempdb regardless of the connected database.
+        self.assertEqual(qualify("##JVM_PKTable", "COSMOS_SneakPeek"), "##JVM_PKTable")
+
+    def test_joins_take_the_database_too(self):
+        self.assertEqual(
+            qualify_join_clause("INNER JOIN EncounterFact AS e ON 1 = 1", "COSMOS_SneakPeek"),
+            "INNER JOIN COSMOS_SneakPeek.dbo.EncounterFact AS e ON 1 = 1",
+        )
+
+
 class QualifyTableRefTests(unittest.TestCase):
     def test_qualifies_a_from_entry_keeping_the_alias(self):
         self.assertEqual(qualify_table_ref("PatientDim AS p"), "dbo.PatientDim AS p")

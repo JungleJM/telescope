@@ -278,7 +278,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "27bf02d52eaed77bdfeeafd142cbf68bd270adac07ab20f97e45ed28af7f011d",
+  "content_id": "a0aa4a6ff93c7189a7f7732bd292a8f5aa660eb3d1baf73c643e9cb578c56c03",
   "file_count": 30,
   "files": [
     {
@@ -333,28 +333,28 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/naming.py",
-      "sha256": "45595539e6045bcc4b431379e8adebb7556793d3246cf7921a79eb16e5afc7c4",
-      "size": 3764
+      "sha256": "873c90540e4fd526d86e65e9c918958c39be18384cadbce239de4fc2b23c6d45",
+      "size": 4175
     },
     {
       "path": "pullmanager/normalize.py",
-      "sha256": "dee580d39bedc3b6fd2bbcb5ed79c4a86e2914bc4b49558d9fc4c582fd89891e",
-      "size": 7036
+      "sha256": "dea303653e1cdc1504e1238ff1fc4ba21cb0e74cc2899f6c160512252a6471a7",
+      "size": 8239
     },
     {
       "path": "pullmanager/server_sql.py",
-      "sha256": "06a74220bcca9ee66fb6ee439272e09910bf3b3913826dec4c69707bebe4887d",
-      "size": 7865
+      "sha256": "2bc6ce2982bcf2c8e76bf0e6a7a2458a340df252ad006aae19dbd6cba2a04a97",
+      "size": 8743
     },
     {
       "path": "pullmanager/session.py",
-      "sha256": "468393abe864ec22f8915d6f3e29a077050f10571749d6c689e56c4e320238ee",
-      "size": 14875
+      "sha256": "38807f146902c57d45d0227986e71f33df69bf3ee2bc1d29cdbfec3e0cea6675",
+      "size": 14925
     },
     {
       "path": "pullmanager/sql.py",
-      "sha256": "35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0",
-      "size": 5255
+      "sha256": "e894b41f2d51392c0690d2f9e7c04d1d617fb3288505a65fccfe22dbf03dbc2c",
+      "size": 5320
     },
     {
       "path": "pullmanager/tests/__init__.py",
@@ -393,18 +393,18 @@ BUNDLE_MANIFEST_JSON = r'''{
     },
     {
       "path": "pullmanager/tests/test_naming.py",
-      "sha256": "52969558fa458ea931e5baf62abbb75426294cdc3cc854a8f867fefbad0c5d5f",
-      "size": 5298
+      "sha256": "ec0c27d0b9eb3b614cb89acdf84d93b6bf8756d1b33d3fada9f65468251ea03e",
+      "size": 6276
     },
     {
       "path": "pullmanager/tests/test_normalize.py",
-      "sha256": "7f8df67188a3032b297e0c22ce7e20861ce4e526c1b710bab86b2bd3d56d2f10",
-      "size": 5859
+      "sha256": "acf17645cde65424d49e02ecda95c2d65df2fc55943283c0a50f729fe7683814",
+      "size": 7257
     },
     {
       "path": "pullmanager/tests/test_render.py",
-      "sha256": "9ab4a4cb4c05f41e6f4a82247ac259568716dc17ac7488e9ea0372bcf816a9c8",
-      "size": 8919
+      "sha256": "51b6f73d1d00c14d116353ae1a05df7e2be1307dfc2e7f51ba12706eed2f8c3f",
+      "size": 10654
     },
     {
       "path": "pullmanager/tests/test_session.py",
@@ -2052,7 +2052,7 @@ if __name__ == "__main__":
 #     return {"seconds": int(round(seconds)), "display": format_duration(seconds)}
 #
 # === END FILE: pullmanager/models.py ===
-# === BEGIN FILE: pullmanager/naming.py SHA256: 45595539e6045bcc4b431379e8adebb7556793d3246cf7921a79eb16e5afc7c4 SIZE: 3764 ===
+# === BEGIN FILE: pullmanager/naming.py SHA256: 873c90540e4fd526d86e65e9c918958c39be18384cadbce239de4fc2b23c6d45 SIZE: 4175 ===
 # """Table naming rules.
 #
 # These come from the old generator and are invariants, not preferences: the
@@ -2138,34 +2138,40 @@ if __name__ == "__main__":
 #     return "." in re.sub(r"\[[^\]]*\]", "", token)
 #
 #
-# def qualify(token: str) -> str:
-#     """Add the default schema to a bare table reference.
+# def qualify(token: str, database: str | None = None) -> str:
+#     """Add the schema, and optionally the database, to a bare table reference.
+#
+#     A database is supplied when a cohort reads somewhere other than the
+#     connected one -- a SneakPeek cohort under `cosmos_db: Dual`, where a
+#     two-part name would silently resolve against COSMOS instead.
 #
 #     Left alone: temp tables, which live in tempdb and must stay unqualified,
 #     and anything already carrying a schema, which is what prevents `dbo.dbo.`.
 #     """
 #     if is_temp_table(token) or is_schema_qualified(token):
 #         return token
+#     if database:
+#         return f"{database}.{DEFAULT_SCHEMA}.{token}"
 #     return f"{DEFAULT_SCHEMA}.{token}"
 #
 #
-# def qualify_table_ref(ref: str) -> str:
+# def qualify_table_ref(ref: str, database: str | None = None) -> str:
 #     """Qualify the leading table of a `from` entry: `PatientDim AS p`."""
 #     match = _LEADING_TABLE.match(ref)
 #     if not match:
 #         return ref
 #     table = match.group("table")
-#     return ref[: match.start("table")] + qualify(table) + ref[match.end("table"):]
+#     return ref[: match.start("table")] + qualify(table, database) + ref[match.end("table"):]
 #
 #
-# def qualify_join_clause(clause: str) -> str:
+# def qualify_join_clause(clause: str, database: str | None = None) -> str:
 #     """Qualify every table named after FROM or JOIN in a clause."""
 #     return _FROM_OR_JOIN.sub(
-#         lambda m: m.group("lead") + qualify(m.group("table")), clause
+#         lambda m: m.group("lead") + qualify(m.group("table"), database), clause
 #     )
 #
 # === END FILE: pullmanager/naming.py ===
-# === BEGIN FILE: pullmanager/normalize.py SHA256: dee580d39bedc3b6fd2bbcb5ed79c4a86e2914bc4b49558d9fc4c582fd89891e SIZE: 7036 ===
+# === BEGIN FILE: pullmanager/normalize.py SHA256: dea303653e1cdc1504e1238ff1fc4ba21cb0e74cc2899f6c160512252a6471a7 SIZE: 8239 ===
 # """Compatibility rules for hand-authored cohort YAML.
 #
 # Each function returns its result alongside any notes worth surfacing, because
@@ -2182,6 +2188,18 @@ if __name__ == "__main__":
 #
 # TRUTHY = {"true", "yes", "y", "1", "on", "t"}
 # FALSY = {"false", "no", "n", "0", "off", "f", ""}
+#
+# # `cosmos_db` accepts several spellings and two of them are directives rather
+# # than database names: `Dual`/`both` means render both variants, and the
+# # per-cohort `cosmos_db` says which database each one reads.
+# COSMOS_DATABASES = {
+#     "cosmos": "COSMOS",
+#     "dual": "COSMOS",
+#     "both": "COSMOS",
+#     "cosmos_sneakpeek": "COSMOS_SneakPeek",
+#     "sneakpeek": "COSMOS_SneakPeek",
+#     "sp": "COSMOS_SneakPeek",
+# }
 #
 # DEAD_TEST_OPTIONS = {
 #     "stop_at_for_non_pk_tables": (
@@ -2295,6 +2313,28 @@ if __name__ == "__main__":
 #     ]
 #
 #
+# def cosmos_database(value: Any, default: str = "COSMOS") -> str:
+#     """The database to connect to, from a `cosmos_db` setting.
+#
+#     `Dual` and `both` are expansion directives, not database names; connecting
+#     with `Database=Dual` would simply fail. Under those the connection goes to
+#     COSMOS and the SneakPeek cohorts qualify their own tables instead.
+#     """
+#     if value is None or not str(value).strip():
+#         return default
+#     key = str(value).strip().lower()
+#     if key in COSMOS_DATABASES:
+#         return COSMOS_DATABASES[key]
+#     raise NormalizationError(
+#         f"Unsupported cosmos_db {value!r}. Expected one of: "
+#         + ", ".join(sorted(COSMOS_DATABASES))
+#     )
+#
+#
+# def is_dual(value: Any) -> bool:
+#     return str(value or "").strip().lower() in ("dual", "both")
+#
+#
 # def is_pk(cohort: dict[str, Any]) -> bool:
 #     return str(cohort.get("type", "")).strip().lower() == "pk"
 #
@@ -2363,7 +2403,7 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: 06a74220bcca9ee66fb6ee439272e09910bf3b3913826dec4c69707bebe4887d SIZE: 7865 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 2bc6ce2982bcf2c8e76bf0e6a7a2458a340df252ad006aae19dbd6cba2a04a97 SIZE: 8743 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -2378,9 +2418,10 @@ if __name__ == "__main__":
 #
 # from .naming import global_temp
 # from .normalize import (
+#     cosmos_database,
 #     normalize_bool,
 #     normalize_dedup_keys,
-#     root_pk_cohort,
+#     root_pk_cohorts,
 #     validate_dedup_columns,
 # )
 # from .sql import (
@@ -2405,16 +2446,22 @@ if __name__ == "__main__":
 #     """Raised when a cohort cannot be rendered."""
 #
 #
-# def top_clause(cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None) -> str:
-#     """`TOP (n)`, applied to the root PK cohort only.
+# def top_clause(
+#     cohort: dict[str, Any], doc: dict[str, Any], roots: list[dict[str, Any]]
+# ) -> str:
+#     """`TOP (n)`, applied to root PK cohorts only.
 #
 #     Limiting a downstream PK as well compounds the restriction: 500 patients
 #     and then 500 of their events is not 500 patients' worth of events.
+#
+#     Plural because `cosmos_db: Dual` renders each cohort twice, once per
+#     database. Those are parallel chains, not competing ones, so each has its
+#     own root and each is limited.
 #     """
 #     options = doc.get("test_options") or {}
 #     if not normalize_bool(options.get("smallset") or options.get("smallest")):
 #         return ""
-#     if root is None or cohort is not root:
+#     if not any(cohort is root for root in roots):
 #         return ""
 #     limit = options.get("stop_at_for_pk_table")
 #     try:
@@ -2429,7 +2476,21 @@ if __name__ == "__main__":
 #     return where_entries(cohort.get("filter") or {}) + non_null_predicates(columns)
 #
 #
-# def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") -> str:
+# def cohort_database(cohort: dict[str, Any], doc: dict[str, Any]) -> str | None:
+#     """The database this cohort reads, when it differs from the connection.
+#
+#     Under `cosmos_db: Dual` the SneakPeek variants carry their own `cosmos_db`,
+#     and a two-part name would resolve against the connected COSMOS instead.
+#     """
+#     declared = cohort.get("cosmos_db")
+#     if not declared:
+#         return None
+#     return cosmos_database(declared)
+#
+#
+# def render_select(
+#     cohort: dict[str, Any], top: str, inner_indent: str = "    ", database: str | None = None
+# ) -> str:
 #     columns = cohort.get("columns") or []
 #     projections = [
 #         f"{inner_indent}{column['source']} AS {quote_name(str(column['name']))}"
@@ -2437,7 +2498,7 @@ if __name__ == "__main__":
 #         if isinstance(column, dict) and column.get("name") and column.get("source")
 #     ]
 #     parts = [f"SELECT {top}".rstrip(), ",\n".join(projections)]
-#     source = render_source_clause(cohort.get("filter") or {})
+#     source = render_source_clause(cohort.get("filter") or {}, database=database)
 #     if source:
 #         parts.append(source)
 #     predicates = cohort_predicates(cohort)
@@ -2448,7 +2509,10 @@ if __name__ == "__main__":
 #
 #
 # def render_dedup_select(
-#     cohort: dict[str, Any], key_sets: list[list[str]], top: str
+#     cohort: dict[str, Any],
+#     key_sets: list[list[str]],
+#     top: str,
+#     database: str | None = None,
 # ) -> tuple[str, list[str]]:
 #     """Wrap the projection in ROW_NUMBER and keep one row per key set.
 #
@@ -2471,7 +2535,7 @@ if __name__ == "__main__":
 #             f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
 #             "key columns, so the surviving row among duplicates is arbitrary but stable."
 #         )
-#     inner = render_select(cohort, top="", inner_indent="        ")
+#     inner = render_select(cohort, top="", inner_indent="        ", database=database)
 #     inner = inner.replace(
 #         "SELECT\n",
 #         "SELECT\n"
@@ -2494,7 +2558,9 @@ if __name__ == "__main__":
 #
 #
 # def render_cohort(
-#     cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None
+#     cohort: dict[str, Any],
+#     doc: dict[str, Any],
+#     roots: list[dict[str, Any]] | None = None,
 # ) -> tuple[str, list[str]]:
 #     """DDL plus population for one cohort's global temp table."""
 #     dest = cohort.get("dest_table")
@@ -2510,7 +2576,8 @@ if __name__ == "__main__":
 #
 #     notes: list[str] = []
 #     temp = global_temp(dest)
-#     top = top_clause(cohort, doc, root)
+#     top = top_clause(cohort, doc, roots or [])
+#     database = cohort_database(cohort, doc)
 #
 #     key_sets, dedup_notes = normalize_dedup_keys(cohort)
 #     notes.extend(dedup_notes)
@@ -2518,10 +2585,10 @@ if __name__ == "__main__":
 #         problems = validate_dedup_columns(key_sets, cohort)
 #         if problems:
 #             raise RenderError("; ".join(problems))
-#         body, more = render_dedup_select(cohort, key_sets, top)
+#         body, more = render_dedup_select(cohort, key_sets, top, database)
 #         notes.extend(more)
 #     else:
-#         body = render_select(cohort, top)
+#         body = render_select(cohort, top, database=database)
 #
 #     sql = (
 #         f"-- cohort {cohort.get('name')!r} -> {temp}\n"
@@ -2557,14 +2624,14 @@ if __name__ == "__main__":
 # def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
 #     """Render every cohort in one phase document."""
 #     cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
-#     root = root_pk_cohort(cohorts)
+#     roots = root_pk_cohorts(cohorts)
 #     blocks: list[SqlBlock] = []
 #     notes: list[str] = []
 #     for cohort in cohorts:
 #         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
 #             notes.append(f"Skipping {cohort.get('dest_table')!r}: pull_this_cycle is false.")
 #             continue
-#         sql, cohort_notes = render_cohort(cohort, doc, root)
+#         sql, cohort_notes = render_cohort(cohort, doc, roots)
 #         notes.extend(cohort_notes)
 #         blocks.append(
 #             SqlBlock(
@@ -2590,7 +2657,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 468393abe864ec22f8915d6f3e29a077050f10571749d6c689e56c4e320238ee SIZE: 14875 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 38807f146902c57d45d0227986e71f33df69bf3ee2bc1d29cdbfec3e0cea6675 SIZE: 14925 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -2610,6 +2677,7 @@ if __name__ == "__main__":
 # from .executor import RESUME_FULL, Unit, iter_units, plan_unit, session_cohorts, should_execute
 # from .manifest import Manifest, Phase, Session
 # from .naming import destination, global_temp
+# from .normalize import cosmos_database
 # from .uploads import UploadError
 # from .yaml_io import load_yaml
 #
@@ -2668,7 +2736,7 @@ if __name__ == "__main__":
 #         """Open the connection whose lifetime defines the session."""
 #         doc = self._phase_doc("setup")
 #         self.cosmos = self._connect(
-#             self.settings.cosmos_connection_string(doc.get("cosmos_db")),
+#             self.settings.cosmos_connection_string(cosmos_database(doc.get("cosmos_db"))),
 #             login_timeout=self.settings.login_timeout,
 #             query_timeout=self.settings.query_timeout,
 #         )
@@ -2904,7 +2972,7 @@ if __name__ == "__main__":
 #         )
 #         if pk_doc_cohort is None:
 #             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
-#         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc, None)
+#         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
 #         create_only = shell.split("INSERT INTO")[0]
 #         execute_script(self.cosmos, create_only, label=f"{node.label} batch shell")
 #         if rows:
@@ -2958,7 +3026,7 @@ if __name__ == "__main__":
 #         return next(iter(server_rows.values()), None)
 #
 # === END FILE: pullmanager/session.py ===
-# === BEGIN FILE: pullmanager/sql.py SHA256: 35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0 SIZE: 5255 ===
+# === BEGIN FILE: pullmanager/sql.py SHA256: e894b41f2d51392c0690d2f9e7c04d1d617fb3288505a65fccfe22dbf03dbc2c SIZE: 5320 ===
 # """Shared SQL construction helpers.
 #
 # The delicate part is the WHERE builder. Authors write predicates as a list of
@@ -3103,16 +3171,18 @@ if __name__ == "__main__":
 #     return "\n".join(rendered)
 #
 #
-# def render_source_clause(filter_block: dict[str, Any], indent: str = "") -> str:
+# def render_source_clause(
+#     filter_block: dict[str, Any], indent: str = "", database: str | None = None
+# ) -> str:
 #     """FROM and JOIN lines, schema-qualified consistently."""
 #     lines: list[str] = []
 #     froms = from_entries(filter_block)
 #     if froms:
-#         lines.append(f"{indent}FROM {qualify_table_ref(froms[0]).strip()}")
+#         lines.append(f"{indent}FROM {qualify_table_ref(froms[0], database).strip()}")
 #         for extra in froms[1:]:
-#             lines.append(f"{indent}    , {qualify_table_ref(extra).strip()}")
+#             lines.append(f"{indent}    , {qualify_table_ref(extra, database).strip()}")
 #     for join in join_entries(filter_block):
-#         lines.append(f"{indent}{qualify_join_clause(join.strip())}")
+#         lines.append(f"{indent}{qualify_join_clause(join.strip(), database)}")
 #     return "\n".join(lines)
 #
 # === END FILE: pullmanager/sql.py ===
@@ -4398,7 +4468,7 @@ if __name__ == "__main__":
 #         self.assertEqual(set(SETTLED_STATUSES), {DONE, SKIPPED})
 #
 # === END FILE: pullmanager/tests/test_models.py ===
-# === BEGIN FILE: pullmanager/tests/test_naming.py SHA256: 52969558fa458ea931e5baf62abbb75426294cdc3cc854a8f867fefbad0c5d5f SIZE: 5298 ===
+# === BEGIN FILE: pullmanager/tests/test_naming.py SHA256: ec0c27d0b9eb3b614cb89acdf84d93b6bf8756d1b33d3fada9f65468251ea03e SIZE: 6276 ===
 # """Naming invariants: server, staging and destination must agree."""
 #
 # from __future__ import annotations
@@ -4500,6 +4570,31 @@ if __name__ == "__main__":
 #         self.assertEqual(qualify("#Local_PKTable"), "#Local_PKTable")
 #
 #
+# class QualifyWithDatabaseTests(unittest.TestCase):
+#     """Three-part names, for a cohort reading a database it is not connected to."""
+#
+#     def test_adds_the_database_when_given(self):
+#         self.assertEqual(
+#             qualify("PatientDim", "COSMOS_SneakPeek"),
+#             "COSMOS_SneakPeek.dbo.PatientDim",
+#         )
+#
+#     def test_already_qualified_names_are_left_alone(self):
+#         self.assertEqual(
+#             qualify("dbo.PatientDim", "COSMOS_SneakPeek"), "dbo.PatientDim"
+#         )
+#
+#     def test_temp_tables_are_never_database_qualified(self):
+#         # Global temps live in tempdb regardless of the connected database.
+#         self.assertEqual(qualify("##JVM_PKTable", "COSMOS_SneakPeek"), "##JVM_PKTable")
+#
+#     def test_joins_take_the_database_too(self):
+#         self.assertEqual(
+#             qualify_join_clause("INNER JOIN EncounterFact AS e ON 1 = 1", "COSMOS_SneakPeek"),
+#             "INNER JOIN COSMOS_SneakPeek.dbo.EncounterFact AS e ON 1 = 1",
+#         )
+#
+#
 # class QualifyTableRefTests(unittest.TestCase):
 #     def test_qualifies_a_from_entry_keeping_the_alias(self):
 #         self.assertEqual(qualify_table_ref("PatientDim AS p"), "dbo.PatientDim AS p")
@@ -4548,7 +4643,7 @@ if __name__ == "__main__":
 #         self.assertEqual(qualify_join_clause(once), once)
 #
 # === END FILE: pullmanager/tests/test_naming.py ===
-# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: 7f8df67188a3032b297e0c22ce7e20861ce4e526c1b710bab86b2bd3d56d2f10 SIZE: 5859 ===
+# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: acf17645cde65424d49e02ecda95c2d65df2fc55943283c0a50f729fe7683814 SIZE: 7257 ===
 # """Compatibility rules for hand-authored cohort YAML."""
 #
 # from __future__ import annotations
@@ -4557,6 +4652,8 @@ if __name__ == "__main__":
 #
 # from ..normalize import (
 #     NormalizationError,
+#     cosmos_database,
+#     is_dual,
 #     dead_options,
 #     joined_generated_tables,
 #     normalize_bool,
@@ -4590,6 +4687,41 @@ if __name__ == "__main__":
 #     },
 # }
 # FACT = {"name": "OtherDx", "type": "fact", "dest_table": "OtherDx", "filter": {}}
+#
+#
+# class CosmosDatabaseTests(unittest.TestCase):
+#     def test_maps_every_accepted_spelling(self):
+#         cases = [
+#             ("COSMOS", "COSMOS"),
+#             ("cosmos", "COSMOS"),
+#             ("COSMOS_SneakPeek", "COSMOS_SneakPeek"),
+#             ("sneakpeek", "COSMOS_SneakPeek"),
+#             ("sp", "COSMOS_SneakPeek"),
+#         ]
+#         for given, expected in cases:
+#             with self.subTest(given=given):
+#                 self.assertEqual(cosmos_database(given), expected)
+#
+#     def test_dual_is_a_directive_not_a_database(self):
+#         # Connecting with Database=Dual would simply fail; under Dual the
+#         # SneakPeek cohorts qualify their own tables instead.
+#         for given in ("Dual", "both", "BOTH"):
+#             with self.subTest(given=given):
+#                 self.assertEqual(cosmos_database(given), "COSMOS")
+#                 self.assertTrue(is_dual(given))
+#
+#     def test_single_database_modes_are_not_dual(self):
+#         for given in ("COSMOS", "sp", None):
+#             with self.subTest(given=given):
+#                 self.assertFalse(is_dual(given))
+#
+#     def test_absent_falls_back(self):
+#         self.assertEqual(cosmos_database(None), "COSMOS")
+#         self.assertEqual(cosmos_database("  "), "COSMOS")
+#
+#     def test_unknown_value_is_refused(self):
+#         with self.assertRaises(NormalizationError):
+#             cosmos_database("Mars")
 #
 #
 # class BooleanTests(unittest.TestCase):
@@ -4709,7 +4841,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 9ab4a4cb4c05f41e6f4a82247ac259568716dc17ac7488e9ea0372bcf816a9c8 SIZE: 8919 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 51b6f73d1d00c14d116353ae1a05df7e2be1307dfc2e7f51ba12706eed2f8c3f SIZE: 10654 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -4823,6 +4955,40 @@ if __name__ == "__main__":
 #         blocks = server_sql.render_setup(doc_with(), "S/setup")
 #         self.assertIn("@@SERVERNAME", blocks[0].sql)
 #         self.assertEqual(blocks[0].meta["captures"], "linked_server")
+#
+#
+# class DualCosmosTests(unittest.TestCase):
+#     """`cosmos_db: Dual` renders each cohort twice, against two databases."""
+#
+#     def cohorts(self):
+#         base = pk_cohort()
+#         sneak = pk_cohort(name="P_sp", dest_table="P_sp", cosmos_db="COSMOS_SneakPeek")
+#         return base, sneak
+#
+#     def test_the_sneakpeek_variant_qualifies_its_own_database(self):
+#         # Without this a two-part name resolves against the connected COSMOS,
+#         # so the SneakPeek cohort would silently read the wrong data.
+#         base, sneak = self.cohorts()
+#         blocks, _ = server_sql.render_phase(doc_with(base, sneak, cosmos_db="Dual"), "S/pk")
+#         by_dest = {b.dest_table: b.sql for b in blocks}
+#         self.assertIn("FROM dbo.PatientDim AS p", by_dest["PKTable2"])
+#         self.assertIn("FROM COSMOS_SneakPeek.dbo.PatientDim AS p", by_dest["P_sp"])
+#
+#     def test_both_variants_are_roots_and_both_are_limited(self):
+#         # They are parallel chains, one per database, not competing ones.
+#         base, sneak = self.cohorts()
+#         doc = doc_with(base, sneak, cosmos_db="Dual",
+#                        test_options={"smallset": True, "stop_at_for_pk_table": 500})
+#         blocks, _ = server_sql.render_phase(doc, "S/pk")
+#         self.assertTrue(all("TOP (500)" in b.sql for b in blocks))
+#
+#     def test_global_temps_stay_unqualified_in_both(self):
+#         base, sneak = self.cohorts()
+#         sneak["filter"]["join"] = ["INNER JOIN ##JVM_Other AS o ON 1 = 1"]
+#         blocks, _ = server_sql.render_phase(doc_with(base, sneak, cosmos_db="Dual"), "S/pk")
+#         sql = {b.dest_table: b.sql for b in blocks}["P_sp"]
+#         self.assertIn("INNER JOIN ##JVM_Other AS o", sql)
+#         self.assertNotIn("COSMOS_SneakPeek.dbo.##JVM_Other", sql)
 #
 #
 # class LocalRenderTests(unittest.TestCase):

@@ -113,6 +113,40 @@ class ServerRenderTests(unittest.TestCase):
         self.assertEqual(blocks[0].meta["captures"], "linked_server")
 
 
+class DualCosmosTests(unittest.TestCase):
+    """`cosmos_db: Dual` renders each cohort twice, against two databases."""
+
+    def cohorts(self):
+        base = pk_cohort()
+        sneak = pk_cohort(name="P_sp", dest_table="P_sp", cosmos_db="COSMOS_SneakPeek")
+        return base, sneak
+
+    def test_the_sneakpeek_variant_qualifies_its_own_database(self):
+        # Without this a two-part name resolves against the connected COSMOS,
+        # so the SneakPeek cohort would silently read the wrong data.
+        base, sneak = self.cohorts()
+        blocks, _ = server_sql.render_phase(doc_with(base, sneak, cosmos_db="Dual"), "S/pk")
+        by_dest = {b.dest_table: b.sql for b in blocks}
+        self.assertIn("FROM dbo.PatientDim AS p", by_dest["PKTable2"])
+        self.assertIn("FROM COSMOS_SneakPeek.dbo.PatientDim AS p", by_dest["P_sp"])
+
+    def test_both_variants_are_roots_and_both_are_limited(self):
+        # They are parallel chains, one per database, not competing ones.
+        base, sneak = self.cohorts()
+        doc = doc_with(base, sneak, cosmos_db="Dual",
+                       test_options={"smallset": True, "stop_at_for_pk_table": 500})
+        blocks, _ = server_sql.render_phase(doc, "S/pk")
+        self.assertTrue(all("TOP (500)" in b.sql for b in blocks))
+
+    def test_global_temps_stay_unqualified_in_both(self):
+        base, sneak = self.cohorts()
+        sneak["filter"]["join"] = ["INNER JOIN ##JVM_Other AS o ON 1 = 1"]
+        blocks, _ = server_sql.render_phase(doc_with(base, sneak, cosmos_db="Dual"), "S/pk")
+        sql = {b.dest_table: b.sql for b in blocks}["P_sp"]
+        self.assertIn("INNER JOIN ##JVM_Other AS o", sql)
+        self.assertNotIn("COSMOS_SneakPeek.dbo.##JVM_Other", sql)
+
+
 class LocalRenderTests(unittest.TestCase):
     LINKED = "et4003vpdsql032"
 

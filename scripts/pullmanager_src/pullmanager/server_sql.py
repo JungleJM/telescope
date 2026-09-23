@@ -12,9 +12,10 @@ from typing import Any
 
 from .naming import global_temp
 from .normalize import (
+    cosmos_database,
     normalize_bool,
     normalize_dedup_keys,
-    root_pk_cohort,
+    root_pk_cohorts,
     validate_dedup_columns,
 )
 from .sql import (
@@ -39,16 +40,22 @@ class RenderError(ValueError):
     """Raised when a cohort cannot be rendered."""
 
 
-def top_clause(cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None) -> str:
-    """`TOP (n)`, applied to the root PK cohort only.
+def top_clause(
+    cohort: dict[str, Any], doc: dict[str, Any], roots: list[dict[str, Any]]
+) -> str:
+    """`TOP (n)`, applied to root PK cohorts only.
 
     Limiting a downstream PK as well compounds the restriction: 500 patients
     and then 500 of their events is not 500 patients' worth of events.
+
+    Plural because `cosmos_db: Dual` renders each cohort twice, once per
+    database. Those are parallel chains, not competing ones, so each has its
+    own root and each is limited.
     """
     options = doc.get("test_options") or {}
     if not normalize_bool(options.get("smallset") or options.get("smallest")):
         return ""
-    if root is None or cohort is not root:
+    if not any(cohort is root for root in roots):
         return ""
     limit = options.get("stop_at_for_pk_table")
     try:
@@ -63,7 +70,21 @@ def cohort_predicates(cohort: dict[str, Any]) -> list[str]:
     return where_entries(cohort.get("filter") or {}) + non_null_predicates(columns)
 
 
-def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") -> str:
+def cohort_database(cohort: dict[str, Any], doc: dict[str, Any]) -> str | None:
+    """The database this cohort reads, when it differs from the connection.
+
+    Under `cosmos_db: Dual` the SneakPeek variants carry their own `cosmos_db`,
+    and a two-part name would resolve against the connected COSMOS instead.
+    """
+    declared = cohort.get("cosmos_db")
+    if not declared:
+        return None
+    return cosmos_database(declared)
+
+
+def render_select(
+    cohort: dict[str, Any], top: str, inner_indent: str = "    ", database: str | None = None
+) -> str:
     columns = cohort.get("columns") or []
     projections = [
         f"{inner_indent}{column['source']} AS {quote_name(str(column['name']))}"
@@ -71,7 +92,7 @@ def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") 
         if isinstance(column, dict) and column.get("name") and column.get("source")
     ]
     parts = [f"SELECT {top}".rstrip(), ",\n".join(projections)]
-    source = render_source_clause(cohort.get("filter") or {})
+    source = render_source_clause(cohort.get("filter") or {}, database=database)
     if source:
         parts.append(source)
     predicates = cohort_predicates(cohort)
@@ -82,7 +103,10 @@ def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") 
 
 
 def render_dedup_select(
-    cohort: dict[str, Any], key_sets: list[list[str]], top: str
+    cohort: dict[str, Any],
+    key_sets: list[list[str]],
+    top: str,
+    database: str | None = None,
 ) -> tuple[str, list[str]]:
     """Wrap the projection in ROW_NUMBER and keep one row per key set.
 
@@ -105,7 +129,7 @@ def render_dedup_select(
             f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
             "key columns, so the surviving row among duplicates is arbitrary but stable."
         )
-    inner = render_select(cohort, top="", inner_indent="        ")
+    inner = render_select(cohort, top="", inner_indent="        ", database=database)
     inner = inner.replace(
         "SELECT\n",
         "SELECT\n"
@@ -128,7 +152,9 @@ def _indent(text: str, prefix: str) -> str:
 
 
 def render_cohort(
-    cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None
+    cohort: dict[str, Any],
+    doc: dict[str, Any],
+    roots: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str]]:
     """DDL plus population for one cohort's global temp table."""
     dest = cohort.get("dest_table")
@@ -144,7 +170,8 @@ def render_cohort(
 
     notes: list[str] = []
     temp = global_temp(dest)
-    top = top_clause(cohort, doc, root)
+    top = top_clause(cohort, doc, roots or [])
+    database = cohort_database(cohort, doc)
 
     key_sets, dedup_notes = normalize_dedup_keys(cohort)
     notes.extend(dedup_notes)
@@ -152,10 +179,10 @@ def render_cohort(
         problems = validate_dedup_columns(key_sets, cohort)
         if problems:
             raise RenderError("; ".join(problems))
-        body, more = render_dedup_select(cohort, key_sets, top)
+        body, more = render_dedup_select(cohort, key_sets, top, database)
         notes.extend(more)
     else:
-        body = render_select(cohort, top)
+        body = render_select(cohort, top, database=database)
 
     sql = (
         f"-- cohort {cohort.get('name')!r} -> {temp}\n"
@@ -191,14 +218,14 @@ def render_cohort_telemetry(cohort: dict[str, Any], temp: str) -> str:
 def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
     """Render every cohort in one phase document."""
     cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
-    root = root_pk_cohort(cohorts)
+    roots = root_pk_cohorts(cohorts)
     blocks: list[SqlBlock] = []
     notes: list[str] = []
     for cohort in cohorts:
         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
             notes.append(f"Skipping {cohort.get('dest_table')!r}: pull_this_cycle is false.")
             continue
-        sql, cohort_notes = render_cohort(cohort, doc, root)
+        sql, cohort_notes = render_cohort(cohort, doc, roots)
         notes.extend(cohort_notes)
         blocks.append(
             SqlBlock(
