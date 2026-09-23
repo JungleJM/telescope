@@ -17,8 +17,8 @@ from ..normalize import (
     validate_dedup_columns,
 )
 
-# The chained PK from inputSimple.yaml: a patient list, then diagnosis events
-# for those patients.
+# A chained PK, as in the old generator's example: a patient list, then
+# diagnosis events for those patients.
 PATIENTS = {
     "name": "PKTable",
     "type": "PK",

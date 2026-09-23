@@ -9,7 +9,7 @@ from .. import local_sql, server_sql
 from ..local_sql import LocalRenderError
 from ..server_sql import RenderError
 
-FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 
 
 def pk_cohort(**overrides):

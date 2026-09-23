@@ -300,7 +300,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "80925553c12dc493d983ea3f98be381c34df2fb5792b21ab218ba4dcd03fb799",
+  "content_id": "5a450c3d1910b30826d2eba8939961945ee7ce92fadb6a19189f73826dfc8257",
   "file_count": 40,
   "files": [
     {
@@ -354,8 +354,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/db.py",
       "policy": "replace",
-      "sha256": "95bf2e090578a6160ac5259be25e6a7d3604df2a33eb9cbfc570774ecb547085",
-      "size": 11608
+      "sha256": "66c7b420c9accce5c49e012813de22fa48166835dd1c8ec4583ee083c39b44da",
+      "size": 11579
     },
     {
       "path": "pullmanager/executor.py",
@@ -450,8 +450,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_executor.py",
       "policy": "replace",
-      "sha256": "f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488",
-      "size": 6609
+      "sha256": "78ddecdc9e7496cd6329f66f44dfdbd17b34403e33ed63b7a14500f5d9a5581f",
+      "size": 6584
     },
     {
       "path": "pullmanager/tests/test_gui.py",
@@ -486,20 +486,20 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_normalize.py",
       "policy": "replace",
-      "sha256": "acf17645cde65424d49e02ecda95c2d65df2fc55943283c0a50f729fe7683814",
-      "size": 7257
+      "sha256": "ef96d8aa43b696e7049d26ae521c39ca82da55331bb9d54c58aa4d6c90d063e0",
+      "size": 7268
     },
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "51b6f73d1d00c14d116353ae1a05df7e2be1307dfc2e7f51ba12706eed2f8c3f",
-      "size": 10654
+      "sha256": "25e7b4fb64a8d6e4a63280be1af0792add5f574205476d1f13ee3c216ab3fd89",
+      "size": 10629
     },
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "c25f08222af3f80d804f5b968132ade7f62000e66e45d50999dedec63e4db26b",
-      "size": 11093
+      "sha256": "ba4cfe39a4a3b23d45875a9c0df2e6c642fe822b34355f93351c16f161abdd21",
+      "size": 11068
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -4487,14 +4487,14 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/db.py SHA256: 95bf2e090578a6160ac5259be25e6a7d3604df2a33eb9cbfc570774ecb547085 SIZE: 11608 ===
+# === BEGIN FILE: pullmanager/db.py SHA256: 66c7b420c9accce5c49e012813de22fa48166835dd1c8ec4583ee083c39b44da SIZE: 11579 ===
 # """Database adapter.
 #
 # pyodbc is imported lazily so the rest of the package -- planning, rendering,
 # the dry run -- works on a machine without a driver.
 #
 # The behaviours here were harvested from the old generator rather than invented;
-# see "Connection And Execution Facts" in pullmanager_contracts.md.
+# see "Connections" in QMDs/design.md.
 # """
 #
 # from __future__ import annotations
@@ -8065,7 +8065,7 @@ if __name__ == "__main__":
 #         self.assertEqual(list(chunked([], 3)), [])
 #
 # === END FILE: pullmanager/tests/test_db.py ===
-# === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: f1907b950db229ff68fbcb7c455df5dd7e9b735a2b130f71f20ca8b5164ce488 SIZE: 6609 ===
+# === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: 78ddecdc9e7496cd6329f66f44dfdbd17b34403e33ed63b7a14500f5d9a5581f SIZE: 6584 ===
 # """Traversal order and resume policy."""
 #
 # from __future__ import annotations
@@ -8090,7 +8090,7 @@ if __name__ == "__main__":
 # from ..manifest import Manifest
 # from .support import sample_manifest
 #
-# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+# FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 #
 #
 # class TraversalTests(unittest.TestCase):
@@ -9316,7 +9316,7 @@ if __name__ == "__main__":
 #         self.assertEqual(qualify_join_clause(once), once)
 #
 # === END FILE: pullmanager/tests/test_naming.py ===
-# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: acf17645cde65424d49e02ecda95c2d65df2fc55943283c0a50f729fe7683814 SIZE: 7257 ===
+# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: ef96d8aa43b696e7049d26ae521c39ca82da55331bb9d54c58aa4d6c90d063e0 SIZE: 7268 ===
 # """Compatibility rules for hand-authored cohort YAML."""
 #
 # from __future__ import annotations
@@ -9336,8 +9336,8 @@ if __name__ == "__main__":
 #     validate_dedup_columns,
 # )
 #
-# # The chained PK from inputSimple.yaml: a patient list, then diagnosis events
-# # for those patients.
+# # A chained PK, as in the old generator's example: a patient list, then
+# # diagnosis events for those patients.
 # PATIENTS = {
 #     "name": "PKTable",
 #     "type": "PK",
@@ -9514,7 +9514,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 51b6f73d1d00c14d116353ae1a05df7e2be1307dfc2e7f51ba12706eed2f8c3f SIZE: 10654 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 25e7b4fb64a8d6e4a63280be1af0792add5f574205476d1f13ee3c216ab3fd89 SIZE: 10629 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9526,7 +9526,7 @@ if __name__ == "__main__":
 # from ..local_sql import LocalRenderError
 # from ..server_sql import RenderError
 #
-# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+# FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 #
 #
 # def pk_cohort(**overrides):
@@ -9752,7 +9752,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: c25f08222af3f80d804f5b968132ade7f62000e66e45d50999dedec63e4db26b SIZE: 11093 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ba4cfe39a4a3b23d45875a9c0df2e6c642fe822b34355f93351c16f161abdd21 SIZE: 11068 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9773,7 +9773,7 @@ if __name__ == "__main__":
 # from ..manifest import Manifest
 # from ..session import LARGE_ROW_WARNING, SessionError, SessionRunner
 #
-# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+# FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 # INSTANCE = "et4003vpdsql032"
 #
 #

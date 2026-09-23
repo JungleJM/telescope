@@ -18,7 +18,7 @@ from ..db import Settings
 from ..manifest import Manifest
 from ..session import LARGE_ROW_WARNING, SessionError, SessionRunner
 
-FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 INSTANCE = "et4003vpdsql032"
 
 

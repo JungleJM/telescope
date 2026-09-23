@@ -1,5 +1,5 @@
 # NOTE: transcribed from the real file. Earlier copies of this fixture carried
-# OCR damage that was mistaken for generator bugs; see pullmanager_contracts.md.
+# OCR damage that was mistaken for generator bugs; see D1 in ../decisions.md.
 # Cosmos variables
 project_db: PROJECTD93A5E7  # Must start with 'PROJECTD...'
 cosmos_db: COSMOS          # COSMOS or COSMOS_SneakPeek

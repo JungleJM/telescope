@@ -22,7 +22,7 @@ from ..executor import (
 from ..manifest import Manifest
 from .support import sample_manifest
 
-FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 
 
 class TraversalTests(unittest.TestCase):

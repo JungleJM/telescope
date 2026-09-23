@@ -1,7 +1,8 @@
-# Pullmanager Architecture Decisions
+# Architecture Decisions
 
-Why things are the way they are. `pullmanager_contracts.md` says what the
-contracts *are*; this says what was chosen instead, and what it cost.
+Why things are the way they are. `design.md` says what the system *is*;
+this says what was chosen, what was rejected, and what it cost. What is still
+undecided lives in `roadmap.md`.
 
 Entries are grouped, numbered stably, and never renumbered. A reversed decision
 keeps its entry and gains a **Superseded by** line, because the reasoning that
@@ -13,8 +14,8 @@ led to the wrong answer is usually the reasoning that will lead there again.
 
 ### D1. Ground contracts in real generator output, not design prose
 
-**Context.** The plan and `yamlmanagerDesign.qmd` described the manifest schema
-in prose. The obvious start was to build against that description.
+**Context.** The plan and the YAML Manager design document described the
+manifest schema in prose. The obvious start was to build against that description.
 
 **Decision.** Generate real `--export-split` output and build against it.
 
@@ -27,6 +28,7 @@ mismatches between `inputSimple.yaml` and the SQL it produced, and comparing
 against the real files showed nearly all of them were OCR damage in the
 transcriptions. The old generator was faithful. That reversal is what made its
 output usable as a specification for Phase 4 instead of a cautionary tale.
+(Those files are now in `old_generator/`.)
 
 **Cost.** The analysis documents had to be retracted in part, and three
 fixtures replaced.
@@ -289,6 +291,9 @@ still rolls up to `failed`, so a partial table cannot read as complete.
 
 ### D24. Default resume replays the whole session
 
+**Amended by D46:** the `--resume-partial` half of this was built wrongly and
+is disabled. Full replay stands.
+
 **Context.** The user's instinct, and the safe answer.
 
 **Decision.** Default to full replay. `--resume-partial` opts into keeping
@@ -304,6 +309,10 @@ epoch staleness produces a *wrong* plan — it would claim completed server-side
 work need not replay.
 
 ### D25. Restore the PK by re-uploading it, not by re-querying Cosmos
+
+**Amended by D46:** the resume this served is disabled. The mechanism survives
+in batch selection (D19), which always reads the Projects copy; the row-count
+guard described in D24 was never built.
 
 **Context.** On resume the PK temp is gone. Re-running the PK query risks a
 different population if Cosmos refreshed in between.
@@ -515,6 +524,9 @@ authored template, so moving one means moving its upload files too.
 
 ### D41. The bundle carries YAML Manager, not just the runtime
 
+**Amended by D42 and D43:** `template.yaml` ships as `template.yaml.example`,
+and `.env.example` no longer ships. The UI and its backend were added.
+
 **Context.** The design has the split step running on the VM. The bundle
 shipped only the Pullmanager runtime, so that step had nothing to run.
 
@@ -591,6 +603,9 @@ tested against a fake tkinter, which checks its own wiring but not Tk itself —
 the development machine has no tkinter and no display, so option names and
 layout are first exercised on the VM.
 
+Later the development box gained Tk 9 and Xvfb, and the launcher was driven by
+hand there. The VM likely has Tk 8.6, so it is still the real test.
+
 Stop is abrupt by design. The node it interrupts stays `running`, which resume
 already treats as interrupted and replays, and SQL Server rolls back the open
 transaction when the connection drops.
@@ -598,17 +613,64 @@ transaction when the connection drops.
 Chosen paths are remembered in the working directory, not the extracted
 bundle, which is replaced on every update.
 
-## Still Open
+### D45. An unbound table input is an error that suggests, never picks
 
-Recorded so the absence of a decision is visible.
+**Context.** A recipe reads another generated table through a variable
+(`##JVM_{{HospitalICDTable}} AS hic`). A template that used the recipe without
+binding it failed with a bare "missing variable", which read like a ghost from
+an old template. Four options: infer the binding from the columns the recipe
+reads (A's suggestions, applied automatically); give recipes default bindings;
+require an explicit declaration on the recipe; or bind on the cohort.
 
-- **Generated-table dependencies.** Cohorts reference other generated temps by
-  handwritten name. Should be structural so the renderer owns the names.
-- **Multi-step PK.** `inputSimple.yaml` builds a PK from a prior PK; the `pk`
-  phase is a single YAML.
-- **`values: all` batching.** Refused with an explanation rather than resolved
-  at run time, which would change the manifest's run set.
-- **Primary and foreign keys in the dictionary.** Relationships exist only as
-  prose inside type annotations. See the To Do section of the plan.
-- **Phases 6 to 8 have never run against a database.** Orchestration is proven
-  against fakes; nothing has touched Cosmos.
+**Decision.** Two of them together. The error, now `unbound_table_input`,
+names the variable, the alias, the columns read through it, and the tables in
+the template whose known columns cover them, and shows the exact line to add.
+The binding itself is written on the cohort using the recipe
+(`vars: {HospitalICDTable: HospitalICDCodes}`). `PKTable` remains the only
+input bound automatically, to the session's root PK.
+
+Rejected: picking the suggested table automatically, and recipe defaults. Both
+introduce an assumption at exactly the point where the author should be made to
+choose: the recipe should say plainly that it needs a table, and the author
+connects it.
+
+**Consequences.** A `dbtable` upload, or a `parquet` one with no declared
+columns, used to register as having *no* columns, which would have ruled it out
+of every suggestion. It now registers as unknown and is listed separately as a
+table that may fit. To be revisited when binding is offered in the UI.
+
+### D46. `--resume-partial` is disabled
+
+**Context.** D24 promised a partial resume that kept completed local transfers.
+Reviewing the pathway end to end found that as built it lost them: setup, which
+replays because its server-side output is stale, drops and recreates every
+destination table, while the completed runs, being settled, were skipped. The
+result was a table holding only the batches that had not previously completed.
+The test for it checked which nodes were skipped, not what the table held, so
+it passed. The guard D24 and D25 described was never built either.
+
+**Decision.** Refuse the flag everywhere: the CLI, the session runner, and the
+launcher, which no longer offers it. Full replay is the only resume.
+
+**Consequences.** Correct, and costs time only. A test now checks the outcome
+of a full replay (every batch's rows restored), and was confirmed to fail with
+the bug reintroduced. What a correct partial resume needs is in the roadmap.
+
+### D47. Three design documents, one job each
+
+**Context.** Design had spread across a YAML Manager design, a contracts
+document, a refactor plan, a progress tracker, a testing guide, a completed
+folder and a todo file, each partly superseding the others. Corrections were
+being recorded as notes in one document about errors in another, and test
+counts, phase statuses and open questions had already drifted.
+
+**Decision.** `design.md` for what exists, `decisions.md` for why, `roadmap.md`
+for what does not exist yet, and nowhere else. Status lives only in the
+roadmap. Old-generator material moved to `old_generator/`, which nothing
+current depends on. Split fixtures moved beside the code that tests against
+them. The completed folder was deleted: its build history is in git, and its
+one lasting lesson (report each problem once) is in the design.
+
+**Consequences.** A fact has one home, so a change updates one place. The rule
+that makes it hold: when code and `design.md` disagree, fix whichever is wrong
+in the same commit.
