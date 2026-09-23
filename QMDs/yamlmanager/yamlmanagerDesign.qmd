@@ -1,5 +1,16 @@
 # YAML Manager to Pullmanager Flowthrough
 
+> **Status note.** This document described the intended design before
+> Pullmanager existed. Pullmanager is now built through Phase 8 and several
+> details here were superseded by what was actually implemented. Corrections
+> are marked inline. Where this document and
+> `QMDs/pullmanager/pullmanager_contracts.md` disagree, the contracts document
+> is right: it is checked against real generator output by tests.
+>
+> - `pullmanager_contracts.md` — verified schema and contracts
+> - `pullmanager_refactor_plan.md` — phase roadmap
+> - `decisions.md` — why each choice was made, and what was rejected
+
 This document describes the intended end-to-end workflow for YAML Manager and its handoff to Pullmanager on the VM side. The goal is to preserve the flexible template/recipe authoring experience while producing execution artifacts that match how server connections, global temp tables, batching, local tables, and final parquet artifacts actually work.
 
 ## Core Idea
@@ -46,7 +57,7 @@ Pullmanager owns:
 - Reading `pullmanifest.yaml`.
 - Executing setup/upload/PK/run YAMLs in manifest order.
 - Keeping the correct server connection open for a session group.
-- Calling generator/makeServer/makeLocal as needed.
+- Rendering server and local SQL. There is no separate generator to call.
 - Creating or reusing global temp tables.
 - Managing local database tables.
 - Pulling PKs.
@@ -54,11 +65,16 @@ Pullmanager owns:
 - Updating manifest status as work proceeds.
 - Recovering, skipping, retrying, or resuming from manifest status.
 
-### generator.py / makeServer / makeLocal
+### ~~generator.py / makeServer / makeLocal~~ (superseded)
 
-These remain responsible for turning a YAML into the server and local SQL scripts needed for a pull. YAML Manager should generate YAMLs that these tools can consume, but should not duplicate their SQL-generation logic.
+**These do not exist.** They appear nowhere in this repository or its history,
+only in the analysis documents. Pullmanager renders its own SQL, in
+`pullmanager/server_sql.py` and `pullmanager/local_sql.py`. The corrected
+fixtures in `QMDs/pullmanager/` are the specification it renders against.
 
-### makeArtifacts
+### makeArtifacts (not built)
+
+Phase 10 of the Pullmanager plan. Does not exist yet.
 
 `makeArtifacts` owns final artifact export. It should inspect what was actually pulled and create parquet files plus `parquetcontents.yaml`.
 
@@ -224,10 +240,14 @@ run.yaml
 With batching, a session has one run YAML per batch:
 
 ```text
-runs/batch-sex-female.yaml
-runs/batch-sex-male.yaml
-runs/batch-other.yaml
+runs/LA-Female.yaml
+runs/LA-Male.yaml
+runs/MS-Female.yaml
+runs/MS-Male.yaml
 ```
+
+Run files are named for the combination, not the axis. A catch-all bucket from
+`include_other` is named `<dimension>-other`.
 
 Each run YAML should assume setup, uploads, and PK have already happened for that session. It should still be standalone-valid as a document, but execution order comes from the manifest.
 
@@ -319,7 +339,8 @@ project:
   name: MyProject
   created_by: yamlmanager
 source:
-  preyaml: ../preyaml.yaml
+  template: YAMLs/template.yaml     # actual shape; not `preyaml`
+  recipes: YAMLs/recipes.yaml
 sessions:
   - session_id: MainCohort__UC
     cohort: MainCohort
@@ -374,9 +395,7 @@ status: done
 started_at: "2026-09-20T14:03:00-05:00"
 finished_at: "2026-09-20T14:08:32-05:00"
 rows: 12345
-outputs:
-  local_table: my_local_table
-  parquet: null
+outputs: {}     # untyped; Pullmanager fills it in as work completes
 error:
   message: null
   detail: null
@@ -392,10 +411,17 @@ For example:
 
 ```yaml
 batch:
-  name: sex-female
-  logic:
-    sex: Female
+  name: LA-Female                 # actual shape; `logic` was superseded
+  dimensions:                     # resolved at plan time
+    - {name: state, kind: column_values, column: StateOrProvinceAbbreviation, value: LA}
+    - {name: sex,   kind: column_values, column: Sex, value: Female}
+  runtime:                        # Pullmanager expands these itself
+    - {name: chunk, kind: row_chunk, rows_per_batch: 2000, applies_to: PKTable}
 ```
+
+**Batch dimensions cross-multiply.** `state x sex` is four runs, each a
+disjoint slice, not three runs describing three axes. A dimension whose values
+cannot be known at plan time (`values: all`, `row_chunk`) stays in `runtime`.
 
 YAML Manager should not try to pre-materialize actual PK values, because those keys are only available after `pk.yaml` runs inside the VM/server environment.
 
@@ -540,10 +566,16 @@ If a run fails, Pullmanager updates the manifest.
 
 Possible behavior:
 
-- Mark the failed run as `failed`.
-- Mark downstream dependent runs as `blocked` or leave independent runs `pending`.
-- Preserve completed run statuses and row counts.
-- Allow retry/resume from the manifest.
+Settled behaviour:
+
+- A failed **run** does not stop its siblings. Batches are disjoint appends and
+  independent once the PK exists, so one night produces one list of every
+  failure rather than one failure per night.
+- A failed **phase** blocks what follows it in that session, because setup,
+  uploads and PK are prerequisites.
+- A failed **session** does not stop the next one.
+- Completed statuses and row counts are preserved; the session still rolls up
+  to `failed`, so a partial table cannot read as complete.
 
 Because the manifest is the status document, YAML Manager can later show progress and failure points without directly managing database connections.
 
@@ -567,6 +599,56 @@ It creates:
 - Column types.
 
 It should not rely solely on planned YAML because partial completion is possible.
+
+## Delivery To The VM
+
+The VM cannot pull from git, so everything it needs travels as one file:
+`dist/pullmanager_bundle.py`, built by `scripts/bundle_pullmanager.py`.
+
+Because the split step runs on the VM (walkthrough steps 5 and 6), the bundle
+carries YAML Manager as well as the Pullmanager runtime:
+
+```text
+runtime/
+  pullmanager.py            entry point
+  pullmanager/              the runtime package and its tests
+  scripts/makeYaml.py       YAML Manager, for validating and splitting
+  YAMLs/recipes.yaml
+  YAMLs/datadictionary.yaml
+  YAMLs/template.yaml       a starting point
+  .env.example
+```
+
+The published paths matter: `makeYaml` resolves `YAMLs/` as a sibling of
+`scripts/`, so that layout lets it find its own recipes and dictionary with no
+flags and no knowledge that it was bundled.
+
+Whole pathway on the VM, from one copied file:
+
+```bash
+python pullmanager_bundle.py --verify-bundle
+python pullmanager_bundle.py --extract ./runtime
+
+python runtime/scripts/makeYaml.py --template mytemplate.yaml --export-split --out-dir ./split
+python runtime/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
+python runtime/pullmanager.py --execute  split/pullmanifest.yaml
+```
+
+No `.env` is required: both hosts are DNS aliases with defaults, and the
+database names come from the manifest. `COSMOS` versus `COSMOS_SneakPeek`
+versus `Dual` is chosen in the template's `cosmos_vars`, not on the VM.
+
+### Upload Files Travel With The Split Folder
+
+`file_loc` is written relative to the template, but the split folder is what
+moves and Pullmanager resolves relative to the manifest. Those two anchors
+disagree, so `--export-split` copies every upload file into `split/uploads/`
+and repoints `file_loc` at it. The split folder is therefore self-contained,
+and is the unit to copy or archive.
+
+The **pre-YAML is not** self-contained in the same way: it still references
+upload files relative to wherever it was written. Moving a pre-YAML means
+moving its upload files alongside it.
 
 ## Implementation Phases
 
@@ -772,10 +854,11 @@ python scripts/yamlmanager.py --export-preyaml expanded-recipes --out dist/preya
 python scripts/yamlmanager.py --export-split --template dist/preyaml.yaml --out-dir dist/split
 ```
 
-Eventually:
+Not built. Handoff is file-based today: `--export-split` writes the folder and
+Pullmanager is pointed at the manifest.
 
 ```bash
-python scripts/yamlmanager.py --handoff dist/split/pullmanifest.yaml
+python scripts/yamlmanager.py --handoff dist/split/pullmanifest.yaml   # not implemented
 ```
 
 ## Design Defaults

@@ -26,12 +26,18 @@ from bundle_extractor import (  # noqa: E402
     safe_relpath,
 )
 from bundle_pullmanager import (  # noqa: E402
+    COMPANION_FILES,
     SOURCE_ROOT,
     build,
+    bundled_files,
     encode_payload_lines,
     render_bundle,
     source_files,
 )
+
+# Published path -> the file it came from. Companion files live outside the
+# source tree, so a published path no longer implies SOURCE_ROOT / path.
+SOURCES = {published: source for source, published in bundled_files()}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -108,9 +114,24 @@ class SafePathTests(unittest.TestCase):
 class BuildTests(BundleTestCase):
     def test_includes_every_source_file(self):
         sections, manifest = read_bundle(self.bundle)
-        expected = {path.relative_to(SOURCE_ROOT).as_posix() for path in source_files()}
-        self.assertEqual({section["path"] for section in sections}, expected)
-        self.assertEqual(manifest["file_count"], len(expected))
+        self.assertEqual({section["path"] for section in sections}, set(SOURCES))
+        self.assertEqual(manifest["file_count"], len(SOURCES))
+
+    def test_carries_yaml_manager_and_its_data(self):
+        # The split step runs on the VM, so YAML Manager and the files it
+        # reads travel with the runtime.
+        sections, _ = read_bundle(self.bundle)
+        published = {section["path"] for section in sections}
+        for _, expected in COMPANION_FILES:
+            with self.subTest(path=expected):
+                self.assertIn(expected, published)
+
+    def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
+        # makeYaml resolves YAMLs/ as a sibling of scripts/, so the published
+        # layout has to preserve that or its defaults break once extracted.
+        published = {p for _, p in COMPANION_FILES}
+        self.assertIn("scripts/makeYaml.py", published)
+        self.assertTrue(any(p.startswith("YAMLs/") for p in published))
 
     def test_rebuild_is_byte_identical(self):
         self.assertEqual(render_bundle(), render_bundle())
@@ -124,7 +145,7 @@ class BuildTests(BundleTestCase):
             with self.subTest(path=section["path"]):
                 self.assertEqual(
                     section["content"].encode("utf-8"),
-                    (SOURCE_ROOT / section["path"]).read_bytes(),
+                    SOURCES[section["path"]].read_bytes(),
                 )
 
 
@@ -189,7 +210,7 @@ class ExtractionTests(BundleTestCase):
     def test_writes_every_file_plus_its_manifest(self):
         target = self.tmp / "runtime"
         written = extract(self.bundle, target)
-        self.assertEqual(len(written), len(source_files()))
+        self.assertEqual(len(written), len(SOURCES))
         self.assertTrue((target / MANIFEST_FILENAME).is_file())
         for rel in written:
             with self.subTest(path=rel):
@@ -199,7 +220,7 @@ class ExtractionTests(BundleTestCase):
         target = self.tmp / "runtime"
         for rel in extract(self.bundle, target):
             with self.subTest(path=rel):
-                self.assertEqual((target / rel).read_bytes(), (SOURCE_ROOT / rel).read_bytes())
+                self.assertEqual((target / rel).read_bytes(), SOURCES[rel].read_bytes())
 
     def test_leaves_no_scratch_directories(self):
         extract(self.bundle, self.tmp / "runtime")

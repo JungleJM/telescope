@@ -499,6 +499,37 @@ have read COSMOS and written results labelled SneakPeek with no error anywhere.
 
 ---
 
+### D40. The split folder is the self-contained handoff unit
+
+**Context.** `file_loc` on an upload cohort is written relative to the
+template. `makeYaml` resolved it that way; Pullmanager resolved it relative to
+the manifest. The two anchors disagreed, so every upload failed to open on the
+far side of the handoff — found by running the whole pathway end to end.
+
+**Decision.** `--export-split` copies upload files into `split/uploads/` and
+repoints `file_loc`.
+
+**Consequences.** The split folder is the unit to copy or archive. The pre-YAML
+is deliberately *not* made self-contained the same way: it stays close to the
+authored template, so moving one means moving its upload files too.
+
+### D41. The bundle carries YAML Manager, not just the runtime
+
+**Context.** The design has the split step running on the VM. The bundle
+shipped only the Pullmanager runtime, so that step had nothing to run.
+
+**Decision.** Bundle `makeYaml.py`, `recipes.yaml`, `datadictionary.yaml`,
+`template.yaml` and `.env.example` alongside the runtime.
+
+**Consequences.** One file delivers the whole pathway. Published paths are
+chosen so `makeYaml` finds its own data with no flags: it resolves `YAMLs/` as
+a sibling of `scripts/`, so the extracted tree reproduces that shape and the
+code needs no knowledge that it was bundled.
+
+The bundle grows from 211 KB to 451 KB, most of it the data dictionary. Worth
+it: the alternative is a second delivery mechanism for the files without which
+the first one cannot be used.
+
 ## Still Open
 
 Recorded so the absence of a decision is visible.

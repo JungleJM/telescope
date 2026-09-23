@@ -40,6 +40,19 @@ SOURCE_ROOT = SCRIPTS_DIR / "pullmanager_src"
 EXTRACTOR_PATH = SCRIPTS_DIR / "bundle_extractor.py"
 DEFAULT_OUTPUT = REPO_ROOT / "dist" / "pullmanager_bundle.py"
 
+# The VM needs more than the runtime. The split step runs there, so YAML
+# Manager and the data it reads travel too. Published paths are chosen so
+# makeYaml's own default paths resolve inside the extracted tree without it
+# knowing it was bundled: it expects <root>/scripts/makeYaml.py alongside
+# <root>/YAMLs/.
+COMPANION_FILES: tuple[tuple[Path, str], ...] = (
+    (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py"),
+    (REPO_ROOT / "YAMLs" / "recipes.yaml", "YAMLs/recipes.yaml"),
+    (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml"),
+    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml"),
+    (REPO_ROOT / ".env.example", ".env.example"),
+)
+
 BUNDLE_FORMAT_VERSION = 1
 FUTURE_IMPORT = "from __future__ import annotations"
 
@@ -85,15 +98,29 @@ def encode_payload_lines(text: str) -> list[str]:
     return ["# " + line if line else "#" for line in text.split("\n")]
 
 
-def build_sections(root: Path = SOURCE_ROOT) -> tuple[list[dict], list[str]]:
+def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str]]:
+    """Every file the bundle carries, as (source, published path)."""
     files = source_files(root)
     if not files:
         raise BundleError(f"No Python sources found under {root}")
+    pairs = [(path, path.relative_to(root).as_posix()) for path in files]
+    for source, published in COMPANION_FILES:
+        if not source.is_file():
+            raise BundleError(f"Companion file missing: {source}")
+        pairs.append((source, published))
+    seen: set[str] = set()
+    for _, published in pairs:
+        if published in seen:
+            raise BundleError(f"Two files would publish to {published}")
+        seen.add(published)
+    return sorted(pairs, key=lambda pair: pair[1])
 
+
+def build_sections(root: Path = SOURCE_ROOT) -> tuple[list[dict], list[str]]:
     entries: list[dict] = []
     lines: list[str] = []
-    for path in files:
-        rel = safe_relpath(path.relative_to(root).as_posix())
+    for path, published in bundled_files(root):
+        rel = safe_relpath(published)
         text = read_source(path)
         raw = text.encode("utf-8")
         sha = hashlib.sha256(raw).hexdigest()

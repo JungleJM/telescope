@@ -278,9 +278,29 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "a0aa4a6ff93c7189a7f7732bd292a8f5aa660eb3d1baf73c643e9cb578c56c03",
-  "file_count": 30,
+  "content_id": "aa9b8008d889d0a7bd60afadf9032cf284dc68a5a4a2a68518e52fca99c14b3f",
+  "file_count": 35,
   "files": [
+    {
+      "path": ".env.example",
+      "sha256": "6f1c896f75869d9967a4db1ae5eabb84bcb77f93e840c6e45deb13c35e2722d4",
+      "size": 1722
+    },
+    {
+      "path": "YAMLs/datadictionary.yaml",
+      "sha256": "25d874ec0b312bce8af471a5614b41026369980a27a1c5ea66c55ff6a202656c",
+      "size": 97788
+    },
+    {
+      "path": "YAMLs/recipes.yaml",
+      "sha256": "974d2fed63e4b6449dc544cbc0559d3b5c4163ff6dfba28595b1cc65b770f3fb",
+      "size": 12725
+    },
+    {
+      "path": "YAMLs/template.yaml",
+      "sha256": "4100e43555a828a435c6f6bbab33dc5231d40d956c70b8a5e0ae1cafa37966b8",
+      "size": 8155
+    },
     {
       "path": "pullmanager.py",
       "sha256": "ebdc02f9ba0685fc16b3aaea58c6563e0b91f3e69bcbce40bf953e414f787add",
@@ -430,6 +450,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/yaml_io.py",
       "sha256": "dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18",
       "size": 1844
+    },
+    {
+      "path": "scripts/makeYaml.py",
+      "sha256": "fe1e7dc6b8814dfe844b8d5222eb3dd2300be1b3abf4cbdde8de3b4b98d47470",
+      "size": 98604
     }
   ]
 }'''
@@ -438,6 +463,3539 @@ BUNDLE_MANIFEST_JSON = r'''{
 if __name__ == "__main__":
     raise SystemExit(bundle_main())
 
+# === BEGIN FILE: .env.example SHA256: 6f1c896f75869d9967a4db1ae5eabb84bcb77f93e840c6e45deb13c35e2722d4 SIZE: 1722 ===
+# # Pullmanager settings. Copy to .env on the VM; .env is gitignored.
+# #
+# # Nothing here is required. Both hosts are DNS aliases with working defaults,
+# # and the database names come from the manifest, so Pullmanager connects
+# # correctly with no .env at all. This file exists to override, not to enable.
+# #
+# # Nothing here is a credential either: both connections use Windows integrated
+# # auth (Trusted_Connection=yes).
+# #
+# # Searched for in the working directory and beside the extracted runtime, or
+# # point at one with --env. A real environment variable beats the file.
+#
+# # Hosts. Aliases, not machine names. The real Cosmos instance is discovered per
+# # connection with @@SERVERNAME, because it changes every time.
+# # PULLMANAGER_COSMOS_SERVER=COSMOS
+# # PULLMANAGER_PROJECTS_SERVER=PROJECTS
+#
+# # Databases. Normally taken from each phase YAML's `cosmos_db` and the
+# # manifest's `project_db`. Set these only to force something else -- for
+# # example, to run everything against COSMOS_SneakPeek.
+# # PULLMANAGER_COSMOS_DATABASE=COSMOS
+# # PULLMANAGER_PROJECTS_DATABASE=
+#
+# # ODBC driver. Driver 17 is what is installed and defaults to Encrypt=no.
+# # Driver 18 flips that default and then needs certificate handling.
+# # PULLMANAGER_ODBC_DRIVER=ODBC Driver 17 for SQL Server
+#
+# # Seconds to wait for a connection. Guards a wrong or unreachable host.
+# # PULLMANAGER_LOGIN_TIMEOUT=10
+#
+# # Seconds to allow a statement. 0 means no limit, which long Cosmos pulls need.
+# # PULLMANAGER_QUERY_TIMEOUT=0
+#
+# # Rows per parameterized bulk insert, used for every upload and for narrowing
+# # the PK per batch. fast_executemany allocates buffers from declared column
+# # width times batch size, so this trades memory against round trips.
+# # PULLMANAGER_UPLOAD_CHUNK=20000
+#
+# === END FILE: .env.example ===
+# === BEGIN FILE: YAMLs/datadictionary.yaml SHA256: 25d874ec0b312bce8af471a5614b41026369980a27a1c5ea66c55ff6a202656c SIZE: 97788 ===
+# DataDictionary:
+#   PatientDim:
+#     description: >
+#       Core patient dimension table. One row per patient, carrying demographics,
+#       vital status, and several social vulnerability and geography attributes.
+#       Use PatientDim.DurableKey to join to facts (note: this is the patient durable key).
+#     granularity: >
+#       One row per patient (patient-level dimension).
+#     columns:
+#       AgeInYears:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Patient's age in years at the time Cosmos snapshot was created or last updated.
+#       BirthDate:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           De-identified patient date of birth. Subject to date shifting per Cosmos
+#           policies.
+#       BirthDateAccuracy_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Categorical flag describing the precision of BirthDate (e.g., day/month/year
+#           known).
+#       EarliestPossibleBirthDate_X:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           Lower bound date when only an age range or imprecise birth date is known.
+#       BloodType_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           ABO blood group if available (e.g., A, B, AB, O); de-identified and sparse.
+#       BloodTypeAndRhesusFactor_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Combined ABO and Rh factor (e.g., A+, O?) if documented and mapped.
+#       Country:
+#         type: string
+#         nullable: true
+#         description: >
+#           Country associated with the patient's primary address at last update.
+#       DeathDate:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           De-identified date of death when known. Empty for living or unknown status.
+#       DurableKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Patient durable key, unique identifier for the patient in Cosmos.
+#           This is the key you join to PatientDurableKey on fact tables.
+#       Ethnicity:
+#         type: string
+#         nullable: true
+#         description: >
+#           Patient-reported or registration ethnicity category (e.g., Hispanic or Latino).
+#       FifthRace:
+#         type: string
+#         nullable: true
+#         description: >
+#           Fifth race component for multi-racial patients; supports up to 5 race values.
+#       FirstRace:
+#         type: string
+#         nullable: true
+#         description: >
+#           Primary race component; for single-race patients this is the sole race value.
+#       FourthRace:
+#         type: string
+#         nullable: true
+#         description: >
+#           Fourth race component for multi-racial patients.
+#       GenderIdentity:
+#         type: string
+#         nullable: true
+#         description: >
+#           Patient's recorded gender identity (e.g., woman, man, nonbinary).
+#       HasPcp_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Flag indicating if a primary care provider is associated with the patient.
+#       IsCurrent:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates whether the row is the current record for the patient.
+#       IsValid:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates whether the record is considered valid for analytics use.
+#       LastImmunizationQueryInstantUtc:
+#         type: datetime (UTC)
+#         nullable: true
+#         description: >
+#           Timestamp in UTC when immunization data was last queried or refreshed for this
+#           patient.
+#       MaritalStatus:
+#         type: string
+#         nullable: true
+#         description: >
+#           Patient's marital status as captured in registration (e.g., Married, Single).
+#       MultiRacial:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that multiple race fields are populated for this patient.
+#       PreferredLanguage:
+#         type: string
+#         nullable: true
+#         description: >
+#           Preferred language for care and communication (e.g., English, Spanish).
+#       PreliminaryCauseOfDeathDiagnosisKey:
+#         type: bigint (foreign key to DiagnosisDim/DiagnosisTerminologyDim)
+#         nullable: true
+#         description: >
+#           Key referencing preliminary cause-of-death diagnosis, if coded.
+#       PrimaryRUCA_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Primary Rural-Urban Commuting Area (RUCA) classification for patient's
+#           residence.
+#       ReliableSex:
+#         type: string
+#         nullable: true
+#         description: >
+#           Derived sex field cleaned for analytic use; more stable than raw sex
+#           assignments.
+#       RhesusFactor_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Rh factor (positive/negative) when available.
+#       SecondRace:
+#         type: string
+#         nullable: true
+#         description: >
+#           Second race component for multi-racial patients.
+#       Sex:
+#         type: string
+#         nullable: true
+#         description: >
+#           Administrative sex field used in general workflows (e.g., Female, Male).
+#       SexAssignedAtBirth:
+#         type: string
+#         nullable: true
+#         description: >
+#           Sex assigned at birth when documented (e.g., female, male).
+#       SourceComboKey_X:
+#         type: bigint (foreign key to PatientSourceBridgeX/SourceDim)
+#         nullable: true
+#         description: >
+#           Composite key linking to data source metadata for the patient record.
+#       SourceCountry_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Country of the source organization contributing this patient's data.
+#       StateOrProvince:
+#         type: string
+#         nullable: true
+#         description: >
+#           State or province of the patient's primary address.
+#       StateOrProvinceAbbreviation:
+#         type: string
+#         nullable: true
+#         description: >
+#           Abbreviated state/province (e.g., WI, TX) based on primary address.
+#       Status:
+#         type: string
+#         nullable: true
+#         description: >
+#           High-level patient status (e.g., active, inactive, deceased).
+#       SviHouseholdCharacteristicsPctlRankByZip2020_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Social Vulnerability Index percentile rank (household characteristics) for
+#           ZIP, 2020.
+#       SviHouseholdCompositionPctlRankingByZip2018_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI percentile for household composition, ZIP-level, 2018 version.
+#       SviHousingTypeTransportationPctlRankByZip2020_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI percentile for housing type & transportation, ZIP-level, 2020 version.
+#       SviHousingTypeTransportationPctlRankingByZip2018_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI percentile for housing type & transportation, ZIP-level, 2018.
+#       SviMinorityStatusLanguagePctlRankingByZip2018_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI percentile for minority & language status, ZIP-level, 2018.
+#       SviOverallPctlRankByZip2020_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Overall SVI percentile rank for ZIP, 2020 ACS-based SVI.
+#       SviOverallPctlRankingByZip2018_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Overall SVI percentile rank for ZIP, 2018 SVI.
+#       SviRacialEthnicMinorityStatusPctlRankByZip2020_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI percentile for racial/ethnic minority status for ZIP, 2020.
+#       SviSocioeconomicPctlRankByZip2020_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI socioeconomic percentile for ZIP, 2020 version.
+#       SviSocioeconomicPctlRankingByZip2018_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           SVI socioeconomic percentile for ZIP, 2018 version.
+#       ThirdRace:
+#         type: string
+#         nullable: true
+#         description: >
+#           Third race component for multi-racial patients.
+#       UseInCosmosAnalytics_X:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates whether the patient record is approved for use in Cosmos analytics.
+#
+#   EdVisitFact:
+#     description: >
+#       Emergency department (ED) visit fact table. One row per ED visit/contact,
+#       linked to encounters via EncounterKey and to patients via PatientDurableKey.
+#       Includes ED timing milestones, acuity, payor, and disposition.
+#     granularity: >
+#       One row per ED visit (ED-visit-level fact), usually one per ED encounter.
+#     columns:
+#       AcuityLevel:
+#         type: string
+#         nullable: true
+#         description: >
+#           ED triage acuity (e.g., ESI level) recorded at arrival.
+#       AdmissionProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for the provider associated with admission decision from ED.
+#       AgeKey:
+#         type: bigint (foreign key to DurationDim/age dimension)
+#         nullable: true
+#         description: >
+#           Age key representing patient age at the time of the ED visit.
+#       ArrivalDateKey:
+#         type: integer (DateKey)
+#         nullable: false
+#         description: >
+#           DateKey for ED arrival date. Join to DateDim for calendar attributes.
+#       ArrivalInstant:
+#         type: datetime
+#         nullable: false
+#         description: >
+#           Timestamp of arrival in ED, de-identified and time-shifted.
+#       ArrivalMethod:
+#         type: string
+#         nullable: true
+#         description: >
+#           Method of arrival (e.g., walk-in, ambulance, transfer).
+#       ArrivalTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           TimeOfDay key for ED arrival time; join to TimeOfDayDim for hour/minute
+#           buckets.
+#       AvsPrintDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when After-Visit Summary was printed, if applicable.
+#       AvsPrintInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when the AVS was printed.
+#       AvsPrintTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for AVS print time.
+#       BedAssignedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when ED bed was assigned.
+#       BedAssignedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when ED bed assignment occurred.
+#       BedAssignedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for bed assignment.
+#       BedRequestDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when bed request for admission/placement was placed.
+#       BedRequestInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for bed request.
+#       BedRequestTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for bed request.
+#       BoardingHoursEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey marking the end of ED boarding period, if tracked.
+#       BoardingHoursEndInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when boarding ended.
+#       BoardingHoursEndTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for boarding end time.
+#       BoardingHoursStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when boarding started.
+#       BoardingHoursStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp marking start of boarding.
+#       BoardingHoursStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for boarding start.
+#       CodingComplete_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates whether ED visit coding is complete at source organization.
+#       CodingStatus_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Categorical coding status (e.g., pending, complete).
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real rows.
+#       CoverageComboKey_X:
+#         type: bigint (foreign key to CoverageBridgeX/CoverageDim)
+#         nullable: true
+#         description: >
+#           Composite coverage key for the ED visit's primary coverage.
+#       DepartureDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when the patient physically left the ED.
+#       DepartureInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of ED departure (may differ from disposition decision time).
+#       DepartureTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for ED departure time.
+#       DerivedEncounterStatus_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Derived status for the ED visit (e.g., completed, cancelled).
+#       DischargeDisposition:
+#         type: string
+#         nullable: true
+#         description: >
+#           Disposition from ED (e.g., admitted, discharged home, left AMA).
+#       DispositionDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey of disposition decision.
+#       DispositionInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of disposition decision.
+#       DispositionTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for disposition.
+#       EdVisitKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for ED visit fact row.
+#       EdGenericDispo:
+#         type: string
+#         nullable: true
+#         description: >
+#           Generalized disposition category, harmonized across organizations.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: false
+#         description: >
+#           Key linking the ED visit to its underlying encounter.
+#       EncounterSourceComboKey_X:
+#         type: bigint (foreign key to EncounterSourceBridge/SourceDim)
+#         nullable: true
+#         description: >
+#           Composite source key describing origin of the encounter data.
+#       FinancialClass:
+#         type: string
+#         nullable: true
+#         description: >
+#           Financial class category (e.g., commercial, Medicare).
+#       FirstAttendingAssignedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first attending provider was assigned in ED.
+#       FirstAttendingAssignedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when first attending was assigned.
+#       FirstAttendingAssignedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for first attending assignment.
+#       FirstCodeEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first resuscitation/code event ended, if documented.
+#       FirstCodeEndInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp marking end of first code event.
+#       FirstCodeEndTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for code end.
+#       FirstCodeStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first code event started.
+#       FirstCodeStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when first code started.
+#       FirstCodeStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for code start.
+#       FirstEdRegisteredNurseAssignedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first ED RN was assigned.
+#       FirstEdRegisteredNurseAssignedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of first ED RN assignment.
+#       FirstEdRegisteredNurseAssignedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for first RN assignment.
+#       FirstEkgCompletedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first ECG/EKG was completed in ED.
+#       FirstEkgCompletedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of first EKG completion.
+#       FirstEkgCompletedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for first EKG completion.
+#       FirstProviderContactDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first provider saw the patient in ED.
+#       FirstProviderContactInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of first provider contact.
+#       FirstProviderContactTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for provider contact.
+#       FirstSedationEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for end of first recorded sedation episode.
+#       FirstSedationEndInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for sedation end.
+#       FirstSedationEndTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for sedation end.
+#       FirstSedationStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for start of first recorded sedation episode.
+#       FirstSedationStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of sedation start.
+#       FirstSedationStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for sedation start.
+#       FirstTraumaEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when first trauma bay period ended.
+#       FirstTraumaEndInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for end of trauma bay period.
+#       FirstTraumaEndTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for trauma end.
+#       FirstTraumaStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when trauma bay period started.
+#       FirstTraumaStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of trauma bay start.
+#       FirstTraumaStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for trauma start.
+#       HospitalAdmissionKey:
+#         type: bigint (foreign key to HospitalAdmissionFact)
+#         nullable: true
+#         description: >
+#           Links ED visit to a subsequent hospital admission record when applicable.
+#       LeftAgainstMedicalAdvice:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates patient left against medical advice (AMA) from ED.
+#       LeftWithoutBeingSeen:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates patient left ED without being seen by a provider.
+#       ObservationStartedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when ED observation status began.
+#       ObservationStartedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp marking start of observation.
+#       ObservationStartedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for observation start.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Durable key identifying the patient associated with the ED visit.
+#       PayorComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key identifying payor information associated with the ED visit.
+#       PrimaryPayorKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Key for primary payor for the ED visit.
+#       RegistrationCompleteDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when ED registration was completed.
+#       RegistrationCompleteInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for registration completion.
+#       RegistrationCompleteTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for registration completion.
+#       RoomedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when patient was assigned to an ED room.
+#       RoomedInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for room assignment.
+#       RoomedTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for rooming time.
+#       TriageCompleteDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when triage was completed.
+#       TriageCompleteInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for triage completion.
+#       TriageCompleteTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for triage completion.
+#       TriageStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when triage started.
+#       TriageStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for triage start.
+#       TriageStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for triage start.
+#       UnderObservation:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates whether visit included an ED observation phase.
+#
+#   DiagnosisEventFact:
+#     description: >
+#       Diagnosis event fact table. Rows represent diagnoses associated with encounters,
+#       problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+#       for prevalence; rows are at the billing/event grain.
+#     granularity: >
+#       One row per diagnosis event per encounter/context at billing/event grain.
+#     columns:
+#       AgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key for patient at time of diagnosis event.
+#       Chronic:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates diagnosis is flagged as chronic in the source system.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count; typically 1 for real diagnosis event rows.
+#       DiagnosisEventKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the diagnosis event record.
+#       DiagnosisKey:
+#         type: bigint (foreign key to DiagnosisDim/DiagnosisTerminologyDim)
+#         nullable: false
+#         description: >
+#           Key referencing the diagnosis concept; use DiagnosisTerminologyDim for code
+#           details.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter associated with this diagnosis event; note that billing diagnoses
+#           can repeat across linked encounters.
+#       EndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing diagnosis end date or inactivation, when present.
+#       EmergencyDepartmentDiagnosis:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates diagnosis was documented in the ED context.
+#       IsPrimary:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates diagnosis is marked as primary or principal for the encounter.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient durable key associated with the diagnosis event.
+#       SourceComboKey:
+#         type: bigint (foreign key to DiagnosisEventSourceBridge/SourceDim)
+#         nullable: true
+#         description: >
+#           Composite key linking to data source metadata for this diagnosis record.
+#       StartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing when diagnosis became active or was first recorded.
+#       Status:
+#         type: string
+#         nullable: true
+#         description: >
+#           Diagnosis status (e.g., active, resolved, ruled out) depending on context.
+#       Type:
+#         type: string
+#         nullable: true
+#         description: >
+#           Diagnosis type (e.g., billing, problem list, admission, discharge), per source.
+#
+#   HospitalAdmissionFact:
+#     description: >
+#       Hospital admission fact table. One row per hospital admission episode,
+#       including inpatient and some observation stays, linked to encounters and patients.
+#       Contains admission/discharge timing, LOS, payor, and readmission flags.
+#     granularity: >
+#       One row per hospital admission episode (admission-level fact).
+#     columns:
+#       AdmissionDateKey:
+#         type: integer (DateKey)
+#         nullable: false
+#         description: >
+#           DateKey for hospital admission date; join to DateDim for calendar attributes.
+#       AdmittingProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for provider recorded as admitting provider.
+#       AgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key at time of admission.
+#       CodingComplete_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates coding for the hospital admission is complete.
+#       CodingStatus_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Categorical coding status (e.g., pending, complete) for the admission.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count; typically 1 for real hospital admission rows.
+#       CoverageComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite coverage key representing coverage for the admission.
+#       DaysSincePriorAdmission_X:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Days between this admission and prior admission, when computable.
+#       DepartmentKey:
+#         type: bigint (foreign key to DepartmentDim)
+#         nullable: true
+#         description: >
+#           Department representing admitting or primary inpatient department.
+#       DerivedEncounterStatus_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Derived status of the admission encounter (e.g., completed, cancelled).
+#       DischargeDepartmentKey_X:
+#         type: bigint (foreign key to DepartmentDim)
+#         nullable: true
+#         description: >
+#           Department key for the department from which the patient was discharged.
+#       DischargeDisposition:
+#         type: string
+#         nullable: true
+#         description: >
+#           Discharge disposition (e.g., home, SNF, expired).
+#       DischargeDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing discharge date.
+#       DischargeInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of discharge; de-identified and time-shifted.
+#       DischargeTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for discharge time.
+#       DischargingProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for provider recorded as discharging provider.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: false
+#         description: >
+#           Encounter key linking to the underlying hospital encounter record.
+#       EncounterSourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key describing origin of the encounter data.
+#       EncounterType:
+#         type: string
+#         nullable: true
+#         description: >
+#           Type of encounter associated with this admission (e.g., inpatient,
+#           observation).
+#       FinancialClass:
+#         type: string
+#         nullable: true
+#         description: >
+#           Financial class for the admission (e.g., commercial, Medicaid).
+#       HospitalAdmissionKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the hospital admission fact record.
+#       InpatientAdmissionDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when the inpatient portion of the admission started (may differ from
+#           hospital arrival).
+#       InpatientAdmissionInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for inpatient admission start.
+#       InpatientAdmissionTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for inpatient admission time.
+#       InpatientLengthOfStayInDays:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Length of stay in days for inpatient portion only.
+#       LengthOfStayInDays:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Total length of stay in days for the hospital admission episode.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient durable key associated with the hospital admission.
+#       PayorComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite payor key associated with the admission.
+#       PrimaryPayorKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Key identifying primary payor for the admission.
+#       StartedAsHOV_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates admission started as a hospital outpatient visit (HOV) before
+#           inpatient conversion.
+#       StartedInED_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates admission started from an ED visit.
+#       IsIndexAdmission_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Flag used in readmission logic to indicate index admission in a readmission
+#           series.
+#       IsUnplannedReadmission_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates admission is categorized as an unplanned readmission relative to a
+#           prior stay.
+#       IsPlannedReadmission_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates admission is categorized as a planned readmission.
+#       ReadmissionCausedByKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Key referencing cause-of-readmission concept when mapped (e.g., another
+#           admission or diagnosis).
+#
+#   LabComponentResultFact:
+#     description: >
+#       Lab component result fact table. One row per lab component result for a patient,
+#       linked to specific lab tests and encounters. Numeric results are stored in
+#       NumericValue with units in Unit; categorical/string results are stored in Value.
+#       LabComponentKey = -1 indicates an unmapped component; exclude or handle separately.
+#     granularity: >
+#       One row per lab component result per patient per event.
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Flag indicating the row has been logically deleted in the source. Filter this
+#           out for most analytic use cases.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Flag indicating the row was inferred rather than directly sourced; used for
+#           lineage and data quality checks.
+#       Abnormal:
+#         type: string
+#         nullable: true
+#         description: >
+#           Abnormality category for the result (e.g., high, low, normal), derived from
+#           reference ranges and the raw value.
+#       CollectionInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when the specimen was collected. De-identified and time-shifted.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator, typically 1 for real rows. Placeholder rows
+#           have nonpositive keys and may carry NULL Count.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter during which the lab specimen/result was associated.
+#       Flag:
+#         type: string
+#         nullable: true
+#         description: >
+#           Result flag as provided by the source (e.g., H, L, critical).
+#       IsBlankOrUnsuccessfulAttempt:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the result represents a blank measurement or an unsuccessful attempt.
+#       LabComponentKey:
+#         type: bigint (foreign key to LabComponentDim)
+#         nullable: false
+#         description: >
+#           Key identifying the lab component. Value -1 is the unspecified sentinel for
+#           unmapped components and should be handled explicitly.
+#       LabComponentResultKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the lab component result fact row.
+#       LabTestKey_X:
+#         type: bigint (foreign key to LabTestFact)
+#         nullable: true
+#         description: >
+#           Key linking this component result to the parent lab test record.
+#       NumericValue:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Numeric representation of the lab result when the raw value parses as a number.
+#           Value is NULL for categorical/string results. Selecting on NumericValue
+#           preferentially pulls abnormal results; use with care.
+#       NumericBoundaryValue_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Numeric boundary value when the result uses inequality or thresholds (e.g.,
+#           "<5").
+#       NumericValueMaximum_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Maximum numeric value when the lab result represents a range.
+#       NumericValueMinimum_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Minimum numeric value when the lab result represents a range.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient durable key associated with the lab result.
+#       PrioritizedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for the prioritized result date (usually the result date); use for
+#           date filtering and reporting.
+#       PrioritizedInstant_X:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for the prioritized result date/time (result or collection, depending
+#           on configuration).
+#       ProcedureDurableKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Durable key for a procedure associated with the lab result, when mapped.
+#       ReferenceValueHigh_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Upper bound of normal reference range for the numeric result.
+#       ReferenceValueLow_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Lower bound of normal reference range for the numeric result.
+#       ReferenceValueNormal_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Textual representation of the normal reference range or category.
+#       ResultingLabDurableKey:
+#         type: bigint (foreign key to LabDim)
+#         nullable: true
+#         description: >
+#           Durable key identifying the lab facility or system that produced the result.
+#       ResultInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when the result was finalized/reported. Often used as the main
+#           result time for analyses.
+#       SourceComboKey:
+#         type: bigint (foreign key to LabComponentResultSourceBridge/SourceDim)
+#         nullable: true
+#         description: >
+#           Composite source key for the lab result; use to trace origin system.
+#       StructuredBoundaryOperator_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Encoded boundary operator for numeric results with thresholds (e.g., "<",
+#           ">=").
+#       Unit:
+#         type: string
+#         nullable: true
+#         description: >
+#           Unit of measure for NumericValue (e.g., mg/dL). For unitless values received
+#           before Oct 2022 this may be "each"; later values may have NULL.
+#       Value:
+#         type: string
+#         nullable: false
+#         description: >
+#           Categorical or string representation of the result when not numeric. For
+#           numeric results, Value is the sentinel "*Not Applicable". Values of "*Masked in De-ID"
+#           represent results masked during de-identification.
+#
+#   EncounterFact:
+#     description: >
+#       General encounter fact table. One row per encounter across settings, with
+#       admission/discharge timing, department, encounter type, and coverage/payor
+#       attributes. EncounterKey is the principal link to many other fact tables.
+#     granularity: >
+#       One row per encounter across settings (encounter-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the encounter record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the encounter record has been inferred rather than directly sourced.
+#       AdmissionDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for encounter admission date (for inpatient/observation encounters).
+#       AdmissionInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of admission; de-identified and time-shifted where applicable.
+#       AdmittingProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for admitting provider associated with the encounter.
+#       AgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key representing patient age at time of encounter.
+#       ArrivalMeans:
+#         type: string
+#         nullable: true
+#         description: >
+#           Means of arrival, where applicable (e.g., ambulance, walk-in).
+#       AttendingProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for attending provider for the encounter.
+#       CodingComplete_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates coding for the encounter has been marked complete.
+#       CodingStatus_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Categorical status of encounter coding (e.g., pending, complete, in progress).
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real encounter rows.
+#       CoverageComboKey_X:
+#         type: bigint (foreign key to CoverageBridgeX/CoverageDim)
+#         nullable: true
+#         description: >
+#           Composite key representing coverage for the encounter.
+#       Date:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           General encounter date field (often the start date); use DateKey for filtering.
+#       DateKey:
+#         type: integer (DateKey)
+#         nullable: false
+#         description: >
+#           Primary encounter date key; join to DateDim for calendar attributes.
+#       DepartmentKey:
+#         type: bigint (foreign key to DepartmentDim)
+#         nullable: true
+#         description: >
+#           Department associated with the encounter (e.g., clinic, inpatient unit).
+#       DerivedEncounterStatus:
+#         type: string
+#         nullable: true
+#         description: >
+#           Derived status of the encounter (e.g., completed, cancelled), harmonized
+#           across organizations.
+#       DerivedEncounterType_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Derived encounter type category (e.g., ED visit, inpatient, outpatient visit).
+#       DischargeDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for discharge date or encounter end date.
+#       DischargeDisposition:
+#         type: string
+#         nullable: true
+#         description: >
+#           Discharge disposition (e.g., home, SNF, expired, left AMA).
+#       DischargeInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of discharge or encounter end.
+#       DischargeProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Durable key for provider documented as discharging provider.
+#       EncounterKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the encounter fact row. Used widely for linking other facts.
+#       EndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing the encounter end date.
+#       EndInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp representing the encounter end time.
+#       IsEDVisit:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that the encounter is an ED visit. ED-specific detail is in
+#           EdVisitFact.
+#       IsHospitalAdmission:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the encounter represents a hospital admission episode.
+#       IsHospitalOutpatientVisit:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates a hospital outpatient encounter (e.g., same-day surgery, diagnostic).
+#       IsOutpatientFaceToFaceVisit:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates a face-to-face outpatient visit (clinic, office).
+#       IsPregnant_X:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Derived flag indicating the patient was pregnant at time of encounter when
+#           documentation supports it.
+#       MarkedDoNotBillInsurance:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates encounter was flagged as not to be billed to insurance.
+#       MarkedSelfPay:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates encounter was flagged as self-pay.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Durable key identifying the patient associated with the encounter.
+#       PayorComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key representing payor information associated with the encounter.
+#       PlaceOfServiceType_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Place of service category (e.g., office, inpatient hospital).
+#       PrimaryCoverageFinancialClass_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Financial class derived from primary coverage for the encounter.
+#       PrimaryPayorKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Key for the primary payor associated with the encounter.
+#       ProviderDurableKey:
+#         type: bigint (foreign key to ProviderDim)
+#         nullable: true
+#         description: >
+#           Provider durable key; may reflect the primary provider associated with the
+#           encounter.
+#       SourceComboKey:
+#         type: bigint (foreign key to EncounterSourceBridge/SourceDim)
+#         nullable: true
+#         description: >
+#           Composite source key providing origin metadata for the encounter.
+#       Type:
+#         type: string
+#         nullable: true
+#         description: >
+#           Encounter type as captured at the source (e.g., inpatient, outpatient,
+#           emergency), prior to derived categorization.
+#
+#   LabComponentDim:
+#     description: >
+#       Lab component dimension table. One row per lab test component (e.g., specific
+#       analyte/measurement). Contains naming, LOINC codes, units, and data type.
+#     granularity: >
+#       One row per lab component concept (component-level dimension).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the component definition.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the component record has been inferred.
+#       Abbreviation:
+#         type: string
+#         nullable: true
+#         description: >
+#           Short abbreviation used for the component name in clinical workflows.
+#       BaseName:
+#         type: string
+#         nullable: true
+#         description: >
+#           Base name representing the core analyte or concept underlying the component.
+#       CommonName:
+#         type: string
+#         nullable: true
+#         description: >
+#           Common display name for the component as used in clinical practice.
+#       DataType:
+#         type: string
+#         nullable: true
+#         description: >
+#           Data type expected for results of this component (e.g., numeric, string).
+#       DefaultUnit:
+#         type: string
+#         nullable: true
+#         description: >
+#           Default unit for numeric results for this component (e.g., mg/dL).
+#       LabComponentKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the lab component dimension row. Join from
+#           LabComponentResultFact on LabComponentKey.
+#       LoincCode:
+#         type: string
+#         nullable: true
+#         description: >
+#           LOINC code associated with the component, when mapped.
+#       LoincName:
+#         type: string
+#         nullable: true
+#         description: >
+#           LOINC long/common name associated with the component.
+#       Name:
+#         type: string
+#         nullable: true
+#         description: >
+#           Full display name for the component.
+#       Subtype:
+#         type: string
+#         nullable: true
+#         description: >
+#           Component subtype used for further categorization within the type.
+#       Type:
+#         type: string
+#         nullable: true
+#         description: >
+#           High-level component type (e.g., lab analyte, vital-related component).
+#
+#   LabComponentSetDim:
+#     description: >
+#       Lab component set dimension, representing value sets or curated lists of
+#       lab components. Used to group components for cohorts or measure logic.
+#     granularity: >
+#       One row per lab component set membership (LabComponentSetKey, LabComponentKey).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the set.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the set record has been inferred.
+#       DisplayName:
+#         type: string
+#         nullable: true
+#         description: >
+#           End-user-friendly display name for the component set.
+#       LabComponentKey:
+#         type: bigint (foreign key to LabComponentDim)
+#         nullable: false
+#         description: >
+#           Component key that is a member of this set.
+#       LabComponentSetKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the lab component set dimension row.
+#       Name:
+#         type: string
+#         nullable: true
+#         description: >
+#           Internal name for the component set.
+#       Trusted:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates whether the set is marked as trusted for use in analytics.
+#       ValueSetEpicId:
+#         type: string
+#         nullable: true
+#         description: >
+#           Epic value set identifier for the component set when applicable.
+#
+#   BirthFact:
+#     description: >
+#       Birth fact table. One row per birth event, with linkages between mother and
+#       baby, gestational age, delivery method, and labor/delivery timing and
+#       characteristics.
+#     granularity: >
+#       One row per infant birth event (birth-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the birth record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the record has been inferred.
+#       AntenatalSteroids:
+#         type: string
+#         nullable: true
+#         description: >
+#           Documentation of antenatal steroid use (e.g., yes/no or categorical detail).
+#       AugmentationUsed:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that labor augmentation was used.
+#       BabyDischargeWeight:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Baby's discharge weight, de-identified and potentially unit normalized.
+#       BabyInpatientLengthOfStayInDays:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Baby's inpatient length of stay in days.
+#       BabyPatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: true
+#         description: >
+#           Durable key identifying the infant patient.
+#       BirthAnesthesiaComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key referencing anesthesia categories used during birth.
+#       BirthAugmentationComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key referencing labor augmentation methods.
+#       BirthAugmentationIndicationComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key referencing indication(s) for augmentation.
+#       BirthCervicalRipeningComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key representing cervical ripening methods.
+#       BirthCesareanIndicationComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key representing indications for cesarean delivery.
+#       BirthDateKey:
+#         type: integer (DateKey)
+#         nullable: false
+#         description: >
+#           DateKey for the birth date.
+#       BirthEpisiotomyComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key representing episiotomy data.
+#       BirthInductionComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key referencing induction methods.
+#       BirthInductionIndicationComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key for indications for induction.
+#       BirthInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of birth; de-identified and time-shifted.
+#       BirthKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the birth fact record.
+#       BirthLength:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Infant length at birth (e.g., centimeters).
+#       BirthRuptureTypeComboKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite key representing type of membrane rupture associated with birth.
+#       BirthTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for birth time.
+#       BirthWeight:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Birth weight measure; often redundant with BirthWeightGrams but may use
+#           different units.
+#       BirthWeightGrams:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Birth weight in grams.
+#       BreastMilkGiven:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates breast milk was given to the infant during the birth encounter.
+#       CervicalRipeningDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when cervical ripening started.
+#       CervicalRipeningInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when cervical ripening began.
+#       CervicalRipeningTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for cervical ripening start time.
+#       CesareanDelivery:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the delivery was cesarean.
+#       CesareanExpected:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates whether a cesarean delivery was expected/planned.
+#       CordClampDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when the umbilical cord was clamped.
+#       CordClampInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of cord clamp.
+#       CordClampTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for cord clamp time.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real birth records.
+#       DeliveryMethod:
+#         type: string
+#         nullable: true
+#         description: >
+#           Delivery method category (e.g., spontaneous vaginal, assisted, cesarean).
+#       DilationCompleteInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when cervical dilation reached completion.
+#       DilationCompleteDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for dilation completion.
+#       DilationCompleteTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for dilation completion.
+#       EpiduralOrSpinalGiven:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates whether epidural or spinal anesthesia was given.
+#       FirstStageLengthMinutes:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration in minutes of first stage of labor.
+#       ForcepsAttempted:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates forceps were attempted during delivery.
+#       ForcepsDelivery:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates delivery ultimately used forceps.
+#       GestationalAgeDays:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Gestational age in days at birth.
+#       GestationalAgeZeroDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing gestational age zero point (e.g., conception or
+#           standardized reference).
+#       HeadCircumference:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Infant head circumference measured at birth.
+#       InductionUsed:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates labor induction was used.
+#       LaborAttempted:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates labor was attempted (may be false for pre-labor cesarean).
+#       LaborStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when labor started.
+#       LaborStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when labor started.
+#       LaborStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for labor start.
+#       LaborType:
+#         type: string
+#         nullable: true
+#         description: >
+#           Categorical description of labor type (e.g., spontaneous, induced, augmented).
+#       LivingStatus:
+#         type: string
+#         nullable: true
+#         description: >
+#           Infant living status at birth (e.g., liveborn, stillborn).
+#       MotherAgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key representing mother's age at time of delivery.
+#       MotherArrivalDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when mother arrived at the birthing facility.
+#       MotherArrivalInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of mother's arrival at the birthing facility.
+#       MotherArrivalTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for mother's arrival time.
+#       MotherEncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter key for mother's delivery encounter.
+#       MotherPatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: true
+#         description: >
+#           Durable key identifying the mother.
+#       MultipleDeliveryCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of infants delivered in a multiple birth (e.g., twins, triplets).
+#       MultipleDeliveryOrder:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Order of the infant within multiple delivery (e.g., first of twins).
+#       NeonatalDemise:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates neonatal demise occurred.
+#       NonBreastMilkGiven:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates non-breast milk was given to the infant.
+#       PlacentaDeliveryDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when placenta was delivered.
+#       PlacentaDeliveryInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of placenta delivery.
+#       PlacentaDeliveryTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for placenta delivery.
+#       PlacentaMethod:
+#         type: string
+#         nullable: true
+#         description: >
+#           Method of placenta delivery (e.g., spontaneous, manual removal).
+#       PregnancyKey:
+#         type: bigint (foreign key to PregnancyFact)
+#         nullable: true
+#         description: >
+#           Key linking the birth to the pregnancy episode.
+#       PresentationType:
+#         type: string
+#         nullable: true
+#         description: >
+#           Fetal presentation type (e.g., vertex, breech).
+#       PresentationVertex:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates vertex presentation.
+#       PushingStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when pushing started.
+#       PushingStartInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when pushing began.
+#       PushingStartTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for pushing start.
+#       RuptureDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when membranes ruptured.
+#       RuptureInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp of membrane rupture.
+#       RuptureOfMembranesToDeliverySeconds:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration in seconds between membrane rupture and delivery.
+#       RuptureTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for rupture time.
+#       SecondStageLengthMinutes:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration in minutes of second stage of labor.
+#       SeverePerinealLacerationOccurred:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates severe perineal laceration (e.g., 3rd/4th degree) occurred.
+#       SkinToSkinDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when skin-to-skin contact first occurred.
+#       SkinToSkinInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp when skin-to-skin contact began.
+#       SkinToSkinTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for skin-to-skin start.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key describing origin of the birth record.
+#       SpontaneousVaginalDelivery:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates delivery was spontaneous vaginal.
+#       ThirdStageLengthMinutes:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration in minutes of third stage of labor (placental).
+#       TotalApgarFiveMinute:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Total Apgar score at 5 minutes.
+#       TotalApgarOneMinute:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Total Apgar score at 1 minute.
+#       TotalApgarTenMinute:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Total Apgar score at 10 minutes.
+#       VacuumAttempted:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates vacuum assistance was attempted.
+#       VacuumDelivery:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates delivery ultimately used vacuum assistance.
+#
+#   MedicationOrderFact:
+#     description: >
+#       Medication order fact table. One row per medication order at the order grain.
+#       Holds order-level fields like quantity, route, frequency, and indications.
+#       MedicationKey = -1 for mixtures; use MedicationOrderComponentFact to identify
+#       ingredients when mixtures are in scope.
+#     granularity: >
+#       One row per medication order (order-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the medication order.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the order record has been inferred.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; often 1 for real orders.
+#       DepartmentKey:
+#         type: bigint (foreign key to DepartmentDim)
+#         nullable: true
+#         description: >
+#           Department associated with the order (e.g., ordering department).
+#       DiscontinueReason:
+#         type: string
+#         nullable: true
+#         description: >
+#           Reason documented for discontinuing the order.
+#       DoseUnit:
+#         type: string
+#         nullable: true
+#         description: >
+#           Unit for ordered dose (e.g., mg, mL, each). Unitless medications before Oct
+#           2022 often use "each"; later data may use NULL.
+#       DurationKey:
+#         type: bigint (foreign key to DurationDim)
+#         nullable: true
+#         description: >
+#           Key referencing the duration category of order when explicitly specified.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter associated with the order. For administrations in another context,
+#           this may be the ordering encounter, not administering encounter.
+#       EndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           Order end date key. Often represents discontinuation or system stop and is
+#           not a reliable indicator of actual therapy stop.
+#       FifthIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Fifth indication for use associated with the order, when documented.
+#       FirstIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Primary indication for medication use as documented on the order.
+#       FourthIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Fourth indication for use.
+#       Frequency:
+#         type: string
+#         nullable: true
+#         description: >
+#           Ordered frequency (e.g., BID, q6h, PRN text). Values vary across orgs;
+#           map carefully when computing daily dose.
+#       IsOutpatientMode:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates order mode flagged as outpatient. Mode is not the same as care
+#           setting; clinic-administered medications may be inpatient mode.
+#       MedicationKey:
+#         type: bigint (foreign key to MedicationDim)
+#         nullable: false
+#         description: >
+#           Key to the medication record. Value -1 indicates mixture orders, which must
+#           be resolved via MedicationOrderComponentFact for ingredients.
+#       MedicationOrderKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the medication order fact record.
+#       MinimumDose:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Minimum dose per administration, used for titrated or range orders.
+#       Mode:
+#         type: string
+#         nullable: true
+#         description: >
+#           Order mode (e.g., inpatient, outpatient). Distinct from Type_X and care
+#           setting.
+#       MorphineEquivalentDailyDosage:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Computed morphine-equivalent daily dose for opioid orders when mapping is
+#           available.
+#       OrderedDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey when the order was placed/signed.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient associated with the medication order.
+#       Quantity:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Total quantity ordered (usually per fill for outpatient orders).
+#       RefillsWritten:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of refills originally written on the order.
+#       Route:
+#         type: string
+#         nullable: true
+#         description: >
+#           Route associated with the medication record for the order (e.g., oral, IV).
+#           Use this to scope medications by route.
+#       SecondIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Second indication for use.
+#       SixthIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Sixth indication for use.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key providing origin metadata for the order.
+#       StartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           Start date key for the order. Masked or defaulted for some patient-reported
+#           and masked medications.
+#       ThirdIndicationForUse:
+#         type: string
+#         nullable: true
+#         description: >
+#           Third indication for use.
+#       Type_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Order type category (e.g., prescription, administered medication, historical).
+#
+#   MedicationDispenseFact:
+#     description: >
+#       Outpatient medication dispense fact table. Rows represent fills/dispenses
+#       from ambulatory or external pharmacies. Includes days supply, NDC, refills,
+#       and dispense timing. Only outpatient dispenses are present.
+#     granularity: >
+#       One row per outpatient dispense/fill event (dispense-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the dispense record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the record has been inferred.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; usually 1 for real dispenses.
+#       DaysSupply:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of days of therapy the dispense is expected to cover.
+#       DispenseDataSourceType_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Source type for the dispense (e.g., Willow Dispense History vs external).
+#           Use to distinguish internal vs external dispenses.
+#       DoseUnit_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Dose unit representation for the dispense, when captured.
+#       FilledDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing dispense/fill date (or claim filed date for external).
+#       FilledInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for dispense/fill date. For mail order, this is not delivery date.
+#       FilledTimeOfDayKey:
+#         type: integer (TimeOfDayKey)
+#         nullable: true
+#         description: >
+#           Time-of-day key for fill time.
+#       FillNumber:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Fill number (0 for initial, >0 for refills) for Willow dispenses; inconsistent
+#           for external dispenses.
+#       FirstDispense:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates this row represents the first dispense for the corresponding order
+#           for Willow; less reliable for external.
+#       Frequency_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Dispensed frequency text when carried at dispense level.
+#       MedicationDispenseKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the dispense fact record.
+#       MedicationKey:
+#         type: bigint (foreign key to MedicationDim)
+#         nullable: false
+#         description: >
+#           Medication associated with the dispense. Masked medications may appear under
+#           generic "Masked Medication".
+#       MedicationOrderKey:
+#         type: bigint (foreign key to MedicationOrderFact)
+#         nullable: true
+#         description: >
+#           Order key associated with the dispense. Reliable for Willow ambulatory;
+#           inconsistent for external dispenses.
+#       MedicationOrderWrittenDateKey_X:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey referencing when associated medication order was written.
+#       MinimumDose_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Minimum dose per administration reflected in this dispense, if provided.
+#       Mode:
+#         type: string
+#         nullable: true
+#         description: >
+#           Order mode associated with the dispense; may reflect outpatient/inpatient
+#           mode, but external interfaces vary.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient associated with the dispense.
+#       PrimaryComponentQuantity:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Quantity of primary component dispensed.
+#       PrimaryComponentQuantityUnit:
+#         type: string
+#         nullable: true
+#         description: >
+#           Unit associated with primary component quantity.
+#       PrimaryComponentUnformattedNdc:
+#         type: string
+#         nullable: true
+#         description: >
+#           Unformatted NDC representing potential package for the medication record;
+#           not necessarily the exact NDC dispensed.
+#       RawCodeSystem_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Original code system of the dispense record (e.g., NDC).
+#       RawCodeValue_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Raw code value representing the product in the source system.
+#       ReadyToDispenseDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing when the medication became ready to dispense; equivalent
+#           to FilledDateKey for Willow; claim filed date for external dispenses.
+#       RefillsRemaining_X:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Remaining refills after this dispense. Reliable for Willow; external mappings
+#           vary and can go negative when splits occur.
+#       RefillsWritten_X:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of refills written, as represented at the dispense level. Pre-2019
+#           external data primarily uses this.
+#       Route_X:
+#         type: string
+#         nullable: true
+#         description: >
+#           Route representation at dispense level when documented.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key for the dispense.
+#       SupplyEndDateKey_X:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey approximating when the supply would end; often derived from days
+#           supply and fill date.
+#
+#   MedicationAdministrationFact:
+#     description: >
+#       Medication administration fact table representing MAR actions. Contains
+#       administrations and non-given actions except Due. Filter using
+#       ActionIsMedAdministration or AdministrationAction values when selecting
+#       given doses. Incomplete data for some encounters; union with
+#       MedicationOrderComponentFact where Type_X = 'Administered Medication'
+#       can improve completeness.
+#     granularity: >
+#       One row per MAR action for a medication order (administration-action-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the administration row.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates an inferred administration record.
+#       AdministrationDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing administration date for the MAR action.
+#       AdministrationDepartmentKey:
+#         type: bigint (foreign key to DepartmentDim)
+#         nullable: true
+#         description: >
+#           Department where the administration action occurred or was recorded.
+#       AdministrationInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp for the administration action (e.g., Given, Held). De-identified.
+#       AdministrationRoute:
+#         type: string
+#         nullable: true
+#         description: >
+#           Route documented at administration time (e.g., PO, IV). Some intraoperative
+#           medications may have route only at administration.
+#       AgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key representing age at administration time.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real MAR rows. Placeholder rows
+#           have nonpositive keys and often NULL Count.
+#       EncounterAdmissionInstant:
+#         type: datetime
+#         nullable: true
+#         description: >
+#           Timestamp representing admission associated with the encounter, carried
+#           on the administration record.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter associated with the medication order; for administrations in a
+#           different contact, this remains the ordering encounter.
+#       MedicationAdministrationKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the medication administration fact row.
+#       MedicationKey:
+#         type: bigint (foreign key to MedicationDim)
+#         nullable: false
+#         description: >
+#           Key to the medication record. Value -1 for mixture administrations; identify
+#           ingredients from order components when mixtures are in scope.
+#       MedicationOrderKey:
+#         type: bigint (foreign key to MedicationOrderFact)
+#         nullable: true
+#         description: >
+#           Links administration to its parent medication order. Never join directly to
+#           MedicationOrderComponentFact; route through MedicationOrderFact.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient associated with the medication administration action.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key for the administration action, referencing origin system.
+#
+#   PregnancyFact:
+#     description: >
+#       Pregnancy episode fact table. One row per pregnancy episode, with
+#       episode-level dates, parity/gravida counts, delivery outcomes, and
+#       pre-/post-delivery anthropometrics. Linked to patients via PatientDurableKey
+#       and to births via BirthFact.PregnancyKey.
+#     granularity: >
+#       One row per pregnancy episode per patient (pregnancy-episode-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the pregnancy episode record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the pregnancy record has been inferred rather than directly sourced.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real pregnancy episode rows.
+#       EpisodeEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing end of the pregnancy episode (e.g., delivery, loss).
+#       EpisodeStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing start of the pregnancy episode, often based on
+#           estimated conception or first documentation.
+#       HadCesarean:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that at least one delivery in the pregnancy was cesarean.
+#       HadFetalDemise:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that fetal demise occurred during this pregnancy.
+#       HadNeonatalDemise:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that neonatal demise occurred for at least one infant in this
+#           pregnancy.
+#       HasDelivery:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates that the pregnancy episode includes at least one delivery event.
+#       HasDeliverySummary:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates a delivery summary record exists for this pregnancy.
+#       IsHistorical:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates pregnancy is historical (documented retrospectively rather than
+#           managed in real time).
+#       LastDeliveryDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for the most recent delivery associated with this pregnancy.
+#       LastDeliveryGestationalAge:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Gestational age (e.g., in weeks or days) at the most recent delivery.
+#       NumberOfFetuses:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of fetuses associated with this pregnancy (e.g., singleton, twins).
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient associated with this pregnancy episode.
+#       PostDeliveryBmi_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           BMI measured post-delivery, derived by source logic and de-identified.
+#       PreDeliveryBmi_X:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           BMI measured pre-delivery, derived by source logic. Use carefully as
+#           measurement timing may vary.
+#       PregnancyAbortionCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of abortions (therapeutic or spontaneous) documented for this pregnancy
+#           episode if tracked at episode level.
+#       PregnancyEctopicCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of ectopic pregnancies associated with this episode context.
+#       PregnancyEstimatedEndDate:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           Estimated pregnancy end date (e.g., EDD); use PregnancyEstimatedEndDateKey
+#           for filtering and reporting.
+#       PregnancyEstimatedEndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for estimated pregnancy end date.
+#       PregnancyEstimatedStartDate:
+#         type: date/datetime
+#         nullable: true
+#         description: >
+#           Estimated pregnancy start date (e.g., based on LMP or ultrasound).
+#       PregnancyEstimatedStartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for estimated pregnancy start date.
+#       PregnancyGravidaCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Gravida count (number of prior pregnancies including current) at the time
+#           of this pregnancy.
+#       PregnancyKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the pregnancy episode fact record. Links to
+#           BirthFact.PregnancyKey.
+#       PregnancyParaCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Para count (number of prior pregnancies resulting in viable births).
+#       PregnancyPretermCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of prior preterm births associated with this pregnancy context.
+#       PregnancyPriorFetalDemiseCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of prior fetal demises documented for the patient at the time of this
+#           pregnancy.
+#       PregnancyPriorLiveBirthCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of prior live births documented at the time of this pregnancy.
+#       PregnancySpontaneousAbortionCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of spontaneous abortions associated with this pregnancy context.
+#       PregnancyStartAgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key representing the patient's age at pregnancy start.
+#       PregnancyTermCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Number of term births associated with this pregnancy episode.
+#       PregnancyTherapeuticAbortionCount:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Count of therapeutic abortions associated with this pregnancy context.
+#       PregravidBmi:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           BMI measured prior to pregnancy (pregravid), when documented.
+#       PregravidWeight:
+#         type: numeric
+#         nullable: true
+#         description: >
+#           Weight prior to pregnancy (pregravid), de-identified and possibly unit
+#           normalized.
+#       PriorCesarean:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the patient has a history of prior cesarean delivery before this
+#           pregnancy.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key representing origin metadata for the pregnancy record.
+#       WorkingEstimatedDateOfDeliveryKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey for working estimated date of delivery (EDD) used during pregnancy
+#           care.
+#
+#   DiagnosisTerminologyDim:
+#     description: >
+#       Diagnosis terminology dimension table. One row per diagnosis code representation
+#       in a particular terminology (e.g., ICD-10-CM, SNOMED). Preferred source for
+#       code-level details for diagnoses used in DiagnosisEventFact and other tables.
+#     granularity: >
+#       One row per diagnosis code representation in a terminology (diagnosis-code-level
+#       dimension).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the diagnosis terminology record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the terminology record has been inferred.
+#       DiagnosisKey:
+#         type: bigint (foreign key to DiagnosisDim)
+#         nullable: false
+#         description: >
+#           Key linking this terminology record to the core diagnosis concept in
+#           DiagnosisDim.
+#       DiagnosisTerminologyKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the diagnosis terminology dimension row.
+#       DisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable display string for the diagnosis concept, often combining
+#           name and code in a user-friendly format.
+#       GroupedNameAndCode:
+#         type: string
+#         nullable: true
+#         description: >
+#           Grouped representation combining name and code for analytic grouping and
+#           reporting.
+#       NameAndCode:
+#         type: string
+#         nullable: true
+#         description: >
+#           Concatenation of diagnosis name and code, often used as a canonical label.
+#       ReferenceBillingCode:
+#         type: string
+#         nullable: true
+#         description: >
+#           Primary billing code value for the diagnosis in the referenced terminology
+#           (e.g., ICD-10-CM code).
+#       Parent:
+#         type: string
+#         nullable: true
+#         description: >
+#           Parent concept identifier or hierarchy label within the terminology, used
+#           for organizing related diagnoses.
+#       TerminologyConceptKey:
+#         type: bigint (foreign key to TerminologyConceptDim)
+#         nullable: true
+#         description: >
+#           Key to the underlying terminology concept record.
+#       Type:
+#         type: string
+#         nullable: true
+#         description: >
+#           Terminology type (e.g., ICD-10-CM, SNOMED CT, internal code set).
+#       Value:
+#         type: string
+#         nullable: true
+#         description: >
+#           Raw value for the terminology representation; often the code or canonical
+#           identifier.
+#
+#   DurationDim:
+#     description: >
+#       Duration dimension table. Encodes durations in days, weeks, months, years
+#       and display strings. Used to represent duration fields as dimensional keys
+#       (e.g., MedicationOrderFact.DurationKey).
+#     granularity: >
+#       One row per distinct duration concept (duration-level dimension).
+#     columns:
+#       DurationKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the duration dimension row.
+#       Days:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration expressed in days.
+#       DaysDisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable display string for duration in days (e.g., "7 days").
+#       DisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           General display string representation for the duration, potentially combining
+#           multiple units.
+#       Months:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration expressed in months.
+#       MonthsDisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable display string for duration in months (e.g., "3 months").
+#       Weeks:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration expressed in weeks.
+#       WeeksDisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable display string for duration in weeks (e.g., "2 weeks").
+#       Years:
+#         type: integer
+#         nullable: true
+#         description: >
+#           Duration expressed in years.
+#       YearsDisplayString:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable display string for duration in years (e.g., "1 year").
+#
+#   ProblemListFact:
+#     description: >
+#       Problem list fact table. One row per problem list entry for a patient,
+#       containing diagnosis keys, dates, chronic flags, and status. Used for
+#       longitudinal conditions separate from billing diagnoses.
+#     granularity: >
+#       One row per problem list entry per patient (problem-entry-level fact).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the problem list entry.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the problem list record has been inferred.
+#       AgeKey:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Age key representing patient age at the time the problem was recorded.
+#       Chronic:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the problem is flagged as chronic in the source system.
+#       Count:
+#         type: integer
+#         nullable: false
+#         description: >
+#           Cosmos row count indicator; typically 1 for real problem list entries.
+#       DiagnosisKey:
+#         type: bigint (foreign key to DiagnosisDim/DiagnosisTerminologyDim)
+#         nullable: false
+#         description: >
+#           Key referencing the diagnosis concept associated with the problem list entry.
+#       EncounterKey:
+#         type: bigint (foreign key to EncounterFact)
+#         nullable: true
+#         description: >
+#           Encounter associated with initial documentation or modification of the problem.
+#       EndDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing when the problem was resolved or inactivated.
+#       IsCancerProblem:
+#         type: boolean (flag)
+#         nullable: true
+#         description: >
+#           Indicates the problem is classified as a cancer-related problem.
+#       PatientDurableKey:
+#         type: bigint (foreign key to PatientDim.DurableKey)
+#         nullable: false
+#         description: >
+#           Patient associated with the problem list entry.
+#       ProblemListKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the problem list fact record.
+#       SourceComboKey_X:
+#         type: bigint
+#         nullable: true
+#         description: >
+#           Composite source key for the problem list record, used for origin metadata.
+#       StartDateKey:
+#         type: integer (DateKey)
+#         nullable: true
+#         description: >
+#           DateKey representing when the problem was first recorded or became active.
+#       Status:
+#         type: string
+#         nullable: true
+#         description: >
+#           Problem status (e.g., active, resolved, inactive).
+#       Type:
+#         type: string
+#         nullable: true
+#         description: >
+#           Problem type category (e.g., medical, surgical, social), depending on local
+#           configuration.
+#
+#   TerminologyConceptDim:
+#     description: >
+#       Terminology concept dimension table. One row per concept in a terminology
+#       (e.g., a code or concept in ICD-10-CM, SNOMED CT, RxNorm, ATC, internal
+#       value set). Serves as a generic concept backbone that other terminology-
+#       specific dimensions (such as DiagnosisTerminologyDim or MedicationCodeDim)
+#       reference via TerminologyConceptKey.
+#     granularity: >
+#       One row per terminology concept (concept-level dimension).
+#     columns:
+#       _IsDeleted:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Logical deletion flag for the terminology concept record.
+#       _IsInferred:
+#         type: boolean (flag)
+#         nullable: false
+#         description: >
+#           Indicates the terminology concept record has been inferred rather than
+#           directly sourced; useful for lineage and data quality checks.
+#       Concept:
+#         type: string
+#         nullable: true
+#         description: >
+#           Concept identifier string as used within the terminology or value set
+#           (for example, a code or concept ID).
+#       Name:
+#         type: string
+#         nullable: true
+#         description: >
+#           Human-readable name or label for the terminology concept.
+#       StandardName:
+#         type: string
+#         nullable: true
+#         description: >
+#           Standardized or normalized name for the concept, used to harmonize
+#           naming across contributors and terminologies.
+#       TerminologyConceptKey:
+#         type: bigint
+#         nullable: false
+#         description: >
+#           Primary key for the terminology concept dimension row. Referenced by
+#           other terminology tables such as DiagnosisTerminologyDim and
+#           TerminologyConceptSetDim.
+#
+# === END FILE: YAMLs/datadictionary.yaml ===
+# === BEGIN FILE: YAMLs/recipes.yaml SHA256: 974d2fed63e4b6449dc544cbc0559d3b5c4163ff6dfba28595b1cc65b770f3fb SIZE: 12725 ===
+# batching_recipes:
+#   - name: state
+#     description: Split each expanded PK table by patient state abbreviation.
+#     kind: column_values
+#     applies_to: PKTable
+#     column: StateOrProvinceAbbreviation
+#     values: all
+#     separate_parquets: true
+#
+#   - name: sex
+#     description: Split each expanded PK table by patient sex.
+#     kind: column_values
+#     applies_to: PKTable
+#     column: Sex
+#     values:
+#       - Female
+#       - Male
+#     separate_parquets: true
+#
+#   - name: chunk
+#     description: Split each expanded PK table into row-count chunks; downstream fact tables join to the matching PK chunk.
+#     kind: row_chunk
+#     applies_to: PKTable
+#     rows_per_batch: required
+#     separate_parquets: true
+#
+# recipes:
+#   - name: PatientWithDx
+#     description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+#     type: PK
+#     pull_this_cycle: true
+#     dest_table: Patients
+#     dedup_keys:
+#       - [PatientDurableKey]
+#     dedup_order_by:
+#       - IndexDate
+#     columns:
+#       - source: dxf.PatientDurableKey
+#         name: PatientDurableKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: p.Sex
+#         name: Sex
+#         type: VARCHAR(50)
+#         nullable: true
+#
+#       - source: dt.NameAndCode
+#         name: ICDName
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dur.Years
+#         name: AgeAtIndexDiagnosis
+#         type: BIGINT
+#         nullable: true
+#
+#       - source: p.BirthDate
+#         name: BirthDate
+#         type: DATE
+#         nullable: true
+#
+#       - source: p.StateOrProvince
+#         name: StateOrProvince
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.StateOrProvinceAbbreviation
+#         name: StateOrProvinceAbbreviation
+#         type: VARCHAR(300)
+#         nullable: false
+#
+#       - source: p.Country
+#         name: Country
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: dt.Value
+#         name: ICDCode
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dxf.StartDateKey
+#         name: IndexDate
+#         type: INT
+#         nullable: true
+#
+#       # Everything else:
+#       - source: dxf.DiagnosisEventKey
+#         name: DiagnosisEventKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: dxf.EncounterKey
+#         name: IndexEncounter
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: p.DurableKey
+#         name: DurableKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: p.FirstRace
+#         name: FirstRace
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.SecondRace
+#         name: SecondRace
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.ThirdRace
+#         name: ThirdRace
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.FourthRace
+#         name: FourthRace
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.FifthRace
+#         name: FifthRace
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+#         name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+#         type: FLOAT
+#         nullable: true
+#
+#       - source: p.SviOverallPctlRankByZip2020_X
+#         name: SviOverallPctlRankByZip2020_X
+#         type: FLOAT
+#         nullable: true
+#
+#       - source: p.SviSocioeconomicPctlRankByZip2020_X
+#         name: SviSocioeconomicPctlRankByZip2020_X
+#         type: FLOAT
+#         nullable: true
+#
+#     filter:
+#       from:
+#         - DiagnosisEventFact as dxf
+#       join:
+#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+#         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
+#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey"
+#       where:
+#         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "dxf.StartDateKey >= 0"
+#         - "dxf._IsDeleted = 0"
+#         - "dt._IsDeleted = 0"
+#         - "p.IsValid = 1"
+#         - "p.IsCurrent = 1"
+#         - "p.UseInCosmosAnalytics_X = 1"
+#         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
+#         - "{{sql_condition('dt.Value', ICD_Value)}}"
+#
+#   - name: IndexDiagnosis
+#     description: Patient's first time diagnoses with the condition, with date, age at diagnosis, event data
+#     dedup_keys:
+#       - [BillingCodeValue]
+#     dedup_order_by: 
+#       - IndexDate
+#     pull_this_cycle: true 
+#     type: fact
+#     dest_table: OtherDiagnoses
+#     columns:
+#       - source: def.DiagnosisEventKey
+#         name: DiagnosisEventKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: tc.StandardName
+#         name: BillingCodeType
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dt.Value
+#         name: BillingCodeValue
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dt.NameAndCode
+#         name: NameAndCode
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dur.Years
+#         name: AgeAtDiagnosis
+#         type: INT
+#         nullable: true
+#
+#       - source: def.IsPrimary
+#         name: IsPrimary
+#         type: BIT
+#         nullable: true
+#
+#       - source: dt.ReferenceBillingCode
+#         name: IsReferenceBillingCode
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: def.Type
+#         name: TypeOfDx
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: tc.Concept
+#         name: TerminologyConcept
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: tc.Name
+#         name: TerminologyName
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: def.Status
+#         name: Status
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: def.StartDateKey
+#         name: StartDateKey
+#         type: INT
+#         nullable: true
+#
+#       - source: def.EndDateKey
+#         name: EndDateKey
+#         type: INT
+#         nullable: true
+#
+#       - source: def.PatientDurableKey
+#         name: PatientDurableKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: def.DiagnosisKey
+#         name: DiagnosisKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: def.EncounterKey
+#         name: EncounterKey
+#         type: BIGINT
+#         nullable: false
+#
+#     filter:
+#       from:
+#         - DiagnosisEventFact AS def
+#       join:
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+#         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+#         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+#       where:
+#         - "def._IsDeleted = 0"
+#         - "dt._IsDeleted = 0"
+#         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+#
+#
+#
+#   - name: OtherDiagnoses
+#     description: Patient's diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions
+#     dedup_keys:
+#       - [BillingCodeValue]
+#     pull_this_cycle: true 
+#     type: fact
+#     dest_table: OtherDiagnoses
+#     columns:
+#       - source: def.DiagnosisEventKey
+#         name: DiagnosisEventKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: tc.StandardName
+#         name: BillingCodeType
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dt.Value
+#         name: BillingCodeValue
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dt.NameAndCode
+#         name: NameAndCode
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dur.Years
+#         name: AgeAtDiagnosis
+#         type: INT
+#         nullable: true
+#
+#       - source: def.IsPrimary
+#         name: IsPrimary
+#         type: BIT
+#         nullable: true
+#
+#       - source: dt.ReferenceBillingCode
+#         name: IsReferenceBillingCode
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: def.Type
+#         name: TypeOfDx
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: tc.Concept
+#         name: TerminologyConcept
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: tc.Name
+#         name: TerminologyName
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: def.Status
+#         name: Status
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       - source: def.StartDateKey
+#         name: StartDateKey
+#         type: INT
+#         nullable: true
+#
+#       - source: def.EndDateKey
+#         name: EndDateKey
+#         type: INT
+#         nullable: true
+#
+#       - source: def.PatientDurableKey
+#         name: PatientDurableKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: def.DiagnosisKey
+#         name: DiagnosisKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: def.EncounterKey
+#         name: EncounterKey
+#         type: BIGINT
+#         nullable: false
+#
+#     filter:
+#       from:
+#         - DiagnosisEventFact AS def
+#       join:
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+#         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+#         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+#       where:
+#         - "def._IsDeleted = 0"
+#         - "dt._IsDeleted = 0"
+#         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+#
+#   - name: OtherHospitalizations
+#     type: fact
+#     pull_this_cycle: true
+#     dest_table: OtherHospitalizations
+#     dedup_keys:
+#       - [InpatientEncounterKey]
+#     columns:
+#       - source: haf.HospitalAdmissionKey
+#         name: HospitalAdmissionKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: haf.EncounterKey
+#         name: InpatientEncounterKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: haf.PatientDurableKey
+#         name: PatientDurableKey
+#         type: BIGINT
+#         nullable: false
+#
+#       - source: haf.AdmissionDateKey
+#         name: AdmissionDateKey
+#         type: INT
+#         nullable: false
+#
+#       - source: haf.InpatientAdmissionInstant
+#         name: InpatientAdmissionInstant
+#         type: DATETIME2(7)
+#         nullable: false
+#
+#       - source: haf.DischargeDateKey
+#         name: DischargeDateKey
+#         type: INT
+#         nullable: true
+#
+#       - source: haf.DischargeInstant
+#         name: DischargeInstant
+#         type: DATETIME2(7)
+#         nullable: true
+#
+#       - source: haf.DischargeDisposition
+#         name: DischargeDisposition
+#         type: VARCHAR(300)
+#         nullable: true
+#
+#       - source: haf.InpatientLengthOfStayInDays
+#         name: InpatientLengthOfStayInDays
+#         type: INT
+#         nullable: true
+#
+#       - source: haf.LengthOfStayInDays
+#         name: LengthOfStayInDays
+#         type: INT
+#         nullable: true
+#
+#       - source: haf.DaysSincePriorAdmission_X
+#         name: DaysSincePriorAdmission_X
+#         type: INT
+#         nullable: true
+#
+#       - source: haf.ReadmissionCausedByKey_X
+#         name: ReadmissionCausedByKey_X
+#         type: BIGINT
+#         nullable: true
+#
+#       - source: haf.IsPlannedReadmission_X
+#         name: IsPlannedReadmission_X
+#         type: BIT
+#         nullable: true
+#
+#       - source: haf.IsUnplannedReadmission_X
+#         name: IsUnplannedReadmission_X
+#         type: BIT
+#         nullable: true
+#
+#       - source: haf.EncounterType
+#         name: EncounterType
+#         type: NVARCHAR(300)
+#         nullable: true
+#
+#       - source: haf.FinancialClass
+#         name: FinancialClass
+#         type: VARCHAR(100)
+#         nullable: true
+#
+#       # optional: ICD for the qualifying diagnosis
+#       - source: dt.Value
+#         name: ICDCode
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#       - source: dt.NameAndCode
+#         name: ICDName
+#         type: VARCHAR(400)
+#         nullable: true
+#
+#     filter:
+#       from:
+#         - HospitalAdmissionFact AS haf
+#       join:
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+#         # Bring in diagnosis events on the same encounter
+#         - "INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey"
+#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+#         - "INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value"
+#       where:
+#         - "haf._IsDeleted = 0"
+#         - "haf.AdmissionDateKey IS NOT NULL"
+#         - "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "dxf._IsDeleted = 0"
+#         - "dt._IsDeleted = 0"
+#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
+#
+# === END FILE: YAMLs/recipes.yaml ===
+# === BEGIN FILE: YAMLs/template.yaml SHA256: 4100e43555a828a435c6f6bbab33dc5231d40d956c70b8a5e0ae1cafa37966b8 SIZE: 8155 ===
+# # Cosmos variables
+# cosmos_vars:
+#   project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
+#   cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
+#                            # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
+#
+# # Initial variables. Dates in format YYYYMMDD
+# run_vars: 
+#   min_date_key: 19900101
+#   max_date_key: 20260601
+#
+# # Test Vars
+# test_options:
+#   smallset: false              # If true, will just make a table up to 'stop_at' number of rows for the PKTable
+#   stop_at_for_pk_table: 10     # limits to SELECT TOP(value)
+#   stop_at_for_non_pk_tables: 0 # 0 or blank means 'don't stop_at'
+#   random_pk_sample: false      # For controls in multiplier will always be random
+#   printout_md: true            # Can print out a Markdown of the run and its results (rows, time, etc). in the r_dump root
+#
+# # Data Science Variables.
+# # Generates R scripts to run in R Studio to make Parquet files of what you just pulled
+# project_vars:
+#   project_folder: "Test Run"     # Folder within QueryGenerator. 
+#
+#
+#
+#
+# multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
+#   - name: IBDType
+#     stage: during_build
+#     levels:
+#       - strat: UC
+#         vars:
+#           ICD_Value:
+#             - K51.%
+#       - strat: Crohns
+#         vars:
+#           ICD_Value:
+#             - K50.%
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: black
+#         column: FirstRace
+#         values:
+#           - "Black %"
+#       - strat: white
+#         role: control
+#         column: FirstRace
+#         values:
+#           - "White %"
+#         row_mult: 4
+# batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
+#   - name: state
+#     column: StateOrProvinceAbbreviation
+#     values:
+#       - LA
+#       - MS
+#       - GA
+#       - NC
+#     separate_parquets: true
+#   - name: sex
+#     column: Sex
+#     values:
+#       - Female
+#       - Male
+#     separate_parquets: true
+#   - chunk: 2000 # if a number, splits into batches (not sure how to do yet)
+#
+# upload_cohorts:
+#   - name: PKTable              # PROJECTS.<project_db>.dbo.(name))
+#     dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
+#     file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS'.dbo.project_db)
+#     push_this_cycle: true      # optional; defaults to true
+#
+#   - name: HospitalICDCodes
+#     dest_table: HospitalICDCodes
+#     file_type: csv
+#     file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
+#     scope: global #global or per_group
+#     push_this_cycle: true
+#
+# cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
+#   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
+#     name: Patients
+#   - recipe: OtherHospitalizations
+#
+#   # Make as many cohorts as you need, each is its own table. 
+#   # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you're deriving from
+#
+#   #Example Cohorts - will be ignored, just for the sake of being an example on the template
+# example_cohorts: 
+#   - name: Pts
+#     type: example # PK is generally the index all the others check against. non-PK tables are 'fact'. 'example' means ignore. 
+#     pull_this_cycle: false # if true, will become part of the cohort cycle. Sometimes you just want to update some and not others. 
+#     dest_table: Patients #Optional - if not specified, it just uses the same name as name:
+#     columns: #Try to have everything you'll need for any future cohort to find info needed. For instance,
+#       # If later you need ED visit and vitals info, you likely need ArrivalDateKey, EncounterKey.
+#       # If it's all in one table it's much easier to pull later data, even if it's not a "primary key"
+#       - source: pk.x
+#         name: # Name in the output table. If you leave alone, skill.md will fill with same name as (column)
+#         type: # Filled by skill.mg
+#         nullable: # Filled by skill.mg
+#       - source: pk.x # repeat as necessary
+#       - source: pk.x
+#       - source: dt.x # data from a joined table, which you declare in the 'join:' section. 
+#     # PK cohort: EdVisitFact + DiagnosisEventFact, no DurationDim, with pediatric age filter via AgeKey and ED primary diagnosis restriction.
+#     filter:
+#       from: # the general collection on Cosmos ('All ED visits' is EDVisitFacts, etc. Look at Data Dictionary for what it contains).
+#          DiagnosisEventFact as pk
+#       join: # You join another table for filtering or for getting other information -
+#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey" # for filtering by dt.value, dxf.StartDateKey
+#         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey" # for getting more information about patient and adding it to table
+#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey" # Sometimes you just need one conversion. AgeKey doesn't give an age, it's a key that needs a translation to Years by DurationDim.
+#         # likely INNER JOIN COSMOS.{cosmos_db}.dbo.(someFact) as sf.(CommonKey) = pk.(CommonKey)
+#         # IF EMPTY MUST USE []
+#       where:
+#         # Your filtering logic. Date ranges, "Had RSV," "Diagnosed with IBD", etc.
+#         # Will likely use your join to do some logic filtering here, as well as variables like date ranges
+#         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "dxf.StartDateKey >= 0"
+#         - "dxf._IsDeleted = 0"
+#         - "dt._IsDeleted = 0"
+#         - "p.IsValid = 1"
+#         - "p.IsCurrent = 1"
+#         - "p.UseInCosmosAnalytics_X = 1"
+#         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
+#         - "{{sql_condition('dt.Value', ICD_Value)}}"
+#
+#   # You can also make custom ones - example below of things you'd need. 
+#   - name: BirthFact #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
+#     pull_this_cycle: true
+#     type: example
+#     dest_table: #PROJECTS-local table name. Cosmos will Pre-pend "JVM_" to Cosmos tables to make them unique.
+#     vars: 
+#       PKTable: "##JVM_Patients" # If you want to override teh standard cohort PKTable, this table exists
+#     columns: # Each 'source' below is a column in your table, you'll define the anchor in 'filter' below.
+#       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
+#       - source: bpf.x
+#         name:
+#         type:
+#         nullable:
+#     filter:
+#       from: PatientDim as p # the general collection on Cosmos.
+#       join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = p.DurableKey" # Joining another table at the key from PKTable and pulling data into a
+#       where: #Logic for filtering things out ("AgeKey >18," etc.)
+#   - name: MotherOfPatients #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
+#     pull_this_cycle: true
+#     type: example
+#     dest_table: #PROJECTS-local table name. Cosmos will Pre-pend "JVM_" to Cosmos tables to make them unique.
+#     vars: 
+#       PKTable: "JVM_Patients" # If you want to have this one override the standard PKTable from the cohort, assuming a Mothers exists
+#     columns: # Each 'source' below is a column in your table, you'll define the anchor in 'filter' below.
+#       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
+#       - source: bpf.x
+#         name:
+#         type:
+#         nullable:
+#     filter:
+#       from: PatientDim as p # the general collection on Cosmos.
+#       join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = p.DurableKey" # Joining another table at the key from PKTable and pulling data into a
+#       where: #Logic for filtering things out ("AgeKey >18," etc.)
+#
+# === END FILE: YAMLs/template.yaml ===
 # === BEGIN FILE: pullmanager.py SHA256: ebdc02f9ba0685fc16b3aaea58c6563e0b91f3e69bcbce40bf953e414f787add SIZE: 408 ===
 # #!/usr/bin/env python3
 # """Launcher for the extracted Pullmanager runtime.
@@ -5925,3 +9483,2601 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: fe1e7dc6b8814dfe844b8d5222eb3dd2300be1b3abf4cbdde8de3b4b98d47470 SIZE: 98604 ===
+# #!/usr/bin/env python3
+# """
+# Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
+#
+# The file is intentionally self-contained for the VM copy-update workflow.
+# """
+#
+# from __future__ import annotations
+#
+# import argparse
+# import copy
+# import csv
+# import json
+# import os
+# import re
+# import shutil
+# import subprocess
+# import sys
+# import tempfile
+# import unittest
+# from dataclasses import dataclass, field
+# from itertools import product
+# from pathlib import Path
+# from typing import Any
+#
+#
+# OUTPUT_SUFFIX = "_Full"
+# PREYAML_SUFFIX = "_preyaml"
+# EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
+# WILDCARD_CHARS = ("%", "_", "[", "]")
+# DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
+# DEFAULT_SPLIT_DIR = Path("split")
+#
+#
+# # =============================================================================
+# # Result structures
+# # =============================================================================
+#
+#
+# @dataclass
+# class Message:
+#     level: str
+#     code: str
+#     message: str
+#     context: str = ""
+#
+#     def to_dict(self) -> dict[str, str]:
+#         return {
+#             "level": self.level,
+#             "code": self.code,
+#             "message": self.message,
+#             "context": self.context,
+#         }
+#
+#
+# @dataclass
+# class CompileResult:
+#     ok: bool = True
+#     errors: list[Message] = field(default_factory=list)
+#     warnings: list[Message] = field(default_factory=list)
+#     finished_yaml: dict[str, Any] = field(default_factory=dict)
+#     analysis: dict[str, Any] = field(default_factory=dict)
+#     graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
+#     output_path: str | None = None
+#
+#     def error(self, code: str, message: str, context: str = "") -> None:
+#         self.ok = False
+#         self.errors.append(Message("ERROR", code, message, context))
+#
+#     def warn(self, code: str, message: str, context: str = "") -> None:
+#         self.warnings.append(Message("WARN", code, message, context))
+#
+#
+# @dataclass
+# class SplitPhase:
+#     name: str
+#     yaml: str
+#     status: str = "pending"
+#     pk_source: dict[str, Any] | None = None
+#     rows: int | None = None
+#     outputs: dict[str, Any] = field(default_factory=dict)
+#     error: dict[str, Any] | None = None
+#     started_at: str | None = None
+#     finished_at: str | None = None
+#
+#     def to_dict(self) -> dict[str, Any]:
+#         out: dict[str, Any] = {
+#             "yaml": self.yaml,
+#             "status": self.status,
+#             "started_at": self.started_at,
+#             "finished_at": self.finished_at,
+#             "rows": self.rows,
+#             "outputs": self.outputs,
+#             "error": self.error,
+#         }
+#         if self.pk_source is not None:
+#             out["pk_source"] = self.pk_source
+#         return out
+#
+#
+# @dataclass
+# class SplitRun:
+#     run_id: str
+#     yaml: str
+#     status: str = "pending"
+#     batch: dict[str, Any] | None = None
+#     rows: int | None = None
+#     outputs: dict[str, Any] = field(default_factory=dict)
+#     error: dict[str, Any] | None = None
+#     started_at: str | None = None
+#     finished_at: str | None = None
+#
+#     def to_dict(self) -> dict[str, Any]:
+#         out: dict[str, Any] = {
+#             "run_id": self.run_id,
+#             "yaml": self.yaml,
+#             "status": self.status,
+#             "started_at": self.started_at,
+#             "finished_at": self.finished_at,
+#             "rows": self.rows,
+#             "outputs": self.outputs,
+#             "error": self.error,
+#         }
+#         if self.batch is not None:
+#             out["batch"] = self.batch
+#         return out
+#
+#
+# @dataclass
+# class SplitSession:
+#     session_id: str
+#     cohort: str
+#     pk_table: str | None
+#     phases: dict[str, SplitPhase]
+#     runs: list[SplitRun]
+#     status: str = "pending"
+#     multiplier: dict[str, Any] | None = None
+#
+#     def to_dict(self) -> dict[str, Any]:
+#         out: dict[str, Any] = {
+#             "session_id": self.session_id,
+#             "cohort": self.cohort,
+#             "pk_table": self.pk_table,
+#             "status": self.status,
+#             "phases": {name: phase.to_dict() for name, phase in self.phases.items()},
+#             "runs": [run.to_dict() for run in self.runs],
+#         }
+#         if self.multiplier is not None:
+#             out["multiplier"] = self.multiplier
+#         return out
+#
+#
+# @dataclass
+# class SplitPlan:
+#     project: dict[str, Any]
+#     source: dict[str, Any]
+#     sessions: list[SplitSession]
+#     manifest_version: int = 1
+#
+#     def to_dict(self) -> dict[str, Any]:
+#         return {
+#             "manifest_version": self.manifest_version,
+#             "project": self.project,
+#             "source": self.source,
+#             "sessions": [session.to_dict() for session in self.sessions],
+#         }
+#
+#
+# # =============================================================================
+# # YAML loading and writing
+# # =============================================================================
+#
+#
+# def _yaml_backend():
+#     try:
+#         from ruamel.yaml import YAML  # type: ignore
+#
+#         yaml = YAML()
+#         yaml.preserve_quotes = True
+#         yaml.default_flow_style = False
+#         return "ruamel", yaml
+#     except Exception:
+#         pass
+#
+#     try:
+#         import yaml  # type: ignore
+#
+#         return "pyyaml", yaml
+#     except Exception:
+#         return "ruby", None
+#
+#
+# def load_yaml(path: str | Path) -> Any:
+#     path = Path(path)
+#     backend, yaml_mod = _yaml_backend()
+#     if backend == "ruamel":
+#         with path.open("r", encoding="utf-8") as handle:
+#             data = yaml_mod.load(handle)
+#         return _plain_data(data)
+#     if backend == "pyyaml":
+#         with path.open("r", encoding="utf-8") as handle:
+#             return yaml_mod.safe_load(handle)
+#
+#     # Local-development fallback for machines without Python YAML packages.
+#     cmd = [
+#         "ruby",
+#         "-ryaml",
+#         "-rjson",
+#         "-e",
+#         "print JSON.generate(YAML.load_file(ARGV[0]))",
+#         str(path),
+#     ]
+#     try:
+#         proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+#     except Exception as exc:
+#         raise RuntimeError(
+#             "No Python YAML backend available. Install ruamel.yaml or pyyaml."
+#         ) from exc
+#     return json.loads(proc.stdout)
+#
+#
+# def dump_yaml(data: Any, path: str | Path) -> None:
+#     path = Path(path)
+#     path.parent.mkdir(parents=True, exist_ok=True)
+#     backend, yaml_mod = _yaml_backend()
+#     if backend == "ruamel":
+#         with path.open("w", encoding="utf-8") as handle:
+#             yaml_mod.dump(data, handle)
+#         return
+#     if backend == "pyyaml":
+#         with path.open("w", encoding="utf-8") as handle:
+#             yaml_mod.safe_dump(data, handle, sort_keys=False, default_flow_style=False)
+#         return
+#
+#     # Minimal writer fallback. This keeps local TDD runnable; production should
+#     # use ruamel.yaml or pyyaml.
+#     path.write_text(_simple_yaml_dump(data), encoding="utf-8")
+#
+#
+# def _plain_data(value: Any) -> Any:
+#     if isinstance(value, dict):
+#         return {str(k): _plain_data(v) for k, v in value.items()}
+#     if isinstance(value, list):
+#         return [_plain_data(v) for v in value]
+#     return value
+#
+#
+# def _simple_yaml_dump(data: Any, indent: int = 0) -> str:
+#     pad = " " * indent
+#     if isinstance(data, dict):
+#         lines: list[str] = []
+#         for key, value in data.items():
+#             if isinstance(value, (dict, list)):
+#                 lines.append(f"{pad}{key}:")
+#                 lines.append(_simple_yaml_dump(value, indent + 2).rstrip())
+#             else:
+#                 lines.append(f"{pad}{key}: {_format_scalar(value)}")
+#         return "\n".join(lines) + "\n"
+#     if isinstance(data, list):
+#         lines = []
+#         for item in data:
+#             if isinstance(item, dict):
+#                 if not item:
+#                     lines.append(f"{pad}- {{}}")
+#                     continue
+#                 first = True
+#                 for key, value in item.items():
+#                     bullet = "- " if first else "  "
+#                     if isinstance(value, (dict, list)):
+#                         lines.append(f"{pad}{bullet}{key}:")
+#                         lines.append(_simple_yaml_dump(value, indent + 4).rstrip())
+#                     else:
+#                         lines.append(f"{pad}{bullet}{key}: {_format_scalar(value)}")
+#                     first = False
+#             elif isinstance(item, list):
+#                 lines.append(f"{pad}-")
+#                 lines.append(_simple_yaml_dump(item, indent + 2).rstrip())
+#             else:
+#                 lines.append(f"{pad}- {_format_scalar(item)}")
+#         return "\n".join(lines) + "\n"
+#     return f"{pad}{_format_scalar(data)}\n"
+#
+#
+# def dump_yaml_text(data: Any) -> str:
+#     return _simple_yaml_dump(data)
+#
+#
+# def _format_scalar(value: Any) -> str:
+#     if value is None:
+#         return ""
+#     if isinstance(value, bool):
+#         return "true" if value else "false"
+#     if isinstance(value, (int, float)):
+#         return str(value)
+#     text = str(value)
+#     if text == "" or any(ch in text for ch in [":", "#", "{", "}", "[", "]", "%"]):
+#         return json.dumps(text)
+#     return text
+#
+#
+# # =============================================================================
+# # Normalization and recipe import
+# # =============================================================================
+#
+#
+# def script_root() -> Path:
+#     return Path(__file__).resolve().parent
+#
+#
+# def project_root() -> Path:
+#     return script_root().parent
+#
+#
+# def default_template_path() -> Path:
+#     return project_root() / "YAMLs" / "template.yaml"
+#
+#
+# def default_recipes_path() -> Path:
+#     return project_root() / "YAMLs" / "recipes.yaml"
+#
+#
+# def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
+#     template = copy.deepcopy(template or {})
+#     for section_name in ("cosmos_vars", "project_vars", "test_options"):
+#         section = template.get(section_name)
+#         if isinstance(section, dict):
+#             for key, value in section.items():
+#                 template.setdefault(key, value)
+#     vars_block = dict(template.get("vars") or {})
+#     run_vars = template.get("run_vars")
+#     if isinstance(run_vars, dict):
+#         vars_block = merge_vars(run_vars, vars_block)
+#     for legacy_key in ("min_date_key", "max_date_key"):
+#         if legacy_key in template and legacy_key not in vars_block:
+#             vars_block[legacy_key] = template[legacy_key]
+#             result.warn(
+#                 "legacy_global_var",
+#                 f"`{legacy_key}` should live under top-level `vars`.",
+#                 legacy_key,
+#             )
+#     template["vars"] = vars_block
+#     if "project_folder" not in template and "projaect_folder" in template:
+#         template["project_folder"] = template["projaect_folder"]
+#         result.warn(
+#             "legacy_project_folder",
+#             "`projaect_folder` is misspelled; use `project_folder`.",
+#             "project_folder",
+#         )
+#     return template
+#
+#
+# def recipe_index(recipes_doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
+#     return {recipe["name"]: recipe for recipe in recipes_doc.get("recipes", []) or []}
+#
+#
+# def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
+#     recipes = recipe_index(recipes_doc)
+#     imported: list[dict[str, Any]] = []
+#     for idx, cohort in enumerate(template.get("cohorts", []) or []):
+#         if not isinstance(cohort, dict):
+#             result.error("invalid_cohort", "Each cohort must be a mapping.", f"cohorts[{idx}]")
+#             continue
+#         if "recipe" in cohort:
+#             recipe_name = cohort["recipe"]
+#             if recipe_name not in recipes:
+#                 result.error("missing_recipe", f"Recipe `{recipe_name}` was not found.", f"cohorts[{idx}]")
+#                 continue
+#             merged = deep_merge(copy.deepcopy(recipes[recipe_name]), cohort)
+#             merged["_recipe"] = recipe_name
+#             merged.pop("recipe", None)
+#         else:
+#             merged = copy.deepcopy(cohort)
+#         if not merged.get("name"):
+#             merged["name"] = merged.get("dest_table") or merged.get("_recipe") or f"cohort_{idx + 1}"
+#             result.warn("default_name", "Cohort had no name; a generated name was assigned.", f"cohorts[{idx}]")
+#         if not merged.get("dest_table"):
+#             merged["dest_table"] = merged["name"]
+#             result.warn(
+#                 "default_dest_table",
+#                 f"`dest_table` defaulted to cohort name `{merged['name']}`.",
+#                 merged["name"],
+#             )
+#         imported.append(merged)
+#     return imported
+#
+#
+# def deep_merge(base: Any, overlay: Any) -> Any:
+#     if isinstance(base, dict) and isinstance(overlay, dict):
+#         out = copy.deepcopy(base)
+#         for key, value in overlay.items():
+#             if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+#                 out[key] = deep_merge(out[key], value)
+#             else:
+#                 out[key] = copy.deepcopy(value)
+#         return out
+#     return copy.deepcopy(overlay)
+#
+#
+# def output_path_for(template: dict[str, Any], suffix: str = OUTPUT_SUFFIX, out: str | None = None) -> Path:
+#     if out:
+#         return Path(out)
+#     name = str(template.get("project_folder") or "finished").strip() or "finished"
+#     clean = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
+#     return project_root() / "YAMLs" / f"{clean}{suffix}.yaml"
+#
+#
+# # =============================================================================
+# # Inference
+# # =============================================================================
+#
+#
+# JINJA_EXPR_RE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
+# TABLE_ALIAS_RE = re.compile(r"##JVM_\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)
+# IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+#
+#
+# def iter_strings(value: Any, path: str = ""):
+#     if isinstance(value, str):
+#         yield path, value
+#     elif isinstance(value, list):
+#         for idx, item in enumerate(value):
+#             yield from iter_strings(item, f"{path}[{idx}]")
+#     elif isinstance(value, dict):
+#         for key, item in value.items():
+#             yield from iter_strings(item, f"{path}.{key}" if path else str(key))
+#
+#
+# def infer_required_vars(cohort: dict[str, Any]) -> dict[str, list[str]]:
+#     found: dict[str, list[str]] = {}
+#     for path, text in iter_strings(cohort):
+#         for expr in JINJA_EXPR_RE.findall(text):
+#             for var in vars_from_expr(expr):
+#                 found.setdefault(var, []).append(path)
+#     return found
+#
+#
+# def vars_from_expr(expr: str) -> set[str]:
+#     expr = expr.strip()
+#     if expr.startswith("sql_condition"):
+#         inside = expr[len("sql_condition") :].strip()
+#         match = re.match(r"^\((.*)\)$", inside)
+#         if not match:
+#             return set()
+#         args = split_args(match.group(1))
+#         if len(args) >= 2:
+#             return {args[1].strip()}
+#         return set()
+#     if "|" in expr:
+#         left = expr.split("|", 1)[0].strip()
+#         return {left} if IDENT_RE.fullmatch(left) else set()
+#     ignored = {"sql_condition", "true", "false", "none", "null"}
+#     return {tok for tok in IDENT_RE.findall(expr) if tok not in ignored}
+#
+#
+# def split_args(arg_text: str) -> list[str]:
+#     args: list[str] = []
+#     current: list[str] = []
+#     quote: str | None = None
+#     for ch in arg_text:
+#         if quote:
+#             current.append(ch)
+#             if ch == quote:
+#                 quote = None
+#             continue
+#         if ch in ("'", '"'):
+#             quote = ch
+#             current.append(ch)
+#         elif ch == ",":
+#             args.append("".join(current).strip())
+#             current = []
+#         else:
+#             current.append(ch)
+#     if current or arg_text.endswith(","):
+#         args.append("".join(current).strip())
+#     return args
+#
+#
+# def infer_table_inputs(cohort: dict[str, Any]) -> dict[str, dict[str, Any]]:
+#     inputs: dict[str, dict[str, Any]] = {}
+#     strings = list(iter_strings(cohort))
+#     for path, text in strings:
+#         for table_var, alias in TABLE_ALIAS_RE.findall(text):
+#             inputs.setdefault(table_var, {"alias": alias, "paths": [], "required_columns": []})
+#             inputs[table_var]["paths"].append(path)
+#     full_text = "\n".join(text for _, text in strings)
+#     for table_var, meta in inputs.items():
+#         alias = re.escape(meta["alias"])
+#         cols = sorted(set(re.findall(rf"\b{alias}\.([A-Za-z_][A-Za-z0-9_]*)\b", full_text)))
+#         meta["required_columns"] = cols
+#     return inputs
+#
+#
+# def output_columns(cohort: dict[str, Any]) -> list[str]:
+#     cols: list[str] = []
+#     for column in cohort.get("columns", []) or []:
+#         if not isinstance(column, dict):
+#             continue
+#         name = column.get("name")
+#         if not name and column.get("source"):
+#             name = str(column["source"]).split(".")[-1]
+#         if name:
+#             cols.append(str(name))
+#     return cols
+#
+#
+# def analyze_cohorts(cohorts: list[dict[str, Any]]) -> dict[str, Any]:
+#     required_vars = {}
+#     table_inputs = {}
+#     required_table_columns = {}
+#     outputs = {}
+#     for cohort in cohorts:
+#         name = cohort.get("name")
+#         required_vars[name] = infer_required_vars(cohort)
+#         table_inputs[name] = infer_table_inputs(cohort)
+#         required_table_columns[name] = {
+#             var: meta["required_columns"] for var, meta in table_inputs[name].items()
+#         }
+#         outputs[cohort.get("dest_table", name)] = output_columns(cohort)
+#     return {
+#         "required_vars": required_vars,
+#         "table_inputs": table_inputs,
+#         "required_table_columns": required_table_columns,
+#         "output_columns": outputs,
+#     }
+#
+#
+# # =============================================================================
+# # Validation and variable resolution
+# # =============================================================================
+#
+#
+# def merge_vars(*scopes: dict[str, Any] | None) -> dict[str, Any]:
+#     merged: dict[str, Any] = {}
+#     for scope in scopes:
+#         if scope:
+#             merged.update(scope)
+#     return merged
+#
+#
+# def find_pk_table(cohorts: list[dict[str, Any]], result: CompileResult, group_key: str | None = None) -> str | None:
+#     scope = [c for c in cohorts if group_key is None or c.get("_group_key", "") == group_key]
+#     pk = [c for c in scope if str(c.get("type", "")).lower() == "pk"]
+#     if len(pk) == 1:
+#         return pk[0].get("dest_table") or pk[0].get("name")
+#     if len(pk) > 1:
+#         result.error(
+#             "multiple_pk_cohorts",
+#             "Cannot infer PKTable because multiple type: PK cohorts exist.",
+#             ", ".join(str(c.get("name")) for c in pk),
+#         )
+#     return None
+#
+#
+# def find_uploaded_pk_table(template: dict[str, Any], result: CompileResult) -> str | None:
+#     pk_uploads = [
+#         upload for upload in template.get("upload_cohorts", []) or []
+#         if isinstance(upload, dict) and str(upload.get("type", "")).lower() == "pk"
+#     ]
+#     if len(pk_uploads) > 1:
+#         result.error(
+#             "multiple_uploaded_pk",
+#             "Only one upload cohort may be marked `type: pk`.",
+#             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+#         )
+#         return None
+#     if not pk_uploads:
+#         return None
+#     upload = pk_uploads[0]
+#     if not upload.get("key_columns"):
+#         result.error(
+#             "uploaded_pk_missing_keys",
+#             "Uploaded PK cohort must declare `key_columns`.",
+#             str(upload.get("name")),
+#         )
+#     return str(upload.get("dest_table") or upload.get("name"))
+#
+#
+# def validate_and_resolve(
+#     template: dict[str, Any],
+#     recipes_doc: dict[str, Any],
+#     cohorts: list[dict[str, Any]],
+#     analysis: dict[str, Any],
+#     result: CompileResult,
+#     base_dir: Path,
+# ) -> list[dict[str, Any]]:
+#     uploads = upload_index(template)
+#     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
+#     table_schemas.update(upload_schemas(template, uploads, result, base_dir))
+#     uploaded_pk_table = find_uploaded_pk_table(template, result)
+#     generated_pk = [c for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+#     if uploaded_pk_table and generated_pk:
+#         result.error(
+#             "uploaded_pk_with_generated_pk",
+#             "A template may not define both an uploaded PK cohort and generated type: PK cohorts.",
+#             uploaded_pk_table,
+#         )
+#     resolved_cohorts: list[dict[str, Any]] = []
+#     for cohort in cohorts:
+#         name = cohort.get("name")
+#         pk_table = find_pk_table(cohorts, result, cohort.get("_group_key", "")) or uploaded_pk_table
+#         auto_vars = {}
+#         required = analysis["required_vars"].get(name, {})
+#         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
+#             auto_vars["PKTable"] = pk_table
+#         vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+#         for var, paths in required.items():
+#             if var not in vars_for_cohort:
+#                 result.error(
+#                     "missing_variable",
+#                     f"Cohort `{name}` requires variable `{var}`, but no value was provided.",
+#                     ", ".join(paths),
+#                 )
+#         for table_var, cols in analysis["required_table_columns"].get(name, {}).items():
+#             table_name = vars_for_cohort.get(table_var)
+#             if not table_name:
+#                 continue
+#             table_name = str(table_name)
+#             if table_name not in table_schemas:
+#                 result.error(
+#                     "missing_input_table",
+#                     f"Cohort `{name}` uses `{table_var}={table_name}`, but no cohort/upload table provides it.",
+#                     table_var,
+#                 )
+#                 continue
+#             if table_schemas[table_name] is None:
+#                 continue
+#             missing = [col for col in cols if col not in table_schemas[table_name]]
+#             if missing:
+#                 result.error(
+#                     "missing_input_column",
+#                     f"Cohort `{name}` uses `{table_var}={table_name}`, but `{table_name}` is missing columns: {', '.join(missing)}.",
+#                     table_var,
+#                 )
+#         resolved = copy.deepcopy(cohort)
+#         resolved["_resolved_vars"] = vars_for_cohort
+#         resolved_cohorts.append(resolved)
+#     validate_upload_references(template, uploads, analysis, result, base_dir)
+#     validate_multipliers(template, cohorts, table_schemas, result)
+#     validate_batching(template, recipes_doc, cohorts, table_schemas, result)
+#     return resolved_cohorts
+#
+#
+# def upload_index(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
+#     uploads = {}
+#     for upload in template.get("upload_cohorts", []) or []:
+#         if isinstance(upload, dict) and upload.get("name"):
+#             item = copy.deepcopy(upload)
+#             item.setdefault("dest_table", item["name"])
+#             item.setdefault("scope", "global")
+#             item.setdefault("push_this_cycle", True)
+#             uploads[item["dest_table"]] = item
+#             uploads[item["name"]] = item
+#     return uploads
+#
+#
+# def upload_vars(template: dict[str, Any]) -> dict[str, Any]:
+#     # Upload variables are primarily user-defined under vars. This hook exists
+#     # for future derived aliases.
+#     return {}
+#
+#
+# def upload_schemas(
+#     template: dict[str, Any],
+#     uploads: dict[str, dict[str, Any]],
+#     result: CompileResult,
+#     base_dir: Path,
+# ) -> dict[str, list[str] | None]:
+#     schemas: dict[str, list[str] | None] = {}
+#     seen: set[int] = set()
+#     for upload in uploads.values():
+#         ident = id(upload)
+#         if ident in seen:
+#             continue
+#         seen.add(ident)
+#         dest = str(upload.get("dest_table") or upload.get("name"))
+#         file_type = str(upload.get("file_type", "")).lower()
+#         if file_type == "csv" and upload.get("file_loc"):
+#             file_path = resolve_file(base_dir, upload["file_loc"])
+#             if not file_path.exists():
+#                 result.error("missing_upload_file", f"Upload file not found: {file_path}", dest)
+#                 schemas[dest] = None
+#                 continue
+#             try:
+#                 with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
+#                     reader = csv.reader(handle)
+#                     schemas[dest] = next(reader, [])
+#             except Exception as exc:
+#                 result.error("upload_read_error", f"Could not read upload CSV `{file_path}`: {exc}", dest)
+#                 schemas[dest] = []
+#         elif file_type in ("dbtable", "parquet"):
+#             schema = upload.get("columns") or upload.get("schema") or []
+#             if schema and isinstance(schema[0], dict):
+#                 schemas[dest] = [str(c.get("name")) for c in schema if c.get("name")]
+#             else:
+#                 schemas[dest] = [str(c) for c in schema] if schema else []
+#                 if not schema:
+#                     result.warn("upload_schema_unknown", f"Upload `{dest}` has no locally discoverable schema.", dest)
+#         else:
+#             schemas[dest] = []
+#     return schemas
+#
+#
+# def resolve_file(base_dir: Path, file_loc: str) -> Path:
+#     path = Path(file_loc)
+#     if path.is_absolute():
+#         return path
+#     candidates = [base_dir / path, project_root() / path, project_root() / "YAMLs" / path]
+#     for candidate in candidates:
+#         if candidate.exists():
+#             return candidate
+#     return candidates[0]
+#
+#
+# def validate_upload_references(
+#     template: dict[str, Any],
+#     uploads: dict[str, dict[str, Any]],
+#     analysis: dict[str, Any],
+#     result: CompileResult,
+#     base_dir: Path,
+# ) -> None:
+#     referenced = set()
+#     for cohort_inputs in analysis.get("table_inputs", {}).values():
+#         for table_var in cohort_inputs:
+#             value = template.get("vars", {}).get(table_var)
+#             if value:
+#                 referenced.add(str(value))
+#     for name in referenced:
+#         upload = uploads.get(name)
+#         if upload and upload.get("push_this_cycle") is False and not upload.get("assume_exists"):
+#             result.error(
+#                 "upload_not_pushed",
+#                 f"Upload `{name}` is referenced but has push_this_cycle: false.",
+#                 name,
+#             )
+#
+#
+# # =============================================================================
+# # Rendering
+# # =============================================================================
+#
+#
+# def render_sql_condition(column: str, value: Any, result: CompileResult, context: str = "") -> str:
+#     values = value if isinstance(value, list) else [value]
+#     values = [str(v) for v in values]
+#     has_wildcard = any(any(ch in v for ch in WILDCARD_CHARS) for v in values)
+#     for v in values:
+#         if "_" in v and has_wildcard:
+#             result.warn(
+#                 "like_underscore",
+#                 f"`_` in `{v}` will be treated as a SQL LIKE single-character wildcard. Use [_] for a literal underscore.",
+#                 context,
+#             )
+#     if has_wildcard:
+#         parts = [f"{column} LIKE {sql_quote(v)}" for v in values]
+#         return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
+#     if len(values) == 1:
+#         return f"{column} = {sql_quote(values[0])}"
+#     return f"{column} IN ({', '.join(sql_quote(v) for v in values)})"
+#
+#
+# def sql_quote(value: str) -> str:
+#     return "'" + value.replace("'", "''") + "'"
+#
+#
+# def render_value(value: Any, vars_for_cohort: dict[str, Any], result: CompileResult, context: str = "") -> Any:
+#     if isinstance(value, str):
+#         return render_string(value, vars_for_cohort, result, context)
+#     if isinstance(value, list):
+#         return [render_value(item, vars_for_cohort, result, f"{context}[{idx}]") for idx, item in enumerate(value)]
+#     if isinstance(value, dict):
+#         return {k: render_value(v, vars_for_cohort, result, f"{context}.{k}" if context else str(k)) for k, v in value.items()}
+#     return value
+#
+#
+# def render_string(text: str, vars_for_cohort: dict[str, Any], result: CompileResult, context: str = "") -> str:
+#     def repl(match: re.Match[str]) -> str:
+#         expr = match.group(1).strip()
+#         if expr.startswith("sql_condition"):
+#             args = split_args(re.match(r"^sql_condition\((.*)\)$", expr).group(1)) if re.match(r"^sql_condition\((.*)\)$", expr) else []
+#             if len(args) < 2:
+#                 result.error("bad_sql_condition", f"Could not parse sql_condition expression `{expr}`.", context)
+#                 return match.group(0)
+#             column = strip_quotes(args[0])
+#             var_name = args[1].strip()
+#             if var_name not in vars_for_cohort:
+#                 result.error("missing_variable", f"`sql_condition` references missing variable `{var_name}`.", context)
+#                 return match.group(0)
+#             return render_sql_condition(column, vars_for_cohort[var_name], result, context)
+#         if "|" in expr and "sql_condition" in expr:
+#             var_name, rest = [part.strip() for part in expr.split("|", 1)]
+#             match_args = re.search(r"sql_condition\((.*)\)", rest)
+#             if match_args and var_name in vars_for_cohort:
+#                 column = strip_quotes(split_args(match_args.group(1))[0])
+#                 return render_sql_condition(column, vars_for_cohort[var_name], result, context)
+#         if expr in vars_for_cohort:
+#             return str(vars_for_cohort[expr])
+#         result.error("missing_variable", f"Missing variable `{expr}`.", context)
+#         return match.group(0)
+#
+#     return JINJA_EXPR_RE.sub(repl, text)
+#
+#
+# def strip_quotes(text: str) -> str:
+#     text = text.strip()
+#     if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+#         return text[1:-1]
+#     return text
+#
+#
+# def render_cohorts(cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
+#     rendered = []
+#     for cohort in cohorts:
+#         vars_for_cohort = cohort.get("_resolved_vars", {})
+#         clean = {k: v for k, v in cohort.items() if not k.startswith("_")}
+#         rendered.append(render_value(clean, vars_for_cohort, result, str(cohort.get("name"))))
+#     return rendered
+#
+#
+# # =============================================================================
+# # Expansion: multipliers, batching, cosmos
+# # =============================================================================
+#
+#
+# def expand_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
+#     multipliers = template.get("multipliers", []) or []
+#     if not multipliers:
+#         return cohorts
+#     level_sets = []
+#     for mult in multipliers:
+#         levels = mult.get("levels", []) if isinstance(mult, dict) else []
+#         level_sets.append([(mult, level) for level in levels])
+#     expanded: list[dict[str, Any]] = []
+#     for combo in product(*level_sets):
+#         prefix = "".join(str(level.get("strat", "")) for _, level in combo)
+#         group_vars: dict[str, Any] = {}
+#         group_meta: list[dict[str, Any]] = []
+#         for mult, level in combo:
+#             if mult.get("stage") == "during_build":
+#                 group_vars.update(level.get("vars") or {})
+#             group_meta.append({"name": mult.get("name"), "stage": mult.get("stage"), "level": level})
+#         for cohort in cohorts:
+#             new = copy.deepcopy(cohort)
+#             base_name = str(new.get("name"))
+#             base_dest = str(new.get("dest_table", base_name))
+#             new["name"] = f"{prefix}{base_name}" if prefix else base_name
+#             new["dest_table"] = f"{prefix}{base_dest}" if prefix else base_dest
+#             new["vars"] = merge_vars(group_vars, new.get("vars"))
+#             new["_group_key"] = prefix
+#             new["_multiplier_group"] = group_meta
+#             split_filters = [
+#                 split_after_build_filter(mult, level, result)
+#                 for mult, level in combo
+#                 if mult.get("stage") == "split_after_build"
+#                 and mult.get("applies_to") == "PKTable"
+#                 and str(new.get("type", "")).lower() == "pk"
+#             ]
+#             split_filters = [item for item in split_filters if item]
+#             if split_filters:
+#                 new["split_after_build"] = split_filters
+#             expanded.append(new)
+#     return expanded
+#
+#
+# def split_after_build_filter(mult: dict[str, Any], level: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+#     if not isinstance(level, dict):
+#         return None
+#     item = {
+#         "multiplier": mult.get("name"),
+#         "strat": level.get("strat"),
+#         "applies_to": mult.get("applies_to"),
+#     }
+#     for key in ("role", "row_mult"):
+#         if key in level:
+#             item[key] = level[key]
+#     if level.get("column") and "values" in level:
+#         values = level.get("values")
+#         item["column"] = level["column"]
+#         item["values"] = values
+#         item["condition"] = render_sql_condition(f"pk.{level['column']}", values, result, str(level.get("strat")))
+#     elif level.get("where"):
+#         item["where"] = level["where"]
+#     return item
+#
+#
+# def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
+#     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+#     for mult in template.get("multipliers", []) or []:
+#         if not isinstance(mult, dict):
+#             continue
+#         stage = mult.get("stage")
+#         if stage not in ("during_build", "split_after_build"):
+#             result.error("bad_multiplier_stage", f"Unsupported multiplier stage `{stage}`.", str(mult.get("name")))
+#         if stage == "split_after_build":
+#             targets = pk_candidates if mult.get("applies_to") == "PKTable" else [mult.get("applies_to")]
+#             target_cols = sorted({col for target in targets for col in (table_schemas.get(str(target)) or [])})
+#             for level in mult.get("levels", []) or []:
+#                 col = level.get("column") if isinstance(level, dict) else None
+#                 if col and col not in target_cols:
+#                     result.error(
+#                         "missing_split_column",
+#                         f"Multiplier `{mult.get('name')}` references missing column `{col}` on `{mult.get('applies_to')}`.",
+#                         str(level.get("strat")),
+#                     )
+#
+#
+# def expand_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
+#     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
+#     for cohort in cohorts:
+#         cohort["batching"] = normalized
+#     return cohorts
+#
+#
+# def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
+#     presets = {item["name"]: item for item in recipes_doc.get("batching_recipes", []) or [] if isinstance(item, dict) and item.get("name")}
+#     normalized = []
+#     for item in batch_items:
+#         if isinstance(item, int):
+#             normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item, "applies_to": "PKTable"})
+#         elif isinstance(item, dict) and "chunk" in item:
+#             normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item["chunk"], "applies_to": "PKTable"})
+#         elif isinstance(item, str) and item in presets:
+#             normalized.append(copy.deepcopy(presets[item]))
+#         elif isinstance(item, dict) and len(item) == 1 and next(iter(item)) in presets:
+#             name = next(iter(item))
+#             merged = deep_merge(presets[name], item[name] or {})
+#             normalized.append(merged)
+#         elif isinstance(item, dict) and item.get("name"):
+#             normalized.append(item)
+#         else:
+#             result.error("bad_batching", f"Could not understand batching item `{item}`.", "batching")
+#     return normalized
+#
+#
+# # =============================================================================
+# # Data dictionary validation
+# # =============================================================================
+#
+#
+# def default_datadictionary_path() -> Path:
+#     return project_root() / "YAMLs" / "datadictionary.yaml"
+#
+#
+# # Dictionary types are abstract and annotated ("bigint (foreign key to ...)");
+# # cohorts declare T-SQL. Compare families, not literals. Widening is accepted
+# # because it cannot lose data; narrowing is not.
+# TYPE_FAMILIES: dict[str, set[str]] = {
+#     "bigint": {"BIGINT"},
+#     "integer": {"INT", "SMALLINT", "TINYINT", "BIGINT"},
+#     "string": {"VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "TEXT", "NTEXT"},
+#     "boolean": {"BIT"},
+#     "numeric": {"DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY", "SMALLMONEY"},
+#     "datetime": {"DATETIME", "DATETIME2", "SMALLDATETIME", "DATE"},
+#     "date/datetime": {"DATE", "DATETIME", "DATETIME2", "SMALLDATETIME"},
+#     "date": {"DATE", "DATETIME", "DATETIME2"},
+#     "time": {"TIME"},
+# }
+#
+# # `PatientDim AS p`, `INNER JOIN X AS y ON ...`, `BirthFact as bf`
+# _ALIAS_PATTERN = re.compile(
+#     # Braces are allowed so an unsubstituted `##JVM_{{PKTable}}` still binds
+#     # its alias, rather than looking like an undeclared one.
+#     r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
+#     re.IGNORECASE,
+# )
+# # Only a bare `alias.Column` source can be resolved to a dictionary entry.
+# _SIMPLE_SOURCE = re.compile(r"^(?P<alias>\w+)\.(?P<column>\w+)$")
+#
+#
+# def dictionary_family(raw_type: Any) -> str:
+#     """`bigint (foreign key to PatientDim.DurableKey)` -> `bigint`."""
+#     return str(raw_type or "").split("(")[0].strip().lower()
+#
+#
+# def tsql_base_type(declared: Any) -> str:
+#     """`VARCHAR(400)` -> `VARCHAR`."""
+#     return str(declared or "").split("(")[0].strip().upper()
+#
+#
+# def is_generated_reference(table: str) -> bool:
+#     """Temp tables and unresolved placeholders are not dictionary entries."""
+#     return table.startswith("#") or "{{" in table
+#
+#
+# def filter_text_parts(cohort: dict[str, Any]) -> list[str]:
+#     block = cohort.get("filter") or {}
+#     parts: list[str] = []
+#     for key in ("from", "join"):
+#         value = block.get(key)
+#         if isinstance(value, str):
+#             parts.append(value)
+#         elif isinstance(value, list):
+#             parts.extend(str(item) for item in value)
+#     return parts
+#
+#
+# def cohort_aliases(cohort: dict[str, Any]) -> dict[str, str]:
+#     """Map each alias declared in `from`/`join` to its table."""
+#     aliases: dict[str, str] = {}
+#     for part in filter_text_parts(cohort):
+#         for match in _ALIAS_PATTERN.finditer(part):
+#             table = match.group("table").strip("[]")
+#             aliases[match.group("alias")] = table
+#     return aliases
+#
+#
+# def validate_data_dictionary(
+#     cohorts: list[dict[str, Any]],
+#     dictionary: dict[str, Any] | None,
+#     result: CompileResult,
+# ) -> None:
+#     """Check every cohort column against the data dictionary.
+#
+#     An unknown table is a hard error rather than a warning: it usually means a
+#     table name was invented or left as pseudocode, and the dictionary is meant
+#     to stay complete, so the fix is to add the table rather than route around
+#     the check.
+#     """
+#     if not dictionary:
+#         return
+#
+#     for cohort in cohorts:
+#         if not isinstance(cohort, dict):
+#             continue
+#         label = str(cohort.get("dest_table") or cohort.get("name") or "cohort")
+#         aliases = cohort_aliases(cohort)
+#
+#         for table in sorted(set(aliases.values())):
+#             if is_generated_reference(table):
+#                 continue
+#             if table not in dictionary:
+#                 result.error(
+#                     "unknown_table",
+#                     f"Table `{table}` is not in the data dictionary. Add it to "
+#                     f"YAMLs/datadictionary.yaml, or correct the name.",
+#                     label,
+#                 )
+#
+#         for column in cohort.get("columns") or []:
+#             if not isinstance(column, dict):
+#                 continue
+#             source = str(column.get("source") or "").strip()
+#             if not source:
+#                 continue
+#             match = _SIMPLE_SOURCE.match(source)
+#             if not match:
+#                 result.warn(
+#                     "dd_source_not_checked",
+#                     f"Source `{source}` is not a plain `alias.Column`, so its type "
+#                     f"cannot be checked against the data dictionary.",
+#                     label,
+#                 )
+#                 continue
+#
+#             alias, column_name = match.group("alias"), match.group("column")
+#             table = aliases.get(alias)
+#             if table is None:
+#                 result.error(
+#                     "unknown_alias",
+#                     f"Source `{source}` uses alias `{alias}`, which is not declared "
+#                     f"in this cohort's `from` or `join`.",
+#                     label,
+#                 )
+#                 continue
+#             if is_generated_reference(table) or table not in dictionary:
+#                 continue
+#
+#             dd_columns = (dictionary[table] or {}).get("columns") or {}
+#             if column_name not in dd_columns:
+#                 result.error(
+#                     "unknown_column",
+#                     f"Column `{column_name}` is not listed under `{table}` in the "
+#                     f"data dictionary. Check the alias and the spelling.",
+#                     label,
+#                 )
+#                 continue
+#
+#             declared = column.get("type")
+#             if not declared:
+#                 continue
+#             family = dictionary_family((dd_columns[column_name] or {}).get("type"))
+#             accepted = TYPE_FAMILIES.get(family)
+#             if accepted is None:
+#                 result.warn(
+#                     "dd_unknown_family",
+#                     f"Data dictionary type `{family}` for `{table}.{column_name}` is "
+#                     f"not a family this checker knows, so `{declared}` was not verified.",
+#                     label,
+#                 )
+#                 continue
+#             if tsql_base_type(declared) not in accepted:
+#                 result.error(
+#                     "dd_type_mismatch",
+#                     f"`{source}` is declared `{declared}`, but the data dictionary "
+#                     f"says `{table}.{column_name}` is "
+#                     f"`{(dd_columns[column_name] or {}).get('type')}`.",
+#                     label,
+#                 )
+#
+#
+# _DATADICT_CACHE: dict[tuple[str, float], dict[str, Any]] = {}
+#
+#
+# def load_datadictionary(path: str | Path | None, result: CompileResult) -> dict[str, Any] | None:
+#     """Load the dictionary, warning rather than failing when it is absent.
+#
+#     Cached by path and mtime: it is a few thousand lines and is otherwise
+#     reparsed on every compile, including once per test.
+#     """
+#     dict_path = Path(path) if path else default_datadictionary_path()
+#     if not dict_path.is_file():
+#         result.warn(
+#             "datadictionary_missing",
+#             f"No data dictionary at {dict_path}; column types were not verified.",
+#             str(dict_path),
+#         )
+#         return None
+#     cache_key = (str(dict_path.resolve()), dict_path.stat().st_mtime)
+#     cached = _DATADICT_CACHE.get(cache_key)
+#     if cached is not None:
+#         return cached
+#     try:
+#         doc = load_yaml(dict_path) or {}
+#     except Exception as exc:
+#         result.warn("datadictionary_unreadable", str(exc), str(dict_path))
+#         return None
+#     entries = doc.get("DataDictionary") if isinstance(doc, dict) else None
+#     if not isinstance(entries, dict):
+#         result.warn(
+#             "datadictionary_malformed",
+#             f"{dict_path} has no `DataDictionary` mapping; column types were not verified.",
+#             str(dict_path),
+#         )
+#         return None
+#     _DATADICT_CACHE[cache_key] = entries
+#     return entries
+#
+#
+#
+# def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
+#     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
+#     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+#     pk_cols = sorted({col for pk_table in pk_candidates for col in (table_schemas.get(str(pk_table)) or [])})
+#     for item in normalized:
+#         if item.get("kind") == "row_chunk":
+#             continue
+#         col = item.get("column")
+#         if col and col not in pk_cols:
+#             result.error("missing_batch_column", f"Batching `{item.get('name')}` requires missing PK column `{col}`.", "PKTable")
+#
+#
+# def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
+#     cosmos = str(template.get("cosmos_db", "COSMOS"))
+#     value = cosmos.lower()
+#     if value in ("cosmos",):
+#         return cohorts
+#     if value in ("cosmos_sneakpeek", "sneakpeek", "sp"):
+#         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
+#     if value in ("dual", "both"):
+#         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
+#     result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{cosmos}`.", "cosmos_db")
+#     return cohorts
+#
+#
+# def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
+#     value = str(template.get("cosmos_db", "COSMOS")).lower()
+#     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
+#         result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.", "cosmos_db")
+#
+#
+# def with_cosmos_suffix(cohort: dict[str, Any], suffix: str, cosmos_db: str) -> dict[str, Any]:
+#     new = copy.deepcopy(cohort)
+#     new["name"] = f"{new.get('name')}{suffix}"
+#     new["dest_table"] = f"{new.get('dest_table', new.get('name'))}{suffix}"
+#     new["cosmos_db"] = cosmos_db
+#     return new
+#
+#
+# # =============================================================================
+# # Reports
+# # =============================================================================
+#
+#
+# def build_report(result: CompileResult) -> str:
+#     lines = ["# Manager Report", ""]
+#     lines.append(f"OK: {result.ok}")
+#     lines.append("")
+#     lines.append("## Errors")
+#     if result.errors:
+#         for msg in result.errors:
+#             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+#     else:
+#         lines.append("- None")
+#     lines.append("")
+#     lines.append("## Warnings")
+#     if result.warnings:
+#         for msg in result.warnings:
+#             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+#     else:
+#         lines.append("- None")
+#     lines.append("")
+#     lines.append("## Expanded Cohorts")
+#     for cohort in result.finished_yaml.get("cohorts", []) or []:
+#         lines.append(f"- {cohort.get('name')} -> {cohort.get('dest_table')}")
+#     lines.append("")
+#     lines.append("## Required Columns")
+#     for cohort, cols in result.analysis.get("required_table_columns", {}).items():
+#         lines.append(f"- {cohort}: {cols}")
+#     return "\n".join(lines) + "\n"
+#
+#
+# # =============================================================================
+# # Public API
+# # =============================================================================
+#
+#
+# def compile_yaml(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     output_path: str | Path | None = None,
+#     suffix: str = OUTPUT_SUFFIX,
+#     write: bool = False,
+#     report_path: str | Path | None = None,
+#     datadictionary_path: str | Path | None = None,
+# ) -> CompileResult:
+#     result = CompileResult()
+#     template_path = Path(template_path) if template_path else default_template_path()
+#     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     try:
+#         template = normalize_template(load_yaml(template_path), result)
+#         recipes_doc = load_yaml(recipes_path) or {}
+#     except Exception as exc:
+#         result.error("yaml_load_error", str(exc), str(template_path))
+#         return result
+#
+#     cohorts = import_recipes(template, recipes_doc, result)
+#     cohorts = expand_multipliers(template, cohorts, result)
+#     analysis = analyze_cohorts(cohorts)
+#     cohorts = validate_and_resolve(template, recipes_doc, cohorts, analysis, result, template_path.parent)
+#     validate_cosmos(template, result)
+#     if result.errors:
+#         rendered_cohorts = [{k: v for k, v in cohort.items() if not k.startswith("_")} for cohort in cohorts]
+#     else:
+#         rendered_cohorts = render_cohorts(cohorts, result)
+#         # Checked after rendering so template variables are already substituted,
+#         # and before expansion so each real cohort reports once rather than once
+#         # per multiplier and Cosmos variant.
+#         validate_data_dictionary(
+#             rendered_cohorts, load_datadictionary(datadictionary_path, result), result
+#         )
+#         rendered_cohorts = expand_batching(template, recipes_doc, rendered_cohorts, result)
+#         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
+#
+#     finished = copy.deepcopy(template)
+#     finished["cohorts"] = rendered_cohorts
+#     finished.pop("example_cohorts", None)
+#     result.finished_yaml = finished
+#     result.analysis = analysis
+#     out_path = Path(output_path) if output_path else output_path_for(template, suffix)
+#     result.output_path = str(out_path)
+#     if write and result.ok:
+#         dump_yaml(finished, out_path)
+#     if report_path:
+#         report_out = Path(report_path)
+#         report_out.parent.mkdir(parents=True, exist_ok=True)
+#         report_out.write_text(build_report(result), encoding="utf-8")
+#     return result
+#
+#
+# def validate_yaml(template_path: str | Path | None = None, recipes_path: str | Path | None = None) -> CompileResult:
+#     return compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+#
+#
+# def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
+#     result = CompileResult()
+#     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     try:
+#         recipes_doc = load_yaml(recipes_path) or {}
+#     except Exception as exc:
+#         result.error("yaml_load_error", str(exc), str(recipes_path))
+#         return result
+#     result.analysis = {
+#         "recipes": [r.get("name") for r in recipes_doc.get("recipes", []) or []],
+#         "batching_recipes": [r.get("name") for r in recipes_doc.get("batching_recipes", []) or []],
+#     }
+#     return result
+#
+#
+# def safe_id(value: Any, fallback: str = "item") -> str:
+#     text = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "")).strip("-")
+#     return text or fallback
+#
+#
+# def project_metadata(template: dict[str, Any]) -> dict[str, Any]:
+#     return {
+#         "name": template.get("project_folder") or template.get("project_db") or "YAML Manager Project",
+#         "project_folder": template.get("project_folder"),
+#         "project_db": template.get("project_db"),
+#         "created_by": "yamlmanager",
+#     }
+#
+#
+# def uploaded_pk_source(template: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+#     pk_uploads = [
+#         upload for upload in template.get("upload_cohorts", []) or []
+#         if isinstance(upload, dict) and str(upload.get("type", "")).lower() == "pk"
+#     ]
+#     if len(pk_uploads) > 1:
+#         result.error(
+#             "multiple_uploaded_pk",
+#             "Only one upload cohort may be marked `type: pk`.",
+#             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+#         )
+#         return None
+#     if not pk_uploads:
+#         return None
+#     upload = pk_uploads[0]
+#     key_columns = upload.get("key_columns") or upload.get("columns") or []
+#     if not key_columns:
+#         result.error(
+#             "uploaded_pk_missing_keys",
+#             "Uploaded PK cohort must declare `key_columns`.",
+#             str(upload.get("name")),
+#         )
+#     return {
+#         "kind": "uploaded_cohort",
+#         "upload_name": upload.get("name"),
+#         "table": upload.get("dest_table") or upload.get("name"),
+#         "key_columns": key_columns,
+#     }
+#
+#
+# def session_paths(session_id: str) -> dict[str, str]:
+#     base = f"sessions/{session_id}"
+#     return {
+#         "setup": f"{base}/setup.yaml",
+#         "upload_cohorts": f"{base}/upload_cohorts.yaml",
+#         "pk": f"{base}/pk.yaml",
+#         "run": f"{base}/runs/run.yaml",
+#     }
+#
+#
+# def batch_buckets(dim: dict[str, Any]) -> list[dict[str, Any]] | None:
+#     """Plan-time buckets for one batching dimension.
+#
+#     Returns None when the buckets cannot be known until the PK table exists:
+#     row chunks depend on the row count, and `values: all` needs a DISTINCT over
+#     real data. Those dimensions stay logical for Pullmanager to materialize.
+#     """
+#     if str(dim.get("kind", "")).lower() == "row_chunk":
+#         return None
+#     values = dim.get("values")
+#     if not isinstance(values, list) or not values:
+#         return None
+#     buckets = [{"value": value, "is_other": False} for value in values]
+#     if dim.get("include_other"):
+#         buckets.append({"value": None, "is_other": True})
+#     return buckets
+#
+#
+# def bucket_label(dim: dict[str, Any], bucket: dict[str, Any]) -> str:
+#     if bucket.get("is_other"):
+#         return safe_id(f"{dim.get('name') or 'batch'}-other", "other")
+#     return safe_id(bucket.get("value"), "value")
+#
+#
+# def resolved_dimension(dim: dict[str, Any], bucket: dict[str, Any]) -> dict[str, Any]:
+#     resolved: dict[str, Any] = {
+#         "name": dim.get("name"),
+#         "kind": dim.get("kind") or "column_values",
+#         "column": dim.get("column"),
+#     }
+#     if bucket.get("is_other"):
+#         # The catch-all is defined by what it is not, so it has to carry the
+#         # named values; a predicate for it cannot be built from `is_other` alone.
+#         resolved["is_other"] = True
+#         resolved["excludes"] = [v for v in (dim.get("values") or [])]
+#     else:
+#         resolved["value"] = bucket.get("value")
+#     return resolved
+#
+#
+# def session_runs(
+#     session_id: str,
+#     pk_cohort: dict[str, Any],
+#     result: CompileResult | None = None,
+# ) -> list[SplitRun]:
+#     """One run per batch combination.
+#
+#     Batching dimensions multiply: state[LA, MS] x sex[Female, Male] is four
+#     runs, each a disjoint slice of the cohort, not three runs describing three
+#     different axes of the whole cohort.
+#     """
+#     base = f"sessions/{session_id}/runs"
+#     dims = [
+#         dim if isinstance(dim, dict) else {"name": str(dim)}
+#         for dim in pk_cohort.get("batching") or []
+#     ]
+#     if not dims:
+#         return [SplitRun(run_id=f"{session_id}__run", yaml=f"{base}/run.yaml")]
+#
+#     static: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+#     runtime: list[dict[str, Any]] = []
+#     for dim in dims:
+#         buckets = batch_buckets(dim)
+#         if buckets is None:
+#             runtime.append(copy.deepcopy(dim))
+#         else:
+#             static.append((dim, buckets))
+#
+#     if not static:
+#         return [
+#             SplitRun(
+#                 run_id=f"{session_id}__run",
+#                 yaml=f"{base}/run.yaml",
+#                 batch={"name": "run", "dimensions": [], "runtime": runtime},
+#             )
+#         ]
+#
+#     runs: list[SplitRun] = []
+#     seen: set[str] = set()
+#     for combo in product(*[buckets for _, buckets in static]):
+#         pairs = list(zip(static, combo))
+#         name = safe_id("-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs), "batch")
+#         if name in seen:
+#             if result is not None:
+#                 result.error(
+#                     "duplicate_batch_name",
+#                     f"Batch combination `{name}` is not unique in session `{session_id}`. "
+#                     "Two batching dimensions produce the same label; rename a value.",
+#                     session_id,
+#                 )
+#             continue
+#         seen.add(name)
+#         runs.append(
+#             SplitRun(
+#                 run_id=f"{session_id}__{name}",
+#                 yaml=f"{base}/{name}.yaml",
+#                 batch={
+#                     "name": name,
+#                     "dimensions": [resolved_dimension(dim, bucket) for (dim, _), bucket in pairs],
+#                     "runtime": copy.deepcopy(runtime),
+#                 },
+#             )
+#         )
+#     return runs
+#
+#
+# def session_multiplier_context(pk_cohort: dict[str, Any], session_id: str) -> dict[str, Any] | None:
+#     context: dict[str, Any] = {"session_label": session_id}
+#     if pk_cohort.get("split_after_build"):
+#         context["split_after_build"] = copy.deepcopy(pk_cohort.get("split_after_build"))
+#     return context if len(context) > 1 else None
+#
+#
+# def build_split_plan_from_finished(
+#     finished_yaml: dict[str, Any],
+#     template_path: Path,
+#     recipes_path: Path,
+#     result: CompileResult,
+# ) -> SplitPlan:
+#     cohorts = finished_yaml.get("cohorts", []) or []
+#     pk_source = uploaded_pk_source(finished_yaml, result)
+#     pk_cohorts = [cohort for cohort in cohorts if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() == "pk"]
+#     if not pk_cohorts:
+#         if pk_source:
+#             pk_cohorts = [{
+#                 "name": pk_source.get("upload_name") or pk_source.get("table"),
+#                 "dest_table": pk_source.get("table"),
+#                 "type": "PK",
+#             }]
+#         else:
+#             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
+#             pk_cohorts = [{"name": session_id, "dest_table": None}]
+#
+#     sessions: list[SplitSession] = []
+#     for pk_cohort in pk_cohorts:
+#         pk_name = str(pk_cohort.get("name") or pk_cohort.get("dest_table") or "PKTable")
+#         pk_table = pk_cohort.get("dest_table") or pk_cohort.get("name")
+#         session_id = safe_id(pk_table or pk_name, "session")
+#         paths = session_paths(session_id)
+#         source = pk_source or {"kind": "generated", "table": pk_table}
+#         phases = {
+#             "setup": SplitPhase("setup", paths["setup"]),
+#             "upload_cohorts": SplitPhase("upload_cohorts", paths["upload_cohorts"]),
+#             "pk": SplitPhase("pk", paths["pk"], pk_source=source),
+#         }
+#         runs = session_runs(session_id, pk_cohort, result)
+#         sessions.append(
+#             SplitSession(
+#                 session_id=session_id,
+#                 cohort=pk_name,
+#                 pk_table=str(pk_table) if pk_table else None,
+#                 phases=phases,
+#                 runs=runs,
+#                 multiplier=session_multiplier_context(pk_cohort, session_id),
+#             )
+#         )
+#
+#     return SplitPlan(
+#         project=project_metadata(finished_yaml),
+#         source={
+#             "template": str(template_path),
+#             "recipes": str(recipes_path),
+#         },
+#         sessions=sessions,
+#     )
+#
+#
+# def plan_split_runs(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+# ) -> CompileResult:
+#     template_path = Path(template_path) if template_path else default_template_path()
+#     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     result = compile_yaml(template_path=template_path, recipes_path=recipes_path, write=False)
+#     if result.errors:
+#         return result
+#     plan = build_split_plan_from_finished(result.finished_yaml, template_path, recipes_path, result)
+#     result.analysis["split_plan"] = plan.to_dict()
+#     return result
+#
+#
+# def build_pullmanifest(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     output_path: str | Path | None = None,
+#     write: bool = False,
+# ) -> CompileResult:
+#     result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+#     if result.errors:
+#         return result
+#     manifest = result.analysis.get("split_plan", {})
+#     result.finished_yaml = manifest
+#     out_path = Path(output_path) if output_path else project_root() / DEFAULT_MANIFEST_PATH
+#     result.output_path = str(out_path)
+#     if write and result.ok:
+#         dump_yaml(manifest, out_path)
+#     return result
+#
+#
+# def split_base_document(finished_yaml: dict[str, Any]) -> dict[str, Any]:
+#     doc = copy.deepcopy(finished_yaml)
+#     doc.pop("cohorts", None)
+#     doc.pop("multipliers", None)
+#     doc.pop("batching", None)
+#     doc.pop("example_cohorts", None)
+#     return doc
+#
+#
+# def split_pull_context(session: dict[str, Any], phase: str, run: dict[str, Any] | None = None) -> dict[str, Any]:
+#     context: dict[str, Any] = {
+#         "session_id": session.get("session_id"),
+#         "phase": phase,
+#         "cohort": session.get("cohort"),
+#         "pk_table": session.get("pk_table"),
+#     }
+#     if run is not None:
+#         context["run_id"] = run.get("run_id")
+#         if run.get("batch") is not None:
+#             context["batch"] = run.get("batch")
+#     if session.get("multiplier") is not None:
+#         context["multiplier"] = session.get("multiplier")
+#     pk_phase = (session.get("phases") or {}).get("pk") or {}
+#     if pk_phase.get("pk_source") is not None:
+#         context["pk_source"] = pk_phase.get("pk_source")
+#     return context
+#
+#
+# def split_phase_document(
+#     finished_yaml: dict[str, Any],
+#     session: dict[str, Any],
+#     phase: str,
+#     run: dict[str, Any] | None = None,
+# ) -> dict[str, Any]:
+#     doc = split_base_document(finished_yaml)
+#     cohorts = finished_yaml.get("cohorts", []) or []
+#     pk_table = session.get("pk_table")
+#     pk_cohorts = [
+#         cohort for cohort in cohorts
+#         if isinstance(cohort, dict)
+#         and str(cohort.get("type", "")).lower() == "pk"
+#         and (pk_table is None or cohort.get("dest_table") == pk_table or cohort.get("name") == pk_table)
+#     ]
+#     fact_cohorts = [
+#         cohort for cohort in cohorts
+#         if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() != "pk"
+#     ]
+#     doc["pull_context"] = split_pull_context(session, phase, run)
+#     if phase == "upload_cohorts":
+#         doc["upload_cohorts"] = copy.deepcopy(finished_yaml.get("upload_cohorts", []) or [])
+#         doc["cohorts"] = []
+#     elif phase == "pk":
+#         doc["cohorts"] = copy.deepcopy(pk_cohorts)
+#     elif phase == "run":
+#         doc["cohorts"] = copy.deepcopy(fact_cohorts)
+#     else:
+#         doc["cohorts"] = []
+#     return doc
+#
+#
+# UPLOAD_STAGING_DIR = "uploads"
+#
+#
+# def stage_upload_files(
+#     finished_yaml: dict[str, Any],
+#     template_path: Path,
+#     out_dir: Path,
+#     result: CompileResult,
+# ) -> None:
+#     """Copy upload files into the split folder and repoint `file_loc` at them.
+#
+#     `file_loc` is written relative to the template, but the split folder is
+#     what travels to the VM, and Pullmanager resolves relative to the manifest.
+#     Without this the two anchors disagree and every upload fails to open on
+#     the far side. Copying makes the split folder self-contained.
+#     """
+#     uploads = finished_yaml.get("upload_cohorts") or []
+#     if not uploads:
+#         return
+#     staging = out_dir / UPLOAD_STAGING_DIR
+#     for upload in uploads:
+#         if not isinstance(upload, dict):
+#             continue
+#         file_loc = upload.get("file_loc")
+#         if not file_loc:
+#             continue
+#         source = Path(str(file_loc))
+#         if not source.is_absolute():
+#             source = template_path.parent / source
+#         if not source.is_file():
+#             result.warn(
+#                 "upload_file_not_staged",
+#                 f"Upload file {source} could not be copied into the split folder; "
+#                 "Pullmanager will not find it.",
+#                 str(upload.get("name")),
+#             )
+#             continue
+#         staging.mkdir(parents=True, exist_ok=True)
+#         target = staging / source.name
+#         shutil.copyfile(source, target)
+#         upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{source.name}"
+#
+#
+# def write_split_artifacts(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     output_dir: str | Path | None = None,
+# ) -> CompileResult:
+#     result = plan_split_runs(template_path=template_path, recipes_path=recipes_path)
+#     if result.errors:
+#         return result
+#     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
+#     finished_yaml = copy.deepcopy(result.finished_yaml)
+#     out_dir.mkdir(parents=True, exist_ok=True)
+#     stage_upload_files(
+#         finished_yaml,
+#         Path(template_path) if template_path else default_template_path(),
+#         out_dir,
+#         result,
+#     )
+#     manifest = result.analysis.get("split_plan", {})
+#     manifest_path = out_dir / "pullmanifest.yaml"
+#     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+#     dump_yaml(manifest, manifest_path)
+#
+#     for session in manifest.get("sessions", []) or []:
+#         phases = session.get("phases", {}) or {}
+#         for phase_name in ("setup", "upload_cohorts", "pk"):
+#             phase = phases.get(phase_name)
+#             if not phase:
+#                 continue
+#             path = out_dir / phase["yaml"]
+#             path.parent.mkdir(parents=True, exist_ok=True)
+#             dump_yaml(split_phase_document(finished_yaml, session, phase_name), path)
+#         for run in session.get("runs", []) or []:
+#             path = out_dir / run["yaml"]
+#             path.parent.mkdir(parents=True, exist_ok=True)
+#             dump_yaml(split_phase_document(finished_yaml, session, "run", run), path)
+#
+#     result.finished_yaml = manifest
+#     result.output_path = str(manifest_path)
+#     result.analysis["split_output_dir"] = str(out_dir)
+#     return result
+#
+#
+# def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
+#     return {k: v for k, v in cohort.items() if not k.startswith("_")}
+#
+#
+# def build_preyaml(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     output_path: str | Path | None = None,
+#     mode: str = "symbolic",
+#     write: bool = False,
+#     report_path: str | Path | None = None,
+# ) -> CompileResult:
+#     result = CompileResult()
+#     template_path = Path(template_path) if template_path else default_template_path()
+#     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     try:
+#         template = load_yaml(template_path) or {}
+#     except Exception as exc:
+#         result.error("yaml_load_error", str(exc), str(template_path))
+#         return result
+#     if not isinstance(template, dict):
+#         result.error("invalid_template", "Template YAML must be a mapping.", str(template_path))
+#         return result
+#     if mode not in ("symbolic", "expanded-recipes"):
+#         result.error("bad_preyaml_mode", f"Unsupported pre-YAML mode `{mode}`.", mode)
+#         return result
+#
+#     if mode == "symbolic":
+#         preyaml = copy.deepcopy(template)
+#         suffix = PREYAML_SUFFIX
+#     else:
+#         try:
+#             recipes_doc = load_yaml(recipes_path) or {}
+#         except Exception as exc:
+#             result.error("yaml_load_error", str(exc), str(recipes_path))
+#             return result
+#         normalized = normalize_template(template, result)
+#         cohorts = import_recipes(normalized, recipes_doc, result)
+#         preyaml = copy.deepcopy(normalized)
+#         preyaml["cohorts"] = [public_cohort(cohort) for cohort in cohorts]
+#         preyaml.pop("example_cohorts", None)
+#         result.analysis = analyze_cohorts(cohorts)
+#         suffix = EXPANDED_PREYAML_SUFFIX
+#
+#     result.finished_yaml = preyaml
+#     out_path = Path(output_path) if output_path else output_path_for(template, suffix)
+#     result.output_path = str(out_path)
+#     if write and result.ok:
+#         dump_yaml(preyaml, out_path)
+#     if report_path:
+#         report_out = Path(report_path)
+#         report_out.parent.mkdir(parents=True, exist_ok=True)
+#         report_out.write_text(build_report(result), encoding="utf-8")
+#     return result
+#
+#
+# # =============================================================================
+# # Embedded TDD
+# # =============================================================================
+#
+#
+# def write_temp_yaml(tmp: Path, name: str, data: str) -> Path:
+#     path = tmp / name
+#     path.write_text(data.strip() + "\n", encoding="utf-8")
+#     return path
+#
+#
+# def tiny_recipes() -> str:
+#     return """
+# batching_recipes:
+#   - name: state
+#     kind: column_values
+#     applies_to: PKTable
+#     column: StateOrProvinceAbbreviation
+#     values: all
+#   - name: sex
+#     kind: column_values
+#     applies_to: PKTable
+#     column: Sex
+#     values: [Female, Male]
+#   - name: chunk
+#     kind: row_chunk
+#     applies_to: PKTable
+#     rows_per_batch: required
+# recipes:
+#   - name: PatientWithDx
+#     type: PK
+#     columns:
+#       - source: dxf.PatientDurableKey
+#         name: PatientDurableKey
+#       - source: dxf.DiagnosisEventKey
+#         name: DiagnosisEventKey
+#       - source: p.FirstRace
+#         name: FirstRace
+#       - source: p.Sex
+#         name: Sex
+#       - source: p.StateOrProvinceAbbreviation
+#         name: StateOrProvinceAbbreviation
+#     filter:
+#       from:
+#         - DiagnosisEventFact AS dxf
+#       join:
+#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+#         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
+#       where:
+#         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+#         - "{{sql_condition('dt.Value', ICD_Value)}}"
+#   - name: OtherDx
+#     type: fact
+#     columns:
+#       - source: def.PatientDurableKey
+#         name: PatientDurableKey
+#     filter:
+#       from:
+#         - DiagnosisEventFact AS def
+#       join:
+#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+#       where:
+#         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+# """
+#
+#
+# def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> str:
+#     keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
+#     return f"""
+# project_folder: Uploaded PK
+# cosmos_db: COSMOS
+# vars:
+#   min_date_key: 20200101
+#   max_date_key: 20240101
+# upload_cohorts:
+#   - name: ClientPK
+#     type: pk
+#     dest_table: ClientPK
+#     file_type: csv
+#     file_loc: pks.csv
+# {keys}{extra_upload}
+# cohorts:
+#   - recipe: OtherDx
+#     name: OtherDx
+# """
+#
+#
+# def tiny_template(extra: str = "") -> str:
+#     return f"""
+# project_folder: Test Run
+# cosmos_db: COSMOS
+# vars:
+#   min_date_key: 20200101
+#   max_date_key: 20240101
+#   ICD_Value:
+#     - K50
+#     - K51
+# cohorts:
+#   - recipe: PatientWithDx
+#     name: Patients
+#   - recipe: OtherDx
+#     name: OtherDx
+# {extra}
+# """
+#
+#
+# def load_yaml_from_text(text: str) -> Any:
+#     with tempfile.TemporaryDirectory() as d:
+#         path = write_temp_yaml(Path(d), "inline.yaml", text)
+#         return load_yaml(path)
+#
+#
+# def has_error(result: CompileResult, code: str) -> bool:
+#     return any(msg.code == code for msg in result.errors)
+#
+#
+# def has_warning(result: CompileResult, code: str) -> bool:
+#     return any(msg.code == code for msg in result.warnings)
+#
+#
+# def summarize_result(result: CompileResult) -> str:
+#     bits = []
+#     if result.errors:
+#         bits.append("errors=" + json.dumps([m.to_dict() for m in result.errors]))
+#     if result.warnings:
+#         bits.append("warnings=" + json.dumps([m.to_dict() for m in result.warnings]))
+#     return "; ".join(bits) or "ok"
+#
+#
+# class MakeYamlTest(unittest.TestCase):
+#     """Base case: a scratch dir plus the template/recipes boilerplate folded in."""
+#
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.tmp = Path(self._tmp.name)
+#
+#     def write_pair(self, template: str | None = None, extra: str = "") -> tuple[Path, Path]:
+#         text = tiny_template(extra) if template is None else template
+#         return (
+#             write_temp_yaml(self.tmp, "template.yaml", text),
+#             write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes()),
+#         )
+#
+#     def compile_template(self, template: str | None = None, extra: str = "") -> CompileResult:
+#         return compile_yaml(*self.write_pair(template, extra))
+#
+#     def plan_split(self, template: str | None = None, extra: str = "") -> CompileResult:
+#         return plan_split_runs(*self.write_pair(template, extra))
+#
+#     def runs_for(self, extra: str = "") -> tuple[CompileResult, list[dict[str, Any]]]:
+#         res = self.plan_split(extra=extra)
+#         sessions = res.analysis.get("split_plan", {}).get("sessions", [])
+#         return res, (sessions[0].get("runs", []) if sessions else [])
+#
+#     def cohorts_by_name(self, res: CompileResult) -> dict[str, Any]:
+#         return {c.get("name"): c for c in res.finished_yaml.get("cohorts", [])}
+#
+#     def assertCompiles(self, res: CompileResult) -> None:
+#         self.assertTrue(res.ok, summarize_result(res))
+#
+#     def assertHasError(self, res: CompileResult, code: str) -> None:
+#         self.assertTrue(has_error(res, code), summarize_result(res))
+#
+#     def assertHasWarning(self, res: CompileResult, code: str) -> None:
+#         self.assertTrue(has_warning(res, code), summarize_result(res))
+#
+#
+# class LoadingTests(MakeYamlTest):
+#     def test_valid_template_compiles(self):
+#         self.assertCompiles(self.compile_template())
+#
+#     def test_malformed_yaml_is_reported(self):
+#         res = self.compile_template("vars:\n  - bad: [")
+#         self.assertFalse(res.ok)
+#         self.assertHasError(res, "yaml_load_error")
+#
+#
+# class RecipeTests(MakeYamlTest):
+#     def test_recipe_cohorts_are_imported(self):
+#         names = [c.get("name") for c in self.compile_template().finished_yaml.get("cohorts", [])]
+#         self.assertIn("Patients", names)
+#         self.assertIn("OtherDx", names)
+#
+#     def test_dest_table_can_be_overridden(self):
+#         res = self.compile_template("""
+# project_folder: Test
+# vars: {min_date_key: 1, max_date_key: 2, ICD_Value: K50}
+# cohorts:
+#   - recipe: PatientWithDx
+#     name: Patients
+#     dest_table: MyPatients
+# """)
+#         self.assertEqual(res.finished_yaml["cohorts"][0]["dest_table"], "MyPatients")
+#
+#     def test_dest_table_defaults_to_cohort_name(self):
+#         res = self.compile_template()
+#         self.assertEqual(res.finished_yaml["cohorts"][0]["dest_table"], "Patients")
+#
+#
+# class InferenceTests(MakeYamlTest):
+#     def test_required_vars_are_inferred_from_recipe_body(self):
+#         required = self.compile_template().analysis["required_vars"]["Patients"]
+#         for name in ("min_date_key", "max_date_key", "ICD_Value"):
+#             with self.subTest(var=name):
+#                 self.assertIn(name, required)
+#
+#
+# class NormalizationTests(MakeYamlTest):
+#     def test_grouped_metadata_vars_are_flattened(self):
+#         template = tiny_template().replace(
+#             "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
+#             "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\n"
+#             "run_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n"
+#             "project_vars:\n  project_folder: Test Run\nvars:\n",
+#         )
+#         res = self.compile_template(template)
+#         self.assertCompiles(res)
+#         self.assertEqual(res.finished_yaml.get("project_db"), "PROJECTD33A929")
+#         self.assertEqual(res.finished_yaml.get("project_folder"), "Test Run")
+#         self.assertEqual(res.finished_yaml.get("vars", {}).get("min_date_key"), 20200101)
+#         self.assertIn(
+#             "dxf.StartDateKey BETWEEN 20200101 AND 20240101",
+#             json.dumps(res.finished_yaml),
+#         )
+#
+#
+# class ValidationTests(MakeYamlTest):
+#     def test_missing_variable_is_an_error(self):
+#         template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
+#         self.assertHasError(self.compile_template(template), "missing_variable")
+#
+#
+# class RenderingTests(MakeYamlTest):
+#     def test_multiple_exact_values_render_as_in(self):
+#         self.assertIn(
+#             "dt.Value IN ('K50', 'K51')",
+#             json.dumps(self.compile_template().finished_yaml),
+#         )
+#
+#     def test_wildcard_values_render_as_or_ed_likes(self):
+#         template = tiny_template().replace("- K50\n    - K51", "- K50.%\n    - K51.%")
+#         text = json.dumps(self.compile_template(template).finished_yaml)
+#         self.assertIn("dt.Value LIKE 'K50.%'", text)
+#         self.assertIn(" OR ", text)
+#
+#     def test_underscore_in_like_value_warns(self):
+#         template = tiny_template().replace("- K50\n    - K51", "- K50_%")
+#         self.assertHasWarning(self.compile_template(template), "like_underscore")
+#
+#
+# class MultiplierTests(MakeYamlTest):
+#     def test_split_on_missing_column_is_an_error(self):
+#         res = self.compile_template(extra="""
+# multipliers:
+#   - name: BadSplit
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: bad
+#         column: MissingRace
+#         values: [x]
+# """)
+#         self.assertHasError(res, "missing_split_column")
+#
+#     def test_during_build_multiplier_gives_each_group_its_own_pk(self):
+#         template = tiny_template("""
+# multipliers:
+#   - name: Type
+#     stage: during_build
+#     levels:
+#       - strat: A
+#         vars:
+#           ICD_Value: A%
+#       - strat: B
+#         vars:
+#           ICD_Value: B%
+# """).replace("  ICD_Value:\n    - K50\n    - K51\n", "")
+#         res = self.compile_template(template)
+#         self.assertCompiles(res)
+#         cohorts = self.cohorts_by_name(res)
+#         self.assertIn("##JVM_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
+#         self.assertIn("##JVM_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
+#
+#     def test_split_after_build_metadata_survives_on_the_pk(self):
+#         res = self.compile_template(extra="""
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: black
+#         column: FirstRace
+#         values:
+#           - Black %
+# """)
+#         pk = self.cohorts_by_name(res)["blackPatients"]
+#         self.assertIn("split_after_build", pk)
+#         self.assertIn("pk.FirstRace LIKE 'Black %'", json.dumps(pk))
+#
+#
+# class BatchingTests(MakeYamlTest):
+#     def test_chunk_shorthand_normalizes(self):
+#         norm = normalize_batching(
+#             [{"chunk": 2000}], load_yaml_from_text(tiny_recipes()), CompileResult()
+#         )
+#         self.assertEqual(norm[0].get("rows_per_batch"), 2000)
+#         self.assertEqual(norm[0].get("kind"), "row_chunk")
+#
+#     def test_batching_metadata_reaches_the_pk_cohort(self):
+#         res = self.compile_template(extra="""
+# batching:
+#   - sex
+#   - chunk: 2000
+# """)
+#         first = res.finished_yaml["cohorts"][0]
+#         self.assertIn("batching", first)
+#         self.assertEqual(len(first["batching"]), 2)
+#
+#     def test_include_other_is_preserved_by_normalization(self):
+#         norm = normalize_batching(
+#             [{"sex": {"values": ["Female"], "include_other": True}}],
+#             load_yaml_from_text(tiny_recipes()),
+#             CompileResult(),
+#         )
+#         self.assertEqual(
+#             {k: norm[0].get(k) for k in ("name", "values", "include_other", "column")},
+#             {"name": "sex", "values": ["Female"], "include_other": True, "column": "Sex"},
+#         )
+#
+#     def test_dimensions_cross_multiply(self):
+#         # state[LA, MS] x sex[Female, Male] is four disjoint slices, not two axes.
+#         res, runs = self.runs_for("""
+# batching:
+#   - state:
+#       values: [LA, MS]
+#   - sex
+# """)
+#         self.assertCompiles(res)
+#         self.assertEqual(
+#             [run["batch"]["name"] for run in runs],
+#             ["LA-Female", "LA-Male", "MS-Female", "MS-Male"],
+#         )
+#
+#     def test_each_run_records_its_resolved_dimensions(self):
+#         _, runs = self.runs_for("""
+# batching:
+#   - state:
+#       values: [LA, MS]
+#   - sex
+# """)
+#         self.assertEqual(
+#             runs[0]["batch"]["dimensions"],
+#             [
+#                 {
+#                     "name": "state",
+#                     "kind": "column_values",
+#                     "column": "StateOrProvinceAbbreviation",
+#                     "value": "LA",
+#                 },
+#                 {"name": "sex", "kind": "column_values", "column": "Sex", "value": "Female"},
+#             ],
+#         )
+#
+#     def test_include_other_contributes_a_bucket_to_the_product(self):
+#         _, runs = self.runs_for("""
+# batching:
+#   - sex:
+#       values: [Female]
+#       include_other: true
+# """)
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "sex-other"])
+#         other = runs[1]["batch"]["dimensions"][0]
+#         self.assertTrue(other["is_other"])
+#         self.assertNotIn("value", other)
+#         # The catch-all is defined by exclusion, so it carries the named values.
+#         self.assertEqual(other["excludes"], ["Female"])
+#
+#     def test_unresolvable_dimensions_stay_logical(self):
+#         # `values: all` needs a DISTINCT and chunking needs a row count, so
+#         # neither can expand until the PK table exists.
+#         res, runs = self.runs_for("""
+# batching:
+#   - state
+#   - chunk: 2000
+# """)
+#         self.assertCompiles(res)
+#         self.assertEqual(len(runs), 1)
+#         self.assertEqual(runs[0]["batch"]["dimensions"], [])
+#         self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
+#
+#     def test_static_and_runtime_dimensions_coexist(self):
+#         _, runs = self.runs_for("""
+# batching:
+#   - sex
+#   - state
+#   - chunk: 2000
+# """)
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "Male"])
+#         self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
+#
+#     def test_no_batching_gives_one_unbatched_run(self):
+#         res, runs = self.runs_for("")
+#         self.assertCompiles(res)
+#         self.assertEqual(len(runs), 1)
+#         self.assertIsNone(runs[0].get("batch"))
+#
+#
+# class CosmosTests(MakeYamlTest):
+#     def test_dual_expands_to_both_instances(self):
+#         out = expand_cosmos(
+#             {"cosmos_db": "Dual"},
+#             [{"name": "Patients", "dest_table": "Patients"}],
+#             CompileResult(),
+#         )
+#         self.assertEqual([c["dest_table"] for c in out], ["Patients", "Patients_sp"])
+#
+#     def test_unknown_cosmos_db_is_an_error(self):
+#         res = CompileResult()
+#         validate_cosmos({"cosmos_db": "Mars"}, res)
+#         self.assertHasError(res, "bad_cosmos_db")
+#
+#
+# class ReportTests(MakeYamlTest):
+#     def test_report_includes_every_section(self):
+#         res = CompileResult()
+#         res.error("x", "bad")
+#         res.warn("y", "careful")
+#         res.finished_yaml = {"cohorts": [{"name": "Patients", "dest_table": "Patients"}]}
+#         res.analysis = {"required_table_columns": {"OtherDx": {"PKTable": ["PatientDurableKey"]}}}
+#         report = build_report(res)
+#         for section in ("Errors", "Warnings", "Patients", "Required Columns"):
+#             with self.subTest(section=section):
+#                 self.assertIn(section, report)
+#
+#
+# class PreyamlTests(MakeYamlTest):
+#     MIXED = """
+# batching:
+#   - sex
+# multipliers:
+#   - name: Type
+#     stage: during_build
+#     levels:
+#       - strat: A
+#         vars:
+#           ICD_Value: A%
+# """
+#
+#     def test_symbolic_mode_keeps_recipe_references(self):
+#         res = build_preyaml(*self.write_pair(extra=self.MIXED), mode="symbolic")
+#         self.assertCompiles(res)
+#         self.assertEqual(res.finished_yaml["cohorts"][0].get("recipe"), "PatientWithDx")
+#         self.assertIn("multipliers", res.finished_yaml)
+#         self.assertIn("batching", res.finished_yaml)
+#
+#     def test_expanded_mode_inlines_recipes_without_applying_multipliers(self):
+#         res = build_preyaml(*self.write_pair(extra=self.MIXED), mode="expanded-recipes")
+#         self.assertCompiles(res)
+#         first = res.finished_yaml["cohorts"][0]
+#         text = json.dumps(res.finished_yaml)
+#         self.assertEqual(first.get("name"), "Patients")
+#         self.assertNotIn("recipe", first)
+#         self.assertIn("DiagnosisEventFact AS dxf", text)
+#         self.assertNotIn("APatients", text)
+#         self.assertIn("batching", res.finished_yaml)
+#
+#
+# class SplitPlanTests(MakeYamlTest):
+#     def test_plain_template_gives_one_session_with_one_run(self):
+#         res = self.plan_split()
+#         plan = res.analysis.get("split_plan", {})
+#         sessions = plan.get("sessions", [])
+#         self.assertCompiles(res)
+#         self.assertEqual(plan.get("manifest_version"), 1)
+#         self.assertEqual(len(sessions), 1)
+#         phases = sessions[0]["phases"]
+#         self.assertEqual(set(phases), {"setup", "upload_cohorts", "pk"})
+#         self.assertEqual(phases["pk"]["pk_source"]["kind"], "generated")
+#         self.assertEqual([r["run_id"] for r in sessions[0]["runs"]], ["Patients__run"])
+#
+#     def test_multiplier_gives_one_session_per_group_each_batched(self):
+#         res = self.plan_split(extra="""
+# multipliers:
+#   - name: Type
+#     stage: during_build
+#     levels:
+#       - strat: A
+#         vars:
+#           ICD_Value: A%
+#       - strat: B
+#         vars:
+#           ICD_Value: B%
+# batching:
+#   - sex
+#   - chunk: 2000
+# """)
+#         sessions = res.analysis.get("split_plan", {}).get("sessions", [])
+#         self.assertCompiles(res)
+#         self.assertEqual(
+#             sorted(s["session_id"] for s in sessions), ["APatients", "BPatients"]
+#         )
+#         for session in sessions:
+#             with self.subTest(session=session["session_id"]):
+#                 sid = session["session_id"]
+#                 self.assertEqual(
+#                     [r["run_id"] for r in session["runs"]],
+#                     [f"{sid}__Female", f"{sid}__Male"],
+#                 )
+#                 first = session["runs"][0]["batch"]
+#                 self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
+#                 self.assertEqual([r["name"] for r in first["runtime"]], ["chunk"])
+#
+#
+# class ManifestTests(MakeYamlTest):
+#     def test_manifest_is_written_with_pending_status_fields(self):
+#         out = self.tmp / "pullmanifest.yaml"
+#         res = build_pullmanifest(*self.write_pair(), output_path=out, write=True)
+#         self.assertCompiles(res)
+#         self.assertTrue(out.exists())
+#
+#         manifest = res.finished_yaml
+#         session = manifest["sessions"][0]
+#         pk_phase = session["phases"]["pk"]
+#         self.assertEqual(manifest.get("manifest_version"), 1)
+#         self.assertEqual(session.get("status"), "pending")
+#         self.assertEqual(pk_phase.get("status"), "pending")
+#         self.assertIsNone(pk_phase.get("rows"))
+#         self.assertIsNone(pk_phase.get("error"))
+#         self.assertEqual(session["runs"][0].get("status"), "pending")
+#         self.assertEqual(session["runs"][0].get("outputs"), {})
+#
+#
+# class SplitArtifactTests(MakeYamlTest):
+#     def test_every_phase_yaml_is_written_and_standalone(self):
+#         out_dir = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(), output_dir=out_dir)
+#         self.assertCompiles(res)
+#
+#         manifest_path = out_dir / "pullmanifest.yaml"
+#         self.assertTrue(manifest_path.exists())
+#         session = load_yaml(manifest_path)["sessions"][0]
+#         expected = [
+#             session["phases"]["setup"]["yaml"],
+#             session["phases"]["upload_cohorts"]["yaml"],
+#             session["phases"]["pk"]["yaml"],
+#             session["runs"][0]["yaml"],
+#         ]
+#         for rel in expected:
+#             with self.subTest(path=rel):
+#                 self.assertTrue((out_dir / rel).exists())
+#
+#         pk_doc = load_yaml(out_dir / expected[2])
+#         self.assertEqual(pk_doc["pull_context"]["phase"], "pk")
+#         self.assertEqual(len(pk_doc.get("cohorts", [])), 1)
+#         self.assertEqual(str(pk_doc["cohorts"][0].get("type", "")).lower(), "pk")
+#
+#         run_doc = load_yaml(out_dir / expected[3])
+#         self.assertEqual(run_doc["pull_context"]["phase"], "run")
+#         self.assertTrue(run_doc.get("cohorts"))
+#         # Expansion instructions must not survive, or they would be applied twice.
+#         self.assertNotIn("multipliers", run_doc)
+#         self.assertNotIn("batching", run_doc)
+#
+#
+# class UploadedPkTests(MakeYamlTest):
+#     def setUp(self):
+#         super().setUp()
+#         (self.tmp / "pks.csv").write_text(
+#             "PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8"
+#         )
+#
+#     def test_uploaded_cohort_becomes_the_session_pk(self):
+#         res = self.plan_split(uploaded_pk_template())
+#         session = res.analysis["split_plan"]["sessions"][0]
+#         pk_source = session["phases"]["pk"]["pk_source"]
+#         self.assertCompiles(res)
+#         self.assertEqual(session["session_id"], "ClientPK")
+#         self.assertEqual(pk_source["kind"], "uploaded_cohort")
+#         self.assertEqual(pk_source["table"], "ClientPK")
+#         self.assertIn("##JVM_ClientPK AS pk", json.dumps(res.finished_yaml))
+#
+#     def test_two_uploaded_pk_cohorts_is_an_error(self):
+#         extra = """  - name: ClientPK2
+#     type: pk
+#     dest_table: ClientPK2
+#     file_type: csv
+#     file_loc: pks.csv
+#     key_columns: [PatientDurableKey, DiagnosisEventKey]
+# """
+#         res = self.compile_template(uploaded_pk_template(extra))
+#         self.assertHasError(res, "multiple_uploaded_pk")
+#
+#     def test_uploaded_pk_without_key_columns_is_an_error(self):
+#         res = self.compile_template(uploaded_pk_template(key_columns=False))
+#         self.assertHasError(res, "uploaded_pk_missing_keys")
+#
+#
+# class DataDictionaryTests(MakeYamlTest):
+#     DICT = {
+#         "PatientDim": {
+#             "columns": {
+#                 "DurableKey": {"type": "bigint", "nullable": False},
+#                 "Sex": {"type": "string", "nullable": True},
+#                 "BirthDate": {"type": "date/datetime", "nullable": True},
+#                 "IsCurrent": {"type": "boolean (flag)", "nullable": False},
+#                 "StartDateKey": {"type": "integer (DateKey)", "nullable": True},
+#                 "Weight": {"type": "numeric", "nullable": True},
+#             }
+#         }
+#     }
+#
+#     def cohort(self, source, declared="BIGINT", join=None):
+#         return {
+#             "dest_table": "T",
+#             "columns": [{"source": source, "name": "C", "type": declared}],
+#             "filter": {"from": "PatientDim AS p", "join": join or []},
+#         }
+#
+#     def check(self, cohort, dictionary=None):
+#         res = CompileResult()
+#         validate_data_dictionary([cohort], self.DICT if dictionary is None else dictionary, res)
+#         return res
+#
+#     def codes(self, res):
+#         return [m.code for m in res.errors] + [m.code for m in res.warnings]
+#
+#     def test_valid_column_passes(self):
+#         res = self.check(self.cohort("p.DurableKey", "BIGINT"))
+#         self.assertEqual(self.codes(res), [])
+#
+#     def test_unknown_table_is_an_error(self):
+#         cohort = self.cohort("h.Whatever")
+#         cohort["filter"]["from"] = "HallucinatedTable AS h"
+#         self.assertIn("unknown_table", self.codes(self.check(cohort)))
+#
+#     def test_unknown_column_is_an_error(self):
+#         self.assertIn("unknown_column", self.codes(self.check(self.cohort("p.NoSuchColumn"))))
+#
+#     def test_undeclared_alias_is_an_error(self):
+#         # Referencing an alias that no from/join declares produces SQL that
+#         # fails to bind at runtime.
+#         self.assertIn("unknown_alias", self.codes(self.check(self.cohort("q.DurableKey"))))
+#
+#     def test_type_family_mismatch_is_an_error(self):
+#         self.assertIn(
+#             "dd_type_mismatch", self.codes(self.check(self.cohort("p.Sex", "BIGINT")))
+#         )
+#
+#     def test_families_accept_their_members(self):
+#         cases = [
+#             ("p.DurableKey", "BIGINT"),
+#             ("p.Sex", "VARCHAR(400)"),
+#             ("p.Sex", "NVARCHAR(50)"),
+#             ("p.IsCurrent", "BIT"),
+#             ("p.BirthDate", "DATETIME2(7)"),
+#             ("p.StartDateKey", "INT"),
+#             ("p.Weight", "FLOAT"),
+#         ]
+#         for source, declared in cases:
+#             with self.subTest(source=source, declared=declared):
+#                 self.assertEqual(self.codes(self.check(self.cohort(source, declared))), [])
+#
+#     def test_widening_is_accepted_but_narrowing_is_not(self):
+#         # An integer fits in a BIGINT; a bigint does not fit in an INT.
+#         self.assertEqual(self.codes(self.check(self.cohort("p.StartDateKey", "BIGINT"))), [])
+#         self.assertIn(
+#             "dd_type_mismatch", self.codes(self.check(self.cohort("p.DurableKey", "INT")))
+#         )
+#
+#     def test_length_is_not_checked(self):
+#         # The dictionary carries no lengths, so VARCHAR(50) and VARCHAR(400)
+#         # are indistinguishable to it.
+#         for declared in ("VARCHAR(50)", "VARCHAR(4000)"):
+#             with self.subTest(declared=declared):
+#                 self.assertEqual(self.codes(self.check(self.cohort("p.Sex", declared))), [])
+#
+#     def test_generated_temps_are_skipped(self):
+#         cohort = self.cohort("pk.PatientDurableKey")
+#         cohort["filter"]["join"] = ["INNER JOIN ##JVM_PKTable AS pk ON 1 = 1"]
+#         self.assertEqual(self.codes(self.check(cohort)), [])
+#
+#     def test_unresolved_placeholder_tables_are_skipped(self):
+#         cohort = self.cohort("pk.Anything")
+#         cohort["filter"]["join"] = ["INNER JOIN ##JVM_{{PKTable}} AS pk ON 1 = 1"]
+#         self.assertEqual(self.codes(self.check(cohort)), [])
+#
+#     def test_computed_source_warns_rather_than_failing(self):
+#         res = self.check(self.cohort("CASE WHEN p.Sex = 'F' THEN 1 ELSE 0 END", "BIT"))
+#         self.assertEqual([m.code for m in res.errors], [])
+#         self.assertIn("dd_source_not_checked", [m.code for m in res.warnings])
+#
+#     def test_lowercase_as_is_recognized(self):
+#         cohort = self.cohort("p.DurableKey", "BIGINT")
+#         cohort["filter"]["from"] = "PatientDim as p"
+#         self.assertEqual(self.codes(self.check(cohort)), [])
+#
+#     def test_absent_dictionary_checks_nothing(self):
+#         self.assertEqual(self.codes(self.check(self.cohort("p.NoSuchColumn"), {})), [])
+#
+#     def test_missing_dictionary_file_warns_but_does_not_fail(self):
+#         res = CompileResult()
+#         self.assertIsNone(load_datadictionary(self.tmp / "nope.yaml", res))
+#         self.assertEqual(res.errors, [])
+#         self.assertEqual([m.code for m in res.warnings], ["datadictionary_missing"])
+#
+#     def test_real_dictionary_accepts_the_bundled_recipes(self):
+#         # The shipped recipes and dictionary must agree, or every template
+#         # built from them fails.
+#         res = compile_yaml(
+#             project_root() / "YAMLs" / "manager_test_cases" / "01_valid_basic.yaml",
+#             project_root() / "YAMLs" / "recipes.yaml",
+#         )
+#         offenders = [
+#             m for m in res.errors
+#             if m.code in ("unknown_table", "unknown_column", "unknown_alias", "dd_type_mismatch")
+#         ]
+#         self.assertEqual(offenders, [], summarize_result(res))
+#
+#
+# TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
+#     "loading": LoadingTests,
+#     "recipes": RecipeTests,
+#     "inference": InferenceTests,
+#     "normalization": NormalizationTests,
+#     "validation": ValidationTests,
+#     "rendering": RenderingTests,
+#     "multipliers": MultiplierTests,
+#     "batching": BatchingTests,
+#     "cosmos": CosmosTests,
+#     "reports": ReportTests,
+#     "preyaml": PreyamlTests,
+#     "split_plan": SplitPlanTests,
+#     "manifest": ManifestTests,
+#     "split_artifacts": SplitArtifactTests,
+#     "uploaded_pk": UploadedPkTests,
+#     "datadictionary": DataDictionaryTests,
+# }
+#
+#
+# def run_tdd(group: str | None = None, verbosity: int = 2) -> int:
+#     loader = unittest.TestLoader()
+#     suite = unittest.TestSuite()
+#     if group:
+#         case = TEST_GROUPS.get(group)
+#         if case is None:
+#             print(f"No test group {group!r}. Available: " + ", ".join(TEST_GROUPS))
+#             return 1
+#         suite.addTests(loader.loadTestsFromTestCase(case))
+#     else:
+#         for case in TEST_GROUPS.values():
+#             suite.addTests(loader.loadTestsFromTestCase(case))
+#     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
+#     return 0 if result.wasSuccessful() else 1
+#
+#
+# # =============================================================================
+# # CLI
+# # =============================================================================
+#
+#
+# def print_messages(result: CompileResult) -> None:
+#     for msg in result.errors:
+#         print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
+#     for msg in result.warnings:
+#         print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
+#
+#
+# def main(argv: list[str] | None = None) -> int:
+#     parser = argparse.ArgumentParser(description="Compile YAML Manager templates.")
+#     parser.add_argument("--template", default=str(default_template_path()))
+#     parser.add_argument("--recipes", default=str(default_recipes_path()))
+#     parser.add_argument("--out", default=None)
+#     parser.add_argument(
+#         "--datadictionary",
+#         default=None,
+#         help="Data dictionary to validate column types against.",
+#     )
+#     parser.add_argument("--suffix", default=OUTPUT_SUFFIX)
+#     parser.add_argument("--write", action="store_true", help="Write finished YAML if validation passes.")
+#     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
+#     parser.add_argument("--inspect-recipes", action="store_true")
+#     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
+#     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")
+#     parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
+#     parser.add_argument("--report", action="store_true")
+#     parser.add_argument("--report-out", default=None)
+#     parser.add_argument("--tdd", nargs="?", const="all", default=None)
+#     args = parser.parse_args(argv)
+#
+#     if args.tdd is not None:
+#         return run_tdd(None if args.tdd == "all" else args.tdd)
+#
+#     if args.inspect_recipes:
+#         result = inspect_recipes(args.recipes)
+#         print_messages(result)
+#         print(json.dumps(result.analysis, indent=2))
+#         return 0 if result.ok else 1
+#
+#     if args.export_preyaml:
+#         report_path = args.report_out if args.report else None
+#         result = build_preyaml(
+#             template_path=args.template,
+#             recipes_path=args.recipes,
+#             output_path=args.out,
+#             mode=args.export_preyaml,
+#             write=not args.validate,
+#             report_path=report_path,
+#         )
+#         print_messages(result)
+#         if result.ok:
+#             print(f"OK: pre-YAML ready at {result.output_path}")
+#             if not args.validate:
+#                 print(f"Wrote {result.output_path}")
+#         else:
+#             print("FAILED: errors block pre-YAML export")
+#         return 0 if result.ok else 1
+#
+#     if args.export_split:
+#         result = write_split_artifacts(
+#             template_path=args.template,
+#             recipes_path=args.recipes,
+#             output_dir=args.out_dir,
+#         )
+#         print_messages(result)
+#         if result.ok:
+#             print(f"Wrote split artifacts to {result.analysis.get('split_output_dir')}")
+#             print(f"Manifest: {result.output_path}")
+#         else:
+#             print("FAILED: errors block split export")
+#         return 0 if result.ok else 1
+#
+#     report_path = args.report_out if args.report else None
+#     result = compile_yaml(
+#         template_path=args.template,
+#         recipes_path=args.recipes,
+#         output_path=args.out,
+#         suffix=args.suffix,
+#         write=args.write and not args.validate,
+#         report_path=report_path,
+#         datadictionary_path=args.datadictionary,
+#     )
+#     print_messages(result)
+#     if result.ok:
+#         print(f"OK: finished YAML ready at {result.output_path}")
+#         if args.write and not args.validate:
+#             print(f"Wrote {result.output_path}")
+#     else:
+#         print("FAILED: errors block YAML generation")
+#     return 0 if result.ok else 1
+#
+#
+# if __name__ == "__main__":
+#     raise SystemExit(main())
+#
+# === END FILE: scripts/makeYaml.py ===

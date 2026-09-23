@@ -13,6 +13,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1597,6 +1598,49 @@ def split_phase_document(
     return doc
 
 
+UPLOAD_STAGING_DIR = "uploads"
+
+
+def stage_upload_files(
+    finished_yaml: dict[str, Any],
+    template_path: Path,
+    out_dir: Path,
+    result: CompileResult,
+) -> None:
+    """Copy upload files into the split folder and repoint `file_loc` at them.
+
+    `file_loc` is written relative to the template, but the split folder is
+    what travels to the VM, and Pullmanager resolves relative to the manifest.
+    Without this the two anchors disagree and every upload fails to open on
+    the far side. Copying makes the split folder self-contained.
+    """
+    uploads = finished_yaml.get("upload_cohorts") or []
+    if not uploads:
+        return
+    staging = out_dir / UPLOAD_STAGING_DIR
+    for upload in uploads:
+        if not isinstance(upload, dict):
+            continue
+        file_loc = upload.get("file_loc")
+        if not file_loc:
+            continue
+        source = Path(str(file_loc))
+        if not source.is_absolute():
+            source = template_path.parent / source
+        if not source.is_file():
+            result.warn(
+                "upload_file_not_staged",
+                f"Upload file {source} could not be copied into the split folder; "
+                "Pullmanager will not find it.",
+                str(upload.get("name")),
+            )
+            continue
+        staging.mkdir(parents=True, exist_ok=True)
+        target = staging / source.name
+        shutil.copyfile(source, target)
+        upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{source.name}"
+
+
 def write_split_artifacts(
     template_path: str | Path | None = None,
     recipes_path: str | Path | None = None,
@@ -1607,6 +1651,13 @@ def write_split_artifacts(
         return result
     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
     finished_yaml = copy.deepcopy(result.finished_yaml)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stage_upload_files(
+        finished_yaml,
+        Path(template_path) if template_path else default_template_path(),
+        out_dir,
+        result,
+    )
     manifest = result.analysis.get("split_plan", {})
     manifest_path = out_dir / "pullmanifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
