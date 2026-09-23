@@ -1,0 +1,201 @@
+"""Server and local SQL rendering, checked against the real fixtures."""
+
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from .. import local_sql, server_sql
+from ..local_sql import LocalRenderError
+from ..server_sql import RenderError
+
+FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+
+
+def pk_cohort(**overrides):
+    cohort = {
+        "name": "Patients",
+        "type": "PK",
+        "dest_table": "PKTable2",
+        "columns": [{"source": "p.DurableKey", "name": "PatientDurableKey",
+                     "type": "BIGINT", "nullable": False}],
+        "filter": {"from": "PatientDim AS p", "join": [], "where": ["p._IsDeleted = 0"]},
+    }
+    cohort.update(overrides)
+    return cohort
+
+
+def doc_with(*cohorts, **extra):
+    doc = {"project_db": "PROJECTD93A5E7", "cosmos_db": "COSMOS", "cohorts": list(cohorts)}
+    doc.update(extra)
+    return doc
+
+
+class ServerRenderTests(unittest.TestCase):
+    def render(self, doc, prefix="S/pk"):
+        return server_sql.render_phase(doc, prefix)
+
+    def test_creates_and_populates_the_global_temp(self):
+        blocks, _ = self.render(doc_with(pk_cohort()))
+        sql = blocks[0].sql
+        self.assertIn("DROP TABLE IF EXISTS ##JVM_PKTable2;", sql)
+        self.assertIn("CREATE TABLE ##JVM_PKTable2", sql)
+        self.assertIn("INSERT INTO ##JVM_PKTable2", sql)
+        self.assertEqual(blocks[0].block_id, "S/pk/PKTable2")
+        self.assertEqual(blocks[0].meta["global_temp"], "##JVM_PKTable2")
+
+    def test_adds_non_null_filters(self):
+        blocks, _ = self.render(doc_with(pk_cohort()))
+        self.assertIn("AND p.DurableKey IS NOT NULL", blocks[0].sql)
+
+    def test_top_applies_only_to_the_root_pk(self):
+        # A downstream PK joins the root's temp; limiting it too would compound
+        # the restriction into an unrepresentative sample.
+        downstream = pk_cohort(
+            dest_table="PKTable",
+            columns=[{"source": "d.Key", "name": "Key", "type": "BIGINT", "nullable": False}],
+            filter={"from": "DiagnosisEventFact AS d",
+                    "join": ["INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = d.PatientDurableKey"]},
+        )
+        doc = doc_with(pk_cohort(), downstream,
+                       test_options={"smallset": True, "stop_at_for_pk_table": 500})
+        blocks, _ = self.render(doc)
+        by_dest = {b.dest_table: b.sql for b in blocks}
+        self.assertIn("TOP (500)", by_dest["PKTable2"])
+        self.assertNotIn("TOP (", by_dest["PKTable"])
+
+    def test_no_top_without_smallset(self):
+        doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
+        blocks, _ = self.render(doc)
+        self.assertNotIn("TOP (", blocks[0].sql)
+
+    def test_dedup_renders_and_is_visible(self):
+        # The old generator accepted only `dedup_keys` and silently emitted no
+        # deduplication at all.
+        cohort = pk_cohort(dedup_key=["PatientDurableKey"])
+        blocks, notes = self.render(doc_with(cohort))
+        self.assertIn("ROW_NUMBER() OVER (PARTITION BY [PatientDurableKey]", blocks[0].sql)
+        self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
+        self.assertTrue(any("legacy" in n for n in notes))
+        self.assertTrue(any("arbitrary but stable" in n for n in notes))
+
+    def test_dedup_key_naming_a_missing_column_is_refused(self):
+        with self.assertRaises(RenderError):
+            self.render(doc_with(pk_cohort(dedup_keys=[["NoSuchColumn"]])))
+
+    def test_unsubstituted_placeholder_is_refused(self):
+        cohort = pk_cohort(filter={"from": "PatientDim AS p",
+                                   "where": ["p.StartDateKey > {{min_date_key}}"]})
+        with self.assertRaises(RenderError) as caught:
+            self.render(doc_with(cohort))
+        self.assertIn("min_date_key", str(caught.exception))
+
+    def test_duplicate_column_names_are_refused(self):
+        cohort = pk_cohort(columns=[
+            {"source": "p.A", "name": "Dup", "type": "BIGINT"},
+            {"source": "p.B", "name": "Dup", "type": "BIGINT"},
+        ])
+        with self.assertRaises(RenderError):
+            self.render(doc_with(cohort))
+
+    def test_missing_dest_table_is_refused(self):
+        with self.assertRaises(RenderError):
+            self.render(doc_with(pk_cohort(dest_table=None)))
+
+    def test_disabled_cohorts_are_skipped_with_a_note(self):
+        blocks, notes = self.render(doc_with(pk_cohort(pull_this_cycle=False)))
+        self.assertEqual(blocks, [])
+        self.assertTrue(any("pull_this_cycle" in n for n in notes))
+
+    def test_setup_captures_the_runtime_instance_name(self):
+        blocks = server_sql.render_setup(doc_with(), "S/setup")
+        self.assertIn("@@SERVERNAME", blocks[0].sql)
+        self.assertEqual(blocks[0].meta["captures"], "linked_server")
+
+
+class LocalRenderTests(unittest.TestCase):
+    LINKED = "et4003vpdsql032"
+
+    def test_shell_drops_and_creates_the_destination(self):
+        blocks = local_sql.render_setup(doc_with(pk_cohort()), [pk_cohort()], "S/setup")
+        sql = blocks[0].sql
+        self.assertIn("DROP TABLE IF EXISTS PROJECTD93A5E7.dbo.PKTable2;", sql)
+        self.assertIn("CREATE TABLE PROJECTD93A5E7.dbo.PKTable2", sql)
+
+    def test_transfer_stages_then_inserts_in_a_transaction(self):
+        sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+        self.assertIn("DROP TABLE IF EXISTS #Local_PKTable2;", sql)
+        self.assertIn("INTO #Local_PKTable2", sql)
+        self.assertIn(f"OPENQUERY(\n    [{self.LINKED}],", sql)
+        self.assertIn("BEGIN TRANSACTION;", sql)
+        self.assertIn("COMMIT TRANSACTION;", sql)
+        # The destination is created in setup, so a run only appends.
+        self.assertNotIn("CREATE TABLE PROJECTD93A5E7", sql)
+        self.assertNotIn("DROP TABLE IF EXISTS PROJECTD93A5E7", sql)
+
+    def test_slow_pull_happens_outside_the_transaction(self):
+        sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+        self.assertLess(sql.index("OPENQUERY"), sql.index("BEGIN TRANSACTION"))
+
+    def test_captures_both_row_counts(self):
+        sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+        self.assertIn("'cosmos' AS [Side]", sql)
+        self.assertIn("'projects' AS [Side]", sql)
+
+    def test_measures_string_column_lengths(self):
+        cohort = pk_cohort(columns=[
+            {"source": "p.Name", "name": "Name", "type": "VARCHAR(400)"},
+            {"source": "p.Key", "name": "Key", "type": "BIGINT"},
+        ])
+        sql = local_sql.render_phase(doc_with(cohort), "S/pk", self.LINKED)[0].sql
+        self.assertIn("MAX(LEN([Name]))", sql)
+        self.assertNotIn("MAX(LEN([Key]))", sql)
+
+    def test_no_length_probe_without_string_columns(self):
+        self.assertIsNone(local_sql.render_length_probe(pk_cohort()))
+
+    def test_missing_linked_server_is_refused(self):
+        # The instance name changes every connection, so a blank one means the
+        # session identity was never captured.
+        with self.assertRaises(LocalRenderError):
+            local_sql.render_phase(doc_with(pk_cohort()), "S/pk", "")
+
+    def test_missing_project_db_is_refused(self):
+        doc = doc_with(pk_cohort())
+        doc.pop("project_db")
+        with self.assertRaises(LocalRenderError):
+            local_sql.render_phase(doc, "S/pk", self.LINKED)
+
+
+class FixtureRenderTests(unittest.TestCase):
+    """Render the real split output rather than hand-built dictionaries."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not FIXTURES.is_dir():
+            raise unittest.SkipTest(f"fixtures not found at {FIXTURES}")
+        from ..yaml_io import load_yaml
+        cls.load = staticmethod(load_yaml)
+
+    def phase(self, name):
+        return self.load(FIXTURES / "sessions" / "Patients" / name)
+
+    def test_pk_phase_renders(self):
+        blocks, _ = server_sql.render_phase(self.phase("pk.yaml"), "Patients/pk")
+        self.assertEqual([b.dest_table for b in blocks], ["Patients"])
+        self.assertIn("##JVM_Patients", blocks[0].sql)
+
+    def test_run_phase_renders_both_sides(self):
+        doc = self.phase("runs/run.yaml")
+        server, _ = server_sql.render_phase(doc, "Patients/run")
+        local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
+        self.assertEqual([b.dest_table for b in server], [b.dest_table for b in local])
+        self.assertTrue(all(b.side == "server" for b in server))
+        self.assertTrue(all(b.side == "local" for b in local))
+
+    def test_block_ids_are_unique_and_addressable(self):
+        doc = self.phase("runs/run.yaml")
+        server, _ = server_sql.render_phase(doc, "Patients/run")
+        ids = [b.block_id for b in server]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(b.dest_table in b.block_id for b in server))

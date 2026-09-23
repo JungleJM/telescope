@@ -278,8 +278,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "87bdb9b38d36c9c20776fba08703e497da9b5c74c05ac7f46a587660214c5088",
-  "file_count": 15,
+  "content_id": "90b456f90eb8a41beb2bf89cf42a835d32072b4c544d19abeeb82bd0b4bb084e",
+  "file_count": 20,
   "files": [
     {
       "path": "pullmanager.py",
@@ -302,6 +302,11 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 2303
     },
     {
+      "path": "pullmanager/local_sql.py",
+      "sha256": "2effa5f5fc36cbafa0a72c872f3f3e362f6a5d8d9608c356fa6663f1697f3130",
+      "size": 7093
+    },
+    {
       "path": "pullmanager/manifest.py",
       "sha256": "1ccaab95c26ba0f76151c64e58e2b5988e60558ae06a9ec1f4e082df23ca4508",
       "size": 11210
@@ -320,6 +325,16 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/normalize.py",
       "sha256": "dee580d39bedc3b6fd2bbcb5ed79c4a86e2914bc4b49558d9fc4c582fd89891e",
       "size": 7036
+    },
+    {
+      "path": "pullmanager/server_sql.py",
+      "sha256": "06a74220bcca9ee66fb6ee439272e09910bf3b3913826dec4c69707bebe4887d",
+      "size": 7865
+    },
+    {
+      "path": "pullmanager/sql.py",
+      "sha256": "35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0",
+      "size": 5255
     },
     {
       "path": "pullmanager/tests/__init__.py",
@@ -350,6 +365,16 @@ BUNDLE_MANIFEST_JSON = r'''{
       "path": "pullmanager/tests/test_normalize.py",
       "sha256": "7f8df67188a3032b297e0c22ce7e20861ce4e526c1b710bab86b2bd3d56d2f10",
       "size": 5859
+    },
+    {
+      "path": "pullmanager/tests/test_render.py",
+      "sha256": "9ab4a4cb4c05f41e6f4a82247ac259568716dc17ac7488e9ea0372bcf816a9c8",
+      "size": 8919
+    },
+    {
+      "path": "pullmanager/tests/test_sql.py",
+      "sha256": "70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35",
+      "size": 5285
     },
     {
       "path": "pullmanager/yaml_io.py",
@@ -477,6 +502,201 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
+# === BEGIN FILE: pullmanager/local_sql.py SHA256: 2effa5f5fc36cbafa0a72c872f3f3e362f6a5d8d9608c356fa6663f1697f3130 SIZE: 7093 ===
+# """Projects-side SQL: destination tables and the transfer from Cosmos.
+#
+# Write mode is decided: the destination is dropped and created once per session
+# in the setup phase, and every run appends. The old generator dropped inside
+# each transfer block, which with batching leaves only the last batch.
+# """
+#
+# from __future__ import annotations
+#
+# from typing import Any
+#
+# from .naming import destination, global_temp, local_staging
+# from .normalize import normalize_bool
+# from .sql import (
+#     SqlBlock,
+#     column_list,
+#     column_names,
+#     ddl_body,
+#     quote_literal,
+#     quote_name,
+# )
+#
+# # Types whose stored length is worth measuring so templates can be tuned.
+# _MEASURABLE = ("CHAR", "VARCHAR", "NCHAR", "NVARCHAR")
+#
+#
+# class LocalRenderError(ValueError):
+#     """Raised when local SQL cannot be rendered."""
+#
+#
+# def _columns(cohort: dict[str, Any]) -> list[dict[str, Any]]:
+#     return [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+#
+#
+# def _remote_query(dest: str, columns: list[dict[str, Any]]) -> str:
+#     """The inner query sent to the linked server, quoted for embedding."""
+#     cols = ", ".join(quote_name(n) for n in column_names(columns))
+#     inner = f"SELECT {cols} FROM {global_temp(dest)}"
+#     return inner.replace("'", "''")
+#
+#
+# def render_table_shell(cohort: dict[str, Any], project_db: str) -> str:
+#     """Drop and create one destination table. Runs once per session."""
+#     dest = cohort.get("dest_table")
+#     if not dest:
+#         raise LocalRenderError(f"Cohort {cohort.get('name')!r} has no dest_table.")
+#     columns = _columns(cohort)
+#     if not columns:
+#         raise LocalRenderError(f"Cohort {dest!r} declares no columns.")
+#     table = destination(project_db, dest)
+#     return (
+#         f"-- session table shell for {dest}\n"
+#         f"DROP TABLE IF EXISTS {table};\n\n"
+#         f"CREATE TABLE {table}\n(\n{ddl_body(columns)}\n);"
+#     )
+#
+#
+# def render_transfer(cohort: dict[str, Any], project_db: str, linked_server: str) -> str:
+#     """Pull one cohort from its global temp into the destination table.
+#
+#     The slow OPENQUERY lands in a staging table outside the transaction, so no
+#     lock is held while data crosses the linked server. Only the final insert is
+#     transactional, which is what makes a retry after a partial failure safe.
+#     """
+#     if not linked_server:
+#         raise LocalRenderError(
+#             "No linked server supplied. The Cosmos instance name changes on every "
+#             "connection and must come from the current session."
+#         )
+#     dest = str(cohort["dest_table"])
+#     columns = _columns(cohort)
+#     table = destination(project_db, dest)
+#     staging = local_staging(dest)
+#     cols = column_list(columns)
+#
+#     return (
+#         f"-- transfer {global_temp(dest)} -> {table}\n"
+#         f"DROP TABLE IF EXISTS {staging};\n\n"
+#         f"SELECT {cols}\n"
+#         f"INTO {staging}\n"
+#         f"FROM OPENQUERY(\n"
+#         f"    [{linked_server}],\n"
+#         f"    '{_remote_query(dest, columns)}'\n"
+#         f");\n\n"
+#         f"BEGIN TRANSACTION;\n"
+#         f"INSERT INTO {table} ({cols})\n"
+#         f"SELECT {cols} FROM {staging};\n"
+#         f"COMMIT TRANSACTION;"
+#     )
+#
+#
+# def render_row_counts(cohort: dict[str, Any], project_db: str, linked_server: str) -> str:
+#     """Both sides of the transfer, so a mismatch is visible."""
+#     dest = str(cohort["dest_table"])
+#     table = destination(project_db, dest)
+#     remote = f"SELECT 1 AS dummy FROM {global_temp(dest)}".replace("'", "''")
+#     return (
+#         "SELECT\n"
+#         f"    {quote_literal(dest)} AS [DestTable],\n"
+#         "    'cosmos' AS [Side],\n"
+#         "    COUNT_BIG(1) AS [RowCount]\n"
+#         f"FROM OPENQUERY([{linked_server}], '{remote}');\n\n"
+#         "SELECT\n"
+#         f"    {quote_literal(dest)} AS [DestTable],\n"
+#         "    'projects' AS [Side],\n"
+#         "    COUNT_BIG(1) AS [RowCount]\n"
+#         f"FROM {table};"
+#     )
+#
+#
+# def render_length_probe(cohort: dict[str, Any]) -> str | None:
+#     """Measure the widest value actually stored in each string column.
+#
+#     Reported rather than applied: the destination table is created in setup,
+#     before any data exists, and sizing it from one batch would truncate a later
+#     batch carrying a longer value.
+#     """
+#     dest = str(cohort["dest_table"])
+#     staging = local_staging(dest)
+#     measurable = [
+#         c for c in _columns(cohort)
+#         if str(c.get("type", "")).split("(")[0].strip().upper() in _MEASURABLE
+#     ]
+#     if not measurable:
+#         return None
+#     selects = [
+#         "SELECT\n"
+#         f"    {quote_literal(dest)} AS [DestTable],\n"
+#         f"    {quote_literal(str(c['name']))} AS [Column],\n"
+#         f"    {quote_literal(str(c.get('type')))} AS [DeclaredType],\n"
+#         f"    MAX(LEN({quote_name(str(c['name']))})) AS [MaxLength]\n"
+#         f"FROM {staging}"
+#         for c in measurable
+#     ]
+#     return "\n UNION ALL\n".join(selects) + ";"
+#
+#
+# def render_setup(doc: dict[str, Any], cohorts: list[dict[str, Any]], block_prefix: str) -> list[SqlBlock]:
+#     """One shell block per destination table for the whole session."""
+#     project_db = doc.get("project_db")
+#     if not project_db:
+#         raise LocalRenderError("Phase document has no `project_db`.")
+#     blocks = []
+#     for cohort in cohorts:
+#         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
+#             continue
+#         blocks.append(
+#             SqlBlock(
+#                 block_id=f"{block_prefix}/shell/{cohort['dest_table']}",
+#                 side="local",
+#                 sql=render_table_shell(cohort, str(project_db)),
+#                 dest_table=str(cohort["dest_table"]),
+#                 meta={"destination": destination(str(project_db), cohort["dest_table"])},
+#             )
+#         )
+#     return blocks
+#
+#
+# def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> list[SqlBlock]:
+#     """Transfer, counts and measurement for every cohort in a phase."""
+#     project_db = doc.get("project_db")
+#     if not project_db:
+#         raise LocalRenderError("Phase document has no `project_db`.")
+#     blocks: list[SqlBlock] = []
+#     for cohort in doc.get("cohorts") or []:
+#         if not isinstance(cohort, dict) or not cohort.get("dest_table"):
+#             continue
+#         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
+#             continue
+#         dest = str(cohort["dest_table"])
+#         parts = [
+#             render_transfer(cohort, str(project_db), linked_server),
+#             render_row_counts(cohort, str(project_db), linked_server),
+#         ]
+#         probe = render_length_probe(cohort)
+#         if probe:
+#             parts.append(probe)
+#         blocks.append(
+#             SqlBlock(
+#                 block_id=f"{block_prefix}/{dest}",
+#                 side="local",
+#                 sql="\n\n".join(parts),
+#                 dest_table=dest,
+#                 meta={
+#                     "destination": destination(str(project_db), dest),
+#                     "staging": local_staging(dest),
+#                     "global_temp": global_temp(dest),
+#                     "linked_server": linked_server,
+#                 },
+#             )
+#         )
+#     return blocks
+#
+# === END FILE: pullmanager/local_sql.py ===
 # === BEGIN FILE: pullmanager/manifest.py SHA256: 1ccaab95c26ba0f76151c64e58e2b5988e60558ae06a9ec1f4e082df23ca4508 SIZE: 11210 ===
 # """Load, mutate, and write back `pullmanifest.yaml`.
 #
@@ -1192,6 +1412,391 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 06a74220bcca9ee66fb6ee439272e09910bf3b3913826dec4c69707bebe4887d SIZE: 7865 ===
+# """Cosmos-side SQL.
+#
+# Renders one block per cohort, addressed by manifest id. Nothing downstream
+# searches SQL text to decide what to run.
+# """
+#
+# from __future__ import annotations
+#
+# import re
+#
+# from typing import Any
+#
+# from .naming import global_temp
+# from .normalize import (
+#     normalize_bool,
+#     normalize_dedup_keys,
+#     root_pk_cohort,
+#     validate_dedup_columns,
+# )
+# from .sql import (
+#     SqlBlock,
+#     column_list,
+#     column_names,
+#     ddl_body,
+#     non_null_predicates,
+#     quote_literal,
+#     quote_name,
+#     render_source_clause,
+#     render_where,
+#     where_entries,
+# )
+#
+# SERVER_NAME_QUERY = "SELECT @@SERVERNAME AS CosmosServerName;"
+#
+# _PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+#
+#
+# class RenderError(ValueError):
+#     """Raised when a cohort cannot be rendered."""
+#
+#
+# def top_clause(cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None) -> str:
+#     """`TOP (n)`, applied to the root PK cohort only.
+#
+#     Limiting a downstream PK as well compounds the restriction: 500 patients
+#     and then 500 of their events is not 500 patients' worth of events.
+#     """
+#     options = doc.get("test_options") or {}
+#     if not normalize_bool(options.get("smallset") or options.get("smallest")):
+#         return ""
+#     if root is None or cohort is not root:
+#         return ""
+#     limit = options.get("stop_at_for_pk_table")
+#     try:
+#         limit = int(limit)
+#     except (TypeError, ValueError):
+#         return ""
+#     return f"TOP ({limit}) " if limit > 0 else ""
+#
+#
+# def cohort_predicates(cohort: dict[str, Any]) -> list[str]:
+#     columns = cohort.get("columns") or []
+#     return where_entries(cohort.get("filter") or {}) + non_null_predicates(columns)
+#
+#
+# def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") -> str:
+#     columns = cohort.get("columns") or []
+#     projections = [
+#         f"{inner_indent}{column['source']} AS {quote_name(str(column['name']))}"
+#         for column in columns
+#         if isinstance(column, dict) and column.get("name") and column.get("source")
+#     ]
+#     parts = [f"SELECT {top}".rstrip(), ",\n".join(projections)]
+#     source = render_source_clause(cohort.get("filter") or {})
+#     if source:
+#         parts.append(source)
+#     predicates = cohort_predicates(cohort)
+#     if predicates:
+#         parts.append("WHERE")
+#         parts.append(render_where(predicates, inner_indent))
+#     return "\n".join(parts)
+#
+#
+# def render_dedup_select(
+#     cohort: dict[str, Any], key_sets: list[list[str]], top: str
+# ) -> tuple[str, list[str]]:
+#     """Wrap the projection in ROW_NUMBER and keep one row per key set.
+#
+#     Returns the SQL and any notes. Deduplication is always visible in the
+#     output: the old generator could silently emit none at all.
+#     """
+#     notes: list[str] = []
+#     keys = [quote_name(k) for k in key_sets[0]]
+#     if len(key_sets) > 1:
+#         notes.append(
+#             f"Only the first dedup key set {key_sets[0]} is applied; "
+#             f"{len(key_sets) - 1} further set(s) were declared."
+#         )
+#     order = cohort.get("dedup_order") or cohort.get("order_by")
+#     if order:
+#         order_sql = order if isinstance(order, str) else ", ".join(str(o) for o in order)
+#     else:
+#         order_sql = ", ".join(keys)
+#         notes.append(
+#             f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
+#             "key columns, so the surviving row among duplicates is arbitrary but stable."
+#         )
+#     inner = render_select(cohort, top="", inner_indent="        ")
+#     inner = inner.replace(
+#         "SELECT\n",
+#         "SELECT\n"
+#         f"        ROW_NUMBER() OVER (PARTITION BY {', '.join(keys)} ORDER BY {order_sql}) AS [_dedup_rn],\n",
+#         1,
+#     )
+#     cols = column_list(cohort.get("columns") or [])
+#     sql = (
+#         f"SELECT {top}{cols}\n"
+#         f"FROM (\n"
+#         f"{_indent(inner, '    ')}\n"
+#         f") AS [_deduped]\n"
+#         f"WHERE [_deduped].[_dedup_rn] = 1"
+#     )
+#     return sql, notes
+#
+#
+# def _indent(text: str, prefix: str) -> str:
+#     return "\n".join(prefix + line if line.strip() else line for line in text.splitlines())
+#
+#
+# def render_cohort(
+#     cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None
+# ) -> tuple[str, list[str]]:
+#     """DDL plus population for one cohort's global temp table."""
+#     dest = cohort.get("dest_table")
+#     if not dest:
+#         raise RenderError(f"Cohort {cohort.get('name')!r} has no dest_table.")
+#     columns = [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+#     if not columns:
+#         raise RenderError(f"Cohort {dest!r} declares no columns.")
+#     names = column_names(columns)
+#     if len(names) != len(set(names)):
+#         duplicates = sorted({n for n in names if names.count(n) > 1})
+#         raise RenderError(f"Cohort {dest!r} declares duplicate column(s): {', '.join(duplicates)}")
+#
+#     notes: list[str] = []
+#     temp = global_temp(dest)
+#     top = top_clause(cohort, doc, root)
+#
+#     key_sets, dedup_notes = normalize_dedup_keys(cohort)
+#     notes.extend(dedup_notes)
+#     if key_sets:
+#         problems = validate_dedup_columns(key_sets, cohort)
+#         if problems:
+#             raise RenderError("; ".join(problems))
+#         body, more = render_dedup_select(cohort, key_sets, top)
+#         notes.extend(more)
+#     else:
+#         body = render_select(cohort, top)
+#
+#     sql = (
+#         f"-- cohort {cohort.get('name')!r} -> {temp}\n"
+#         f"DROP TABLE IF EXISTS {temp};\n\n"
+#         f"CREATE TABLE {temp}\n(\n{ddl_body(columns)}\n);\n\n"
+#         f"INSERT INTO {temp} ({column_list(columns)})\n"
+#         f"{body};\n\n"
+#         f"{render_cohort_telemetry(cohort, temp)}"
+#     )
+#     # Variable substitution is YAML Manager's job and has already happened by
+#     # the time a split YAML reaches us. A placeholder surviving to here would
+#     # render as invalid T-SQL, so fail with the name rather than emit it.
+#     leftover = sorted({m.group(1) for m in _PLACEHOLDER.finditer(sql)})
+#     if leftover:
+#         raise RenderError(
+#             f"Cohort {dest!r} still contains unsubstituted placeholder(s): "
+#             f"{', '.join(leftover)}. Render from split YAML, not a raw template."
+#         )
+#     return sql, notes
+#
+#
+# def render_cohort_telemetry(cohort: dict[str, Any], temp: str) -> str:
+#     """A declared telemetry shape, not column names to be scraped."""
+#     return (
+#         "SELECT\n"
+#         f"    {quote_literal(cohort.get('name'))} AS [CohortName],\n"
+#         f"    {quote_literal(cohort.get('dest_table'))} AS [DestTable],\n"
+#         f"    COUNT_BIG(1) AS [RowCount]\n"
+#         f"FROM {temp};"
+#     )
+#
+#
+# def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
+#     """Render every cohort in one phase document."""
+#     cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
+#     root = root_pk_cohort(cohorts)
+#     blocks: list[SqlBlock] = []
+#     notes: list[str] = []
+#     for cohort in cohorts:
+#         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
+#             notes.append(f"Skipping {cohort.get('dest_table')!r}: pull_this_cycle is false.")
+#             continue
+#         sql, cohort_notes = render_cohort(cohort, doc, root)
+#         notes.extend(cohort_notes)
+#         blocks.append(
+#             SqlBlock(
+#                 block_id=f"{block_prefix}/{cohort['dest_table']}",
+#                 side="server",
+#                 sql=sql,
+#                 dest_table=str(cohort["dest_table"]),
+#                 meta={"global_temp": global_temp(cohort["dest_table"])},
+#             )
+#         )
+#     return blocks, notes
+#
+#
+# def render_setup(doc: dict[str, Any], block_prefix: str) -> list[SqlBlock]:
+#     """Capture the runtime instance name; it changes on every connection."""
+#     return [
+#         SqlBlock(
+#             block_id=f"{block_prefix}/server-identity",
+#             side="server",
+#             sql=SERVER_NAME_QUERY,
+#             meta={"captures": "linked_server"},
+#         )
+#     ]
+#
+# === END FILE: pullmanager/server_sql.py ===
+# === BEGIN FILE: pullmanager/sql.py SHA256: 35ff5620f0075f8d5db26c0be551717f01a063769339c01e21ea445a5bd7f9d0 SIZE: 5255 ===
+# """Shared SQL construction helpers.
+#
+# The delicate part is the WHERE builder. Authors write predicates as a list of
+# lines, and a line may continue a parenthesised boolean group started by the
+# previous one, so `AND` cannot simply be inserted between entries.
+# """
+#
+# from __future__ import annotations
+#
+# from dataclasses import dataclass, field
+# from typing import Any
+#
+# from .naming import qualify_join_clause, qualify_table_ref
+# from .normalize import normalize_bool
+#
+# # A line that already begins with one of these continues the previous
+# # predicate, so prefixing `AND` would produce invalid SQL.
+# CONTINUATION_PREFIXES = ("AND", "OR", ")", "--")
+#
+#
+# @dataclass
+# class SqlBlock:
+#     """One executable unit, addressed by manifest id rather than by text."""
+#
+#     block_id: str
+#     side: str  # "server" or "local"
+#     sql: str
+#     dest_table: str | None = None
+#     meta: dict[str, Any] = field(default_factory=dict)
+#
+#     def __repr__(self) -> str:
+#         return f"<SqlBlock {self.side} {self.block_id}>"
+#
+#
+# def quote_literal(value: Any) -> str:
+#     """Render a Python value as a T-SQL literal."""
+#     if value is None:
+#         return "NULL"
+#     if isinstance(value, bool):
+#         return "1" if value else "0"
+#     if isinstance(value, (int, float)):
+#         return str(value)
+#     return "'" + str(value).replace("'", "''") + "'"
+#
+#
+# def quote_name(name: str) -> str:
+#     return f"[{name}]"
+#
+#
+# def column_names(columns: list[dict[str, Any]]) -> list[str]:
+#     return [str(c["name"]) for c in columns if isinstance(c, dict) and c.get("name")]
+#
+#
+# def column_list(columns: list[dict[str, Any]], indent: str = "") -> str:
+#     return ", ".join(quote_name(n) for n in column_names(columns))
+#
+#
+# def is_nullable(column: dict[str, Any]) -> bool:
+#     return normalize_bool(column.get("nullable"), default=True)
+#
+#
+# def ddl_body(columns: list[dict[str, Any]]) -> str:
+#     """The column definitions inside a CREATE TABLE."""
+#     lines = []
+#     for column in columns:
+#         if not isinstance(column, dict) or not column.get("name"):
+#             continue
+#         null = "NULL" if is_nullable(column) else "NOT NULL"
+#         lines.append(f"    {quote_name(str(column['name']))} {column.get('type', 'VARCHAR(900)')} {null}")
+#     return ",\n".join(lines)
+#
+#
+# def from_entries(filter_block: dict[str, Any]) -> list[str]:
+#     """`from` may be a string or a list; the old renderer tolerated both."""
+#     value = (filter_block or {}).get("from")
+#     if not value:
+#         return []
+#     if isinstance(value, str):
+#         return [value]
+#     return [str(item) for item in value if str(item).strip()]
+#
+#
+# def join_entries(filter_block: dict[str, Any]) -> list[str]:
+#     value = (filter_block or {}).get("join")
+#     if not value:
+#         return []
+#     if isinstance(value, str):
+#         return [value]
+#     return [str(item) for item in value if str(item).strip()]
+#
+#
+# def where_entries(filter_block: dict[str, Any]) -> list[str]:
+#     value = (filter_block or {}).get("where")
+#     if not value:
+#         return []
+#     if isinstance(value, str):
+#         return [value]
+#     return [str(item) for item in value if str(item).strip()]
+#
+#
+# def non_null_predicates(columns: list[dict[str, Any]]) -> list[str]:
+#     """`IS NOT NULL` for every column the cohort declares as non-nullable.
+#
+#     Without these a NOT NULL destination column rejects the insert partway
+#     through, after the expensive part of the pull has already run.
+#     """
+#     predicates = []
+#     for column in columns:
+#         if not isinstance(column, dict) or is_nullable(column):
+#             continue
+#         source = str(column.get("source") or "").strip()
+#         if source:
+#             predicates.append(f"{source} IS NOT NULL")
+#     return predicates
+#
+#
+# def render_where(predicates: list[str], indent: str = "    ") -> str:
+#     """Join predicates with AND, leaving continuation lines alone.
+#
+#     A grouped code list authored as separate list entries must survive intact:
+#
+#         ( dt.Value LIKE 'K50.%'      ->  AND ( dt.Value LIKE 'K50.%'
+#           OR dt.Value = 'K50'        ->      OR dt.Value = 'K50'
+#         )                            ->      )
+#     """
+#     rendered: list[str] = []
+#     first = True
+#     for raw in predicates:
+#         for line in str(raw).splitlines() or [""]:
+#             stripped = line.strip()
+#             if not stripped:
+#                 continue
+#             continues = stripped.upper().startswith(CONTINUATION_PREFIXES)
+#             if first and not continues:
+#                 rendered.append(f"{indent}{stripped}")
+#                 first = False
+#             elif continues:
+#                 rendered.append(f"{indent}{stripped}")
+#             else:
+#                 rendered.append(f"{indent}AND {stripped}")
+#                 first = False
+#     return "\n".join(rendered)
+#
+#
+# def render_source_clause(filter_block: dict[str, Any], indent: str = "") -> str:
+#     """FROM and JOIN lines, schema-qualified consistently."""
+#     lines: list[str] = []
+#     froms = from_entries(filter_block)
+#     if froms:
+#         lines.append(f"{indent}FROM {qualify_table_ref(froms[0]).strip()}")
+#         for extra in froms[1:]:
+#             lines.append(f"{indent}    , {qualify_table_ref(extra).strip()}")
+#     for join in join_entries(filter_block):
+#         lines.append(f"{indent}{qualify_join_clause(join.strip())}")
+#     return "\n".join(lines)
+#
+# === END FILE: pullmanager/sql.py ===
 # === BEGIN FILE: pullmanager/tests/__init__.py SHA256: 4f70b04f739db1fd4fdae89aa3b2dd3ac8afea47a8dc6b8d5eb7fcda8ed717a2 SIZE: 1508 ===
 # """Test suite for the Pullmanager runtime.
 #
@@ -2127,6 +2732,353 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 9ab4a4cb4c05f41e6f4a82247ac259568716dc17ac7488e9ea0372bcf816a9c8 SIZE: 8919 ===
+# """Server and local SQL rendering, checked against the real fixtures."""
+#
+# from __future__ import annotations
+#
+# import unittest
+# from pathlib import Path
+#
+# from .. import local_sql, server_sql
+# from ..local_sql import LocalRenderError
+# from ..server_sql import RenderError
+#
+# FIXTURES = Path(__file__).resolve().parents[4] / "QMDs" / "pullmanager" / "fixtures" / "split"
+#
+#
+# def pk_cohort(**overrides):
+#     cohort = {
+#         "name": "Patients",
+#         "type": "PK",
+#         "dest_table": "PKTable2",
+#         "columns": [{"source": "p.DurableKey", "name": "PatientDurableKey",
+#                      "type": "BIGINT", "nullable": False}],
+#         "filter": {"from": "PatientDim AS p", "join": [], "where": ["p._IsDeleted = 0"]},
+#     }
+#     cohort.update(overrides)
+#     return cohort
+#
+#
+# def doc_with(*cohorts, **extra):
+#     doc = {"project_db": "PROJECTD93A5E7", "cosmos_db": "COSMOS", "cohorts": list(cohorts)}
+#     doc.update(extra)
+#     return doc
+#
+#
+# class ServerRenderTests(unittest.TestCase):
+#     def render(self, doc, prefix="S/pk"):
+#         return server_sql.render_phase(doc, prefix)
+#
+#     def test_creates_and_populates_the_global_temp(self):
+#         blocks, _ = self.render(doc_with(pk_cohort()))
+#         sql = blocks[0].sql
+#         self.assertIn("DROP TABLE IF EXISTS ##JVM_PKTable2;", sql)
+#         self.assertIn("CREATE TABLE ##JVM_PKTable2", sql)
+#         self.assertIn("INSERT INTO ##JVM_PKTable2", sql)
+#         self.assertEqual(blocks[0].block_id, "S/pk/PKTable2")
+#         self.assertEqual(blocks[0].meta["global_temp"], "##JVM_PKTable2")
+#
+#     def test_adds_non_null_filters(self):
+#         blocks, _ = self.render(doc_with(pk_cohort()))
+#         self.assertIn("AND p.DurableKey IS NOT NULL", blocks[0].sql)
+#
+#     def test_top_applies_only_to_the_root_pk(self):
+#         # A downstream PK joins the root's temp; limiting it too would compound
+#         # the restriction into an unrepresentative sample.
+#         downstream = pk_cohort(
+#             dest_table="PKTable",
+#             columns=[{"source": "d.Key", "name": "Key", "type": "BIGINT", "nullable": False}],
+#             filter={"from": "DiagnosisEventFact AS d",
+#                     "join": ["INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = d.PatientDurableKey"]},
+#         )
+#         doc = doc_with(pk_cohort(), downstream,
+#                        test_options={"smallset": True, "stop_at_for_pk_table": 500})
+#         blocks, _ = self.render(doc)
+#         by_dest = {b.dest_table: b.sql for b in blocks}
+#         self.assertIn("TOP (500)", by_dest["PKTable2"])
+#         self.assertNotIn("TOP (", by_dest["PKTable"])
+#
+#     def test_no_top_without_smallset(self):
+#         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
+#         blocks, _ = self.render(doc)
+#         self.assertNotIn("TOP (", blocks[0].sql)
+#
+#     def test_dedup_renders_and_is_visible(self):
+#         # The old generator accepted only `dedup_keys` and silently emitted no
+#         # deduplication at all.
+#         cohort = pk_cohort(dedup_key=["PatientDurableKey"])
+#         blocks, notes = self.render(doc_with(cohort))
+#         self.assertIn("ROW_NUMBER() OVER (PARTITION BY [PatientDurableKey]", blocks[0].sql)
+#         self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
+#         self.assertTrue(any("legacy" in n for n in notes))
+#         self.assertTrue(any("arbitrary but stable" in n for n in notes))
+#
+#     def test_dedup_key_naming_a_missing_column_is_refused(self):
+#         with self.assertRaises(RenderError):
+#             self.render(doc_with(pk_cohort(dedup_keys=[["NoSuchColumn"]])))
+#
+#     def test_unsubstituted_placeholder_is_refused(self):
+#         cohort = pk_cohort(filter={"from": "PatientDim AS p",
+#                                    "where": ["p.StartDateKey > {{min_date_key}}"]})
+#         with self.assertRaises(RenderError) as caught:
+#             self.render(doc_with(cohort))
+#         self.assertIn("min_date_key", str(caught.exception))
+#
+#     def test_duplicate_column_names_are_refused(self):
+#         cohort = pk_cohort(columns=[
+#             {"source": "p.A", "name": "Dup", "type": "BIGINT"},
+#             {"source": "p.B", "name": "Dup", "type": "BIGINT"},
+#         ])
+#         with self.assertRaises(RenderError):
+#             self.render(doc_with(cohort))
+#
+#     def test_missing_dest_table_is_refused(self):
+#         with self.assertRaises(RenderError):
+#             self.render(doc_with(pk_cohort(dest_table=None)))
+#
+#     def test_disabled_cohorts_are_skipped_with_a_note(self):
+#         blocks, notes = self.render(doc_with(pk_cohort(pull_this_cycle=False)))
+#         self.assertEqual(blocks, [])
+#         self.assertTrue(any("pull_this_cycle" in n for n in notes))
+#
+#     def test_setup_captures_the_runtime_instance_name(self):
+#         blocks = server_sql.render_setup(doc_with(), "S/setup")
+#         self.assertIn("@@SERVERNAME", blocks[0].sql)
+#         self.assertEqual(blocks[0].meta["captures"], "linked_server")
+#
+#
+# class LocalRenderTests(unittest.TestCase):
+#     LINKED = "et4003vpdsql032"
+#
+#     def test_shell_drops_and_creates_the_destination(self):
+#         blocks = local_sql.render_setup(doc_with(pk_cohort()), [pk_cohort()], "S/setup")
+#         sql = blocks[0].sql
+#         self.assertIn("DROP TABLE IF EXISTS PROJECTD93A5E7.dbo.PKTable2;", sql)
+#         self.assertIn("CREATE TABLE PROJECTD93A5E7.dbo.PKTable2", sql)
+#
+#     def test_transfer_stages_then_inserts_in_a_transaction(self):
+#         sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+#         self.assertIn("DROP TABLE IF EXISTS #Local_PKTable2;", sql)
+#         self.assertIn("INTO #Local_PKTable2", sql)
+#         self.assertIn(f"OPENQUERY(\n    [{self.LINKED}],", sql)
+#         self.assertIn("BEGIN TRANSACTION;", sql)
+#         self.assertIn("COMMIT TRANSACTION;", sql)
+#         # The destination is created in setup, so a run only appends.
+#         self.assertNotIn("CREATE TABLE PROJECTD93A5E7", sql)
+#         self.assertNotIn("DROP TABLE IF EXISTS PROJECTD93A5E7", sql)
+#
+#     def test_slow_pull_happens_outside_the_transaction(self):
+#         sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+#         self.assertLess(sql.index("OPENQUERY"), sql.index("BEGIN TRANSACTION"))
+#
+#     def test_captures_both_row_counts(self):
+#         sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
+#         self.assertIn("'cosmos' AS [Side]", sql)
+#         self.assertIn("'projects' AS [Side]", sql)
+#
+#     def test_measures_string_column_lengths(self):
+#         cohort = pk_cohort(columns=[
+#             {"source": "p.Name", "name": "Name", "type": "VARCHAR(400)"},
+#             {"source": "p.Key", "name": "Key", "type": "BIGINT"},
+#         ])
+#         sql = local_sql.render_phase(doc_with(cohort), "S/pk", self.LINKED)[0].sql
+#         self.assertIn("MAX(LEN([Name]))", sql)
+#         self.assertNotIn("MAX(LEN([Key]))", sql)
+#
+#     def test_no_length_probe_without_string_columns(self):
+#         self.assertIsNone(local_sql.render_length_probe(pk_cohort()))
+#
+#     def test_missing_linked_server_is_refused(self):
+#         # The instance name changes every connection, so a blank one means the
+#         # session identity was never captured.
+#         with self.assertRaises(LocalRenderError):
+#             local_sql.render_phase(doc_with(pk_cohort()), "S/pk", "")
+#
+#     def test_missing_project_db_is_refused(self):
+#         doc = doc_with(pk_cohort())
+#         doc.pop("project_db")
+#         with self.assertRaises(LocalRenderError):
+#             local_sql.render_phase(doc, "S/pk", self.LINKED)
+#
+#
+# class FixtureRenderTests(unittest.TestCase):
+#     """Render the real split output rather than hand-built dictionaries."""
+#
+#     @classmethod
+#     def setUpClass(cls):
+#         if not FIXTURES.is_dir():
+#             raise unittest.SkipTest(f"fixtures not found at {FIXTURES}")
+#         from ..yaml_io import load_yaml
+#         cls.load = staticmethod(load_yaml)
+#
+#     def phase(self, name):
+#         return self.load(FIXTURES / "sessions" / "Patients" / name)
+#
+#     def test_pk_phase_renders(self):
+#         blocks, _ = server_sql.render_phase(self.phase("pk.yaml"), "Patients/pk")
+#         self.assertEqual([b.dest_table for b in blocks], ["Patients"])
+#         self.assertIn("##JVM_Patients", blocks[0].sql)
+#
+#     def test_run_phase_renders_both_sides(self):
+#         doc = self.phase("runs/run.yaml")
+#         server, _ = server_sql.render_phase(doc, "Patients/run")
+#         local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
+#         self.assertEqual([b.dest_table for b in server], [b.dest_table for b in local])
+#         self.assertTrue(all(b.side == "server" for b in server))
+#         self.assertTrue(all(b.side == "local" for b in local))
+#
+#     def test_block_ids_are_unique_and_addressable(self):
+#         doc = self.phase("runs/run.yaml")
+#         server, _ = server_sql.render_phase(doc, "Patients/run")
+#         ids = [b.block_id for b in server]
+#         self.assertEqual(len(ids), len(set(ids)))
+#         self.assertTrue(all(b.dest_table in b.block_id for b in server))
+#
+# === END FILE: pullmanager/tests/test_render.py ===
+# === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
+# """SQL construction, with the WHERE builder as the main risk."""
+#
+# from __future__ import annotations
+#
+# import unittest
+#
+# from ..sql import (
+#     ddl_body,
+#     from_entries,
+#     is_nullable,
+#     non_null_predicates,
+#     quote_literal,
+#     render_source_clause,
+#     render_where,
+#     where_entries,
+# )
+#
+#
+# class WhereBuilderTests(unittest.TestCase):
+#     def render(self, predicates):
+#         return [line.strip() for line in render_where(predicates).splitlines()]
+#
+#     def test_first_predicate_takes_no_and(self):
+#         self.assertEqual(self.render(["a = 1"]), ["a = 1"])
+#
+#     def test_subsequent_predicates_take_and(self):
+#         self.assertEqual(self.render(["a = 1", "b = 2"]), ["a = 1", "AND b = 2"])
+#
+#     def test_preserves_a_grouped_code_list(self):
+#         # The K50/K51 filter, authored as separate list entries. Inserting AND
+#         # before the OR lines or the closing paren would be invalid SQL.
+#         self.assertEqual(
+#             self.render([
+#                 "dt.Type IN ('ICD-10-CM')",
+#                 "( dt.Value LIKE 'K50.%'",
+#                 "  OR dt.Value = 'K50'",
+#                 "  OR dt.Value LIKE 'K51.%'",
+#                 "  OR dt.Value = 'K51'",
+#                 ")",
+#             ]),
+#             [
+#                 "dt.Type IN ('ICD-10-CM')",
+#                 "AND ( dt.Value LIKE 'K50.%'",
+#                 "OR dt.Value = 'K50'",
+#                 "OR dt.Value LIKE 'K51.%'",
+#                 "OR dt.Value = 'K51'",
+#                 ")",
+#             ],
+#         )
+#
+#     def test_does_not_double_an_explicit_and(self):
+#         self.assertEqual(self.render(["a = 1", "AND b = 2"]), ["a = 1", "AND b = 2"])
+#
+#     def test_leading_or_is_left_alone(self):
+#         self.assertEqual(self.render(["a = 1", "OR b = 2"]), ["a = 1", "OR b = 2"])
+#
+#     def test_comments_are_not_prefixed(self):
+#         self.assertEqual(
+#             self.render(["a = 1", "-- restrict to ICD-10", "b = 2"]),
+#             ["a = 1", "-- restrict to ICD-10", "AND b = 2"],
+#         )
+#
+#     def test_a_group_opening_the_clause_takes_no_and(self):
+#         self.assertEqual(self.render(["( a = 1", "OR b = 2", ")"]), ["( a = 1", "OR b = 2", ")"])
+#
+#     def test_blank_entries_are_dropped(self):
+#         self.assertEqual(self.render(["a = 1", "", "   ", "b = 2"]), ["a = 1", "AND b = 2"])
+#
+#     def test_multiline_entries_are_split(self):
+#         self.assertEqual(
+#             self.render(["a = 1\nAND b = 2", "c = 3"]),
+#             ["a = 1", "AND b = 2", "AND c = 3"],
+#         )
+#
+#     def test_case_insensitive_continuations(self):
+#         self.assertEqual(self.render(["a = 1", "and b = 2", "or c = 3"]),
+#                          ["a = 1", "and b = 2", "or c = 3"])
+#
+#
+# class NonNullTests(unittest.TestCase):
+#     def test_adds_a_predicate_for_each_non_nullable_column(self):
+#         columns = [
+#             {"source": "p.A", "name": "A", "nullable": False},
+#             {"source": "p.B", "name": "B", "nullable": True},
+#             {"source": "p.C", "name": "C"},  # absent means nullable
+#         ]
+#         self.assertEqual(non_null_predicates(columns), ["p.A IS NOT NULL"])
+#
+#     def test_accepts_boolean_spellings(self):
+#         self.assertEqual(
+#             non_null_predicates([{"source": "p.A", "name": "A", "nullable": "no"}]),
+#             ["p.A IS NOT NULL"],
+#         )
+#
+#     def test_absent_nullable_defaults_to_nullable(self):
+#         self.assertTrue(is_nullable({"name": "A"}))
+#
+#
+# class FilterShapeTests(unittest.TestCase):
+#     def test_from_accepts_a_string_or_a_list(self):
+#         self.assertEqual(from_entries({"from": "PatientDim AS p"}), ["PatientDim AS p"])
+#         self.assertEqual(from_entries({"from": ["PatientDim AS p"]}), ["PatientDim AS p"])
+#         self.assertEqual(from_entries({}), [])
+#
+#     def test_where_accepts_a_string_or_a_list(self):
+#         self.assertEqual(where_entries({"where": "a = 1"}), ["a = 1"])
+#         self.assertEqual(where_entries({"where": ["a = 1", "b = 2"]}), ["a = 1", "b = 2"])
+#
+#     def test_source_clause_qualifies_from_and_joins(self):
+#         sql = render_source_clause({
+#             "from": ["DiagnosisEventFact AS def"],
+#             "join": [
+#                 "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey",
+#                 "INNER JOIN ##JVM_PKTable2 AS p ON p.PatientDurableKey = def.PatientDurableKey",
+#             ],
+#         })
+#         self.assertIn("FROM dbo.DiagnosisEventFact AS def", sql)
+#         self.assertIn("INNER JOIN dbo.DiagnosisTerminologyDim", sql)
+#         # A generated temp lives in tempdb and must stay unqualified.
+#         self.assertIn("INNER JOIN ##JVM_PKTable2 AS p", sql)
+#
+#
+# class LiteralTests(unittest.TestCase):
+#     def test_escapes_embedded_quotes(self):
+#         self.assertEqual(quote_literal("HUMIRA(CF) CROHN'S STARTER"), "'HUMIRA(CF) CROHN''S STARTER'")
+#
+#     def test_renders_scalars(self):
+#         self.assertEqual(quote_literal(None), "NULL")
+#         self.assertEqual(quote_literal(42), "42")
+#         self.assertEqual(quote_literal(True), "1")
+#
+#
+# class DdlTests(unittest.TestCase):
+#     def test_renders_nullability(self):
+#         body = ddl_body([
+#             {"name": "A", "type": "BIGINT", "nullable": False},
+#             {"name": "B", "type": "VARCHAR(400)", "nullable": True},
+#         ])
+#         self.assertIn("[A] BIGINT NOT NULL", body)
+#         self.assertIn("[B] VARCHAR(400) NULL", body)
+#
+# === END FILE: pullmanager/tests/test_sql.py ===
 # === BEGIN FILE: pullmanager/yaml_io.py SHA256: dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18 SIZE: 1844 ===
 # """YAML load/dump for Pullmanager.
 #

@@ -1,0 +1,224 @@
+"""Cosmos-side SQL.
+
+Renders one block per cohort, addressed by manifest id. Nothing downstream
+searches SQL text to decide what to run.
+"""
+
+from __future__ import annotations
+
+import re
+
+from typing import Any
+
+from .naming import global_temp
+from .normalize import (
+    normalize_bool,
+    normalize_dedup_keys,
+    root_pk_cohort,
+    validate_dedup_columns,
+)
+from .sql import (
+    SqlBlock,
+    column_list,
+    column_names,
+    ddl_body,
+    non_null_predicates,
+    quote_literal,
+    quote_name,
+    render_source_clause,
+    render_where,
+    where_entries,
+)
+
+SERVER_NAME_QUERY = "SELECT @@SERVERNAME AS CosmosServerName;"
+
+_PLACEHOLDER = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+
+
+class RenderError(ValueError):
+    """Raised when a cohort cannot be rendered."""
+
+
+def top_clause(cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None) -> str:
+    """`TOP (n)`, applied to the root PK cohort only.
+
+    Limiting a downstream PK as well compounds the restriction: 500 patients
+    and then 500 of their events is not 500 patients' worth of events.
+    """
+    options = doc.get("test_options") or {}
+    if not normalize_bool(options.get("smallset") or options.get("smallest")):
+        return ""
+    if root is None or cohort is not root:
+        return ""
+    limit = options.get("stop_at_for_pk_table")
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        return ""
+    return f"TOP ({limit}) " if limit > 0 else ""
+
+
+def cohort_predicates(cohort: dict[str, Any]) -> list[str]:
+    columns = cohort.get("columns") or []
+    return where_entries(cohort.get("filter") or {}) + non_null_predicates(columns)
+
+
+def render_select(cohort: dict[str, Any], top: str, inner_indent: str = "    ") -> str:
+    columns = cohort.get("columns") or []
+    projections = [
+        f"{inner_indent}{column['source']} AS {quote_name(str(column['name']))}"
+        for column in columns
+        if isinstance(column, dict) and column.get("name") and column.get("source")
+    ]
+    parts = [f"SELECT {top}".rstrip(), ",\n".join(projections)]
+    source = render_source_clause(cohort.get("filter") or {})
+    if source:
+        parts.append(source)
+    predicates = cohort_predicates(cohort)
+    if predicates:
+        parts.append("WHERE")
+        parts.append(render_where(predicates, inner_indent))
+    return "\n".join(parts)
+
+
+def render_dedup_select(
+    cohort: dict[str, Any], key_sets: list[list[str]], top: str
+) -> tuple[str, list[str]]:
+    """Wrap the projection in ROW_NUMBER and keep one row per key set.
+
+    Returns the SQL and any notes. Deduplication is always visible in the
+    output: the old generator could silently emit none at all.
+    """
+    notes: list[str] = []
+    keys = [quote_name(k) for k in key_sets[0]]
+    if len(key_sets) > 1:
+        notes.append(
+            f"Only the first dedup key set {key_sets[0]} is applied; "
+            f"{len(key_sets) - 1} further set(s) were declared."
+        )
+    order = cohort.get("dedup_order") or cohort.get("order_by")
+    if order:
+        order_sql = order if isinstance(order, str) else ", ".join(str(o) for o in order)
+    else:
+        order_sql = ", ".join(keys)
+        notes.append(
+            f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
+            "key columns, so the surviving row among duplicates is arbitrary but stable."
+        )
+    inner = render_select(cohort, top="", inner_indent="        ")
+    inner = inner.replace(
+        "SELECT\n",
+        "SELECT\n"
+        f"        ROW_NUMBER() OVER (PARTITION BY {', '.join(keys)} ORDER BY {order_sql}) AS [_dedup_rn],\n",
+        1,
+    )
+    cols = column_list(cohort.get("columns") or [])
+    sql = (
+        f"SELECT {top}{cols}\n"
+        f"FROM (\n"
+        f"{_indent(inner, '    ')}\n"
+        f") AS [_deduped]\n"
+        f"WHERE [_deduped].[_dedup_rn] = 1"
+    )
+    return sql, notes
+
+
+def _indent(text: str, prefix: str) -> str:
+    return "\n".join(prefix + line if line.strip() else line for line in text.splitlines())
+
+
+def render_cohort(
+    cohort: dict[str, Any], doc: dict[str, Any], root: dict[str, Any] | None
+) -> tuple[str, list[str]]:
+    """DDL plus population for one cohort's global temp table."""
+    dest = cohort.get("dest_table")
+    if not dest:
+        raise RenderError(f"Cohort {cohort.get('name')!r} has no dest_table.")
+    columns = [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+    if not columns:
+        raise RenderError(f"Cohort {dest!r} declares no columns.")
+    names = column_names(columns)
+    if len(names) != len(set(names)):
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        raise RenderError(f"Cohort {dest!r} declares duplicate column(s): {', '.join(duplicates)}")
+
+    notes: list[str] = []
+    temp = global_temp(dest)
+    top = top_clause(cohort, doc, root)
+
+    key_sets, dedup_notes = normalize_dedup_keys(cohort)
+    notes.extend(dedup_notes)
+    if key_sets:
+        problems = validate_dedup_columns(key_sets, cohort)
+        if problems:
+            raise RenderError("; ".join(problems))
+        body, more = render_dedup_select(cohort, key_sets, top)
+        notes.extend(more)
+    else:
+        body = render_select(cohort, top)
+
+    sql = (
+        f"-- cohort {cohort.get('name')!r} -> {temp}\n"
+        f"DROP TABLE IF EXISTS {temp};\n\n"
+        f"CREATE TABLE {temp}\n(\n{ddl_body(columns)}\n);\n\n"
+        f"INSERT INTO {temp} ({column_list(columns)})\n"
+        f"{body};\n\n"
+        f"{render_cohort_telemetry(cohort, temp)}"
+    )
+    # Variable substitution is YAML Manager's job and has already happened by
+    # the time a split YAML reaches us. A placeholder surviving to here would
+    # render as invalid T-SQL, so fail with the name rather than emit it.
+    leftover = sorted({m.group(1) for m in _PLACEHOLDER.finditer(sql)})
+    if leftover:
+        raise RenderError(
+            f"Cohort {dest!r} still contains unsubstituted placeholder(s): "
+            f"{', '.join(leftover)}. Render from split YAML, not a raw template."
+        )
+    return sql, notes
+
+
+def render_cohort_telemetry(cohort: dict[str, Any], temp: str) -> str:
+    """A declared telemetry shape, not column names to be scraped."""
+    return (
+        "SELECT\n"
+        f"    {quote_literal(cohort.get('name'))} AS [CohortName],\n"
+        f"    {quote_literal(cohort.get('dest_table'))} AS [DestTable],\n"
+        f"    COUNT_BIG(1) AS [RowCount]\n"
+        f"FROM {temp};"
+    )
+
+
+def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
+    """Render every cohort in one phase document."""
+    cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
+    root = root_pk_cohort(cohorts)
+    blocks: list[SqlBlock] = []
+    notes: list[str] = []
+    for cohort in cohorts:
+        if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
+            notes.append(f"Skipping {cohort.get('dest_table')!r}: pull_this_cycle is false.")
+            continue
+        sql, cohort_notes = render_cohort(cohort, doc, root)
+        notes.extend(cohort_notes)
+        blocks.append(
+            SqlBlock(
+                block_id=f"{block_prefix}/{cohort['dest_table']}",
+                side="server",
+                sql=sql,
+                dest_table=str(cohort["dest_table"]),
+                meta={"global_temp": global_temp(cohort["dest_table"])},
+            )
+        )
+    return blocks, notes
+
+
+def render_setup(doc: dict[str, Any], block_prefix: str) -> list[SqlBlock]:
+    """Capture the runtime instance name; it changes on every connection."""
+    return [
+        SqlBlock(
+            block_id=f"{block_prefix}/server-identity",
+            side="server",
+            sql=SERVER_NAME_QUERY,
+            meta={"captures": "linked_server"},
+        )
+    ]
