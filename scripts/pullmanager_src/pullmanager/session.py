@@ -14,7 +14,15 @@ from typing import Any, Callable
 from . import local_sql, server_sql, uploads
 from .batches import BatchError, select_batch_rows
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
-from .executor import RESUME_FULL, Unit, iter_units, plan_unit, session_cohorts, should_execute
+from .executor import (
+    RESUME_FULL,
+    RESUME_PARTIAL,
+    Unit,
+    iter_units,
+    plan_unit,
+    session_cohorts,
+    should_execute,
+)
 from .manifest import Manifest, Phase, Session
 from .naming import destination, global_temp
 from .normalize import cosmos_database
@@ -28,6 +36,14 @@ LARGE_ROW_WARNING = 80_000_000
 
 class SessionError(RuntimeError):
     """Raised when a session cannot proceed."""
+
+
+RESUME_PARTIAL_UNAVAILABLE = (
+    "--resume-partial is not available yet. On a new connection the setup phase "
+    "replays, and setup drops every destination table -- including the ones "
+    "completed batches filled -- while those batches are then skipped as done. "
+    "Their rows would be lost. Use the default, which replays the whole session."
+)
 
 
 @dataclass
@@ -66,6 +82,8 @@ class SessionRunner:
         self.mode = mode
         self.retry_failed = retry_failed
         self.upload_root = upload_root or manifest.root
+        if mode == RESUME_PARTIAL:
+            raise SessionError(RESUME_PARTIAL_UNAVAILABLE)
         self.cosmos: Any = None
         self.projects: Any = None
         self.report = SessionReport(session_id=session.session_id)

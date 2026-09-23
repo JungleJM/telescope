@@ -300,7 +300,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "1e88d769240c7aebc5088a89f07d00f19049ba2c0c0b8fbdbce22878ce964020",
+  "content_id": "80925553c12dc493d983ea3f98be381c34df2fb5792b21ab218ba4dcd03fb799",
   "file_count": 40,
   "files": [
     {
@@ -348,8 +348,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "9fc0f09124ab1fb71a592f5e717d7e3b9a6322cac290528bb8d53919cc4a544d",
-      "size": 9424
+      "sha256": "7a6f2a8cc3d805366c4457f130ec98ba1cb105699518d60470909d18c6af4499",
+      "size": 9581
     },
     {
       "path": "pullmanager/db.py",
@@ -366,14 +366,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "1866a7b3c41374c18442f9fa4f0e34cfb0b0a3ae8ecb9346963ecafc0e8f977b",
-      "size": 11348
+      "sha256": "6e4ecb5860155092cdf80f92d3b27dca41b71b046197822820051992023c6ec2",
+      "size": 11041
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "0962943061a366d8e7233663c1c4389a815737c4f8dade41b73fc0573e9b7e7b",
-      "size": 9798
+      "sha256": "4e4c0b3c167132c38d7f83ad9542ffc26ffea33ae10fd8be330fda41ca1b62dc",
+      "size": 9693
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -414,8 +414,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "38807f146902c57d45d0227986e71f33df69bf3ee2bc1d29cdbfec3e0cea6675",
-      "size": 14925
+      "sha256": "165c404d1270abf125b118f0e43ede53e774d6c03f0348153a8ec0b6d672039a",
+      "size": 15426
     },
     {
       "path": "pullmanager/sql.py",
@@ -462,8 +462,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "2593df5712032ce30fef0ce431afda64cec2e0b3b259f34d11ccaefa8e6d9adb",
-      "size": 10172
+      "sha256": "9b627fdad3bcdc3fd21552d485a2bf444ba7a1206fe3215dbdad9b0d7d9207e3",
+      "size": 10477
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -498,8 +498,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "98a71c5383ac3eee9711dce20de58e349f78246f3bf021f7b018f2dc6b976a90",
-      "size": 10227
+      "sha256": "c25f08222af3f80d804f5b968132ade7f62000e66e45d50999dedec63e4db26b",
+      "size": 11093
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -4220,7 +4220,7 @@ if __name__ == "__main__":
 #     return BatchSelection(sql=sql + ";", params=params)
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 9fc0f09124ab1fb71a592f5e717d7e3b9a6322cac290528bb8d53919cc4a544d SIZE: 9424 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 7a6f2a8cc3d805366c4457f130ec98ba1cb105699518d60470909d18c6af4499 SIZE: 9581 ===
 # """Command line entry point.
 #
 # Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
@@ -4417,8 +4417,8 @@ if __name__ == "__main__":
 #     parser.add_argument(
 #         "--resume-partial",
 #         action="store_true",
-#         help="Keep completed local transfers and replay only the server side. Server "
-#              "state is gone either way; this trades a guard for not re-pulling.",
+#         help="Not available yet: as implemented it would lose completed batches. "
+#              "The default replays the whole session.",
 #     )
 #     parser.add_argument("--all", action="store_true", help="Include already-settled work.")
 #     parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")
@@ -4464,6 +4464,11 @@ if __name__ == "__main__":
 #
 #     try:
 #         manifest = Manifest.load(args.manifest)
+#         if args.resume_partial:
+#             from .session import RESUME_PARTIAL_UNAVAILABLE
+#
+#             print(f"ERROR {RESUME_PARTIAL_UNAVAILABLE}", file=sys.stderr)
+#             return 1
 #         if args.dry_run and args.execute:
 #             print("--dry-run and --execute are mutually exclusive.", file=sys.stderr)
 #             return 1
@@ -5070,7 +5075,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: 1866a7b3c41374c18442f9fa4f0e34cfb0b0a3ae8ecb9346963ecafc0e8f977b SIZE: 11348 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: 6e4ecb5860155092cdf80f92d3b27dca41b71b046197822820051992023c6ec2 SIZE: 11041 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -5119,7 +5124,6 @@ if __name__ == "__main__":
 #         self.runner = launcher.CommandRunner()
 #         self.vars: dict[str, tk.StringVar] = {}
 #         self.retry_failed = tk.BooleanVar(value=False)
-#         self.resume_partial = tk.BooleanVar(value=False)
 #         self.action_buttons: list[ttk.Button] = []
 #         self._next_status_refresh = 0
 #
@@ -5154,9 +5158,6 @@ if __name__ == "__main__":
 #         options = ttk.Frame(frame)
 #         options.grid(row=len(FIELDS), column=0, columnspan=4, sticky="w", pady=(8, 4))
 #         ttk.Checkbutton(options, text="Retry failed", variable=self.retry_failed).pack(side="left")
-#         ttk.Checkbutton(
-#             options, text="Resume partial (keep completed transfers)", variable=self.resume_partial
-#         ).pack(side="left", padx=(16, 0))
 #
 #         actions = ttk.Frame(frame)
 #         actions.grid(row=len(FIELDS) + 1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
@@ -5216,10 +5217,7 @@ if __name__ == "__main__":
 #         return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS})
 #
 #     def options(self) -> Options:
-#         return Options(
-#             retry_failed=bool(self.retry_failed.get()),
-#             resume_partial=bool(self.resume_partial.get()),
-#         )
+#         return Options(retry_failed=bool(self.retry_failed.get()))
 #
 #     def _load_settings(self) -> None:
 #         saved = launcher.load_settings(self.workdir)
@@ -5365,7 +5363,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: 0962943061a366d8e7233663c1c4389a815737c4f8dade41b73fc0573e9b7e7b SIZE: 9798 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: 4e4c0b3c167132c38d7f83ad9542ffc26ffea33ae10fd8be330fda41ca1b62dc SIZE: 9693 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -5444,7 +5442,6 @@ if __name__ == "__main__":
 # @dataclass
 # class Options:
 #     retry_failed: bool = False
-#     resume_partial: bool = False
 #
 #
 # def _require(value: str, what: str) -> str:
@@ -5467,8 +5464,6 @@ if __name__ == "__main__":
 #     flags = []
 #     if options.retry_failed:
 #         flags.append("--retry-failed")
-#     if options.resume_partial:
-#         flags.append("--resume-partial")
 #     return flags
 #
 #
@@ -6864,7 +6859,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 38807f146902c57d45d0227986e71f33df69bf3ee2bc1d29cdbfec3e0cea6675 SIZE: 14925 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 165c404d1270abf125b118f0e43ede53e774d6c03f0348153a8ec0b6d672039a SIZE: 15426 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6881,7 +6876,15 @@ if __name__ == "__main__":
 # from . import local_sql, server_sql, uploads
 # from .batches import BatchError, select_batch_rows
 # from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
-# from .executor import RESUME_FULL, Unit, iter_units, plan_unit, session_cohorts, should_execute
+# from .executor import (
+#     RESUME_FULL,
+#     RESUME_PARTIAL,
+#     Unit,
+#     iter_units,
+#     plan_unit,
+#     session_cohorts,
+#     should_execute,
+# )
 # from .manifest import Manifest, Phase, Session
 # from .naming import destination, global_temp
 # from .normalize import cosmos_database
@@ -6895,6 +6898,14 @@ if __name__ == "__main__":
 #
 # class SessionError(RuntimeError):
 #     """Raised when a session cannot proceed."""
+#
+#
+# RESUME_PARTIAL_UNAVAILABLE = (
+#     "--resume-partial is not available yet. On a new connection the setup phase "
+#     "replays, and setup drops every destination table -- including the ones "
+#     "completed batches filled -- while those batches are then skipped as done. "
+#     "Their rows would be lost. Use the default, which replays the whole session."
+# )
 #
 #
 # @dataclass
@@ -6933,6 +6944,8 @@ if __name__ == "__main__":
 #         self.mode = mode
 #         self.retry_failed = retry_failed
 #         self.upload_root = upload_root or manifest.root
+#         if mode == RESUME_PARTIAL:
+#             raise SessionError(RESUME_PARTIAL_UNAVAILABLE)
 #         self.cosmos: Any = None
 #         self.projects: Any = None
 #         self.report = SessionReport(session_id=session.session_id)
@@ -8419,7 +8432,7 @@ if __name__ == "__main__":
 #         self.assertIn("Export a split", message)
 #
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 2593df5712032ce30fef0ce431afda64cec2e0b3b259f34d11ccaefa8e6d9adb SIZE: 10172 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 9b627fdad3bcdc3fd21552d485a2bf444ba7a1206fe3215dbdad9b0d7d9207e3 SIZE: 10477 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -8524,18 +8537,22 @@ if __name__ == "__main__":
 #         self.assertIn(str(Path("s") / "pullmanifest.yaml"), command)
 #         self.assertEqual(command[command.index("--out-dir") + 1], "q")
 #
-#     def test_execute_carries_the_resume_options(self):
-#         command = command_execute(
-#             TOOLS, Paths(split_dir="s"), Options(retry_failed=True, resume_partial=True)
-#         )
+#     def test_execute_carries_retry_failed(self):
+#         command = command_execute(TOOLS, Paths(split_dir="s"), Options(retry_failed=True))
 #         self.assertIn("--execute", command)
 #         self.assertIn("--retry-failed", command)
-#         self.assertIn("--resume-partial", command)
 #
-#     def test_resume_options_are_absent_by_default(self):
+#     def test_retry_is_absent_by_default(self):
 #         command = command_execute(TOOLS, Paths(split_dir="s"), Options())
 #         self.assertNotIn("--retry-failed", command)
-#         self.assertNotIn("--resume-partial", command)
+#
+#     def test_the_launcher_cannot_request_a_partial_resume(self):
+#         # As implemented it lost completed batches; nothing may ask for it.
+#         self.assertNotIn("resume_partial", Options.__dataclass_fields__)
+#         for options in (Options(), Options(retry_failed=True)):
+#             with self.subTest(options=options):
+#                 command = command_execute(TOOLS, Paths(split_dir="s"), options)
+#                 self.assertNotIn("--resume-partial", command)
 #
 #     def test_child_output_is_unbuffered_utf8(self):
 #         # Buffered, a long pull prints nothing until it ends; without UTF-8 a
@@ -9735,7 +9752,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 98a71c5383ac3eee9711dce20de58e349f78246f3bf021f7b018f2dc6b976a90 SIZE: 10227 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: c25f08222af3f80d804f5b968132ade7f62000e66e45d50999dedec63e4db26b SIZE: 11093 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9996,14 +10013,31 @@ if __name__ == "__main__":
 #         self.assertIn("Patients/pk", report.completed)
 #         self.assertNotEqual(self.manifest.sessions[0].epoch, first_epoch)
 #
-#     def test_partial_resume_keeps_completed_runs(self):
+#     def test_partial_resume_is_refused(self):
+#         # It used to run, and this test used to pass by checking only that the
+#         # completed batch was skipped. It never checked the batch's rows
+#         # survived -- and they did not: the replayed setup phase dropped the
+#         # destination table first. See the test below for that outcome.
+#         with self.assertRaises(SessionError) as caught:
+#             self.runner(mode="partial")
+#         self.assertIn("would be lost", str(caught.exception))
+#
+#     def test_a_full_replay_restores_every_completed_batch(self):
+#         # The default. Setup drops the destination, so every run must refill it.
 #         with self.runner() as runner:
 #             runner.execute()
 #         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
-#         with self.runner(mode="partial") as runner:
-#             report = runner.execute()
-#         # The run's rows are in a Projects table and survive the lost connection.
-#         self.assertTrue(any("survive" in s for s in report.skipped))
+#         with self.runner() as runner:
+#             runner.execute()
+#         destination = "PROJECTD33A929.dbo.OtherHospitalizations"
+#         executed = self.projects.executed
+#         dropped_at = max(
+#             i for i, sql in enumerate(executed) if f"DROP TABLE IF EXISTS {destination}" in sql
+#         )
+#         self.assertTrue(
+#             any(f"INSERT INTO {destination}" in sql for sql in executed[dropped_at:]),
+#             "a destination dropped by setup must be refilled in the same session",
+#         )
 #
 # === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===

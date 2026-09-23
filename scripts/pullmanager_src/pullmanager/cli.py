@@ -194,8 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--resume-partial",
         action="store_true",
-        help="Keep completed local transfers and replay only the server side. Server "
-             "state is gone either way; this trades a guard for not re-pulling.",
+        help="Not available yet: as implemented it would lose completed batches. "
+             "The default replays the whole session.",
     )
     parser.add_argument("--all", action="store_true", help="Include already-settled work.")
     parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")
@@ -241,6 +241,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         manifest = Manifest.load(args.manifest)
+        if args.resume_partial:
+            from .session import RESUME_PARTIAL_UNAVAILABLE
+
+            print(f"ERROR {RESUME_PARTIAL_UNAVAILABLE}", file=sys.stderr)
+            return 1
         if args.dry_run and args.execute:
             print("--dry-run and --execute are mutually exclusive.", file=sys.stderr)
             return 1

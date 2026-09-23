@@ -258,11 +258,28 @@ class ResumeTests(SessionTestCase):
         self.assertIn("Patients/pk", report.completed)
         self.assertNotEqual(self.manifest.sessions[0].epoch, first_epoch)
 
-    def test_partial_resume_keeps_completed_runs(self):
+    def test_partial_resume_is_refused(self):
+        # It used to run, and this test used to pass by checking only that the
+        # completed batch was skipped. It never checked the batch's rows
+        # survived -- and they did not: the replayed setup phase dropped the
+        # destination table first. See the test below for that outcome.
+        with self.assertRaises(SessionError) as caught:
+            self.runner(mode="partial")
+        self.assertIn("would be lost", str(caught.exception))
+
+    def test_a_full_replay_restores_every_completed_batch(self):
+        # The default. Setup drops the destination, so every run must refill it.
         with self.runner() as runner:
             runner.execute()
         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
-        with self.runner(mode="partial") as runner:
-            report = runner.execute()
-        # The run's rows are in a Projects table and survive the lost connection.
-        self.assertTrue(any("survive" in s for s in report.skipped))
+        with self.runner() as runner:
+            runner.execute()
+        destination = "PROJECTD33A929.dbo.OtherHospitalizations"
+        executed = self.projects.executed
+        dropped_at = max(
+            i for i, sql in enumerate(executed) if f"DROP TABLE IF EXISTS {destination}" in sql
+        )
+        self.assertTrue(
+            any(f"INSERT INTO {destination}" in sql for sql in executed[dropped_at:]),
+            "a destination dropped by setup must be refilled in the same session",
+        )

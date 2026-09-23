@@ -102,18 +102,22 @@ class CommandTests(unittest.TestCase):
         self.assertIn(str(Path("s") / "pullmanifest.yaml"), command)
         self.assertEqual(command[command.index("--out-dir") + 1], "q")
 
-    def test_execute_carries_the_resume_options(self):
-        command = command_execute(
-            TOOLS, Paths(split_dir="s"), Options(retry_failed=True, resume_partial=True)
-        )
+    def test_execute_carries_retry_failed(self):
+        command = command_execute(TOOLS, Paths(split_dir="s"), Options(retry_failed=True))
         self.assertIn("--execute", command)
         self.assertIn("--retry-failed", command)
-        self.assertIn("--resume-partial", command)
 
-    def test_resume_options_are_absent_by_default(self):
+    def test_retry_is_absent_by_default(self):
         command = command_execute(TOOLS, Paths(split_dir="s"), Options())
         self.assertNotIn("--retry-failed", command)
-        self.assertNotIn("--resume-partial", command)
+
+    def test_the_launcher_cannot_request_a_partial_resume(self):
+        # As implemented it lost completed batches; nothing may ask for it.
+        self.assertNotIn("resume_partial", Options.__dataclass_fields__)
+        for options in (Options(), Options(retry_failed=True)):
+            with self.subTest(options=options):
+                command = command_execute(TOOLS, Paths(split_dir="s"), options)
+                self.assertNotIn("--resume-partial", command)
 
     def test_child_output_is_unbuffered_utf8(self):
         # Buffered, a long pull prints nothing until it ends; without UTF-8 a
