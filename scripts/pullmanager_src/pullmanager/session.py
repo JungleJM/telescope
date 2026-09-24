@@ -1,13 +1,14 @@
 """Executing one session.
 
 The Cosmos connection is held open for the whole session, because every
-`##JVM_*` table dies with it. That single fact shapes everything here: the
+global temp (`##<prefix>_*`) dies with it. That single fact shapes everything here: the
 epoch, what a resume must replay, and why uploads travel through the client.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -26,10 +27,13 @@ from .executor import (
     should_execute,
 )
 from .manifest import Manifest, Phase, Session
-from .naming import destination, global_temp
+from .naming import destination, global_temp, temp_prefix
 from .normalize import cosmos_database
 from .uploads import UploadError
 from .yaml_io import load_yaml
+
+# A clash adds a number to the prefix (D50); past this many, something is wrong.
+MAX_PREFIX_NUMBER = 99
 
 # The old generator warned past this; a pull this size is usually a mistake in
 # the filter rather than an intention.
@@ -79,6 +83,10 @@ class SessionRunner:
         self.cosmos: Any = None
         self.projects: Any = None
         self.report = SessionReport(session_id=session.session_id)
+        # What the split named the temps with, and what this session uses: the
+        # same unless another pull holds those names (D50).
+        self.planned_prefix = ""
+        self.prefix = ""
 
     # ----------------------------------------------------------- lifecycle
 
@@ -101,6 +109,7 @@ class SessionRunner:
         # cached one would aim OPENQUERY at a server that is no longer ours.
         linked_server = capture_server_name(self.cosmos)
         self._check_refresh()
+        self._choose_prefix()
         epoch = self.session.begin_epoch(linked_server=linked_server)
         self.report.epoch = epoch
         self.report.linked_server = linked_server
@@ -135,6 +144,63 @@ class SessionRunner:
         for name, value in seen.items():
             self.manifest.cosmos_refresh.setdefault(name, value)
         self.session.runtime["cosmos_created"] = seen
+
+    def _session_temps(self, prefix: str) -> list[str]:
+        dests = {str(c["dest_table"]) for c in session_cohorts(self.manifest, self.session)}
+        for upload in uploads.enabled_uploads(self._phase_doc("upload_cohorts")):
+            dests.add(str(upload.get("dest_table") or upload.get("name")))
+        return sorted(global_temp(dest, prefix) for dest in dests if dest)
+
+    def _choose_prefix(self) -> None:
+        """Use the planned prefix unless another pull holds one of its temps.
+
+        A global temp lives only while the connection that made it is open, so
+        one that already exists belongs to a pull running now. Rather than
+        drop it from under that pull, number this session's prefix until none
+        of its names are taken (D50).
+        """
+        self.planned_prefix = self.prefix = temp_prefix(self._phase_doc("setup"))
+        for number in range(1, MAX_PREFIX_NUMBER + 1):
+            candidate = self.planned_prefix if number == 1 else f"{self.planned_prefix}{number}"
+            names = self._session_temps(candidate)
+            if not names:
+                break
+            probe = ", ".join(f"OBJECT_ID(N'tempdb..{name}')" for name in names)
+            try:
+                cursor = self.cosmos.cursor()
+                cursor.execute(f"SELECT {probe};")
+                row = cursor.fetchone()
+            except Exception as exc:
+                self.report.warnings.append(
+                    f"Could not check whether another pull holds these temps ({exc}); "
+                    f"using ##{candidate}_ as planned."
+                )
+                break
+            if not row or all(value is None for value in row):
+                self.prefix = candidate
+                break
+        else:
+            raise SessionError(
+                f"Temps named ##{self.planned_prefix}_ through ##{self.planned_prefix}"
+                f"{MAX_PREFIX_NUMBER}_ are all in use. Set a different temp_prefix."
+            )
+        if self.prefix != self.planned_prefix:
+            self.report.warnings.append(
+                f"Another pull holds temps named ##{self.planned_prefix}_; this session "
+                f"uses ##{self.prefix}_ instead."
+            )
+        self.session.runtime["temp_prefix"] = self.prefix
+
+    def _rename(self, sql: str) -> str:
+        """Point planned temp names at the ones this session actually uses."""
+        if not self.prefix or self.prefix == self.planned_prefix:
+            return sql
+        return re.sub(
+            f"##{re.escape(self.planned_prefix)}_", f"##{self.prefix}_", sql, flags=re.I
+        )
+
+    def _execute(self, connection: Any, sql: str, *, label: str) -> Any:
+        return execute_script(connection, self._rename(sql), label=label)
 
     def close(self) -> None:
         for connection in (self.projects, self.cosmos):
@@ -240,7 +306,7 @@ class SessionRunner:
             keep=self.resuming,
             batched=run_destinations(self.manifest, self.session),
         ):
-            execute_script(self.projects, block.sql, label=block.block_id)
+            self._execute(self.projects, block.sql, label=block.block_id)
         self.projects.commit()
         node_outputs = {"linked_server": self.report.linked_server, "tables": len(cohorts)}
         self.session.phases[0].outputs.update(node_outputs)
@@ -256,9 +322,11 @@ class SessionRunner:
         for cohort in enabled:
             kind = uploads.upload_kind(cohort)
             if kind == "csv":
-                plan = uploads.plan_csv_upload(cohort, self.upload_root)
+                plan = uploads.plan_csv_upload(cohort, self.upload_root, self.prefix)
             else:
-                plan = uploads.plan_dbtable_upload(self.projects, cohort, self.project_db)
+                plan = uploads.plan_dbtable_upload(
+                    self.projects, cohort, self.project_db, self.prefix
+                )
             self.report.warnings.extend(plan.notes)
             uploaded += uploads.materialize(
                 self.cosmos, plan, chunk_size=self.settings.upload_chunk
@@ -276,7 +344,7 @@ class SessionRunner:
             resuming=self.resuming,
         )
         rows = self._run_pair(unit)
-        node.outputs["global_temp"] = global_temp(self.session.pk_table or "")
+        node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
         node.outputs["local_table"] = destination(self.project_db, self.session.pk_table or "")
         self._verify_pk_uniqueness(doc)
         return rows
@@ -414,7 +482,7 @@ class SessionRunner:
                 f"{node.label}: batch ({selection.description}) matched no PK rows."
             )
 
-        temp = global_temp(pk_table)
+        temp = global_temp(pk_table, self.prefix)
         pk_doc_cohort = next(
             (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
              and c.get("dest_table") == pk_table),
@@ -424,7 +492,7 @@ class SessionRunner:
             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
         create_only = shell.split("INSERT INTO")[0]
-        execute_script(self.cosmos, create_only, label=f"{node.label} batch shell")
+        self._execute(self.cosmos, create_only, label=f"{node.label} batch shell")
         if rows:
             bulk_insert(
                 self.cosmos, temp, columns, rows, chunk_size=self.settings.upload_chunk
@@ -443,14 +511,14 @@ class SessionRunner:
 
     def _run_blocks(self, blocks: list[Any], connection: Any) -> None:
         for block in blocks:
-            execute_script(connection, block.sql, label=block.block_id)
+            self._execute(connection, block.sql, label=block.block_id)
         connection.commit()
 
     def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
         """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
         server_rows: dict[str, int] = {}
         for block in unit.server_blocks:
-            outcome = execute_script(self.cosmos, block.sql, label=block.block_id)
+            outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "RowCount"):
                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
         self.cosmos.commit()
@@ -459,7 +527,7 @@ class SessionRunner:
         for block in unit.local_blocks:
             if block.meta.get("clears") and not clear:
                 continue
-            outcome = execute_script(self.projects, block.sql, label=block.block_id)
+            outcome = self._execute(self.projects, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
                 if row["Side"] == "projects":
                     local_rows[str(row["DestTable"])] = int(row["RowCount"])

@@ -526,7 +526,9 @@ def output_path_for(template: dict[str, Any], suffix: str = OUTPUT_SUFFIX, out: 
 
 
 JINJA_EXPR_RE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
-TABLE_ALIAS_RE = re.compile(r"##JVM_\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)
+TABLE_ALIAS_RE = re.compile(
+    r"\{\{\s*prefix\s*\}\}_\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)", re.I
+)
 IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
 
@@ -765,6 +767,18 @@ def validate_and_resolve(
     base_dir: Path,
 ) -> list[dict[str, Any]]:
     uploads = upload_index(template)
+    temp_prefix(template, result)
+    refuse_old_temp_marker(cohorts, result)
+    for where, scope in [("vars", template.get("vars"))] + [
+        (f"{cohort_label(c)}: vars", c.get("vars")) for c in cohorts
+    ]:
+        if isinstance(scope, dict) and "prefix" in scope:
+            result.error(
+                "reserved_variable",
+                "`prefix` is filled in by YAML Manager with this project's temp prefix (D50).",
+                f"{where}.prefix",
+                fix="Rename the variable. To choose the prefix, set top-level `temp_prefix:`.",
+            )
     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
     table_schemas.update(upload_schemas(template, uploads, result, base_dir))
     uploaded_pk_table = find_uploaded_pk_table(template, result)
@@ -782,11 +796,12 @@ def validate_and_resolve(
     for cohort in cohorts:
         name = cohort.get("name")
         pk_table = find_pk_table(cohorts, result, cohort.get("_group_key", "")) or uploaded_pk_table
-        auto_vars = {}
+        auto_vars = {"prefix": f"##{temp_prefix(template)}"}
         required = analysis["required_vars"].get(name, {})
         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
             auto_vars["PKTable"] = pk_table
         vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+        vars_for_cohort["prefix"] = auto_vars["prefix"]
         table_inputs = analysis["table_inputs"].get(name, {})
         for var, paths in required.items():
             if var in vars_for_cohort:
@@ -1246,9 +1261,9 @@ TYPE_FAMILIES: dict[str, set[str]] = {
 
 # `PatientDim AS p`, `INNER JOIN X AS y ON ...`, `BirthFact as bf`
 _ALIAS_PATTERN = re.compile(
-    # Braces are allowed so an unsubstituted `##JVM_{{PKTable}}` still binds
-    # its alias, rather than looking like an undeclared one.
-    r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
+    # Braces are allowed so an unsubstituted `{{prefix}}_{{PKTable}}` still
+    # binds its alias, rather than looking like an undeclared one.
+    r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@{][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
     re.IGNORECASE,
 )
 # Only a bare `alias.Column` source can be resolved to a dictionary entry.
@@ -1508,7 +1523,53 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
 COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
 
 
-TEMP_MARKER = "##JVM_"
+OLD_TEMP_MARKER = "##JVM_"
+TEMP_PREFIX_RE = re.compile(r"^[A-Za-z0-9_]{1,30}$")
+
+
+def derived_temp_prefix(project_folder: Any) -> str:
+    """The first (up to) three letters of each word: `IBD Ancestry` is `ibdanc`."""
+    words = re.findall(r"[A-Za-z0-9]+", str(project_folder or ""))
+    return "".join(word[:3] for word in words).lower()[:30] or "pull"
+
+
+def temp_prefix(template: dict[str, Any], result: CompileResult | None = None) -> str:
+    """This project's global-temp prefix (D50): `temp_prefix`, else derived."""
+    explicit = template.get("temp_prefix")
+    if explicit is None or str(explicit).strip() == "":
+        return derived_temp_prefix(template.get("project_folder"))
+    text = str(explicit).strip()
+    if not TEMP_PREFIX_RE.match(text):
+        if result is not None:
+            result.error(
+                "bad_temp_prefix",
+                f"`temp_prefix: {text}` is not usable in a table name.",
+                "temp_prefix",
+                fix="Use letters, digits and underscores only, at most 30 of them, e.g. "
+                "`temp_prefix: ibdanc`; or remove it to derive one from `project_folder`.",
+            )
+        return derived_temp_prefix(template.get("project_folder"))
+    return text
+
+
+def temp_marker(template: dict[str, Any]) -> str:
+    """How this project's rendered temps begin: `##ibdanc_`."""
+    return f"##{temp_prefix(template)}_"
+
+
+def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """`##JVM_` was every project's prefix; writing it now would bypass D50."""
+    for cohort in cohorts:
+        for path, text in iter_strings({k: v for k, v in cohort.items() if not k.startswith("_")}):
+            if OLD_TEMP_MARKER.lower() in text.lower():
+                example = re.sub(r"##JVM_", "{{prefix}}_", text, flags=re.I)
+                result.error(
+                    "old_temp_marker",
+                    f"`{OLD_TEMP_MARKER}` names another pull's temps now that each project "
+                    "has its own prefix (D50).",
+                    f"{cohort_label(cohort)}: {path}",
+                    fix=f"Write `{{{{prefix}}}}_` in its place: `{example.strip()}`.",
+                )
 
 
 def temp_base(name: Any) -> str:
@@ -1543,12 +1604,15 @@ def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], resul
     cosmos = str(template.get("cosmos_db", "COSMOS"))
     value = cosmos.lower()
     generated = {str(c.get("dest_table") or c.get("name")) for c in cohorts}
+    marker = temp_marker(template)
     if value in ("cosmos",):
         return cohorts
     if value in ("cosmos_sneakpeek", "sneakpeek", "sp"):
-        return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
+        return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated, marker) for c in cohorts]
     if value in ("dual", "both"):
-        return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
+        return cohorts + [
+            with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated, marker) for c in cohorts
+        ]
     result.error(
         "bad_cosmos_db",
         f"Unsupported cosmos_db value `{cosmos}`.",
@@ -1570,13 +1634,17 @@ def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
 
 
 def with_cosmos_suffix(
-    cohort: dict[str, Any], suffix: str, cosmos_db: str, generated: set[str] | None = None
+    cohort: dict[str, Any],
+    suffix: str,
+    cosmos_db: str,
+    generated: set[str] | None = None,
+    marker: str = OLD_TEMP_MARKER,
 ) -> dict[str, Any]:
     """The cohort's copy for another Cosmos database, pointing at its own temps.
 
     Renaming the cohort is not enough: its SQL names the temps of the cohorts
-    it reads (`##JVM_Patients`), and the copy must read their copies
-    (`##JVM_Patients_sp`), or it pulls for the other database's population.
+    it reads (`##ibdanc_Patients`), and the copy must read their copies
+    (`##ibdanc_Patients_sp`), or it pulls for the other database's population.
     Uploads are shared by both copies, so they keep their names.
     """
     new = copy.deepcopy(cohort)
@@ -1585,7 +1653,7 @@ def with_cosmos_suffix(
     new["cosmos_db"] = cosmos_db
     if generated:
         pattern = re.compile(
-            re.escape(TEMP_MARKER)
+            re.escape(marker)
             + "("
             + "|".join(re.escape(name) for name in sorted(generated, key=len, reverse=True))
             + ")(?![A-Za-z0-9_])"
@@ -1593,7 +1661,7 @@ def with_cosmos_suffix(
 
         def rename(value: Any) -> Any:
             if isinstance(value, str):
-                return pattern.sub(lambda m: f"{TEMP_MARKER}{m.group(1)}{suffix}", value)
+                return pattern.sub(lambda m: f"{marker}{m.group(1)}{suffix}", value)
             if isinstance(value, list):
                 return [rename(item) for item in value]
             if isinstance(value, dict):
@@ -1704,6 +1772,7 @@ def compile_yaml(
         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
     finished = copy.deepcopy(template)
+    finished["temp_prefix"] = temp_prefix(template)
     finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
     finished.pop("example_cohorts", None)
     result.finished_yaml = finished
@@ -1757,6 +1826,7 @@ def project_metadata(template: dict[str, Any]) -> dict[str, Any]:
         "name": template.get("project_folder") or template.get("project_db") or "YAML Manager Project",
         "project_folder": template.get("project_folder"),
         "project_db": template.get("project_db"),
+        "temp_prefix": temp_prefix(template),
         "created_by": "yamlmanager",
     }
 
@@ -1854,6 +1924,9 @@ def session_runs(
     Batching dimensions multiply: state[LA, MS] x sex[Female, Male] is four
     runs, each a disjoint slice of the cohort, not three runs describing three
     different axes of the whole cohort.
+
+    Labels are numbered, `b1of4-LA-Female` (D53): the number makes each one
+    unique, so two combinations can never share a label and lose a batch.
     """
     base = f"sessions/{session_id}/runs"
     dims = [
@@ -1875,29 +1948,18 @@ def session_runs(
     if not static:
         return [
             SplitRun(
-                run_id=f"{session_id}__run",
-                yaml=f"{base}/run.yaml",
-                batch={"name": "run", "dimensions": [], "runtime": runtime},
+                run_id=f"{session_id}__b1of1",
+                yaml=f"{base}/b1of1.yaml",
+                batch={"name": "b1of1", "dimensions": [], "runtime": runtime},
             )
         ]
 
     runs: list[SplitRun] = []
-    seen: set[str] = set()
-    for combo in product(*[buckets for _, buckets in static]):
+    combos = list(product(*[buckets for _, buckets in static]))
+    for number, combo in enumerate(combos, start=1):
         pairs = list(zip(static, combo))
-        name = safe_id("-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs), "batch")
-        if name in seen:
-            if result is not None:
-                result.error(
-                    "duplicate_batch_name",
-                    f"Batch combination `{name}` is not unique in session `{session_id}`. "
-                    "Two batching dimensions produce the same label.",
-                    "batching",
-                    fix="Change one of the `values` so the labels differ; labels keep only "
-                    "letters, digits, `-` and `_`, so `A B` and `A-B` collide.",
-                )
-            continue
-        seen.add(name)
+        values = "-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs)
+        name = safe_id(f"b{number}of{len(combos)}-{values}", "batch")
         runs.append(
             SplitRun(
                 run_id=f"{session_id}__{name}",
@@ -2412,7 +2474,7 @@ recipes:
       from:
         - DiagnosisEventFact AS def
       join:
-        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
       where:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 """
@@ -2637,8 +2699,8 @@ multipliers:
         res = self.compile_template(template)
         self.assertCompiles(res)
         cohorts = self.cohorts_by_name(res)
-        self.assertIn("##JVM_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
-        self.assertIn("##JVM_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
+        self.assertIn("##tesrun_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
+        self.assertIn("##tesrun_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
 
     def test_split_after_build_metadata_survives_on_the_pk(self):
         res = self.compile_template(extra="""
@@ -2697,8 +2759,21 @@ batching:
         self.assertCompiles(res)
         self.assertEqual(
             [run["batch"]["name"] for run in runs],
-            ["LA-Female", "LA-Male", "MS-Female", "MS-Male"],
+            ["b1of4-LA-Female", "b2of4-LA-Male", "b3of4-MS-Female", "b4of4-MS-Male"],
         )
+
+    def test_labels_that_would_collide_are_numbered_apart(self):
+        # `A B` and `A-B` both clean to `A-B`; the number keeps them apart
+        # instead of failing (D53).
+        res, runs = self.runs_for("""
+batching:
+  - name: code
+    kind: column_values
+    column: Sex
+    values: ["A B", "A-B"]
+""")
+        self.assertCompiles(res)
+        self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-A-B", "b2of2-A-B"])
 
     def test_each_run_records_its_resolved_dimensions(self):
         _, runs = self.runs_for("""
@@ -2727,7 +2802,7 @@ batching:
       values: [Female]
       include_other: true
 """)
-        self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "sex-other"])
+        self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-sex-other"])
         other = runs[1]["batch"]["dimensions"][0]
         self.assertTrue(other["is_other"])
         self.assertNotIn("value", other)
@@ -2754,7 +2829,7 @@ batching:
   - state
   - chunk: 2000
 """)
-        self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "Male"])
+        self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-Male"])
         self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
 
     def test_no_batching_gives_one_unbatched_run(self):
@@ -2863,7 +2938,7 @@ batching:
                 sid = session["session_id"]
                 self.assertEqual(
                     [r["run_id"] for r in session["runs"]],
-                    [f"{sid}__Female", f"{sid}__Male"],
+                    [f"{sid}__b1of2-Female", f"{sid}__b2of2-Male"],
                 )
                 first = session["runs"][0]["batch"]
                 self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
@@ -2936,7 +3011,7 @@ class UploadedPkTests(MakeYamlTest):
         self.assertEqual(session["session_id"], "ClientPK")
         self.assertEqual(pk_source["kind"], "uploaded_cohort")
         self.assertEqual(pk_source["table"], "ClientPK")
-        self.assertIn("##JVM_ClientPK AS pk", json.dumps(res.finished_yaml))
+        self.assertIn("##uplpk_ClientPK AS pk", json.dumps(res.finished_yaml))
 
     def test_two_uploaded_pk_cohorts_is_an_error(self):
         extra = """  - name: ClientPK2
@@ -3035,12 +3110,12 @@ class DataDictionaryTests(MakeYamlTest):
 
     def test_generated_temps_are_skipped(self):
         cohort = self.cohort("pk.PatientDurableKey")
-        cohort["filter"]["join"] = ["INNER JOIN ##JVM_PKTable AS pk ON 1 = 1"]
+        cohort["filter"]["join"] = ["INNER JOIN ##tesrun_PKTable AS pk ON 1 = 1"]
         self.assertEqual(self.codes(self.check(cohort)), [])
 
     def test_unresolved_placeholder_tables_are_skipped(self):
         cohort = self.cohort("pk.Anything")
-        cohort["filter"]["join"] = ["INNER JOIN ##JVM_{{PKTable}} AS pk ON 1 = 1"]
+        cohort["filter"]["join"] = ["INNER JOIN {{prefix}}_{{PKTable}} AS pk ON 1 = 1"]
         self.assertEqual(self.codes(self.check(cohort)), [])
 
     def test_computed_source_warns_rather_than_failing(self):
@@ -3149,7 +3224,7 @@ cohorts:
     filter:
       from: EncounterFact AS e
       join:
-        - "INNER JOIN ##JVM_{{{{CodesTable}}}} AS c ON c.Code = e.EncounterKey"
+        - "INNER JOIN {{{{prefix}}}}_{{{{CodesTable}}}} AS c ON c.Code = e.EncounterKey"
 """
 
     def compile(self, extra_vars="", extra_uploads="", cohort_vars=""):
@@ -3286,8 +3361,8 @@ multipliers:
         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
             for cohort in cohorts:
                 with self.subTest(session=pk_table, cohort=cohort["dest_table"]):
-                    temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
-                    self.assertEqual(temps, {f"##JVM_{pk_table}"})
+                    temps = set(re.findall(r"##tesrun_[A-Za-z0-9_]+", json.dumps(cohort)))
+                    self.assertEqual(temps, {f"##tesrun_{pk_table}"})
 
     def test_every_cohort_is_built_exactly_once(self):
         manifest, out = self.split()
@@ -3300,8 +3375,8 @@ multipliers:
         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
             self.assertTrue(pk_table.endswith("_sp"), pk_table)
             for cohort in cohorts:
-                temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
-                self.assertEqual(temps, {f"##JVM_{pk_table}"})
+                temps = set(re.findall(r"##tesrun_[A-Za-z0-9_]+", json.dumps(cohort)))
+                self.assertEqual(temps, {f"##tesrun_{pk_table}"})
 
     def test_an_uploaded_pk_keeps_one_session_for_both_databases(self):
         text = uploaded_pk_template().replace("cosmos_db: COSMOS", "cosmos_db: Dual")
@@ -3316,6 +3391,55 @@ multipliers:
             {pk: sorted(c["dest_table"] for c in cs) for pk, cs in by_session.items()},
             {"ClientPK": ["OtherDx", "OtherDx_sp"]},
         )
+
+
+class TempPrefixTests(MakeYamlTest):
+    """D50: each project's temps carry its own prefix."""
+
+    def test_derived_from_the_first_letters_of_each_word(self):
+        self.assertEqual(derived_temp_prefix("IBD Ancestry"), "ibdanc")
+        self.assertEqual(derived_temp_prefix("Test Run"), "tesrun")
+        self.assertEqual(derived_temp_prefix(""), "pull")
+
+    def test_recipes_render_with_the_projects_prefix(self):
+        res = self.compile_template()
+        self.assertCompiles(res)
+        self.assertIn("##tesrun_Patients AS pk", json.dumps(self.cohorts_by_name(res)["OtherDx"]))
+
+    def test_temp_prefix_overrides_the_derived_one(self):
+        out = self.tmp / "split"
+        res = write_split_artifacts(*self.write_pair(extra="temp_prefix: ibd1"), output_dir=out)
+        self.assertCompiles(res)
+        manifest = load_yaml(out / "pullmanifest.yaml")
+        self.assertEqual(manifest["project"]["temp_prefix"], "ibd1")
+        run = load_yaml(out / manifest["sessions"][0]["runs"][0]["yaml"])
+        self.assertEqual(run["temp_prefix"], "ibd1")
+        self.assertIn("##ibd1_Patients AS pk", json.dumps(run["cohorts"]))
+
+    def test_an_unusable_temp_prefix_is_refused(self):
+        res = self.compile_template(extra="temp_prefix: ibd anc")
+        self.assertHasError(res, "bad_temp_prefix")
+        self.assertIn("temp_prefix: ibdanc", res.errors[0].fix)
+
+    def test_the_old_marker_is_refused_with_the_new_form(self):
+        res = self.compile_template(extra="""
+  - name: Custom
+    type: fact
+    columns:
+      - {source: pk.PatientDurableKey, name: PatientDurableKey, type: BIGINT}
+    filter:
+      from: "##JVM_Patients AS pk"
+""")
+        found = [m for m in res.errors if m.code == "old_temp_marker"]
+        self.assertTrue(found, summarize_result(res))
+        self.assertIn("{{prefix}}_Patients AS pk", found[0].fix)
+        self.assertTrue(found[0].context.startswith("cohorts[2] (Custom)"), found[0].context)
+
+    def test_prefix_is_reserved(self):
+        res = self.compile_template(
+            tiny_template().replace("  max_date_key: 20240101", "  max_date_key: 20240101\n  prefix: x")
+        )
+        self.assertHasError(res, "reserved_variable")
 
 
 class TransferTests(MakeYamlTest):
@@ -3584,6 +3708,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "datadictionary": DataDictionaryTests,
     "table_binding": TableBindingTests,
     "sessions": SessionMembershipTests,
+    "temp_prefix": TempPrefixTests,
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
     "fixes": FixTests,

@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "91234eeeeef0876c91659cc1a6da783fcd9309edafd8c479b82b02f06511e61f",
+  "content_id": "778ea1c40673c06f7c359a31b02bc9d531dc1cd7fb3a20e5ff90307e1ab2c039",
   "file_count": 37,
   "files": [
     {
@@ -429,8 +429,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/local_sql.py",
       "policy": "replace",
-      "sha256": "106ed8e8a9b5e242e0c0b112f3ae5303941e8c2166866764059a72eedbaf63e1",
-      "size": 10315
+      "sha256": "edb9b23bd936f0c2f965b23f1572f7179e84a3a4b2546a42e6b25e078e03d2ee",
+      "size": 10552
     },
     {
       "path": "pullmanager/manifest.py",
@@ -447,14 +447,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/naming.py",
       "policy": "replace",
-      "sha256": "873c90540e4fd526d86e65e9c918958c39be18384cadbce239de4fc2b23c6d45",
-      "size": 4175
+      "sha256": "a9925eb45037c3c41e3465b31a9d32091369d79481e6601c34ac627717cccff6",
+      "size": 4567
     },
     {
       "path": "pullmanager/normalize.py",
       "policy": "replace",
-      "sha256": "dea303653e1cdc1504e1238ff1fc4ba21cb0e74cc2899f6c160512252a6471a7",
-      "size": 8239
+      "sha256": "47fbbcd86942a050e6d04f3ae1b17c5b8aa26ee4118cbc27d56f09edaa0c3b3b",
+      "size": 8431
     },
     {
       "path": "pullmanager/refresh.py",
@@ -465,14 +465,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "2bc6ce2982bcf2c8e76bf0e6a7a2458a340df252ad006aae19dbd6cba2a04a97",
-      "size": 8743
+      "sha256": "fbdce7b3187a06d30ad4cff683c15d6c77abffaa6e0e7b1155d1be91f11f7877",
+      "size": 8810
     },
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "18912d3a46a212e1cba9890c9d41ccf1c5ff760c1c34ddba0c44d55561281db6",
-      "size": 20484
+      "sha256": "59343dc1a5c6b5440a1e4e1524ddf2e0a050932ad9a1d6727229ac4dd02ea1f9",
+      "size": 23690
     },
     {
       "path": "pullmanager/sql.py",
@@ -537,8 +537,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_naming.py",
       "policy": "replace",
-      "sha256": "ec0c27d0b9eb3b614cb89acdf84d93b6bf8756d1b33d3fada9f65468251ea03e",
-      "size": 6276
+      "sha256": "129db594b8734406bd81f3b4a64b294abfdd968a1c6049aff813455b7a89af87",
+      "size": 6875
     },
     {
       "path": "pullmanager/tests/test_normalize.py",
@@ -549,14 +549,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "fb25f07bdd9ce47cc2eabaffc4be695921d2f45d8ed0ae608311f76eec36e90b",
-      "size": 11294
+      "sha256": "c511efa559627ccb99236c09be15db8ded9170b17476ee822932a40bcb3078ee",
+      "size": 11300
     },
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "ba7ac3910a6d7d1d67f5a0b99d0df6e8c5ef5aaabbe4e23433bd74639ea4d1a6",
-      "size": 22522
+      "sha256": "de0f08cab2533e83e59531320497e859b8483eabe979b6925a15745772ca41c5",
+      "size": 24810
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -573,8 +573,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/uploads.py",
       "policy": "replace",
-      "sha256": "9698807e77ee5ecf179a2478f9fb4ae53e6b5d702caf8126a27cbc0b6fadb4e9",
-      "size": 7077
+      "sha256": "f3bfeb3655ab66795d593c04ca64d383cd8362536e4db51a5937508ee8b02dbd",
+      "size": 7203
     },
     {
       "path": "pullmanager/yaml_io.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "88a2448e9ade4c3a9ae6e6434a55d290bfdd0cae431c03b8e845bbdd08471d96",
-      "size": 147768
+      "sha256": "0a8972c00e28bc49f9159f0bb79cd9bfbfa9adb1df328dc0f160712da8746904",
+      "size": 153299
     }
   ]
 }'''
@@ -5160,7 +5160,7 @@ if __name__ == "__main__":
 #     return path
 #
 # === END FILE: pullmanager/launcher.py ===
-# === BEGIN FILE: pullmanager/local_sql.py SHA256: 106ed8e8a9b5e242e0c0b112f3ae5303941e8c2166866764059a72eedbaf63e1 SIZE: 10315 ===
+# === BEGIN FILE: pullmanager/local_sql.py SHA256: edb9b23bd936f0c2f965b23f1572f7179e84a3a4b2546a42e6b25e078e03d2ee SIZE: 10552 ===
 # """Projects-side SQL: destination tables and the transfer from Cosmos.
 #
 # Write mode is decided: the destination is dropped and created once per session
@@ -5178,7 +5178,7 @@ if __name__ == "__main__":
 #
 # from typing import Any
 #
-# from .naming import destination, global_temp, local_staging
+# from .naming import DEFAULT_TEMP_PREFIX, destination, global_temp, local_staging, temp_prefix
 # from .normalize import normalize_bool
 # from .sql import (
 #     SqlBlock,
@@ -5205,10 +5205,10 @@ if __name__ == "__main__":
 #     return [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
 #
 #
-# def _remote_query(dest: str, columns: list[dict[str, Any]]) -> str:
+# def _remote_query(dest: str, columns: list[dict[str, Any]], prefix: str) -> str:
 #     """The inner query sent to the linked server, quoted for embedding."""
 #     cols = ", ".join(quote_name(n) for n in column_names(columns))
-#     inner = f"SELECT {cols} FROM {global_temp(dest)}"
+#     inner = f"SELECT {cols} FROM {global_temp(dest, prefix)}"
 #     return inner.replace("'", "''")
 #
 #
@@ -5265,7 +5265,11 @@ if __name__ == "__main__":
 #
 #
 # def render_transfer(
-#     cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+#     cohort: dict[str, Any],
+#     project_db: str,
+#     linked_server: str,
+#     label: str | None = None,
+#     prefix: str = DEFAULT_TEMP_PREFIX,
 # ) -> str:
 #     """Pull one cohort from its global temp into the destination table.
 #
@@ -5289,13 +5293,13 @@ if __name__ == "__main__":
 #         select_cols = f"{cols}, {quote_literal(label)}"
 #
 #     return (
-#         f"-- transfer {global_temp(dest)} -> {table}\n"
+#         f"-- transfer {global_temp(dest, prefix)} -> {table}\n"
 #         f"DROP TABLE IF EXISTS {staging};\n\n"
 #         f"SELECT {cols}\n"
 #         f"INTO {staging}\n"
 #         f"FROM OPENQUERY(\n"
 #         f"    [{linked_server}],\n"
-#         f"    '{_remote_query(dest, columns)}'\n"
+#         f"    '{_remote_query(dest, columns, prefix)}'\n"
 #         f");\n\n"
 #         f"BEGIN TRANSACTION;\n"
 #         f"INSERT INTO {table} ({insert_cols})\n"
@@ -5305,7 +5309,11 @@ if __name__ == "__main__":
 #
 #
 # def render_row_counts(
-#     cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+#     cohort: dict[str, Any],
+#     project_db: str,
+#     linked_server: str,
+#     label: str | None = None,
+#     prefix: str = DEFAULT_TEMP_PREFIX,
 # ) -> str:
 #     """Both sides of the transfer, so a mismatch is visible.
 #
@@ -5317,7 +5325,7 @@ if __name__ == "__main__":
 #     where = (
 #         f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
 #     )
-#     remote = f"SELECT 1 AS dummy FROM {global_temp(dest)}".replace("'", "''")
+#     remote = f"SELECT 1 AS dummy FROM {global_temp(dest, prefix)}".replace("'", "''")
 #     return (
 #         "SELECT\n"
 #         f"    {quote_literal(dest)} AS [DestTable],\n"
@@ -5402,6 +5410,7 @@ if __name__ == "__main__":
 #     if not project_db:
 #         raise LocalRenderError("Phase document has no `project_db`.")
 #     label = batch_label(doc)
+#     prefix = temp_prefix(doc)
 #     blocks: list[SqlBlock] = []
 #     for cohort in doc.get("cohorts") or []:
 #         if not isinstance(cohort, dict) or not cohort.get("dest_table"):
@@ -5421,8 +5430,8 @@ if __name__ == "__main__":
 #                 )
 #             )
 #         parts = [
-#             render_transfer(cohort, str(project_db), linked_server, label),
-#             render_row_counts(cohort, str(project_db), linked_server, label),
+#             render_transfer(cohort, str(project_db), linked_server, label, prefix),
+#             render_row_counts(cohort, str(project_db), linked_server, label, prefix),
 #         ]
 #         probe = render_length_probe(cohort)
 #         if probe:
@@ -5436,7 +5445,7 @@ if __name__ == "__main__":
 #                 meta={
 #                     "destination": destination(str(project_db), dest),
 #                     "staging": local_staging(dest),
-#                     "global_temp": global_temp(dest),
+#                     "global_temp": global_temp(dest, prefix),
 #                     "linked_server": linked_server,
 #                 },
 #             )
@@ -5871,7 +5880,7 @@ if __name__ == "__main__":
 #     return {"seconds": int(round(seconds)), "display": format_duration(seconds)}
 #
 # === END FILE: pullmanager/models.py ===
-# === BEGIN FILE: pullmanager/naming.py SHA256: 873c90540e4fd526d86e65e9c918958c39be18384cadbce239de4fc2b23c6d45 SIZE: 4175 ===
+# === BEGIN FILE: pullmanager/naming.py SHA256: a9925eb45037c3c41e3465b31a9d32091369d79481e6601c34ac627717cccff6 SIZE: 4567 ===
 # """Table naming rules.
 #
 # These come from the old generator and are invariants, not preferences: the
@@ -5884,7 +5893,10 @@ if __name__ == "__main__":
 #
 # import re
 #
-# GLOBAL_TEMP_PREFIX = "##JVM_"
+# # Each project names its temps with its own prefix (D50), which YAML Manager
+# # writes into every phase document as `temp_prefix`. A document written before
+# # D50 has none and keeps the old one.
+# DEFAULT_TEMP_PREFIX = "JVM"
 # LOCAL_STAGING_PREFIX = "#Local_"
 # DEFAULT_SCHEMA = "dbo"
 #
@@ -5920,13 +5932,18 @@ if __name__ == "__main__":
 #     return name
 #
 #
-# def global_temp(dest_table: str | None) -> str:
-#     """Cosmos session-scoped output: PKTable -> ##JVM_PKTable.
+# def temp_prefix(doc: dict | None) -> str:
+#     """The prefix a phase document's temps carry."""
+#     return str((doc or {}).get("temp_prefix") or DEFAULT_TEMP_PREFIX)
+#
+#
+# def global_temp(dest_table: str | None, prefix: str = DEFAULT_TEMP_PREFIX) -> str:
+#     """Cosmos session-scoped output: PKTable -> ##ibdanc_PKTable.
 #
 #     A dest_table that already starts with JVM_ is not prefixed twice, which is
 #     the `##JVM_JVM_Foo` bug the old generator guarded against.
 #     """
-#     return GLOBAL_TEMP_PREFIX + base_name(dest_table)
+#     return f"##{prefix}_{base_name(dest_table)}"
 #
 #
 # def local_staging(dest_table: str | None) -> str:
@@ -5990,7 +6007,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/naming.py ===
-# === BEGIN FILE: pullmanager/normalize.py SHA256: dea303653e1cdc1504e1238ff1fc4ba21cb0e74cc2899f6c160512252a6471a7 SIZE: 8239 ===
+# === BEGIN FILE: pullmanager/normalize.py SHA256: 47fbbcd86942a050e6d04f3ae1b17c5b8aa26ee4118cbc27d56f09edaa0c3b3b SIZE: 8431 ===
 # """Compatibility rules for hand-authored cohort YAML.
 #
 # Each function returns its result alongside any notes worth surfacing, because
@@ -6003,7 +6020,7 @@ if __name__ == "__main__":
 #
 # from typing import Any
 #
-# from .naming import global_temp
+# from .naming import DEFAULT_TEMP_PREFIX, global_temp
 #
 # TRUTHY = {"true", "yes", "y", "1", "on", "t"}
 # FALSY = {"false", "no", "n", "0", "off", "f", ""}
@@ -6162,7 +6179,7 @@ if __name__ == "__main__":
 #     return [c for c in cohorts if isinstance(c, dict) and is_pk(c)]
 #
 #
-# def joined_generated_tables(cohort: dict[str, Any]) -> set[str]:
+# def joined_generated_tables(cohort: dict[str, Any], prefix: str = DEFAULT_TEMP_PREFIX) -> set[str]:
 #     """Global temp names this cohort joins, found in its filter text."""
 #     filter_block = cohort.get("filter") or {}
 #     text_parts: list[str] = []
@@ -6173,12 +6190,12 @@ if __name__ == "__main__":
 #         elif isinstance(value, list):
 #             text_parts.extend(str(item) for item in value)
 #     haystack = " ".join(text_parts).upper()
-#     return {token for token in _global_temp_tokens(haystack)}
+#     return {token for token in _global_temp_tokens(haystack, prefix)}
 #
 #
-# def _global_temp_tokens(haystack: str) -> set[str]:
+# def _global_temp_tokens(haystack: str, prefix: str = DEFAULT_TEMP_PREFIX) -> set[str]:
 #     tokens: set[str] = set()
-#     marker = "##JVM_"
+#     marker = f"##{prefix}_".upper()
 #     start = haystack.find(marker)
 #     while start != -1:
 #         end = start + len(marker)
@@ -6189,7 +6206,9 @@ if __name__ == "__main__":
 #     return tokens
 #
 #
-# def root_pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+# def root_pk_cohorts(
+#     cohorts: list[dict[str, Any]], prefix: str = DEFAULT_TEMP_PREFIX
+# ) -> list[dict[str, Any]]:
 #     """PK cohorts that do not depend on another PK cohort's global temp.
 #
 #     A chained PK (patients -> diagnosis events for those patients) has exactly
@@ -6197,11 +6216,13 @@ if __name__ == "__main__":
 #     compounds the restriction into an unrepresentative sample.
 #     """
 #     pks = pk_cohorts(cohorts)
-#     sibling_temps = {global_temp(c.get("dest_table")).upper() for c in pks if c.get("dest_table")}
+#     sibling_temps = {
+#         global_temp(c.get("dest_table"), prefix).upper() for c in pks if c.get("dest_table")
+#     }
 #     roots = []
 #     for cohort in pks:
-#         own = global_temp(cohort.get("dest_table")).upper() if cohort.get("dest_table") else None
-#         depends_on = joined_generated_tables(cohort) & sibling_temps
+#         own = global_temp(cohort.get("dest_table"), prefix).upper() if cohort.get("dest_table") else None
+#         depends_on = joined_generated_tables(cohort, prefix) & sibling_temps
 #         depends_on.discard(own)
 #         if not depends_on:
 #             roots.append(cohort)
@@ -6317,7 +6338,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: 2bc6ce2982bcf2c8e76bf0e6a7a2458a340df252ad006aae19dbd6cba2a04a97 SIZE: 8743 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: fbdce7b3187a06d30ad4cff683c15d6c77abffaa6e0e7b1155d1be91f11f7877 SIZE: 8810 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6330,7 +6351,7 @@ if __name__ == "__main__":
 #
 # from typing import Any
 #
-# from .naming import global_temp
+# from .naming import global_temp, temp_prefix
 # from .normalize import (
 #     cosmos_database,
 #     normalize_bool,
@@ -6489,7 +6510,7 @@ if __name__ == "__main__":
 #         raise RenderError(f"Cohort {dest!r} declares duplicate column(s): {', '.join(duplicates)}")
 #
 #     notes: list[str] = []
-#     temp = global_temp(dest)
+#     temp = global_temp(dest, temp_prefix(doc))
 #     top = top_clause(cohort, doc, roots or [])
 #     database = cohort_database(cohort, doc)
 #
@@ -6538,7 +6559,7 @@ if __name__ == "__main__":
 # def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
 #     """Render every cohort in one phase document."""
 #     cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
-#     roots = root_pk_cohorts(cohorts)
+#     roots = root_pk_cohorts(cohorts, temp_prefix(doc))
 #     blocks: list[SqlBlock] = []
 #     notes: list[str] = []
 #     for cohort in cohorts:
@@ -6553,7 +6574,7 @@ if __name__ == "__main__":
 #                 side="server",
 #                 sql=sql,
 #                 dest_table=str(cohort["dest_table"]),
-#                 meta={"global_temp": global_temp(cohort["dest_table"])},
+#                 meta={"global_temp": global_temp(cohort["dest_table"], temp_prefix(doc))},
 #             )
 #         )
 #     return blocks, notes
@@ -6571,17 +6592,18 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 18912d3a46a212e1cba9890c9d41ccf1c5ff760c1c34ddba0c44d55561281db6 SIZE: 20484 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 59343dc1a5c6b5440a1e4e1524ddf2e0a050932ad9a1d6727229ac4dd02ea1f9 SIZE: 23690 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
-# `##JVM_*` table dies with it. That single fact shapes everything here: the
+# global temp (`##<prefix>_*`) dies with it. That single fact shapes everything here: the
 # epoch, what a resume must replay, and why uploads travel through the client.
 # """
 #
 # from __future__ import annotations
 #
 # import math
+# import re
 # from dataclasses import dataclass, field
 # from pathlib import Path
 # from typing import Any, Callable
@@ -6600,10 +6622,13 @@ if __name__ == "__main__":
 #     should_execute,
 # )
 # from .manifest import Manifest, Phase, Session
-# from .naming import destination, global_temp
+# from .naming import destination, global_temp, temp_prefix
 # from .normalize import cosmos_database
 # from .uploads import UploadError
 # from .yaml_io import load_yaml
+#
+# # A clash adds a number to the prefix (D50); past this many, something is wrong.
+# MAX_PREFIX_NUMBER = 99
 #
 # # The old generator warned past this; a pull this size is usually a mistake in
 # # the filter rather than an intention.
@@ -6653,6 +6678,10 @@ if __name__ == "__main__":
 #         self.cosmos: Any = None
 #         self.projects: Any = None
 #         self.report = SessionReport(session_id=session.session_id)
+#         # What the split named the temps with, and what this session uses: the
+#         # same unless another pull holds those names (D50).
+#         self.planned_prefix = ""
+#         self.prefix = ""
 #
 #     # ----------------------------------------------------------- lifecycle
 #
@@ -6675,6 +6704,7 @@ if __name__ == "__main__":
 #         # cached one would aim OPENQUERY at a server that is no longer ours.
 #         linked_server = capture_server_name(self.cosmos)
 #         self._check_refresh()
+#         self._choose_prefix()
 #         epoch = self.session.begin_epoch(linked_server=linked_server)
 #         self.report.epoch = epoch
 #         self.report.linked_server = linked_server
@@ -6709,6 +6739,63 @@ if __name__ == "__main__":
 #         for name, value in seen.items():
 #             self.manifest.cosmos_refresh.setdefault(name, value)
 #         self.session.runtime["cosmos_created"] = seen
+#
+#     def _session_temps(self, prefix: str) -> list[str]:
+#         dests = {str(c["dest_table"]) for c in session_cohorts(self.manifest, self.session)}
+#         for upload in uploads.enabled_uploads(self._phase_doc("upload_cohorts")):
+#             dests.add(str(upload.get("dest_table") or upload.get("name")))
+#         return sorted(global_temp(dest, prefix) for dest in dests if dest)
+#
+#     def _choose_prefix(self) -> None:
+#         """Use the planned prefix unless another pull holds one of its temps.
+#
+#         A global temp lives only while the connection that made it is open, so
+#         one that already exists belongs to a pull running now. Rather than
+#         drop it from under that pull, number this session's prefix until none
+#         of its names are taken (D50).
+#         """
+#         self.planned_prefix = self.prefix = temp_prefix(self._phase_doc("setup"))
+#         for number in range(1, MAX_PREFIX_NUMBER + 1):
+#             candidate = self.planned_prefix if number == 1 else f"{self.planned_prefix}{number}"
+#             names = self._session_temps(candidate)
+#             if not names:
+#                 break
+#             probe = ", ".join(f"OBJECT_ID(N'tempdb..{name}')" for name in names)
+#             try:
+#                 cursor = self.cosmos.cursor()
+#                 cursor.execute(f"SELECT {probe};")
+#                 row = cursor.fetchone()
+#             except Exception as exc:
+#                 self.report.warnings.append(
+#                     f"Could not check whether another pull holds these temps ({exc}); "
+#                     f"using ##{candidate}_ as planned."
+#                 )
+#                 break
+#             if not row or all(value is None for value in row):
+#                 self.prefix = candidate
+#                 break
+#         else:
+#             raise SessionError(
+#                 f"Temps named ##{self.planned_prefix}_ through ##{self.planned_prefix}"
+#                 f"{MAX_PREFIX_NUMBER}_ are all in use. Set a different temp_prefix."
+#             )
+#         if self.prefix != self.planned_prefix:
+#             self.report.warnings.append(
+#                 f"Another pull holds temps named ##{self.planned_prefix}_; this session "
+#                 f"uses ##{self.prefix}_ instead."
+#             )
+#         self.session.runtime["temp_prefix"] = self.prefix
+#
+#     def _rename(self, sql: str) -> str:
+#         """Point planned temp names at the ones this session actually uses."""
+#         if not self.prefix or self.prefix == self.planned_prefix:
+#             return sql
+#         return re.sub(
+#             f"##{re.escape(self.planned_prefix)}_", f"##{self.prefix}_", sql, flags=re.I
+#         )
+#
+#     def _execute(self, connection: Any, sql: str, *, label: str) -> Any:
+#         return execute_script(connection, self._rename(sql), label=label)
 #
 #     def close(self) -> None:
 #         for connection in (self.projects, self.cosmos):
@@ -6814,7 +6901,7 @@ if __name__ == "__main__":
 #             keep=self.resuming,
 #             batched=run_destinations(self.manifest, self.session),
 #         ):
-#             execute_script(self.projects, block.sql, label=block.block_id)
+#             self._execute(self.projects, block.sql, label=block.block_id)
 #         self.projects.commit()
 #         node_outputs = {"linked_server": self.report.linked_server, "tables": len(cohorts)}
 #         self.session.phases[0].outputs.update(node_outputs)
@@ -6830,9 +6917,11 @@ if __name__ == "__main__":
 #         for cohort in enabled:
 #             kind = uploads.upload_kind(cohort)
 #             if kind == "csv":
-#                 plan = uploads.plan_csv_upload(cohort, self.upload_root)
+#                 plan = uploads.plan_csv_upload(cohort, self.upload_root, self.prefix)
 #             else:
-#                 plan = uploads.plan_dbtable_upload(self.projects, cohort, self.project_db)
+#                 plan = uploads.plan_dbtable_upload(
+#                     self.projects, cohort, self.project_db, self.prefix
+#                 )
 #             self.report.warnings.extend(plan.notes)
 #             uploaded += uploads.materialize(
 #                 self.cosmos, plan, chunk_size=self.settings.upload_chunk
@@ -6850,7 +6939,7 @@ if __name__ == "__main__":
 #             resuming=self.resuming,
 #         )
 #         rows = self._run_pair(unit)
-#         node.outputs["global_temp"] = global_temp(self.session.pk_table or "")
+#         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
 #         node.outputs["local_table"] = destination(self.project_db, self.session.pk_table or "")
 #         self._verify_pk_uniqueness(doc)
 #         return rows
@@ -6988,7 +7077,7 @@ if __name__ == "__main__":
 #                 f"{node.label}: batch ({selection.description}) matched no PK rows."
 #             )
 #
-#         temp = global_temp(pk_table)
+#         temp = global_temp(pk_table, self.prefix)
 #         pk_doc_cohort = next(
 #             (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
 #              and c.get("dest_table") == pk_table),
@@ -6998,7 +7087,7 @@ if __name__ == "__main__":
 #             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
 #         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
 #         create_only = shell.split("INSERT INTO")[0]
-#         execute_script(self.cosmos, create_only, label=f"{node.label} batch shell")
+#         self._execute(self.cosmos, create_only, label=f"{node.label} batch shell")
 #         if rows:
 #             bulk_insert(
 #                 self.cosmos, temp, columns, rows, chunk_size=self.settings.upload_chunk
@@ -7017,14 +7106,14 @@ if __name__ == "__main__":
 #
 #     def _run_blocks(self, blocks: list[Any], connection: Any) -> None:
 #         for block in blocks:
-#             execute_script(connection, block.sql, label=block.block_id)
+#             self._execute(connection, block.sql, label=block.block_id)
 #         connection.commit()
 #
 #     def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
 #         """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
 #         server_rows: dict[str, int] = {}
 #         for block in unit.server_blocks:
-#             outcome = execute_script(self.cosmos, block.sql, label=block.block_id)
+#             outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
 #             for row in outcome.rows_of("DestTable", "RowCount"):
 #                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
 #         self.cosmos.commit()
@@ -7033,7 +7122,7 @@ if __name__ == "__main__":
 #         for block in unit.local_blocks:
 #             if block.meta.get("clears") and not clear:
 #                 continue
-#             outcome = execute_script(self.projects, block.sql, label=block.block_id)
+#             outcome = self._execute(self.projects, block.sql, label=block.block_id)
 #             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
 #                 if row["Side"] == "projects":
 #                     local_rows[str(row["DestTable"])] = int(row["RowCount"])
@@ -9009,7 +9098,7 @@ if __name__ == "__main__":
 #         self.assertEqual(set(SETTLED_STATUSES), {DONE, SKIPPED})
 #
 # === END FILE: pullmanager/tests/test_models.py ===
-# === BEGIN FILE: pullmanager/tests/test_naming.py SHA256: ec0c27d0b9eb3b614cb89acdf84d93b6bf8756d1b33d3fada9f65468251ea03e SIZE: 6276 ===
+# === BEGIN FILE: pullmanager/tests/test_naming.py SHA256: 129db594b8734406bd81f3b4a64b294abfdd968a1c6049aff813455b7a89af87 SIZE: 6875 ===
 # """Naming invariants: server, staging and destination must agree."""
 #
 # from __future__ import annotations
@@ -9182,6 +9271,22 @@ if __name__ == "__main__":
 #     def test_is_idempotent(self):
 #         once = qualify_join_clause("INNER JOIN Foo AS f ON 1 = 1")
 #         self.assertEqual(qualify_join_clause(once), once)
+#
+#
+# class TempPrefixTests(unittest.TestCase):
+#     """D50: temps carry the project's prefix; old documents keep JVM."""
+#
+#     def test_the_prefix_names_the_temp(self):
+#         from ..naming import global_temp
+#
+#         self.assertEqual(global_temp("Patients", "ibdanc"), "##ibdanc_Patients")
+#
+#     def test_a_document_without_one_keeps_the_old_prefix(self):
+#         from ..naming import global_temp, temp_prefix
+#
+#         self.assertEqual(temp_prefix({}), "JVM")
+#         self.assertEqual(temp_prefix({"temp_prefix": "tesrun"}), "tesrun")
+#         self.assertEqual(global_temp("Patients"), "##JVM_Patients")
 #
 # === END FILE: pullmanager/tests/test_naming.py ===
 # === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: ef96d8aa43b696e7049d26ae521c39ca82da55331bb9d54c58aa4d6c90d063e0 SIZE: 7268 ===
@@ -9382,7 +9487,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: fb25f07bdd9ce47cc2eabaffc4be695921d2f45d8ed0ae608311f76eec36e90b SIZE: 11294 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: c511efa559627ccb99236c09be15db8ded9170b17476ee822932a40bcb3078ee SIZE: 11300 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9602,7 +9707,7 @@ if __name__ == "__main__":
 #     def test_pk_phase_renders(self):
 #         blocks, _ = server_sql.render_phase(self.phase("pk.yaml"), "Patients/pk")
 #         self.assertEqual([b.dest_table for b in blocks], ["Patients"])
-#         self.assertIn("##JVM_Patients", blocks[0].sql)
+#         self.assertIn("##manvalbas_Patients", blocks[0].sql)
 #
 #     def test_run_phase_renders_both_sides(self):
 #         doc = self.phase("runs/run.yaml")
@@ -9630,7 +9735,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ba7ac3910a6d7d1d67f5a0b99d0df6e8c5ef5aaabbe4e23433bd74639ea4d1a6 SIZE: 22522 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: de0f08cab2533e83e59531320497e859b8483eabe979b6925a15745772ca41c5 SIZE: 24810 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9728,7 +9833,7 @@ if __name__ == "__main__":
 #
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
 #                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-#                  pk_rows=3):
+#                  pk_rows=3, existing_temps=()):
 #         self.side = side
 #         self.rows = rows
 #         self.distinct = rows if distinct is None else distinct
@@ -9738,6 +9843,8 @@ if __name__ == "__main__":
 #         self.tables = tables if tables is not None else {}
 #         self.created = created
 #         self.pk_rows = pk_rows
+#         # Global temps another pull holds on this instance, for D50's check.
+#         self.existing_temps = {name.lower() for name in existing_temps}
 #         # pattern -> [matches left before failing, message]
 #         self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
 #         self.executed: list[str] = []
@@ -9790,6 +9897,11 @@ if __name__ == "__main__":
 #     def results_for(self, sql):
 #         if "@@SERVERNAME" in sql:
 #             return [(["CosmosServerName"], [(INSTANCE,)])]
+#         if "OBJECT_ID(N'tempdb.." in sql:
+#             names = re.findall(r"OBJECT_ID\(N'tempdb\.\.([^']+)'\)", sql)
+#             return [(names, [tuple(
+#                 1234 if name.lower() in self.existing_temps else None for name in names
+#             )])]
 #         if "sys.databases" in sql:
 #             return [(["name", "create_date"],
 #                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
@@ -10170,6 +10282,41 @@ if __name__ == "__main__":
 #         self.assertTrue(report.ok, report.failed)
 #         self.assertEqual(self.windows(), [(0, 2000)] * 2)
 #
+#
+# class TempClashTests(SessionTestCase):
+#     """D50: a temp another pull holds is never dropped; this session renumbers."""
+#
+#     def cosmos_sql(self):
+#         """Everything sent to Cosmos except the probe that asks which names are taken."""
+#         sent = self.cosmos.executed + [sql for sql, _ in self.cosmos.inserted]
+#         return "\n".join(sql for sql in sent if "OBJECT_ID(N'tempdb" not in sql)
+#
+#     def test_no_clash_uses_the_planned_prefix(self):
+#         with self.runner() as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas")
+#         self.assertIn("##manvalbas_Patients", self.cosmos_sql())
+#
+#     def test_a_held_temp_moves_this_session_to_a_numbered_prefix(self):
+#         held = {"##manvalbas_OtherHospitalizations"}
+#         with self.runner(cosmos={"existing_temps": held}) as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas2")
+#         self.assertTrue(any("##manvalbas2_" in w for w in report.warnings), report.warnings)
+#         # The outcome: nothing this session sent names the other pull's temps.
+#         self.assertNotIn("##manvalbas_", self.cosmos_sql())
+#         self.assertNotIn("##manvalbas_", "\n".join(self.projects.executed))
+#         self.assertIn("##manvalbas2_OtherHospitalizations", "\n".join(self.projects.executed))
+#         self.assertIn("##manvalbas2_HospitalICDCodes", self.cosmos_sql())
+#
+#     def test_numbering_continues_past_a_second_clash(self):
+#         held = {"##manvalbas_Patients", "##manvalbas2_Patients"}
+#         with self.runner(cosmos={"existing_temps": held}) as runner:
+#             runner.execute()
+#         self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas3")
+#
 # === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
 # """SQL construction, with the WHERE builder as the main risk."""
@@ -10475,7 +10622,7 @@ if __name__ == "__main__":
 #         self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["A", "C"])
 #
 # === END FILE: pullmanager/tests/test_uploads.py ===
-# === BEGIN FILE: pullmanager/uploads.py SHA256: 9698807e77ee5ecf179a2478f9fb4ae53e6b5d702caf8126a27cbc0b6fadb4e9 SIZE: 7077 ===
+# === BEGIN FILE: pullmanager/uploads.py SHA256: f3bfeb3655ab66795d593c04ca64d383cd8362536e4db51a5937508ee8b02dbd SIZE: 7203 ===
 # """Upload cohorts: getting local data up into a Cosmos global temp.
 #
 # There is no linked server from Cosmos back to Projects, so everything here
@@ -10491,7 +10638,7 @@ if __name__ == "__main__":
 # from typing import Any, Sequence
 #
 # from .db import DatabaseError, bulk_insert, execute_script
-# from .naming import global_temp
+# from .naming import DEFAULT_TEMP_PREFIX, global_temp
 # from .normalize import normalize_bool
 #
 # # Room above the widest value seen, so a later file with slightly longer
@@ -10586,7 +10733,9 @@ if __name__ == "__main__":
 #     return candidate if candidate.is_absolute() else (root / candidate)
 #
 #
-# def plan_csv_upload(cohort: dict[str, Any], root: Path) -> UploadPlan:
+# def plan_csv_upload(
+#     cohort: dict[str, Any], root: Path, prefix: str = DEFAULT_TEMP_PREFIX
+# ) -> UploadPlan:
 #     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
 #     if not dest:
 #         raise UploadError("Upload cohort has neither dest_table nor name.")
@@ -10598,7 +10747,7 @@ if __name__ == "__main__":
 #     plan = UploadPlan(
 #         name=str(cohort.get("name") or dest),
 #         dest_table=dest,
-#         global_temp=global_temp(dest),
+#         global_temp=global_temp(dest, prefix),
 #         columns=columns,
 #         rows=rows,
 #         widths=measure_widths(columns, rows),
@@ -10637,7 +10786,10 @@ if __name__ == "__main__":
 #
 #
 # def plan_dbtable_upload(
-#     projects_connection: Any, cohort: dict[str, Any], project_db: str
+#     projects_connection: Any,
+#     cohort: dict[str, Any],
+#     project_db: str,
+#     prefix: str = DEFAULT_TEMP_PREFIX,
 # ) -> UploadPlan:
 #     """Read an existing Projects table and carry it up through the client."""
 #     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
@@ -10649,7 +10801,7 @@ if __name__ == "__main__":
 #     return UploadPlan(
 #         name=str(cohort.get("name") or dest),
 #         dest_table=dest,
-#         global_temp=global_temp(dest),
+#         global_temp=global_temp(dest, prefix),
 #         columns=columns,
 #         rows=rows,
 #         widths=measure_widths(columns, rows),
@@ -10746,7 +10898,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 88a2448e9ade4c3a9ae6e6434a55d290bfdd0cae431c03b8e845bbdd08471d96 SIZE: 147768 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 0a8972c00e28bc49f9159f0bb79cd9bfbfa9adb1df328dc0f160712da8746904 SIZE: 153299 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11275,7 +11427,9 @@ if __name__ == "__main__":
 #
 #
 # JINJA_EXPR_RE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
-# TABLE_ALIAS_RE = re.compile(r"##JVM_\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)
+# TABLE_ALIAS_RE = re.compile(
+#     r"\{\{\s*prefix\s*\}\}_\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)", re.I
+# )
 # IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 #
 #
@@ -11514,6 +11668,18 @@ if __name__ == "__main__":
 #     base_dir: Path,
 # ) -> list[dict[str, Any]]:
 #     uploads = upload_index(template)
+#     temp_prefix(template, result)
+#     refuse_old_temp_marker(cohorts, result)
+#     for where, scope in [("vars", template.get("vars"))] + [
+#         (f"{cohort_label(c)}: vars", c.get("vars")) for c in cohorts
+#     ]:
+#         if isinstance(scope, dict) and "prefix" in scope:
+#             result.error(
+#                 "reserved_variable",
+#                 "`prefix` is filled in by YAML Manager with this project's temp prefix (D50).",
+#                 f"{where}.prefix",
+#                 fix="Rename the variable. To choose the prefix, set top-level `temp_prefix:`.",
+#             )
 #     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
 #     table_schemas.update(upload_schemas(template, uploads, result, base_dir))
 #     uploaded_pk_table = find_uploaded_pk_table(template, result)
@@ -11531,11 +11697,12 @@ if __name__ == "__main__":
 #     for cohort in cohorts:
 #         name = cohort.get("name")
 #         pk_table = find_pk_table(cohorts, result, cohort.get("_group_key", "")) or uploaded_pk_table
-#         auto_vars = {}
+#         auto_vars = {"prefix": f"##{temp_prefix(template)}"}
 #         required = analysis["required_vars"].get(name, {})
 #         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
 #             auto_vars["PKTable"] = pk_table
 #         vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+#         vars_for_cohort["prefix"] = auto_vars["prefix"]
 #         table_inputs = analysis["table_inputs"].get(name, {})
 #         for var, paths in required.items():
 #             if var in vars_for_cohort:
@@ -11995,9 +12162,9 @@ if __name__ == "__main__":
 #
 # # `PatientDim AS p`, `INNER JOIN X AS y ON ...`, `BirthFact as bf`
 # _ALIAS_PATTERN = re.compile(
-#     # Braces are allowed so an unsubstituted `##JVM_{{PKTable}}` still binds
-#     # its alias, rather than looking like an undeclared one.
-#     r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
+#     # Braces are allowed so an unsubstituted `{{prefix}}_{{PKTable}}` still
+#     # binds its alias, rather than looking like an undeclared one.
+#     r"(?:\bFROM\s+|\bJOIN\s+|^)\s*(?P<table>\[[^\]]+\]|[A-Za-z_#@{][\w@$#.{}]*)\s+AS\s+(?P<alias>\w+)",
 #     re.IGNORECASE,
 # )
 # # Only a bare `alias.Column` source can be resolved to a dictionary entry.
@@ -12257,7 +12424,53 @@ if __name__ == "__main__":
 # COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
 #
 #
-# TEMP_MARKER = "##JVM_"
+# OLD_TEMP_MARKER = "##JVM_"
+# TEMP_PREFIX_RE = re.compile(r"^[A-Za-z0-9_]{1,30}$")
+#
+#
+# def derived_temp_prefix(project_folder: Any) -> str:
+#     """The first (up to) three letters of each word: `IBD Ancestry` is `ibdanc`."""
+#     words = re.findall(r"[A-Za-z0-9]+", str(project_folder or ""))
+#     return "".join(word[:3] for word in words).lower()[:30] or "pull"
+#
+#
+# def temp_prefix(template: dict[str, Any], result: CompileResult | None = None) -> str:
+#     """This project's global-temp prefix (D50): `temp_prefix`, else derived."""
+#     explicit = template.get("temp_prefix")
+#     if explicit is None or str(explicit).strip() == "":
+#         return derived_temp_prefix(template.get("project_folder"))
+#     text = str(explicit).strip()
+#     if not TEMP_PREFIX_RE.match(text):
+#         if result is not None:
+#             result.error(
+#                 "bad_temp_prefix",
+#                 f"`temp_prefix: {text}` is not usable in a table name.",
+#                 "temp_prefix",
+#                 fix="Use letters, digits and underscores only, at most 30 of them, e.g. "
+#                 "`temp_prefix: ibdanc`; or remove it to derive one from `project_folder`.",
+#             )
+#         return derived_temp_prefix(template.get("project_folder"))
+#     return text
+#
+#
+# def temp_marker(template: dict[str, Any]) -> str:
+#     """How this project's rendered temps begin: `##ibdanc_`."""
+#     return f"##{temp_prefix(template)}_"
+#
+#
+# def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+#     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
+#     for cohort in cohorts:
+#         for path, text in iter_strings({k: v for k, v in cohort.items() if not k.startswith("_")}):
+#             if OLD_TEMP_MARKER.lower() in text.lower():
+#                 example = re.sub(r"##JVM_", "{{prefix}}_", text, flags=re.I)
+#                 result.error(
+#                     "old_temp_marker",
+#                     f"`{OLD_TEMP_MARKER}` names another pull's temps now that each project "
+#                     "has its own prefix (D50).",
+#                     f"{cohort_label(cohort)}: {path}",
+#                     fix=f"Write `{{{{prefix}}}}_` in its place: `{example.strip()}`.",
+#                 )
 #
 #
 # def temp_base(name: Any) -> str:
@@ -12292,12 +12505,15 @@ if __name__ == "__main__":
 #     cosmos = str(template.get("cosmos_db", "COSMOS"))
 #     value = cosmos.lower()
 #     generated = {str(c.get("dest_table") or c.get("name")) for c in cohorts}
+#     marker = temp_marker(template)
 #     if value in ("cosmos",):
 #         return cohorts
 #     if value in ("cosmos_sneakpeek", "sneakpeek", "sp"):
-#         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
+#         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated, marker) for c in cohorts]
 #     if value in ("dual", "both"):
-#         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
+#         return cohorts + [
+#             with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated, marker) for c in cohorts
+#         ]
 #     result.error(
 #         "bad_cosmos_db",
 #         f"Unsupported cosmos_db value `{cosmos}`.",
@@ -12319,13 +12535,17 @@ if __name__ == "__main__":
 #
 #
 # def with_cosmos_suffix(
-#     cohort: dict[str, Any], suffix: str, cosmos_db: str, generated: set[str] | None = None
+#     cohort: dict[str, Any],
+#     suffix: str,
+#     cosmos_db: str,
+#     generated: set[str] | None = None,
+#     marker: str = OLD_TEMP_MARKER,
 # ) -> dict[str, Any]:
 #     """The cohort's copy for another Cosmos database, pointing at its own temps.
 #
 #     Renaming the cohort is not enough: its SQL names the temps of the cohorts
-#     it reads (`##JVM_Patients`), and the copy must read their copies
-#     (`##JVM_Patients_sp`), or it pulls for the other database's population.
+#     it reads (`##ibdanc_Patients`), and the copy must read their copies
+#     (`##ibdanc_Patients_sp`), or it pulls for the other database's population.
 #     Uploads are shared by both copies, so they keep their names.
 #     """
 #     new = copy.deepcopy(cohort)
@@ -12334,7 +12554,7 @@ if __name__ == "__main__":
 #     new["cosmos_db"] = cosmos_db
 #     if generated:
 #         pattern = re.compile(
-#             re.escape(TEMP_MARKER)
+#             re.escape(marker)
 #             + "("
 #             + "|".join(re.escape(name) for name in sorted(generated, key=len, reverse=True))
 #             + ")(?![A-Za-z0-9_])"
@@ -12342,7 +12562,7 @@ if __name__ == "__main__":
 #
 #         def rename(value: Any) -> Any:
 #             if isinstance(value, str):
-#                 return pattern.sub(lambda m: f"{TEMP_MARKER}{m.group(1)}{suffix}", value)
+#                 return pattern.sub(lambda m: f"{marker}{m.group(1)}{suffix}", value)
 #             if isinstance(value, list):
 #                 return [rename(item) for item in value]
 #             if isinstance(value, dict):
@@ -12453,6 +12673,7 @@ if __name__ == "__main__":
 #         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 #
 #     finished = copy.deepcopy(template)
+#     finished["temp_prefix"] = temp_prefix(template)
 #     finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
 #     finished.pop("example_cohorts", None)
 #     result.finished_yaml = finished
@@ -12506,6 +12727,7 @@ if __name__ == "__main__":
 #         "name": template.get("project_folder") or template.get("project_db") or "YAML Manager Project",
 #         "project_folder": template.get("project_folder"),
 #         "project_db": template.get("project_db"),
+#         "temp_prefix": temp_prefix(template),
 #         "created_by": "yamlmanager",
 #     }
 #
@@ -12603,6 +12825,9 @@ if __name__ == "__main__":
 #     Batching dimensions multiply: state[LA, MS] x sex[Female, Male] is four
 #     runs, each a disjoint slice of the cohort, not three runs describing three
 #     different axes of the whole cohort.
+#
+#     Labels are numbered, `b1of4-LA-Female` (D53): the number makes each one
+#     unique, so two combinations can never share a label and lose a batch.
 #     """
 #     base = f"sessions/{session_id}/runs"
 #     dims = [
@@ -12624,29 +12849,18 @@ if __name__ == "__main__":
 #     if not static:
 #         return [
 #             SplitRun(
-#                 run_id=f"{session_id}__run",
-#                 yaml=f"{base}/run.yaml",
-#                 batch={"name": "run", "dimensions": [], "runtime": runtime},
+#                 run_id=f"{session_id}__b1of1",
+#                 yaml=f"{base}/b1of1.yaml",
+#                 batch={"name": "b1of1", "dimensions": [], "runtime": runtime},
 #             )
 #         ]
 #
 #     runs: list[SplitRun] = []
-#     seen: set[str] = set()
-#     for combo in product(*[buckets for _, buckets in static]):
+#     combos = list(product(*[buckets for _, buckets in static]))
+#     for number, combo in enumerate(combos, start=1):
 #         pairs = list(zip(static, combo))
-#         name = safe_id("-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs), "batch")
-#         if name in seen:
-#             if result is not None:
-#                 result.error(
-#                     "duplicate_batch_name",
-#                     f"Batch combination `{name}` is not unique in session `{session_id}`. "
-#                     "Two batching dimensions produce the same label.",
-#                     "batching",
-#                     fix="Change one of the `values` so the labels differ; labels keep only "
-#                     "letters, digits, `-` and `_`, so `A B` and `A-B` collide.",
-#                 )
-#             continue
-#         seen.add(name)
+#         values = "-".join(bucket_label(dim, bucket) for (dim, _), bucket in pairs)
+#         name = safe_id(f"b{number}of{len(combos)}-{values}", "batch")
 #         runs.append(
 #             SplitRun(
 #                 run_id=f"{session_id}__{name}",
@@ -13161,7 +13375,7 @@ if __name__ == "__main__":
 #       from:
 #         - DiagnosisEventFact AS def
 #       join:
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+#         - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
 #       where:
 #         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 # """
@@ -13386,8 +13600,8 @@ if __name__ == "__main__":
 #         res = self.compile_template(template)
 #         self.assertCompiles(res)
 #         cohorts = self.cohorts_by_name(res)
-#         self.assertIn("##JVM_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
-#         self.assertIn("##JVM_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
+#         self.assertIn("##tesrun_APatients AS pk", json.dumps(cohorts.get("AOtherDx", {})))
+#         self.assertIn("##tesrun_BPatients AS pk", json.dumps(cohorts.get("BOtherDx", {})))
 #
 #     def test_split_after_build_metadata_survives_on_the_pk(self):
 #         res = self.compile_template(extra="""
@@ -13446,8 +13660,21 @@ if __name__ == "__main__":
 #         self.assertCompiles(res)
 #         self.assertEqual(
 #             [run["batch"]["name"] for run in runs],
-#             ["LA-Female", "LA-Male", "MS-Female", "MS-Male"],
+#             ["b1of4-LA-Female", "b2of4-LA-Male", "b3of4-MS-Female", "b4of4-MS-Male"],
 #         )
+#
+#     def test_labels_that_would_collide_are_numbered_apart(self):
+#         # `A B` and `A-B` both clean to `A-B`; the number keeps them apart
+#         # instead of failing (D53).
+#         res, runs = self.runs_for("""
+# batching:
+#   - name: code
+#     kind: column_values
+#     column: Sex
+#     values: ["A B", "A-B"]
+# """)
+#         self.assertCompiles(res)
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-A-B", "b2of2-A-B"])
 #
 #     def test_each_run_records_its_resolved_dimensions(self):
 #         _, runs = self.runs_for("""
@@ -13476,7 +13703,7 @@ if __name__ == "__main__":
 #       values: [Female]
 #       include_other: true
 # """)
-#         self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "sex-other"])
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-sex-other"])
 #         other = runs[1]["batch"]["dimensions"][0]
 #         self.assertTrue(other["is_other"])
 #         self.assertNotIn("value", other)
@@ -13503,7 +13730,7 @@ if __name__ == "__main__":
 #   - state
 #   - chunk: 2000
 # """)
-#         self.assertEqual([run["batch"]["name"] for run in runs], ["Female", "Male"])
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-Male"])
 #         self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
 #
 #     def test_no_batching_gives_one_unbatched_run(self):
@@ -13612,7 +13839,7 @@ if __name__ == "__main__":
 #                 sid = session["session_id"]
 #                 self.assertEqual(
 #                     [r["run_id"] for r in session["runs"]],
-#                     [f"{sid}__Female", f"{sid}__Male"],
+#                     [f"{sid}__b1of2-Female", f"{sid}__b2of2-Male"],
 #                 )
 #                 first = session["runs"][0]["batch"]
 #                 self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
@@ -13685,7 +13912,7 @@ if __name__ == "__main__":
 #         self.assertEqual(session["session_id"], "ClientPK")
 #         self.assertEqual(pk_source["kind"], "uploaded_cohort")
 #         self.assertEqual(pk_source["table"], "ClientPK")
-#         self.assertIn("##JVM_ClientPK AS pk", json.dumps(res.finished_yaml))
+#         self.assertIn("##uplpk_ClientPK AS pk", json.dumps(res.finished_yaml))
 #
 #     def test_two_uploaded_pk_cohorts_is_an_error(self):
 #         extra = """  - name: ClientPK2
@@ -13784,12 +14011,12 @@ if __name__ == "__main__":
 #
 #     def test_generated_temps_are_skipped(self):
 #         cohort = self.cohort("pk.PatientDurableKey")
-#         cohort["filter"]["join"] = ["INNER JOIN ##JVM_PKTable AS pk ON 1 = 1"]
+#         cohort["filter"]["join"] = ["INNER JOIN ##tesrun_PKTable AS pk ON 1 = 1"]
 #         self.assertEqual(self.codes(self.check(cohort)), [])
 #
 #     def test_unresolved_placeholder_tables_are_skipped(self):
 #         cohort = self.cohort("pk.Anything")
-#         cohort["filter"]["join"] = ["INNER JOIN ##JVM_{{PKTable}} AS pk ON 1 = 1"]
+#         cohort["filter"]["join"] = ["INNER JOIN {{prefix}}_{{PKTable}} AS pk ON 1 = 1"]
 #         self.assertEqual(self.codes(self.check(cohort)), [])
 #
 #     def test_computed_source_warns_rather_than_failing(self):
@@ -13898,7 +14125,7 @@ if __name__ == "__main__":
 #     filter:
 #       from: EncounterFact AS e
 #       join:
-#         - "INNER JOIN ##JVM_{{{{CodesTable}}}} AS c ON c.Code = e.EncounterKey"
+#         - "INNER JOIN {{{{prefix}}}}_{{{{CodesTable}}}} AS c ON c.Code = e.EncounterKey"
 # """
 #
 #     def compile(self, extra_vars="", extra_uploads="", cohort_vars=""):
@@ -14035,8 +14262,8 @@ if __name__ == "__main__":
 #         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
 #             for cohort in cohorts:
 #                 with self.subTest(session=pk_table, cohort=cohort["dest_table"]):
-#                     temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
-#                     self.assertEqual(temps, {f"##JVM_{pk_table}"})
+#                     temps = set(re.findall(r"##tesrun_[A-Za-z0-9_]+", json.dumps(cohort)))
+#                     self.assertEqual(temps, {f"##tesrun_{pk_table}"})
 #
 #     def test_every_cohort_is_built_exactly_once(self):
 #         manifest, out = self.split()
@@ -14049,8 +14276,8 @@ if __name__ == "__main__":
 #         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
 #             self.assertTrue(pk_table.endswith("_sp"), pk_table)
 #             for cohort in cohorts:
-#                 temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
-#                 self.assertEqual(temps, {f"##JVM_{pk_table}"})
+#                 temps = set(re.findall(r"##tesrun_[A-Za-z0-9_]+", json.dumps(cohort)))
+#                 self.assertEqual(temps, {f"##tesrun_{pk_table}"})
 #
 #     def test_an_uploaded_pk_keeps_one_session_for_both_databases(self):
 #         text = uploaded_pk_template().replace("cosmos_db: COSMOS", "cosmos_db: Dual")
@@ -14065,6 +14292,55 @@ if __name__ == "__main__":
 #             {pk: sorted(c["dest_table"] for c in cs) for pk, cs in by_session.items()},
 #             {"ClientPK": ["OtherDx", "OtherDx_sp"]},
 #         )
+#
+#
+# class TempPrefixTests(MakeYamlTest):
+#     """D50: each project's temps carry its own prefix."""
+#
+#     def test_derived_from_the_first_letters_of_each_word(self):
+#         self.assertEqual(derived_temp_prefix("IBD Ancestry"), "ibdanc")
+#         self.assertEqual(derived_temp_prefix("Test Run"), "tesrun")
+#         self.assertEqual(derived_temp_prefix(""), "pull")
+#
+#     def test_recipes_render_with_the_projects_prefix(self):
+#         res = self.compile_template()
+#         self.assertCompiles(res)
+#         self.assertIn("##tesrun_Patients AS pk", json.dumps(self.cohorts_by_name(res)["OtherDx"]))
+#
+#     def test_temp_prefix_overrides_the_derived_one(self):
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(extra="temp_prefix: ibd1"), output_dir=out)
+#         self.assertCompiles(res)
+#         manifest = load_yaml(out / "pullmanifest.yaml")
+#         self.assertEqual(manifest["project"]["temp_prefix"], "ibd1")
+#         run = load_yaml(out / manifest["sessions"][0]["runs"][0]["yaml"])
+#         self.assertEqual(run["temp_prefix"], "ibd1")
+#         self.assertIn("##ibd1_Patients AS pk", json.dumps(run["cohorts"]))
+#
+#     def test_an_unusable_temp_prefix_is_refused(self):
+#         res = self.compile_template(extra="temp_prefix: ibd anc")
+#         self.assertHasError(res, "bad_temp_prefix")
+#         self.assertIn("temp_prefix: ibdanc", res.errors[0].fix)
+#
+#     def test_the_old_marker_is_refused_with_the_new_form(self):
+#         res = self.compile_template(extra="""
+#   - name: Custom
+#     type: fact
+#     columns:
+#       - {source: pk.PatientDurableKey, name: PatientDurableKey, type: BIGINT}
+#     filter:
+#       from: "##JVM_Patients AS pk"
+# """)
+#         found = [m for m in res.errors if m.code == "old_temp_marker"]
+#         self.assertTrue(found, summarize_result(res))
+#         self.assertIn("{{prefix}}_Patients AS pk", found[0].fix)
+#         self.assertTrue(found[0].context.startswith("cohorts[2] (Custom)"), found[0].context)
+#
+#     def test_prefix_is_reserved(self):
+#         res = self.compile_template(
+#             tiny_template().replace("  max_date_key: 20240101", "  max_date_key: 20240101\n  prefix: x")
+#         )
+#         self.assertHasError(res, "reserved_variable")
 #
 #
 # class TransferTests(MakeYamlTest):
@@ -14333,6 +14609,7 @@ if __name__ == "__main__":
 #     "datadictionary": DataDictionaryTests,
 #     "table_binding": TableBindingTests,
 #     "sessions": SessionMembershipTests,
+#     "temp_prefix": TempPrefixTests,
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
 #     "fixes": FixTests,

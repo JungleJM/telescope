@@ -1734,7 +1734,7 @@ function renderJoinLine(join) {
   if (typeof join === 'string') return join;
   const operator = join.operator || '=';
   const joinType = join.join_type || 'INNER';
-  return `${joinType} JOIN ##JVM_${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
+  return `${joinType} JOIN {{prefix}}_${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
 }
 
 function renderCustomJoinRows() {

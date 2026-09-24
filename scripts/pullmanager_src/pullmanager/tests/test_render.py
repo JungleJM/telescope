@@ -217,7 +217,7 @@ class FixtureRenderTests(unittest.TestCase):
     def test_pk_phase_renders(self):
         blocks, _ = server_sql.render_phase(self.phase("pk.yaml"), "Patients/pk")
         self.assertEqual([b.dest_table for b in blocks], ["Patients"])
-        self.assertIn("##JVM_Patients", blocks[0].sql)
+        self.assertIn("##manvalbas_Patients", blocks[0].sql)
 
     def test_run_phase_renders_both_sides(self):
         doc = self.phase("runs/run.yaml")

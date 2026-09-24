@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import re
 
-GLOBAL_TEMP_PREFIX = "##JVM_"
+# Each project names its temps with its own prefix (D50), which YAML Manager
+# writes into every phase document as `temp_prefix`. A document written before
+# D50 has none and keeps the old one.
+DEFAULT_TEMP_PREFIX = "JVM"
 LOCAL_STAGING_PREFIX = "#Local_"
 DEFAULT_SCHEMA = "dbo"
 
@@ -46,13 +49,18 @@ def base_name(dest_table: str | None) -> str:
     return name
 
 
-def global_temp(dest_table: str | None) -> str:
-    """Cosmos session-scoped output: PKTable -> ##JVM_PKTable.
+def temp_prefix(doc: dict | None) -> str:
+    """The prefix a phase document's temps carry."""
+    return str((doc or {}).get("temp_prefix") or DEFAULT_TEMP_PREFIX)
+
+
+def global_temp(dest_table: str | None, prefix: str = DEFAULT_TEMP_PREFIX) -> str:
+    """Cosmos session-scoped output: PKTable -> ##ibdanc_PKTable.
 
     A dest_table that already starts with JVM_ is not prefixed twice, which is
     the `##JVM_JVM_Foo` bug the old generator guarded against.
     """
-    return GLOBAL_TEMP_PREFIX + base_name(dest_table)
+    return f"##{prefix}_{base_name(dest_table)}"
 
 
 def local_staging(dest_table: str | None) -> str:

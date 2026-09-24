@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .naming import destination, global_temp, local_staging
+from .naming import DEFAULT_TEMP_PREFIX, destination, global_temp, local_staging, temp_prefix
 from .normalize import normalize_bool
 from .sql import (
     SqlBlock,
@@ -42,10 +42,10 @@ def _columns(cohort: dict[str, Any]) -> list[dict[str, Any]]:
     return [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
 
 
-def _remote_query(dest: str, columns: list[dict[str, Any]]) -> str:
+def _remote_query(dest: str, columns: list[dict[str, Any]], prefix: str) -> str:
     """The inner query sent to the linked server, quoted for embedding."""
     cols = ", ".join(quote_name(n) for n in column_names(columns))
-    inner = f"SELECT {cols} FROM {global_temp(dest)}"
+    inner = f"SELECT {cols} FROM {global_temp(dest, prefix)}"
     return inner.replace("'", "''")
 
 
@@ -102,7 +102,11 @@ def render_delete_batch(cohort: dict[str, Any], project_db: str, label: str) -> 
 
 
 def render_transfer(
-    cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+    cohort: dict[str, Any],
+    project_db: str,
+    linked_server: str,
+    label: str | None = None,
+    prefix: str = DEFAULT_TEMP_PREFIX,
 ) -> str:
     """Pull one cohort from its global temp into the destination table.
 
@@ -126,13 +130,13 @@ def render_transfer(
         select_cols = f"{cols}, {quote_literal(label)}"
 
     return (
-        f"-- transfer {global_temp(dest)} -> {table}\n"
+        f"-- transfer {global_temp(dest, prefix)} -> {table}\n"
         f"DROP TABLE IF EXISTS {staging};\n\n"
         f"SELECT {cols}\n"
         f"INTO {staging}\n"
         f"FROM OPENQUERY(\n"
         f"    [{linked_server}],\n"
-        f"    '{_remote_query(dest, columns)}'\n"
+        f"    '{_remote_query(dest, columns, prefix)}'\n"
         f");\n\n"
         f"BEGIN TRANSACTION;\n"
         f"INSERT INTO {table} ({insert_cols})\n"
@@ -142,7 +146,11 @@ def render_transfer(
 
 
 def render_row_counts(
-    cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+    cohort: dict[str, Any],
+    project_db: str,
+    linked_server: str,
+    label: str | None = None,
+    prefix: str = DEFAULT_TEMP_PREFIX,
 ) -> str:
     """Both sides of the transfer, so a mismatch is visible.
 
@@ -154,7 +162,7 @@ def render_row_counts(
     where = (
         f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
     )
-    remote = f"SELECT 1 AS dummy FROM {global_temp(dest)}".replace("'", "''")
+    remote = f"SELECT 1 AS dummy FROM {global_temp(dest, prefix)}".replace("'", "''")
     return (
         "SELECT\n"
         f"    {quote_literal(dest)} AS [DestTable],\n"
@@ -239,6 +247,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
     if not project_db:
         raise LocalRenderError("Phase document has no `project_db`.")
     label = batch_label(doc)
+    prefix = temp_prefix(doc)
     blocks: list[SqlBlock] = []
     for cohort in doc.get("cohorts") or []:
         if not isinstance(cohort, dict) or not cohort.get("dest_table"):
@@ -258,8 +267,8 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
                 )
             )
         parts = [
-            render_transfer(cohort, str(project_db), linked_server, label),
-            render_row_counts(cohort, str(project_db), linked_server, label),
+            render_transfer(cohort, str(project_db), linked_server, label, prefix),
+            render_row_counts(cohort, str(project_db), linked_server, label, prefix),
         ]
         probe = render_length_probe(cohort)
         if probe:
@@ -273,7 +282,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
                 meta={
                     "destination": destination(str(project_db), dest),
                     "staging": local_staging(dest),
-                    "global_temp": global_temp(dest),
+                    "global_temp": global_temp(dest, prefix),
                     "linked_server": linked_server,
                 },
             )

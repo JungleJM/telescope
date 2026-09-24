@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .naming import global_temp
+from .naming import DEFAULT_TEMP_PREFIX, global_temp
 
 TRUTHY = {"true", "yes", "y", "1", "on", "t"}
 FALSY = {"false", "no", "n", "0", "off", "f", ""}
@@ -169,7 +169,7 @@ def pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [c for c in cohorts if isinstance(c, dict) and is_pk(c)]
 
 
-def joined_generated_tables(cohort: dict[str, Any]) -> set[str]:
+def joined_generated_tables(cohort: dict[str, Any], prefix: str = DEFAULT_TEMP_PREFIX) -> set[str]:
     """Global temp names this cohort joins, found in its filter text."""
     filter_block = cohort.get("filter") or {}
     text_parts: list[str] = []
@@ -180,12 +180,12 @@ def joined_generated_tables(cohort: dict[str, Any]) -> set[str]:
         elif isinstance(value, list):
             text_parts.extend(str(item) for item in value)
     haystack = " ".join(text_parts).upper()
-    return {token for token in _global_temp_tokens(haystack)}
+    return {token for token in _global_temp_tokens(haystack, prefix)}
 
 
-def _global_temp_tokens(haystack: str) -> set[str]:
+def _global_temp_tokens(haystack: str, prefix: str = DEFAULT_TEMP_PREFIX) -> set[str]:
     tokens: set[str] = set()
-    marker = "##JVM_"
+    marker = f"##{prefix}_".upper()
     start = haystack.find(marker)
     while start != -1:
         end = start + len(marker)
@@ -196,7 +196,9 @@ def _global_temp_tokens(haystack: str) -> set[str]:
     return tokens
 
 
-def root_pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def root_pk_cohorts(
+    cohorts: list[dict[str, Any]], prefix: str = DEFAULT_TEMP_PREFIX
+) -> list[dict[str, Any]]:
     """PK cohorts that do not depend on another PK cohort's global temp.
 
     A chained PK (patients -> diagnosis events for those patients) has exactly
@@ -204,11 +206,13 @@ def root_pk_cohorts(cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     compounds the restriction into an unrepresentative sample.
     """
     pks = pk_cohorts(cohorts)
-    sibling_temps = {global_temp(c.get("dest_table")).upper() for c in pks if c.get("dest_table")}
+    sibling_temps = {
+        global_temp(c.get("dest_table"), prefix).upper() for c in pks if c.get("dest_table")
+    }
     roots = []
     for cohort in pks:
-        own = global_temp(cohort.get("dest_table")).upper() if cohort.get("dest_table") else None
-        depends_on = joined_generated_tables(cohort) & sibling_temps
+        own = global_temp(cohort.get("dest_table"), prefix).upper() if cohort.get("dest_table") else None
+        depends_on = joined_generated_tables(cohort, prefix) & sibling_temps
         depends_on.discard(own)
         if not depends_on:
             roots.append(cohort)

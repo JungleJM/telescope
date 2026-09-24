@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .db import DatabaseError, bulk_insert, execute_script
-from .naming import global_temp
+from .naming import DEFAULT_TEMP_PREFIX, global_temp
 from .normalize import normalize_bool
 
 # Room above the widest value seen, so a later file with slightly longer
@@ -108,7 +108,9 @@ def resolve_path(file_loc: str, root: Path) -> Path:
     return candidate if candidate.is_absolute() else (root / candidate)
 
 
-def plan_csv_upload(cohort: dict[str, Any], root: Path) -> UploadPlan:
+def plan_csv_upload(
+    cohort: dict[str, Any], root: Path, prefix: str = DEFAULT_TEMP_PREFIX
+) -> UploadPlan:
     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
     if not dest:
         raise UploadError("Upload cohort has neither dest_table nor name.")
@@ -120,7 +122,7 @@ def plan_csv_upload(cohort: dict[str, Any], root: Path) -> UploadPlan:
     plan = UploadPlan(
         name=str(cohort.get("name") or dest),
         dest_table=dest,
-        global_temp=global_temp(dest),
+        global_temp=global_temp(dest, prefix),
         columns=columns,
         rows=rows,
         widths=measure_widths(columns, rows),
@@ -159,7 +161,10 @@ def materialize(connection: Any, plan: UploadPlan, *, chunk_size: int) -> int:
 
 
 def plan_dbtable_upload(
-    projects_connection: Any, cohort: dict[str, Any], project_db: str
+    projects_connection: Any,
+    cohort: dict[str, Any],
+    project_db: str,
+    prefix: str = DEFAULT_TEMP_PREFIX,
 ) -> UploadPlan:
     """Read an existing Projects table and carry it up through the client."""
     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
@@ -171,7 +176,7 @@ def plan_dbtable_upload(
     return UploadPlan(
         name=str(cohort.get("name") or dest),
         dest_table=dest,
-        global_temp=global_temp(dest),
+        global_temp=global_temp(dest, prefix),
         columns=columns,
         rows=rows,
         widths=measure_widths(columns, rows),

@@ -253,7 +253,7 @@ recipes:
       from:
         - DiagnosisEventFact AS def
       join:
-        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
@@ -355,7 +355,7 @@ recipes:
       from:
         - DiagnosisEventFact AS def
       join:
-        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
@@ -467,11 +467,11 @@ recipes:
       from:
         - HospitalAdmissionFact AS haf
       join:
-        - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
         # Bring in diagnosis events on the same encounter
         - "INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey"
         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
-        - "INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value"
+        - "INNER JOIN {{prefix}}_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value"
       where:
         - "haf._IsDeleted = 0"
         - "haf.AdmissionDateKey IS NOT NULL"

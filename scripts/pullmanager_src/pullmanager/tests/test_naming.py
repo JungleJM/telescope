@@ -170,3 +170,19 @@ class QualifyJoinClauseTests(unittest.TestCase):
     def test_is_idempotent(self):
         once = qualify_join_clause("INNER JOIN Foo AS f ON 1 = 1")
         self.assertEqual(qualify_join_clause(once), once)
+
+
+class TempPrefixTests(unittest.TestCase):
+    """D50: temps carry the project's prefix; old documents keep JVM."""
+
+    def test_the_prefix_names_the_temp(self):
+        from ..naming import global_temp
+
+        self.assertEqual(global_temp("Patients", "ibdanc"), "##ibdanc_Patients")
+
+    def test_a_document_without_one_keeps_the_old_prefix(self):
+        from ..naming import global_temp, temp_prefix
+
+        self.assertEqual(temp_prefix({}), "JVM")
+        self.assertEqual(temp_prefix({"temp_prefix": "tesrun"}), "tesrun")
+        self.assertEqual(global_temp("Patients"), "##JVM_Patients")

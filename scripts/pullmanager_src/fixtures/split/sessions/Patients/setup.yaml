@@ -14,6 +14,7 @@ upload_cohorts:
   file_type: csv
   file_loc: uploads/hospital_icd_codes.csv
   push_this_cycle: true
+temp_prefix: manvalbas
 pull_context:
   session_id: Patients
   phase: setup

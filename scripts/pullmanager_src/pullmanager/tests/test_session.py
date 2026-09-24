@@ -95,7 +95,7 @@ class FakeConnection:
 
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-                 pk_rows=3):
+                 pk_rows=3, existing_temps=()):
         self.side = side
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
@@ -105,6 +105,8 @@ class FakeConnection:
         self.tables = tables if tables is not None else {}
         self.created = created
         self.pk_rows = pk_rows
+        # Global temps another pull holds on this instance, for D50's check.
+        self.existing_temps = {name.lower() for name in existing_temps}
         # pattern -> [matches left before failing, message]
         self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
         self.executed: list[str] = []
@@ -157,6 +159,11 @@ class FakeConnection:
     def results_for(self, sql):
         if "@@SERVERNAME" in sql:
             return [(["CosmosServerName"], [(INSTANCE,)])]
+        if "OBJECT_ID(N'tempdb.." in sql:
+            names = re.findall(r"OBJECT_ID\(N'tempdb\.\.([^']+)'\)", sql)
+            return [(names, [tuple(
+                1234 if name.lower() in self.existing_temps else None for name in names
+            )])]
         if "sys.databases" in sql:
             return [(["name", "create_date"],
                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
@@ -536,3 +543,38 @@ class ChunkTests(SessionTestCase):
         report = self.execute(pk_rows=0)
         self.assertTrue(report.ok, report.failed)
         self.assertEqual(self.windows(), [(0, 2000)] * 2)
+
+
+class TempClashTests(SessionTestCase):
+    """D50: a temp another pull holds is never dropped; this session renumbers."""
+
+    def cosmos_sql(self):
+        """Everything sent to Cosmos except the probe that asks which names are taken."""
+        sent = self.cosmos.executed + [sql for sql, _ in self.cosmos.inserted]
+        return "\n".join(sql for sql in sent if "OBJECT_ID(N'tempdb" not in sql)
+
+    def test_no_clash_uses_the_planned_prefix(self):
+        with self.runner() as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas")
+        self.assertIn("##manvalbas_Patients", self.cosmos_sql())
+
+    def test_a_held_temp_moves_this_session_to_a_numbered_prefix(self):
+        held = {"##manvalbas_OtherHospitalizations"}
+        with self.runner(cosmos={"existing_temps": held}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas2")
+        self.assertTrue(any("##manvalbas2_" in w for w in report.warnings), report.warnings)
+        # The outcome: nothing this session sent names the other pull's temps.
+        self.assertNotIn("##manvalbas_", self.cosmos_sql())
+        self.assertNotIn("##manvalbas_", "\n".join(self.projects.executed))
+        self.assertIn("##manvalbas2_OtherHospitalizations", "\n".join(self.projects.executed))
+        self.assertIn("##manvalbas2_HospitalICDCodes", self.cosmos_sql())
+
+    def test_numbering_continues_past_a_second_clash(self):
+        held = {"##manvalbas_Patients", "##manvalbas2_Patients"}
+        with self.runner(cosmos={"existing_temps": held}) as runner:
+            runner.execute()
+        self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas3")

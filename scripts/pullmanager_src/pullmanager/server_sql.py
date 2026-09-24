@@ -10,7 +10,7 @@ import re
 
 from typing import Any
 
-from .naming import global_temp
+from .naming import global_temp, temp_prefix
 from .normalize import (
     cosmos_database,
     normalize_bool,
@@ -169,7 +169,7 @@ def render_cohort(
         raise RenderError(f"Cohort {dest!r} declares duplicate column(s): {', '.join(duplicates)}")
 
     notes: list[str] = []
-    temp = global_temp(dest)
+    temp = global_temp(dest, temp_prefix(doc))
     top = top_clause(cohort, doc, roots or [])
     database = cohort_database(cohort, doc)
 
@@ -218,7 +218,7 @@ def render_cohort_telemetry(cohort: dict[str, Any], temp: str) -> str:
 def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock], list[str]]:
     """Render every cohort in one phase document."""
     cohorts = [c for c in doc.get("cohorts") or [] if isinstance(c, dict)]
-    roots = root_pk_cohorts(cohorts)
+    roots = root_pk_cohorts(cohorts, temp_prefix(doc))
     blocks: list[SqlBlock] = []
     notes: list[str] = []
     for cohort in cohorts:
@@ -233,7 +233,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str) -> tuple[list[SqlBlock]
                 side="server",
                 sql=sql,
                 dest_table=str(cohort["dest_table"]),
-                meta={"global_temp": global_temp(cohort["dest_table"])},
+                meta={"global_temp": global_temp(cohort["dest_table"], temp_prefix(doc))},
             )
         )
     return blocks, notes

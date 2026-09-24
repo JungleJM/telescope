@@ -14,6 +14,7 @@ upload_cohorts:
   file_type: csv
   file_loc: uploads/hospital_icd_codes.csv
   push_this_cycle: true
+temp_prefix: manvalbas
 pull_context:
   session_id: Patients
   phase: run
@@ -107,12 +108,12 @@ cohorts:
     from:
     - HospitalAdmissionFact AS haf
     join:
-    - 'INNER JOIN ##JVM_Patients AS pk ON pk.PatientDurableKey = haf.PatientDurableKey'
+    - 'INNER JOIN ##manvalbas_Patients AS pk ON pk.PatientDurableKey = haf.PatientDurableKey'
     - INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = 
       haf.EncounterKey
     - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = 
       dxf.DiagnosisKey
-    - 'INNER JOIN ##JVM_HospitalICDCodes AS ih ON ih.DiagnosisCode = dt.Value'
+    - 'INNER JOIN ##manvalbas_HospitalICDCodes AS ih ON ih.DiagnosisCode = dt.Value'
     where:
     - haf._IsDeleted = 0
     - haf.AdmissionDateKey IS NOT NULL

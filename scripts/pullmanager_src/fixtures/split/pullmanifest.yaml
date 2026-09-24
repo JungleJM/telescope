@@ -3,6 +3,7 @@ project:
   name: "Manager Valid Basic"
   project_folder: "Manager Valid Basic"
   project_db: PROJECTD33A929
+  temp_prefix: manvalbas
   created_by: yamlmanager
 source:
   template: YAMLs/manager_test_cases/01_valid_basic.yaml
