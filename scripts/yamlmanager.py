@@ -19,6 +19,8 @@ import os
 import re
 import socket
 import sys
+import tempfile
+import unittest
 import urllib.parse
 import webbrowser
 from pathlib import Path
@@ -82,6 +84,132 @@ def slug(value: str) -> str:
 
 def yaml_text(value: Any) -> str:
     return backend.dump_yaml_text(value).rstrip()
+
+
+# Section explanations come from the comments in YAMLs/template.yaml, where the
+# template's sections are explained; these stand in where a key has none.
+NOTES_TEMPLATE = PROJECT_ROOT / "YAMLs" / "template.yaml"
+FALLBACK_NOTES = {
+    "cosmos_vars": "Where the pull reads from (cosmos_db) and lands (project_db).",
+    "run_vars": "Variables every cohort can use. Dates as YYYYMMDD.",
+    "test_options": "Limits for a trial run.",
+    "upload_cohorts": "Tables you bring: parquet (a CSV is converted to parquet at split) or a "
+    "Projects table. Each lands in Projects as upload_<name>, then goes up to Cosmos. "
+    "Mark one as the PK to pull for a list you were given.",
+    "multipliers": "Copies every cohort once per level, prefixing its name; multipliers stack.",
+    "batching": "Splits each PK into batches by value, or into chunks of rows.",
+    "cohorts": "The tables to pull: recipes, or custom tables built below.",
+    "draft": "The template this builder makes. Download it, then export a transfer YAML for the VM.",
+}
+
+
+def template_section_notes(path: Path = NOTES_TEMPLATE) -> dict[str, str]:
+    """Each top-level key's comment: inline on its line, else the lines just above."""
+    notes = dict(FALLBACK_NOTES)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return notes
+    pending: list[str] = []
+    for line in lines:
+        if line.startswith("#"):
+            pending.append(line.lstrip("#").strip())
+            continue
+        match = re.match(r"^([A-Za-z_]+):\s*(?:#\s*(.*))?$", line)
+        if match:
+            note = (match.group(2) or "").strip() or " ".join(part for part in pending if part)
+            if note:
+                notes[match.group(1)] = note
+        pending = []
+    return notes
+
+
+def section_note(notes: dict[str, str], *keys: str) -> str:
+    text = " ".join(notes[key].rstrip(".") + "." for key in keys if notes.get(key))
+    return f'<span class="section-note">{e(text)}</span>' if text else ""
+
+
+def run_summary(result: Any) -> str:
+    """Multipliers and batching in one read-only line each, for the Cohorts tab."""
+    finished = getattr(result, "finished_yaml", {}) or {}
+    multipliers = []
+    for mult in finished.get("multipliers") or []:
+        if isinstance(mult, dict):
+            levels = [str(level.get("strat")) for level in mult.get("levels") or [] if isinstance(level, dict)]
+            multipliers.append(f"{mult.get('name')}: {'/'.join(levels)}")
+    batching_items = next(
+        (c.get("batching") for c in finished.get("cohorts") or [] if isinstance(c, dict) and c.get("batching")),
+        None,
+    ) or []
+    batching = []
+    for item in batching_items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("kind")) == "row_chunk":
+            batching.append(f"{item.get('name')}: {item.get('rows_per_batch')}")
+            continue
+        values = item.get("values")
+        shown = "/".join(str(v) for v in values) if isinstance(values, list) else str(values)
+        if item.get("include_other"):
+            shown += "/other"
+        batching.append(f"{item.get('name')}: {shown}")
+    return (
+        '<div class="block run-summary">'
+        f'<div><strong>[multipliers]</strong> {e(", ".join(multipliers) or "none")}</div>'
+        f'<div><strong>[batching]</strong> {e(", ".join(batching) or "none")}</div>'
+        "</div>"
+    )
+
+
+def save_recipe(recipes_path: Path, recipe: Any) -> tuple[int, str]:
+    """Add one recipe to recipes.yaml, keeping the file's comments and layout.
+
+    Refuses a name already there. The new entry is written into the `recipes:`
+    list at that list's own indentation, and the result is parsed before it
+    replaces the file, so a bad write cannot leave recipes.yaml broken.
+    """
+    if not isinstance(recipe, dict) or not str(recipe.get("name") or "").strip():
+        return 400, "The table needs a Name before it can be saved as a recipe."
+    name = str(recipe["name"]).strip()
+    try:
+        text = recipes_path.read_text(encoding="utf-8")
+        existing = backend.load_document(recipes_path) or {}
+    except Exception as exc:  # noqa: BLE001 - reported to the page
+        return 500, f"Could not read {recipes_path}: {exc}"
+    names = {str(r.get("name")) for r in existing.get("recipes") or [] if isinstance(r, dict)}
+    if name in names:
+        return 409, (
+            f"A recipe named {name} is already in {recipes_path.name}. Rename the table "
+            "(Name) and save again."
+        )
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if re.match(r"^recipes:\s*(#.*)?$", line)), None)
+    if start is None:
+        lines += ["", "recipes:"]
+        start, end, indent = len(lines) - 1, len(lines), "  "
+    else:
+        end = next(
+            (i for i in range(start + 1, len(lines)) if lines[i] and not lines[i][0].isspace()
+             and not lines[i].startswith("#")),
+            len(lines),
+        )
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        item = next((line for line in lines[start + 1:end] if line.lstrip().startswith("- ")), "  - ")
+        indent = item[: len(item) - len(item.lstrip())]
+    entry = [indent + line if line else line for line in yaml_text([recipe]).splitlines()]
+    updated = "\n".join(lines[:end] + entry + lines[end:]) + "\n"
+    temp = recipes_path.with_name(recipes_path.name + ".tmp")
+    try:
+        temp.write_text(updated, encoding="utf-8")
+        check = backend.load_document(temp) or {}
+        if name not in {str(r.get("name")) for r in check.get("recipes") or [] if isinstance(r, dict)}:
+            raise ValueError("the saved file did not read back with the new recipe")
+        os.replace(temp, recipes_path)
+    except Exception as exc:  # noqa: BLE001 - reported to the page
+        temp.unlink(missing_ok=True)
+        return 500, f"Could not save to {recipes_path.name}: {exc}. The file is unchanged."
+    return 200, f"Saved {name} to {recipes_path.name}."
 
 
 def load_data_dictionary(path: Path | None = None) -> dict[str, Any]:
@@ -655,6 +783,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     recipe_names = [recipe.get("name") for recipe in recipe_defs]
     batching_recipes = [recipe for recipe in recipes_doc.get("batching_recipes", []) or [] if recipe.get("name")]
     batching_names = [recipe.get("name") for recipe in batching_recipes]
+    notes = template_section_notes()
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -712,13 +841,14 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
         <aside class="builder-nav">
           <button class="builder-link active" data-builder-section="builderProject">Project</button>
           <button class="builder-link" data-builder-section="builderUploads">Uploads</button>
+          <button class="builder-link" data-builder-section="builderMultipliers">Multipliers</button>
           <button class="builder-link" data-builder-section="builderBatching">Batching</button>
           <button class="builder-link" data-builder-section="builderCohorts">Cohorts</button>
           <button class="builder-link" data-builder-section="builderDraft">Draft YAML</button>
         </aside>
         <div class="builder-main">
           <section id="builderProject" class="builder-section active block">
-            <h2>Project</h2>
+            <div class="section-title"><h2>Project</h2>{section_note(notes, "cosmos_vars", "run_vars")}</div>
             <div class="form-grid">
               <label>Project Folder<input id="builderProjectFolder" type="text"></label>
               <label>Project DB<input id="builderProjectDb" type="text"></label>
@@ -732,7 +862,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
               <label>Min Date Key<input id="builderMinDate" type="text"></label>
               <label>Max Date Key<input id="builderMaxDate" type="text"></label>
             </div>
-            <h3>Test Options</h3>
+            <div class="section-title"><h3>Test Options</h3>{section_note(notes, "test_options")}</div>
             <div class="form-grid">
               <label class="checkbox-label"><input id="builderSmallset" type="checkbox"> Small set</label>
               <label>PK Row Limit<input id="builderStopAtPk" type="number" min="0"></label>
@@ -747,7 +877,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
           </section>
 
           <section id="builderUploads" class="builder-section block">
-            <h2>Uploads</h2>
+            <div class="section-title"><h2>Uploads</h2>{section_note(notes, "upload_cohorts")}</div>
+            <p class="pk-status" data-pk-status></p>
+            <div id="uploadPkMessage" class="message error hidden"></div>
             <div class="inline-form">
               <select id="newUploadType">
                 <option value="dbtable">dbtable</option>
@@ -761,8 +893,22 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
             <div id="uploadEditorRows" class="editor-rows"></div>
           </section>
 
+          <section id="builderMultipliers" class="builder-section block">
+            <div class="section-title"><h2>Multipliers</h2>{section_note(notes, "multipliers")}</div>
+            <div class="inline-form">
+              <input id="newMultiplierName" type="text" placeholder="name, e.g. IBDType">
+              <select id="newMultiplierStage">
+                <option value="during_build">during_build: each level builds its own cohorts</option>
+                <option value="split_after_build">split_after_build: one build, split by a PK column</option>
+              </select>
+              <span></span>
+              <button id="addMultiplier">Add Multiplier</button>
+            </div>
+            <div id="multiplierEditorRows" class="editor-rows"></div>
+          </section>
+
           <section id="builderBatching" class="builder-section block">
-            <h2>Batching</h2>
+            <div class="section-title"><h2>Batching</h2>{section_note(notes, "batching")}</div>
             <div class="inline-form">
               <select id="newBatchingRecipe"></select>
               <input id="newBatchingValue" type="text" placeholder="value or chunk size" list="batchingValueSuggestions">
@@ -774,7 +920,8 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
           </section>
 
           <section id="builderCohorts" class="builder-section block">
-            <h2>Cohorts</h2>
+            <div class="section-title"><h2>Cohorts</h2>{section_note(notes, "cohorts")}</div>
+            <p class="pk-status" data-pk-status></p>
             <h3>Recipes</h3>
             <div class="inline-form">
               <select id="newCohortRecipe"></select>
@@ -782,21 +929,22 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
               <button id="addCohort">Add Recipe</button>
             </div>
             <div id="cohortEditorRows" class="editor-rows"></div>
-            <h3>Custom</h3>
+            <div id="cohortPkMessage" class="message error hidden"></div>
+            <div id="recipeSaveMessage" class="message hidden"></div>
+            <div class="section-title spaced">
+              <h3>Custom</h3>
+              <span class="section-note">A table built from the data dictionary, added to the cohorts above.</span>
+              <button id="resetCustomCohort" class="push-right">Reset Form</button>
+            </div>
             <div class="custom-builder">
-              <div id="pkWarning" class="message warn hidden">
-                <div class="message-code">PK warning</div>
-                <div class="message-body">This draft already has a PK cohort. Only one PK cohort should be used.</div>
-              </div>
-              <div class="form-grid">
+              <div id="customPkMessage" class="message error hidden"></div>
+              <div class="editor-row custom-head">
                 <label>Name<input id="customName" type="text" placeholder="Mothers"></label>
                 <label>Destination<input id="customDestTable" type="text" placeholder="Mothers"></label>
-                <label>Type
-                  <select id="customType">
-                    <option value="fact">fact</option>
-                    <option value="PK">PK</option>
-                  </select>
-                </label>
+                <label class="checkbox-label"><input id="customIsPk" type="checkbox"> PK table</label>
+                <button id="addCustomCohort">Add Custom Table</button>
+              </div>
+              <div class="form-grid">
                 <label class="checkbox-label"><input id="customPullThisCycle" type="checkbox" checked> Pull this cycle</label>
                 <label>From Table<select id="customFromTable"></select></label>
                 <label>AS<input id="customFromAlias" type="text" placeholder="bpf"></label>
@@ -818,6 +966,11 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                 <h4>Joins</h4>
                 <button id="addCustomJoin">Add Join</button>
               </div>
+              <p class="helper-text join-note"><strong>INNER</strong> keeps rows that match on both sides.
+                <strong>LEFT</strong> keeps every row of this table; the joined table's columns are empty
+                (NULL) where nothing matches. <strong>RIGHT</strong> is the reverse. <strong>FULL</strong>
+                keeps every row from both, NULL on whichever side has no match. A Where on a LEFT-joined
+                column drops those NULL rows, which makes it an INNER join.</p>
               <div class="join-builder">
                 <label>Join Type<select id="joinType">
                     <option value="INNER">INNER</option>
@@ -842,17 +995,11 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                 <button id="addCustomWhere">Add Where</button>
               </div>
               <div id="customWhereRows" class="editor-rows"></div>
-              <div class="toolbar compact">
-                <button id="addCustomCohort">Add Custom Cohort</button>
-                <button id="resetCustomCohort">Reset Custom Form</button>
-                <button id="copyCustomRecipe">Copy Custom As Recipe</button>
-                <button id="downloadCustomRecipe">Download Custom Recipe</button>
-              </div>
             </div>
           </section>
 
           <section id="builderDraft" class="builder-section block">
-            <h2>Draft YAML</h2>
+            <div class="section-title"><h2>Draft YAML</h2>{section_note(notes, "draft")}</div>
             <div class="form-grid single">
               <label>Download Name<input id="builderDraftFilename" type="text" placeholder="Test_Run_Full.yaml"></label>
             </div>
@@ -874,6 +1021,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     </section>
 
     <section id="cohorts" class="panel">
+      {run_summary(result)}
       <div class="toolbar">
         <input id="cohortSearch" type="search" placeholder="Filter cohorts">
         <button data-expand="cohorts">Expand All</button>
@@ -1000,6 +1148,7 @@ main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .message { border-left: 4px solid var(--line); padding: 10px 12px; background: var(--chip); border-radius: 6px; margin-bottom: 9px; }
 .message.error { border-left-color: var(--err); }
 .message.warn { border-left-color: var(--warn); }
+.message.ok { border-left-color: var(--ok); }
 .message-code { font-weight: 800; font-size: 13px; }
 .message-context, .muted { color: var(--muted); font-size: 12px; }
 .message-fix { font-size: 13px; margin-top: 4px; }
@@ -1028,7 +1177,6 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
 .editor-rows { display: grid; gap: 10px; }
 .editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
-.editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto; }
 .editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto; }
 .editor-row.custom-column { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
 .editor-row.line-editor { grid-template-columns: minmax(220px, 1fr) auto; }
@@ -1047,6 +1195,23 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .join-check.ok { color: var(--ok); }
 .join-check.error { color: var(--err); }
 .subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
+.section-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.section-title h2, .section-title h3 { margin: 0; }
+.section-title.spaced { margin-top: 18px; margin-bottom: 8px; }
+.section-note { color: var(--muted); font-size: 13px; flex: 1 1 280px; }
+.push-right { margin-left: auto; }
+.pk-status { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.pk-status strong { color: var(--ok); }
+.editor-row.custom-head { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto; }
+.editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto auto auto; }
+.editor-row.upload { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto auto; }
+.editor-row.upload .key-columns { grid-column: 1 / span 2; }
+.multiplier { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+.multiplier-head { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(200px, 1.4fr) auto auto; gap: 8px; align-items: end; }
+.editor-row.level { grid-template-columns: minmax(100px, .8fr) minmax(160px, 2fr) auto; }
+.editor-row.level.split { grid-template-columns: minmax(100px, .8fr) minmax(120px, 1fr) minmax(140px, 1.4fr) minmax(90px, .6fr) minmax(80px, .5fr) auto; }
+.run-summary { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; }
+.join-note { font-size: 12px; color: var(--muted); }
 .subsection-head h4 { margin: 0; }
 .helper-text { margin: 0 0 12px; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 38px; align-items: center; }
@@ -1185,6 +1350,7 @@ function ensureDraftShape() {
   draftTemplate.test_options = draftTemplate.test_options || {};
   draftTemplate.vars = draftTemplate.vars || {};
   draftTemplate.upload_cohorts = Array.isArray(draftTemplate.upload_cohorts) ? draftTemplate.upload_cohorts : [];
+  draftTemplate.multipliers = Array.isArray(draftTemplate.multipliers) ? draftTemplate.multipliers : [];
   draftTemplate.batching = Array.isArray(draftTemplate.batching) ? draftTemplate.batching : [];
   draftTemplate.cohorts = Array.isArray(draftTemplate.cohorts) ? draftTemplate.cohorts : [];
 }
@@ -1234,6 +1400,7 @@ function hydrateBuilder() {
   renderDictionaryTableOptions();
   renderCustomBuilder();
   renderUploadRows();
+  renderMultiplierRows();
   renderBatchingRows();
   renderCohortRows();
   updateDraftYaml();
@@ -1287,7 +1454,7 @@ function syncProjectFields() {
   if (el) el.addEventListener('change', syncProjectFields);
 });
 
-['customName', 'customDestTable', 'customType', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
+['customName', 'customDestTable', 'customIsPk', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', syncCustomFields);
   if (el) el.addEventListener('change', syncCustomFields);
@@ -1348,7 +1515,7 @@ function renderUploadRows() {
   const root = document.getElementById('uploadEditorRows');
   if (!root) return;
   root.innerHTML = draftTemplate.upload_cohorts.map((upload, index) => `
-    <div class="editor-row">
+    <div class="editor-row upload">
       <label>Name<input data-upload-field="name" data-index="${index}" value="${escapeAttr(upload.name || '')}"></label>
       <label>Destination<input data-upload-field="dest_table" data-index="${index}" value="${escapeAttr(upload.dest_table || upload.name || '')}"></label>
       <label>Type
@@ -1357,9 +1524,74 @@ function renderUploadRows() {
         </select>
       </label>
       <label>File/Table<input data-upload-field="file_loc" data-index="${index}" value="${escapeAttr(upload.file_loc || '')}"></label>
+      <label class="checkbox-label"><input type="checkbox" data-upload-pk="${index}" ${uploadIsPk(upload) ? 'checked' : ''}> PK table</label>
       <button class="danger" data-remove-upload="${index}">Remove</button>
+      ${uploadIsPk(upload) ? `<label class="key-columns">Key columns (identify a row)<input data-upload-field="key_columns" data-index="${index}" value="${escapeAttr((upload.key_columns || []).join(', '))}" placeholder="PatientDurableKey"></label>` : ''}
     </div>
   `).join('') || '<div class="empty">No uploads in draft.</div>';
+  renderPkStatus();
+}
+
+// One PK per template: an upload marked type: pk, or a cohort of type PK
+// (a custom table, or a recipe that is one).
+function recipeIsPk(name) {
+  return String(recipeDefs.find(item => item.name === name)?.type || '').toLowerCase() === 'pk';
+}
+
+function cohortIsPk(cohort) {
+  if (cohort?.type) return String(cohort.type).toLowerCase() === 'pk';
+  return cohort?.recipe ? recipeIsPk(cohort.recipe) : false;
+}
+
+function uploadIsPk(upload) {
+  return String(upload?.type || '').toLowerCase() === 'pk';
+}
+
+function currentPk(except = null) {
+  const skip = (kind, index) => except && except.kind === kind && except.index === index;
+  for (const [index, upload] of draftTemplate.upload_cohorts.entries()) {
+    if (uploadIsPk(upload) && !skip('upload', index)) {
+      return { label: `${upload.dest_table || upload.name} (upload)` };
+    }
+  }
+  for (const [index, cohort] of draftTemplate.cohorts.entries()) {
+    if (cohortIsPk(cohort) && !skip('cohort', index)) {
+      const from = cohort.recipe ? `recipe ${cohort.recipe}` : 'custom table';
+      return { label: `${cohort.dest_table || cohort.name || cohort.recipe} (${from})` };
+    }
+  }
+  return null;
+}
+
+function renderPkStatus() {
+  const pk = currentPk();
+  document.querySelectorAll('[data-pk-status]').forEach(el => {
+    el.innerHTML = pk
+      ? `PK table: <strong>${escapeHtml(pk.label)}</strong>`
+      : 'No PK table yet: mark an upload or a custom table as the PK, or add a PK recipe.';
+  });
+}
+
+function showMessage(id, text, kind = 'error') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = `message ${kind}`;
+  el.textContent = text;
+}
+
+function hideMessage(id) {
+  document.getElementById(id)?.classList.add('hidden');
+}
+
+function refusePk(messageId, existing) {
+  showMessage(messageId, `PK table already exists: ${existing.label}. A template has one PK; unmark it first.`);
+}
+
+function setUploadField(index, field, value) {
+  draftTemplate.upload_cohorts[index][field] = field === 'key_columns'
+    ? String(value).split(',').map(v => v.trim()).filter(Boolean)
+    : value;
+  updateDraftYaml();
 }
 
 function renderBatchingRows() {
@@ -1393,15 +1625,24 @@ function renderBatchingRows() {
 function renderCohortRows() {
   const root = document.getElementById('cohortEditorRows');
   if (!root) return;
-  root.innerHTML = draftTemplate.cohorts.map((cohort, index) => `
+  root.innerHTML = draftTemplate.cohorts.map((cohort, index) => cohort.recipe ? `
     <div class="editor-row cohort">
-      <label>${cohort.recipe ? 'Recipe' : 'Custom'}<input data-cohort-field="${cohort.recipe ? 'recipe' : 'type'}" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort.type || '')}"></label>
+      <label>Recipe<input data-cohort-field="recipe" data-index="${index}" value="${escapeAttr(cohort.recipe || '')}"></label>
       <label>Name<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
-      ${cohort.recipe ? '' : `<button data-edit-custom-cohort="${index}">Load</button>`}
+      ${cohortIsPk(cohort) ? '<span class="badge pk">PK table</span>' : '<span></span>'}
+      <span></span><span></span>
+      <button class="danger" data-remove-cohort="${index}">Remove</button>
+    </div>` : `
+    <div class="editor-row cohort">
+      <label>Custom table<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
+      <label>Destination<input data-cohort-field="dest_table" data-index="${index}" value="${escapeAttr(cohort.dest_table || '')}"></label>
+      <label class="checkbox-label"><input type="checkbox" data-cohort-pk="${index}" ${cohortIsPk(cohort) ? 'checked' : ''}> PK table</label>
+      <button data-edit-custom-cohort="${index}">Load</button>
+      <button data-save-recipe="${index}" title="Add this table to recipes.yaml">Save as Recipe</button>
       <button class="danger" data-remove-cohort="${index}">Remove</button>
     </div>
   `).join('') || '<div class="empty">No cohorts in draft.</div>';
-  updatePkWarning();
+  renderPkStatus();
   renderJoinBuilder();
 }
 
@@ -1559,7 +1800,10 @@ function renderCustomBuilder() {
   renderDictionaryTableOptions();
   setValue('customName', customDraft.name || '');
   setValue('customDestTable', customDraft.dest_table || '');
-  setValue('customType', customDraft.type || 'fact');
+  setChecked('customIsPk', String(customDraft.type || '').toLowerCase() === 'pk');
+  const addButton = document.getElementById('addCustomCohort');
+  if (addButton) addButton.textContent = editingCustomIndex === null ? 'Add Custom Table' : 'Save Changes';
+  hideMessage('customPkMessage');
   const pull = document.getElementById('customPullThisCycle');
   if (pull) pull.checked = customDraft.pull_this_cycle !== false;
   setValue('customFromTable', customDraft.filter.from_table || '');
@@ -1764,7 +2008,14 @@ function syncCustomFields() {
   const oldAlias = customDraft.filter.from_alias;
   customDraft.name = getValue('customName');
   customDraft.dest_table = getValue('customDestTable');
-  customDraft.type = getValue('customType') || 'fact';
+  if (getChecked('customIsPk') && String(customDraft.type || '').toLowerCase() !== 'pk') {
+    const existing = currentPk(editingCustomIndex === null ? null : { kind: 'cohort', index: editingCustomIndex });
+    if (existing) {
+      setChecked('customIsPk', false);
+      refusePk('customPkMessage', existing);
+    }
+  }
+  customDraft.type = getChecked('customIsPk') ? 'PK' : 'fact';
   customDraft.pull_this_cycle = !!document.getElementById('customPullThisCycle')?.checked;
   customDraft.filter.from_table = getValue('customFromTable');
   customDraft.filter.from_alias = getValue('customFromAlias');
@@ -1820,24 +2071,45 @@ function cleanColumn(column) {
 }
 
 function updatePkWarning() {
-  const warning = document.getElementById('pkWarning');
-  if (!warning) return;
-  const existingPk = draftTemplate.cohorts.some(cohort => {
-    if (String(cohort.type || '').toLowerCase() === 'pk') return true;
-    const recipe = recipeDefs.find(item => item.name === cohort.recipe);
-    return String(recipe?.type || '').toLowerCase() === 'pk';
-  });
-  const customPk = String(getValue('customType') || customDraft.type || '').toLowerCase() === 'pk';
-  warning.classList.toggle('hidden', !(existingPk && customPk));
+  renderPkStatus();
 }
 
-function customRecipeText() {
-  const cohort = makeCustomCohort();
-  const recipeName = cohort.name || 'CustomRecipe';
+function recipeFromCohort(cohort) {
   const recipe = clone(cohort);
-  recipe.name = recipeName;
+  recipe.name = recipe.name || 'CustomRecipe';
   delete recipe.recipe;
-  return toYaml({ recipes: [recipe] });
+  return recipe;
+}
+
+async function saveCohortAsRecipe(index) {
+  const recipe = recipeFromCohort(draftTemplate.cohorts[index]);
+  const recipesPath = document.querySelector('input[name="recipes"]')?.value || '';
+  if (window.location.protocol === 'file:') {
+    const blob = new Blob([toYaml({ recipes: [recipe] })], { type: 'text/yaml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = cleanDownloadName(`recipe_${recipe.name}.yaml`);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showMessage('recipeSaveMessage', 'This page was opened as a file, so it cannot write recipes.yaml. The recipe was downloaded instead: paste it under recipes:, or open the served UI (python3 scripts/yamlmanager.py).', 'warn');
+    return;
+  }
+  try {
+    const response = await fetch('/save-recipe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipe, recipes: recipesPath })
+    });
+    const body = await response.json();
+    showMessage('recipeSaveMessage', body.message, body.ok ? 'ok' : 'error');
+    if (body.ok) {
+      recipeDefs.push(recipe);
+      recipeNames.push(recipe.name);
+      renderRecipeOptions();
+    }
+  } catch (err) {
+    showMessage('recipeSaveMessage', `Could not reach the YAML Manager server to save: ${err}`);
+  }
 }
 
 function describeBatching(item) {
@@ -1903,6 +2175,75 @@ document.getElementById('addUpload')?.addEventListener('click', () => {
   renderUploadRows();
   updateDraftYaml();
 });
+
+document.getElementById('addMultiplier')?.addEventListener('click', () => {
+  ensureDraftShape();
+  const stage = getValue('newMultiplierStage') || 'during_build';
+  const mult = { name: getValue('newMultiplierName') || `Multiplier${draftTemplate.multipliers.length + 1}`, stage, levels: [] };
+  if (stage === 'split_after_build') mult.applies_to = 'PKTable';
+  draftTemplate.multipliers.push(mult);
+  setValue('newMultiplierName', '');
+  renderMultiplierRows();
+  updateDraftYaml();
+});
+
+function levelVarsText(vars) {
+  return Object.entries(vars || {})
+    .map(([key, value]) => `${key}: ${(Array.isArray(value) ? value : [value]).join(', ')}`)
+    .join('; ');
+}
+
+function parseLevelVars(text) {
+  const vars = {};
+  String(text || '').split(';').forEach(part => {
+    const [key, ...rest] = part.split(':');
+    if (!key.trim()) return;
+    vars[key.trim()] = rest.join(':').split(',').map(v => v.trim()).filter(Boolean);
+  });
+  return vars;
+}
+
+function renderMultiplierRows() {
+  const root = document.getElementById('multiplierEditorRows');
+  if (!root) return;
+  root.innerHTML = draftTemplate.multipliers.map((mult, index) => {
+    const split = mult.stage === 'split_after_build';
+    const at = (li, field) => `data-level-field="${field}" data-mult="${index}" data-level="${li}"`;
+    const levels = (mult.levels || []).map((level, li) => split ? `
+      <div class="editor-row level split">
+        <label>Strat<input ${at(li, 'strat')} value="${escapeAttr(level.strat || '')}" placeholder="black"></label>
+        <label>PK column<input ${at(li, 'column')} value="${escapeAttr(level.column || '')}" placeholder="FirstRace"></label>
+        <label>Values<input ${at(li, 'values')} value="${escapeAttr((level.values || []).join(', '))}" placeholder="Black %"></label>
+        <label>Role<select ${at(li, 'role')}>
+          <option value="" ${level.role ? '' : 'selected'}></option>
+          <option value="control" ${level.role === 'control' ? 'selected' : ''}>control</option>
+        </select></label>
+        <label>Row mult<input type="number" min="1" ${at(li, 'row_mult')} value="${escapeAttr(level.row_mult ?? '')}"></label>
+        <button class="danger" data-remove-level="${index}" data-level="${li}">Remove</button>
+      </div>` : `
+      <div class="editor-row level">
+        <label>Strat<input ${at(li, 'strat')} value="${escapeAttr(level.strat || '')}" placeholder="UC"></label>
+        <label>Vars<input ${at(li, 'vars')} value="${escapeAttr(levelVarsText(level.vars))}" placeholder="ICD_Value: K51.%, K52.%"></label>
+        <button class="danger" data-remove-level="${index}" data-level="${li}">Remove</button>
+      </div>`).join('');
+    return `
+      <div class="multiplier">
+        <div class="multiplier-head">
+          <label>Name<input data-mult-field="name" data-index="${index}" value="${escapeAttr(mult.name || '')}"></label>
+          <label>Stage<select data-mult-field="stage" data-index="${index}">
+            <option value="during_build" ${split ? '' : 'selected'}>during_build</option>
+            <option value="split_after_build" ${split ? 'selected' : ''}>split_after_build</option>
+          </select></label>
+          <button data-add-level="${index}">Add Level</button>
+          <button class="danger" data-remove-multiplier="${index}">Remove</button>
+        </div>
+        <p class="helper-text">${split
+          ? 'Builds the PK once, then splits it: each level keeps the PK rows whose column matches its values (% is a wildcard).'
+          : 'Each level builds every cohort again with its variables, and prefixes their names with its strat. Separate variables with ;.'}</p>
+        <div class="editor-rows">${levels || '<div class="empty">No levels yet.</div>'}</div>
+      </div>`;
+  }).join('') || '<div class="empty">No multipliers in draft.</div>';
+}
 
 document.getElementById('addBatching')?.addEventListener('click', () => {
   ensureDraftShape();
@@ -1970,31 +2311,31 @@ document.getElementById('resetCustomCohort')?.addEventListener('click', () => {
   renderCustomBuilder();
 });
 
-document.getElementById('copyCustomRecipe')?.addEventListener('click', async () => {
-  const text = customRecipeText();
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (err) {
-    window.prompt('Copy custom recipe YAML:', text);
-  }
-});
-
-document.getElementById('downloadCustomRecipe')?.addEventListener('click', () => {
-  const text = customRecipeText();
-  const blob = new Blob([text], { type: 'text/yaml' });
-  const a = document.createElement('a');
-  const name = cleanDownloadName(`recipe_${makeCustomCohort().name || 'custom'}.yaml`);
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
 document.addEventListener('input', event => {
   const target = event.target;
   const index = Number(target.dataset.index);
   if (target.dataset.uploadField) {
-    draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
+    setUploadField(index, target.dataset.uploadField, target.value);
+  }
+  if (target.dataset.multField) {
+    const mult = draftTemplate.multipliers[index];
+    mult[target.dataset.multField] = target.value;
+    if (target.dataset.multField === 'stage') {
+      if (target.value === 'split_after_build') mult.applies_to = 'PKTable';
+      else delete mult.applies_to;
+      renderMultiplierRows();
+    }
+    updateDraftYaml();
+  }
+  if (target.dataset.levelField) {
+    const level = draftTemplate.multipliers[Number(target.dataset.mult)].levels[Number(target.dataset.level)];
+    const field = target.dataset.levelField;
+    const text = target.value.trim();
+    if (field === 'values') level.values = text.split(',').map(v => v.trim()).filter(Boolean);
+    else if (field === 'vars') level.vars = parseLevelVars(text);
+    else if (field === 'row_mult') { if (text) level.row_mult = Number(text); else delete level.row_mult; }
+    else if (field === 'role') { if (text) level.role = text; else delete level.role; }
+    else level[field] = target.value;
     updateDraftYaml();
   }
   if (target.dataset.batchingField) {
@@ -2025,7 +2366,42 @@ document.addEventListener('change', event => {
   const target = event.target;
   const index = Number(target.dataset.index);
   if (target.dataset.uploadField) {
-    draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
+    setUploadField(index, target.dataset.uploadField, target.value);
+  }
+  if (target.dataset.uploadPk !== undefined) {
+    const at = Number(target.dataset.uploadPk);
+    const upload = draftTemplate.upload_cohorts[at];
+    hideMessage('uploadPkMessage');
+    if (target.checked) {
+      const existing = currentPk({ kind: 'upload', index: at });
+      if (existing) {
+        target.checked = false;
+        refusePk('uploadPkMessage', existing);
+        return;
+      }
+      upload.type = 'pk';
+      upload.key_columns = upload.key_columns || [];
+    } else {
+      delete upload.type;
+      delete upload.key_columns;
+    }
+    renderUploadRows();
+    renderCohortRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.cohortPk !== undefined) {
+    const at = Number(target.dataset.cohortPk);
+    hideMessage('cohortPkMessage');
+    if (target.checked) {
+      const existing = currentPk({ kind: 'cohort', index: at });
+      if (existing) {
+        target.checked = false;
+        refusePk('cohortPkMessage', existing);
+        return;
+      }
+    }
+    draftTemplate.cohorts[at].type = target.checked ? 'PK' : 'fact';
+    renderCohortRows();
     updateDraftYaml();
   }
   if (target.dataset.batchingField) {
@@ -2087,6 +2463,26 @@ document.addEventListener('click', event => {
       renderCustomBuilder();
     }
     renderCohortRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.saveRecipe) {
+    saveCohortAsRecipe(Number(target.dataset.saveRecipe));
+  }
+  if (target.dataset.addLevel) {
+    const mult = draftTemplate.multipliers[Number(target.dataset.addLevel)];
+    mult.levels = mult.levels || [];
+    mult.levels.push(mult.stage === 'split_after_build' ? { strat: '', column: '', values: [] } : { strat: '', vars: {} });
+    renderMultiplierRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.removeLevel) {
+    draftTemplate.multipliers[Number(target.dataset.removeLevel)].levels.splice(Number(target.dataset.level), 1);
+    renderMultiplierRows();
+    updateDraftYaml();
+  }
+  if (target.dataset.removeMultiplier) {
+    draftTemplate.multipliers.splice(Number(target.dataset.removeMultiplier), 1);
+    renderMultiplierRows();
     updateDraftYaml();
   }
   if (target.dataset.editCustomCohort) {
@@ -2371,6 +2767,26 @@ def serve_dashboard(
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self) -> None:
+            """The one write the page can make: a custom table saved as a recipe."""
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != "/save-recipe":
+                self.send_error(404)
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}")
+                recipes_path = resolve_workspace_path(body.get("recipes") or default_recipes)
+                status, message = save_recipe(recipes_path, body.get("recipe"))
+            except (ValueError, OSError) as exc:
+                status, message = 400, f"Could not save: {exc}"
+            data = json.dumps({"ok": status == 200, "message": message}).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def log_message(self, format: str, *args: Any) -> None:
             print(f"[yamlmanager] {self.address_string()} - {format % args}")
 
@@ -2407,8 +2823,103 @@ def serve_dashboard(
     return 0
 
 
+class SaveRecipeTests(unittest.TestCase):
+    """Saving a custom table into recipes.yaml must never damage the file."""
+
+    RECIPES = """# Reusable definitions
+batching_recipes:
+  - name: sex
+    kind: column_values
+    column: Sex
+
+recipes:
+  # the main PK
+  - name: PatientWithDx
+    type: PK
+    columns:
+      - {source: p.Sex, name: Sex}
+
+# trailing notes stay put
+"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "recipes.yaml"
+        self.path.write_text(self.RECIPES, encoding="utf-8")
+
+    def recipe(self, name="Mothers"):
+        return {"name": name, "type": "fact", "columns": [{"source": "bf.MotherKey", "name": "MotherKey"}]}
+
+    def test_the_recipe_is_added_and_everything_else_kept(self):
+        status, message = save_recipe(self.path, self.recipe())
+        self.assertEqual(status, 200, message)
+        text = self.path.read_text(encoding="utf-8")
+        for kept in ("# Reusable definitions", "# the main PK", "# trailing notes stay put"):
+            self.assertIn(kept, text)
+        doc = backend.load_document(self.path)
+        self.assertEqual([r["name"] for r in doc["recipes"]], ["PatientWithDx", "Mothers"])
+        self.assertEqual([r["name"] for r in doc["batching_recipes"]], ["sex"])
+        self.assertIn("\n  - name: Mothers", text)
+
+    def test_a_name_already_there_is_refused_and_the_file_unchanged(self):
+        status, message = save_recipe(self.path, self.recipe("PatientWithDx"))
+        self.assertEqual(status, 409)
+        self.assertIn("Rename", message)
+        self.assertEqual(self.path.read_text(encoding="utf-8"), self.RECIPES)
+
+    def test_a_table_without_a_name_is_refused(self):
+        self.assertEqual(save_recipe(self.path, {"type": "fact"})[0], 400)
+
+    def test_recipes_before_another_section_are_inserted_in_place(self):
+        self.path.write_text(
+            "recipes:\n  - name: A\n    type: fact\n\nbatching_recipes:\n  - name: sex\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(save_recipe(self.path, self.recipe())[0], 200)
+        doc = backend.load_document(self.path)
+        self.assertEqual([r["name"] for r in doc["recipes"]], ["A", "Mothers"])
+        self.assertEqual([r["name"] for r in doc["batching_recipes"]], ["sex"])
+
+
+class SectionNoteTests(unittest.TestCase):
+    def test_inline_and_preceding_comments_become_notes(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "template.yaml"
+            path.write_text(
+                "# Cosmos variables\ncosmos_vars:\n  a: 1\n\nbatching:  # splits by value\n"
+                "upload_cohorts:\n",
+                encoding="utf-8",
+            )
+            notes = template_section_notes(path)
+        self.assertEqual(notes["cosmos_vars"], "Cosmos variables")
+        self.assertEqual(notes["batching"], "splits by value")
+        self.assertEqual(notes["upload_cohorts"], FALLBACK_NOTES["upload_cohorts"])
+
+    def test_the_summary_lists_multipliers_and_batching(self):
+        class Result:
+            finished_yaml = {
+                "multipliers": [{"name": "Race", "levels": [{"strat": "black"}, {"strat": "white"}]}],
+                "cohorts": [{"batching": [
+                    {"name": "sex", "kind": "column_values", "values": ["Female", "Male"], "include_other": True},
+                    {"name": "chunk", "kind": "row_chunk", "rows_per_batch": 2000},
+                ]}],
+            }
+        html_text = run_summary(Result())
+        self.assertIn("Race: black/white", html_text)
+        self.assertIn("sex: Female/Male/other, chunk: 2000", html_text)
+
+
+def run_tdd() -> int:
+    suite = unittest.TestSuite()
+    for case in (SaveRecipeTests, SectionNoteTests):
+        suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
+    return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a static YAML Manager UI.")
+    parser.add_argument("--tdd", action="store_true", help="Run this UI's own tests.")
     parser.add_argument("--template", default="YAMLs/template.yaml")
     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
     parser.add_argument(
@@ -2432,6 +2943,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
     raw_argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(raw_argv)
+    if args.tdd:
+        return run_tdd()
 
     # A path typed on the command line means "relative to where I am", as it
     # does for makeYaml and every other CLI tool. Only the built-in defaults are

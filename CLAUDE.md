@@ -55,10 +55,12 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Working Conventions
 
-- Tests are stdlib `unittest`. Run all three suites before committing:
+- Tests are stdlib `unittest`. Run all four suites before committing:
   `python3 scripts/makeYaml.py --tdd`,
   `python3 scripts/pullmanager_src/pullmanager.py --tdd`,
-  `python3 scripts/bundle_pullmanager.py --tdd`.
+  `python3 scripts/bundle_pullmanager.py --tdd`,
+  `python3 scripts/yamlmanager.py --tdd` (the browser UI; Mac only).
+  Upload tests need `pyarrow` and skip without it.
 - A bug fix gets a test of the **outcome** (what data ends up where), confirmed
   to fail with the bug reintroduced. D46 is what happens otherwise.
 - Prefer a loud error that suggests a fix over inferring what the user meant.
