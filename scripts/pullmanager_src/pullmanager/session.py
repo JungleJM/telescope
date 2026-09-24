@@ -11,16 +11,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import local_sql, server_sql, uploads
+from . import local_sql, refresh, server_sql, uploads
 from .batches import BatchError, select_batch_rows
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 from .executor import (
-    RESUME_FULL,
-    RESUME_PARTIAL,
     Unit,
     iter_units,
     plan_unit,
+    run_destinations,
     session_cohorts,
+    session_has_work,
+    session_resumes,
     should_execute,
 )
 from .manifest import Manifest, Phase, Session
@@ -36,14 +37,6 @@ LARGE_ROW_WARNING = 80_000_000
 
 class SessionError(RuntimeError):
     """Raised when a session cannot proceed."""
-
-
-RESUME_PARTIAL_UNAVAILABLE = (
-    "--resume-partial is not available yet. On a new connection the setup phase "
-    "replays, and setup drops every destination table -- including the ones "
-    "completed batches filled -- while those batches are then skipped as done. "
-    "Their rows would be lost. Use the default, which replays the whole session."
-)
 
 
 @dataclass
@@ -71,7 +64,6 @@ class SessionRunner:
         settings: Settings,
         *,
         connect_fn: Callable[..., Any] = connect,
-        mode: str = RESUME_FULL,
         retry_failed: bool = False,
         upload_root: Path | None = None,
     ):
@@ -79,11 +71,10 @@ class SessionRunner:
         self.session = session
         self.settings = settings
         self._connect = connect_fn
-        self.mode = mode
         self.retry_failed = retry_failed
         self.upload_root = upload_root or manifest.root
-        if mode == RESUME_PARTIAL:
-            raise SessionError(RESUME_PARTIAL_UNAVAILABLE)
+        # Decided before anything runs: executing the PK phase would change it.
+        self.resuming = session_resumes(session)
         self.cosmos: Any = None
         self.projects: Any = None
         self.report = SessionReport(session_id=session.session_id)
@@ -91,6 +82,13 @@ class SessionRunner:
     # ----------------------------------------------------------- lifecycle
 
     def open(self) -> None:
+        try:
+            self._open()
+        except Exception:
+            self.close()
+            raise
+
+    def _open(self) -> None:
         """Open the connection whose lifetime defines the session."""
         doc = self._phase_doc("setup")
         self.cosmos = self._connect(
@@ -101,6 +99,7 @@ class SessionRunner:
         # Captured per connection: the instance name changes every time, so a
         # cached one would aim OPENQUERY at a server that is no longer ours.
         linked_server = capture_server_name(self.cosmos)
+        self._check_refresh()
         epoch = self.session.begin_epoch(linked_server=linked_server)
         self.report.epoch = epoch
         self.report.linked_server = linked_server
@@ -115,6 +114,26 @@ class SessionRunner:
             query_timeout=self.settings.query_timeout,
         )
         self.manifest.save()
+
+    def _check_refresh(self) -> None:
+        """Refuse to add to a pull whose Cosmos has been rebuilt under it (D51).
+
+        `--execute` compares before any session opens and starts everything
+        over if Cosmos moved. This catches a refresh during the run itself.
+        """
+        stamps = refresh.read_stamps(self.cosmos)
+        used = refresh.databases_used(self.manifest)
+        moved = refresh.changes(self.manifest, stamps, used)
+        if moved:
+            described = "; ".join(f"{name}: {before} -> {after}" for name, before, after in moved)
+            raise SessionError(
+                f"Cosmos was refreshed while this pull was running ({described}). Nothing "
+                "more was pulled. Run --execute again: every session will start over."
+            )
+        seen = {name: value for name, value in stamps.items() if name.lower() in used}
+        for name, value in seen.items():
+            self.manifest.cosmos_refresh.setdefault(name, value)
+        self.session.runtime["cosmos_created"] = seen
 
     def close(self) -> None:
         for connection in (self.projects, self.cosmos):
@@ -149,6 +168,9 @@ class SessionRunner:
         every failure. A failed phase does block what follows it, since setup,
         uploads and PK are prerequisites.
         """
+        if not session_has_work(self.manifest, self.session, retry_failed=self.retry_failed):
+            self.report.skipped.append(f"{self.session.session_id} (nothing left to pull)")
+            return self.report
         blocked = False
         for kind, node, path in iter_units(self.manifest, self.session):
             label = node.label
@@ -159,11 +181,7 @@ class SessionRunner:
                 continue
 
             execute, reason = should_execute(
-                node,
-                kind,
-                current_epoch=self.session.epoch,
-                mode=self.mode,
-                retry_failed=self.retry_failed,
+                node, kind, resuming=self.resuming, retry_failed=self.retry_failed
             )
             if not execute:
                 self.report.skipped.append(f"{label} ({reason})")
@@ -174,6 +192,9 @@ class SessionRunner:
             try:
                 rows = self._run_unit(kind, node, path)
             except Exception as exc:
+                # Nothing a failed unit wrote should be committed along with the
+                # next unit's work. The retry clears its batch anyway (D52).
+                self._rollback()
                 node.fail(str(exc), detail=type(exc).__name__)
                 self.report.failed.append((label, str(exc)))
                 self.manifest.save()
@@ -184,6 +205,13 @@ class SessionRunner:
             self.report.completed.append(label)
             self.manifest.save()
         return self.report
+
+    def _rollback(self) -> None:
+        for connection in (self.projects, self.cosmos):
+            try:
+                connection.rollback()
+            except Exception:
+                pass
 
     def _run_unit(self, kind: str, node: Any, path: Path) -> int | None:
         if kind == "setup":
@@ -198,10 +226,19 @@ class SessionRunner:
     # --------------------------------------------------------------- setup
 
     def _run_setup(self, path: Path) -> None:
-        """Create the destination tables once; runs then append to them."""
+        """Create the destination tables once; runs then append to them.
+
+        Resuming, the tables are kept: they hold the finished batches.
+        """
         doc = load_yaml(path) or {}
         cohorts = session_cohorts(self.manifest, self.session)
-        for block in local_sql.render_setup(doc, cohorts, f"{self.session.session_id}/setup"):
+        for block in local_sql.render_setup(
+            doc,
+            cohorts,
+            f"{self.session.session_id}/setup",
+            keep=self.resuming,
+            batched=run_destinations(self.manifest, self.session),
+        ):
             execute_script(self.projects, block.sql, label=block.block_id)
         self.projects.commit()
         node_outputs = {"linked_server": self.report.linked_server, "tables": len(cohorts)}
@@ -234,7 +271,8 @@ class SessionRunner:
         """Build the PK, land it in Projects, and prove its key is unique."""
         doc = load_yaml(path) or {}
         unit = plan_unit(
-            self.manifest, self.session, "pk", node, path, self.report.linked_server
+            self.manifest, self.session, "pk", node, path, self.report.linked_server,
+            resuming=self.resuming,
         )
         rows = self._run_pair(unit)
         node.outputs["global_temp"] = global_temp(self.session.pk_table or "")
@@ -289,9 +327,14 @@ class SessionRunner:
     def _run_run(self, node: Any, path: Path) -> int | None:
         self._materialize_batch(node)
         unit = plan_unit(
-            self.manifest, self.session, "run", node, path, self.report.linked_server
+            self.manifest, self.session, "run", node, path, self.report.linked_server,
+            resuming=self.resuming,
         )
         return self._run_pair(unit)
+
+    def _pk_is_generated(self) -> bool:
+        pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
+        return not pk_source or pk_source.get("kind") == "generated"
 
     def _materialize_batch(self, node: Any) -> None:
         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
@@ -301,7 +344,12 @@ class SessionRunner:
         """
         batch = node.batch
         if not batch:
-            return
+            # Resuming, the PK query did not run, so its temp does not exist:
+            # rebuild it whole from the Projects copy. An uploaded PK was
+            # rebuilt by the upload phase.
+            if not (self.resuming and self._pk_is_generated()):
+                return
+            batch = {"name": local_sql.UNBATCHED_LABEL, "dimensions": [], "runtime": []}
         pk_table = self.session.pk_table
         if not pk_table:
             raise SessionError(f"{node.label}: the session has no pk_table to narrow.")

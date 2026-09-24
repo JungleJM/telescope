@@ -111,6 +111,17 @@ class Node:
         self._stamp_finish()
         self._data["error"] = {"message": message, "detail": detail}
 
+    def reset(self, reason: str | None = None) -> None:
+        """Back to pending, as if never run: everything must be pulled again."""
+        self.status = PENDING
+        for key in ("started_at", "finished_at", "rows", "error", "epoch", "duration"):
+            self._data.pop(key, None)
+        self._data["outputs"] = {}
+        if reason:
+            self._data["note"] = reason
+        else:
+            self._data.pop("note", None)
+
     def skip(self, reason: str | None = None) -> None:
         self._settle_without_running(SKIPPED, reason)
 
@@ -300,6 +311,18 @@ class Manifest:
         if not node.yaml:
             raise ManifestError(f"Node {node.label!r} has no `yaml` path to resolve.")
         return self.root / node.yaml
+
+    @property
+    def cosmos_refresh(self) -> dict[str, str]:
+        """Each Cosmos database's `create_date` when this manifest last ran (D51)."""
+        return self._data.setdefault("cosmos_refresh", {})
+
+    def reset_all(self, reason: str) -> None:
+        """Every session starts over, finished work included."""
+        for session in self.sessions:
+            session.runtime.clear()
+            for child in session.children:
+                child.reset(reason)
 
     def iter_nodes(self) -> Iterator[tuple[Session, Node]]:
         for session in self.sessions:

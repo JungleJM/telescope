@@ -55,44 +55,94 @@ def iter_units(manifest: Manifest, session: Session) -> Iterator[tuple[str, Node
         yield "run", run, manifest.resolve(run)
 
 
-RESUME_FULL = "full"
-RESUME_PARTIAL = "partial"
+def session_resumes(session: Session) -> bool:
+    """Whether a session picks up where it left off rather than starting over.
+
+    It resumes once its PK phase is done: the Projects copy of the PK exists,
+    so the batches still to run can be drawn from the same population as the
+    ones that finished (D52). Anything earlier starts over. A refresh of Cosmos
+    or `--repull` resets every node, which makes every session start over.
+    """
+    pk = next((phase for phase in session.phases if phase.name == "pk"), None)
+    return pk is not None and pk.status == DONE
 
 
 def should_execute(
     node: Node,
     kind: str,
     *,
-    current_epoch: str | None = None,
-    mode: str = RESUME_FULL,
+    resuming: bool = False,
     retry_failed: bool = False,
 ) -> tuple[bool, str]:
     """Decide whether one unit runs, and say why.
 
-    `done` does not mean "its output still exists". Global temps die with the
-    connection, so work completed under a previous epoch has left nothing on
-    the server even though the status still reads done. A run is different: its
-    durable result is rows in a Projects table, which survive, so it is the one
-    kind of unit a partial resume can skip.
+    Starting over, everything runs: setup drops the destinations, so every run
+    has to refill them. Resuming, a finished run's rows are in Projects and
+    stay; the server-side phases are rebuilt for the runs still to go, except
+    the PK query, whose Projects copy the remaining batches are drawn from.
     """
     status = node.status
     if status == FAILED:
         if retry_failed:
             return True, "retrying a failure"
         return False, "failed; --retry-failed reopens it"
-    if status == RUNNING:
-        return True, "interrupted while running"
-    if status == BLOCKED:
-        return True, "was blocked; upstream may succeed this time"
     if status == SKIPPED:
         return False, "skipped deliberately"
+    if not resuming:
+        if status == RUNNING:
+            return True, "interrupted while running"
+        if status == BLOCKED:
+            return True, "was blocked; upstream may succeed this time"
+        if status == DONE:
+            return True, "starting over: setup empties the destinations"
+        return True, "pending"
+    if kind == "pk":
+        return False, "kept: its Projects copy is what the remaining batches are drawn from"
+    if kind in ("setup", "upload_cohorts"):
+        return True, "rebuilt for the runs still to go; finished tables are kept"
     if status == DONE:
-        if not node.is_stale(current_epoch):
-            return False, "already done in this session"
-        if kind == "run" and mode == RESUME_PARTIAL:
-            return False, "done; its rows are in a Projects table and survive"
-        return True, "done under a previous connection; server state is gone"
+        return False, "done; its rows are in Projects"
+    if status == RUNNING:
+        return True, "interrupted while running; its rows are cleared first"
+    if status == BLOCKED:
+        return True, "was blocked; upstream may succeed this time"
     return True, "pending"
+
+
+def session_units(
+    manifest: Manifest, session: Session, *, retry_failed: bool = False
+) -> list[tuple[str, Node, Path, bool, str]]:
+    """Every unit with whether it runs next time, and why."""
+    resuming = session_resumes(session)
+    return [
+        (kind, node, path, *should_execute(node, kind, resuming=resuming, retry_failed=retry_failed))
+        for kind, node, path in iter_units(manifest, session)
+    ]
+
+
+def session_has_work(manifest: Manifest, session: Session, *, retry_failed: bool = False) -> bool:
+    """False when an `--execute` has nothing to do for this session.
+
+    A resuming session with no run left to execute is complete (or holds only
+    failures not reopened), so rebuilding its server side would pull nothing.
+    """
+    units = session_units(manifest, session, retry_failed=retry_failed)
+    if session_resumes(session):
+        return any(execute for kind, _, _, execute, _ in units if kind == "run")
+    return any(execute for _, _, _, execute, _ in units)
+
+
+def run_destinations(manifest: Manifest, session: Session) -> set[str]:
+    """Destinations the session's runs fill, which carry a `_batch` column."""
+    dests: set[str] = set()
+    for run in session.runs:
+        path = manifest.resolve(run)
+        if not path.is_file():
+            continue
+        for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+            if isinstance(cohort, dict) and cohort.get("dest_table"):
+                dests.add(str(cohort["dest_table"]))
+    return dests
 
 
 def session_cohorts(manifest: Manifest, session: Session) -> list[dict[str, Any]]:
@@ -118,6 +168,8 @@ def plan_unit(
     node: Node,
     path: Path,
     linked_server: str,
+    *,
+    resuming: bool = False,
 ) -> Unit:
     """Render the SQL one phase or run implies."""
     if not path.is_file():
@@ -128,8 +180,16 @@ def plan_unit(
     if kind == "setup":
         unit.server_blocks = server_sql.render_setup(doc, unit.unit_id)
         cohorts = session_cohorts(manifest, session)
-        unit.local_blocks = local_sql.render_setup(doc, cohorts, unit.unit_id)
+        unit.local_blocks = local_sql.render_setup(
+            doc,
+            cohorts,
+            unit.unit_id,
+            keep=resuming,
+            batched=run_destinations(manifest, session),
+        )
         unit.notes.append(
+            f"setup keeps {len(cohorts)} destination table(s), creating any missing"
+            if resuming else
             f"setup creates {len(cohorts)} destination table(s); runs append to them"
         )
         return unit
@@ -161,22 +221,18 @@ def plan_session(
     linked_server: str = DRY_RUN_LINKED_SERVER,
     retry_failed: bool = False,
     include_settled: bool = False,
-    mode: str = RESUME_FULL,
-    current_epoch: str | None = None,
 ) -> list[Unit]:
-    """Every unit this session would execute, in order.
-
-    `current_epoch` defaults to None, which models opening a fresh connection:
-    anything completed under a previous epoch is stale.
-    """
+    """Every unit the next `--execute` would run for this session, in order."""
+    if not include_settled and not session_has_work(manifest, session, retry_failed=retry_failed):
+        return []
+    resuming = session_resumes(session)
     units: list[Unit] = []
-    for kind, node, path in iter_units(manifest, session):
-        execute, reason = should_execute(
-            node, kind, current_epoch=current_epoch, mode=mode, retry_failed=retry_failed
-        )
+    for kind, node, path, execute, reason in session_units(
+        manifest, session, retry_failed=retry_failed
+    ):
         if not execute and not include_settled:
             continue
-        unit = plan_unit(manifest, session, kind, node, path, linked_server)
+        unit = plan_unit(manifest, session, kind, node, path, linked_server, resuming=resuming)
         unit.reason = reason if execute else f"included anyway ({reason})"
         units.append(unit)
     return units
@@ -188,7 +244,6 @@ def plan(
     linked_server: str = DRY_RUN_LINKED_SERVER,
     retry_failed: bool = False,
     include_settled: bool = False,
-    mode: str = RESUME_FULL,
 ) -> list[Unit]:
     units: list[Unit] = []
     for session in manifest.sessions:
@@ -199,34 +254,31 @@ def plan(
                 linked_server=linked_server,
                 retry_failed=retry_failed,
                 include_settled=include_settled,
-                mode=mode,
             )
         )
     return units
 
 
 def excluded_units(
-    manifest: Manifest,
-    *,
-    mode: str = RESUME_FULL,
-    retry_failed: bool = False,
-    current_epoch: str | None = None,
+    manifest: Manifest, *, retry_failed: bool = False
 ) -> list[tuple[str, str, str]]:
     """Units the plan leaves out, as (id, status, reason).
 
-    Reported rather than silently dropped: a resume that rebuilds the server
-    side but omits the run that failed would finish with nothing transferred,
-    which should not look like success.
+    Reported rather than silently dropped: a failure left out should not look
+    like success.
     """
     left_out: list[tuple[str, str, str]] = []
     for session in manifest.sessions:
-        for kind, node, _ in iter_units(manifest, session):
-            execute, reason = should_execute(
-                node, kind, current_epoch=current_epoch, mode=mode, retry_failed=retry_failed
-            )
-            if not execute:
-                label = f"{session.session_id}/{kind}" if isinstance(node, Phase) else node.label
-                left_out.append((label, node.status, reason))
+        idle = not session_has_work(manifest, session, retry_failed=retry_failed)
+        for kind, node, _, execute, reason in session_units(
+            manifest, session, retry_failed=retry_failed
+        ):
+            if execute and not idle:
+                continue
+            label = f"{session.session_id}/{kind}" if isinstance(node, Phase) else node.label
+            if execute and idle:
+                reason = "nothing left to pull in this session"
+            left_out.append((label, node.status, reason))
     return left_out
 
 

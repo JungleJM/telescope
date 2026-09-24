@@ -45,6 +45,7 @@ class LauncherApp:
         self.runner = launcher.CommandRunner()
         self.vars: dict[str, tk.StringVar] = {}
         self.retry_failed = tk.BooleanVar(value=False)
+        self.repull = tk.BooleanVar(value=False)
         self.action_buttons: list[ttk.Button] = []
         self._next_status_refresh = 0
 
@@ -79,6 +80,9 @@ class LauncherApp:
         options = ttk.Frame(frame)
         options.grid(row=len(FIELDS), column=0, columnspan=4, sticky="w", pady=(8, 4))
         ttk.Checkbutton(options, text="Retry failed", variable=self.retry_failed).pack(side="left")
+        ttk.Checkbutton(
+            options, text="Re-pull everything", variable=self.repull
+        ).pack(side="left", padx=(12, 0))
 
         actions = ttk.Frame(frame)
         actions.grid(row=len(FIELDS) + 1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
@@ -138,7 +142,7 @@ class LauncherApp:
         return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS})
 
     def options(self) -> Options:
-        return Options(retry_failed=bool(self.retry_failed.get()))
+        return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()))
 
     def _load_settings(self) -> None:
         saved = launcher.load_settings(self.workdir)

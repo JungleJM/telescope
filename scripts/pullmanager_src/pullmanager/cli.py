@@ -12,14 +12,16 @@ from pathlib import Path
 
 from . import __version__
 from .executor import (
-    RESUME_FULL,
-    RESUME_PARTIAL,
     PlanError,
     excluded_units,
     plan,
+    session_has_work,
+    session_resumes,
+    session_units,
     write_sql,
 )
 from .manifest import Manifest, ManifestError
+from .models import FAILED
 from .naming import NamingError
 from .normalize import NormalizationError
 
@@ -36,26 +38,40 @@ def summarize(manifest: Manifest) -> None:
         epoch = session.epoch or "-"
         print(f"  {session.session_id}  [{session.status}]  pk={session.pk_table} ({kind})")
         print(f"    epoch {epoch}")
+        print(f"    next --execute: {next_step(manifest, session)}")
         for phase in session.phases:
-            stale = "  STALE" if phase.is_stale(session.epoch) else ""
-            print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}{stale}")
+            print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}")
         for run in session.runs:
             batch = run.batch.get("name") if run.batch else "-"
-            stale = "  STALE" if run.is_stale(session.epoch) else ""
-            print(f"    run   {batch:<15} {run.status:<8} {run.yaml}{stale}")
+            print(f"    run   {batch:<15} {run.status:<8} {run.yaml}")
         print()
 
 
+def next_step(manifest: Manifest, session, retry_failed: bool = False) -> str:
+    if not session_has_work(manifest, session, retry_failed=retry_failed):
+        if any(run.status == FAILED for run in session.runs):
+            return "nothing, until --retry-failed reopens its failed runs"
+        return "nothing left to pull (--repull pulls it again)"
+    if session_resumes(session):
+        todo = sum(
+            1 for kind, _, _, execute, _ in session_units(manifest, session, retry_failed=retry_failed)
+            if kind == "run" and execute
+        )
+        return f"resumes: {todo} run(s) to pull, finished ones kept"
+    return "starts over"
+
+
 def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
-    mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+    if args.repull:
+        # In memory only: a dry run never writes the manifest.
+        manifest.reset_all("re-pulled: --repull")
     units = plan(
         manifest,
         linked_server=args.linked_server,
         retry_failed=args.retry_failed,
         include_settled=args.all,
-        mode=mode,
     )
-    left_out = excluded_units(manifest, mode=mode, retry_failed=args.retry_failed)
+    left_out = excluded_units(manifest, retry_failed=args.retry_failed)
     failures = [row for row in left_out if row[1] == "failed"]
 
     if not units:
@@ -79,7 +95,8 @@ def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
                 print(f"    {block.side:<6} {block.block_id}")
 
     print(f"\n{len(units)} unit(s), {total_blocks} SQL block(s).")
-    print(f"Resume mode: {mode}")
+    for session in manifest.sessions:
+        print(f"{session.session_id}: {next_step(manifest, session, args.retry_failed)}")
     print(f"Linked server placeholder: {args.linked_server}")
     print("Nothing was executed and the manifest was not modified.")
     _report_exclusions(left_out, failures)
@@ -104,9 +121,11 @@ def _report_exclusions(left_out, failures) -> None:
         )
 
 
-def execute(manifest: Manifest, args: argparse.Namespace) -> int:
-    from .db import DatabaseError, Settings, find_env_file, load_env_file
-    from .session import SessionRunner
+def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+    from . import refresh
+    from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
+    from .normalize import cosmos_database
+    from .session import SessionError, SessionRunner
 
     try:
         loaded = load_env_file(args.env)
@@ -117,18 +136,55 @@ def execute(manifest: Manifest, args: argparse.Namespace) -> int:
         print(f"Loaded {len(loaded)} setting(s) from {find_env_file(args.env)}")
     elif not args.env:
         print("No .env found; using environment variables and defaults.")
+
     settings = Settings.from_env()
-    mode = RESUME_PARTIAL if args.resume_partial else RESUME_FULL
+    connect_fn = connect_fn or connect
+    if args.repull:
+        manifest.reset_all("re-pulled: --repull")
+        print("--repull: every session starts over, finished work included.")
+
+    # D51: before anything is skipped as finished, make sure Cosmos has not
+    # been rebuilt since it was pulled.
+    try:
+        probe = connect_fn(
+            settings.cosmos_connection_string(cosmos_database(None)),
+            login_timeout=settings.login_timeout,
+            query_timeout=settings.query_timeout,
+        )
+    except DatabaseError as exc:
+        print(f"ERROR could not connect to Cosmos: {exc}", file=sys.stderr)
+        return 1
+    try:
+        stamps = refresh.read_stamps(probe)
+    except Exception as exc:
+        stamps = {}
+        print(f"WARNING could not read Cosmos's create_date ({exc}); a refresh cannot be detected.")
+    finally:
+        try:
+            probe.close()
+        except Exception:
+            pass
+    for line in refresh.reconcile(manifest, stamps, refresh.databases_used(manifest)):
+        print(line)
+    manifest.save()
+
     reports = []
+    idle_failures = 0
     for session in manifest.sessions:
         print(f"=== {session.session_id} ===")
+        if not session_has_work(manifest, session, retry_failed=args.retry_failed):
+            print(f"  {next_step(manifest, session, args.retry_failed)}")
+            print()
+            if any(run.status == FAILED for run in session.runs):
+                idle_failures += 1
+            continue
         runner = SessionRunner(
-            manifest, session, settings, mode=mode, retry_failed=args.retry_failed
+            manifest, session, settings, connect_fn=connect_fn, retry_failed=args.retry_failed
         )
         try:
             with runner:
                 report = runner.execute()
-        except DatabaseError as exc:
+        except (DatabaseError, SessionError) as exc:
             print(f"  could not open the session: {exc}", file=sys.stderr)
             # Sessions have independent connections and PKs, so the next one
             # still gets its chance.
@@ -145,14 +201,12 @@ def execute(manifest: Manifest, args: argparse.Namespace) -> int:
         for warning in report.warnings:
             print(f"  warning  {warning}")
         print()
-
     failures = [r for r in reports if r is None or not r.ok]
-    print(f"{len(reports) - len(failures)}/{len(reports)} session(s) completed.")
-    if any(r is not None for r in reports):
-        print(f"Manifest updated: {manifest.path}")
-    else:
-        print("No session opened, so the manifest was not modified.")
-    return 1 if failures else 0
+    ran = len(reports)
+    print(f"{ran - len(failures)}/{ran} session(s) run completed; "
+          f"{len(manifest.sessions) - ran} had nothing to pull.")
+    print(f"Manifest updated: {manifest.path}")
+    return 1 if failures or idle_failures else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -192,10 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--retry-failed", action="store_true", help="Reopen failed work.")
     parser.add_argument(
-        "--resume-partial",
+        "--repull",
         action="store_true",
-        help="Not available yet: as implemented it would lose completed batches. "
-             "The default replays the whole session.",
+        help="Start every session over, finished work included. Without it, finished "
+             "sessions are skipped and unfinished ones resume.",
     )
     parser.add_argument("--all", action="store_true", help="Include already-settled work.")
     parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")
@@ -241,11 +295,6 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         manifest = Manifest.load(args.manifest)
-        if args.resume_partial:
-            from .session import RESUME_PARTIAL_UNAVAILABLE
-
-            print(f"ERROR {RESUME_PARTIAL_UNAVAILABLE}", file=sys.stderr)
-            return 1
         if args.dry_run and args.execute:
             print("--dry-run and --execute are mutually exclusive.", file=sys.stderr)
             return 1

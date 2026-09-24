@@ -80,6 +80,7 @@ class Paths:
 @dataclass
 class Options:
     retry_failed: bool = False
+    repull: bool = False  # start every session over, finished ones included
 
 
 def _require(value: str, what: str) -> str:
@@ -100,6 +101,8 @@ def _resume_flags(options: Options) -> list[str]:
     flags = []
     if options.retry_failed:
         flags.append("--retry-failed")
+    if options.repull:
+        flags.append("--repull")
     return flags
 
 

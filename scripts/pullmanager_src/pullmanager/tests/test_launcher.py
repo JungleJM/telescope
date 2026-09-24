@@ -115,10 +115,14 @@ class CommandTests(unittest.TestCase):
         command = command_execute(TOOLS, Paths(split_dir="s"), Options())
         self.assertNotIn("--retry-failed", command)
 
+    def test_repull_is_passed_when_chosen(self):
+        self.assertIn("--repull", command_execute(TOOLS, Paths(split_dir="s"), Options(repull=True)))
+        self.assertNotIn("--repull", command_execute(TOOLS, Paths(split_dir="s"), Options()))
+
     def test_the_launcher_cannot_request_a_partial_resume(self):
-        # As implemented it lost completed batches; nothing may ask for it.
+        # Removed (D52); a finished batch is kept without asking.
         self.assertNotIn("resume_partial", Options.__dataclass_fields__)
-        for options in (Options(), Options(retry_failed=True)):
+        for options in (Options(), Options(retry_failed=True), Options(repull=True)):
             with self.subTest(options=options):
                 command = command_execute(TOOLS, Paths(split_dir="s"), options)
                 self.assertNotIn("--resume-partial", command)

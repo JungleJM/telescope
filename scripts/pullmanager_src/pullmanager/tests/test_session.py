@@ -8,18 +8,29 @@ are captured per connection.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import re
 import shutil
 import tempfile
 import unittest
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
+from .. import cli
 from ..db import Settings
 from ..manifest import Manifest
-from ..session import LARGE_ROW_WARNING, SessionError, SessionRunner
+from ..session import LARGE_ROW_WARNING, SessionRunner
+from ..yaml_io import dump_yaml, load_yaml
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 INSTANCE = "et4003vpdsql032"
+LAST_REFRESH = datetime(2026, 9, 17, 19, 34, 56, 450000)
+NEXT_REFRESH = datetime(2026, 10, 15, 19, 30, 2, 100000)
+DEST = "PROJECTD33A929.dbo.OtherHospitalizations"
+PK_DEST = "PROJECTD33A929.dbo.Patients"
 
 
 class ScriptedCursor:
@@ -32,9 +43,7 @@ class ScriptedCursor:
 
     def execute(self, sql, params=None):
         self.owner.executed.append(sql)
-        for pattern, action in self.owner.failures.items():
-            if re.search(pattern, sql, re.I):
-                raise RuntimeError(action)
+        self.owner.apply(sql)
         self._sets = list(self.owner.results_for(sql))
         self._advance()
 
@@ -73,15 +82,31 @@ class ScriptedCursor:
 
 
 class FakeConnection:
-    def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None):
+    """A connection whose Projects side remembers what landed where.
+
+    `tables` models the durable Projects database: each destination's rows,
+    counted per `_batch` label. It is shared between the connections of
+    successive executions, the way the real database outlives them, so a test
+    can check the outcome of a failure and a retry rather than the SQL sent.
+    Statements apply in order and a failure stops at the one it matches, so a
+    run can fail after landing some rows. Nothing is undone by a rollback:
+    the worst case, rows that survived a failed run.
+    """
+
+    def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
+                 fail_once=None, tables=None, created=LAST_REFRESH):
         self.side = side
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
-        self.landed = rows if landed is None else landed
+        self.landed = landed
         self.failures = failures or {}
+        self.fail_once = fail_once if fail_once is not None else {}
+        self.tables = tables if tables is not None else {}
+        self.created = created
         self.executed: list[str] = []
         self.inserted: list = []
         self.commits = 0
+        self.rollbacks = 0
         self.closed = False
 
     def cursor(self):
@@ -90,12 +115,41 @@ class FakeConnection:
     def commit(self):
         self.commits += 1
 
+    def rollback(self):
+        self.rollbacks += 1
+
     def close(self):
         self.closed = True
+
+    def apply(self, sql):
+        for statement in sql.split(";"):
+            for pattern, action in self.failures.items():
+                if re.search(pattern, statement, re.I):
+                    raise RuntimeError(action)
+            for pattern in list(self.fail_once):
+                if re.search(pattern, statement, re.I):
+                    raise RuntimeError(self.fail_once.pop(pattern))
+            if self.side == "projects":
+                self._model(statement)
+
+    def _model(self, statement):
+        if match := re.search(r"DROP TABLE IF EXISTS (PROJECTD\S+)", statement):
+            self.tables.pop(match.group(1), None)
+        if match := re.search(r"CREATE TABLE (PROJECTD\S+)", statement):
+            if "IF OBJECT_ID" not in statement or match.group(1) not in self.tables:
+                self.tables[match.group(1)] = Counter()
+        if match := re.search(r"INSERT INTO (PROJECTD\S+) \(", statement):
+            label = re.search(r", '([^']*)' FROM #", statement)
+            self.tables[match.group(1)][label.group(1) if label else "-"] += self.rows
+        if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
+            self.tables[match.group(1)].pop(match.group(2), None)
 
     def results_for(self, sql):
         if "@@SERVERNAME" in sql:
             return [(["CosmosServerName"], [(INSTANCE,)])]
+        if "sys.databases" in sql:
+            return [(["name", "create_date"],
+                     [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
         if "COUNT_BIG(DISTINCT" in sql:
             return [(["total", "distinct"], [(self.rows, self.distinct)])]
         if "SELECT * FROM" in sql:
@@ -107,11 +161,22 @@ class FakeConnection:
                 sets.append((["DestTable", "Side", "RowCount"],
                              [(dest, "cosmos", self.rows)]))
                 sets.append((["DestTable", "Side", "RowCount"],
-                             [(dest, "projects", self.landed)]))
+                             [(dest, "projects", self._landed(sql))]))
             else:
                 sets.append((["CohortName", "DestTable", "RowCount"],
                              [(dest, dest, self.rows)]))
         return sets
+
+    def _landed(self, sql):
+        if self.landed is not None:
+            return self.landed
+        match = re.search(
+            r"\[RowCount\]\s+FROM (PROJECTD\S+?)(?:\s+WHERE \[_batch\] = '([^']*)')?;", sql
+        )
+        if not match:
+            return self.rows
+        rows = self.tables.get(match.group(1), Counter())
+        return rows.get(match.group(2), 0) if match.group(2) else sum(rows.values())
 
 
 class SessionTestCase(unittest.TestCase):
@@ -136,6 +201,33 @@ class SessionTestCase(unittest.TestCase):
         doc = load_yaml(path)
         doc["cohorts"][0]["key_column"] = column
         dump_yaml(doc, path)
+
+    def make_batched(self):
+        """Give the fixture's session two batches, Female and Male."""
+        runs_dir = self.root / "sessions" / "Patients" / "runs"
+        doc = load_yaml(runs_dir / "run.yaml")
+        runs = []
+        for value in ("Female", "Male"):
+            batch = {
+                "name": value,
+                "dimensions": [
+                    {"name": "sex", "kind": "column_values", "column": "Sex", "value": value}
+                ],
+                "runtime": [],
+            }
+            doc["pull_context"]["batch"] = batch
+            doc["pull_context"]["run_id"] = f"Patients__{value}"
+            dump_yaml(doc, runs_dir / f"{value}.yaml")
+            runs.append({
+                "run_id": f"Patients__{value}",
+                "yaml": f"sessions/Patients/runs/{value}.yaml",
+                "status": "pending",
+                "batch": batch,
+            })
+        data = load_yaml(self.root / "pullmanifest.yaml")
+        data["sessions"][0]["runs"] = runs
+        dump_yaml(data, self.root / "pullmanifest.yaml")
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
 
     def runner(self, **kwargs):
         cosmos = FakeConnection("cosmos", **kwargs.pop("cosmos", {}))
@@ -244,42 +336,136 @@ class FailureTests(SessionTestCase):
 
 
 class ResumeTests(SessionTestCase):
-    def test_a_second_run_replays_stale_server_work(self):
-        with self.runner() as runner:
-            runner.execute()
-        first_epoch = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].epoch
+    """D52: a retry pulls only what failed, and every batch lands exactly once."""
 
+    def setUp(self):
+        super().setUp()
+        self.make_batched()
+        self.tables: dict[str, Counter] = {}
+
+    def execute(self, **projects):
         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
-        with self.runner() as runner:
-            report = runner.execute()
-        # A new connection means the global temps are gone, so the phases run
-        # again even though their status said done.
-        self.assertIn("Patients/setup", report.completed)
-        self.assertIn("Patients/pk", report.completed)
-        self.assertNotEqual(self.manifest.sessions[0].epoch, first_epoch)
+        retry = projects.pop("retry_failed", False)
+        with self.runner(projects={"tables": self.tables, **projects}, retry_failed=retry) as runner:
+            return runner.execute()
 
-    def test_partial_resume_is_refused(self):
-        # It used to run, and this test used to pass by checking only that the
-        # completed batch was skipped. It never checked the batch's rows
-        # survived -- and they did not: the replayed setup phase dropped the
-        # destination table first. See the test below for that outcome.
-        with self.assertRaises(SessionError) as caught:
-            self.runner(mode="partial")
-        self.assertIn("would be lost", str(caught.exception))
+    def test_a_failed_batch_is_retried_alone_and_lands_once(self):
+        # Male fails after its rows have landed: the worst case.
+        first = self.execute(
+            fail_once={r"\[RowCount\]\s+FROM PROJECTD\S+\s+WHERE \[_batch\] = 'Male'": "timeout"}
+        )
+        self.assertEqual([label for label, _ in first.failed], ["Patients__Male"])
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
 
-    def test_a_full_replay_restores_every_completed_batch(self):
-        # The default. Setup drops the destination, so every run must refill it.
-        with self.runner() as runner:
-            runner.execute()
-        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
-        with self.runner() as runner:
-            runner.execute()
-        destination = "PROJECTD33A929.dbo.OtherHospitalizations"
-        executed = self.projects.executed
-        dropped_at = max(
-            i for i, sql in enumerate(executed) if f"DROP TABLE IF EXISTS {destination}" in sql
+        second = self.execute(retry_failed=True)
+        self.assertTrue(second.ok, second.failed)
+        # The outcome: each batch's rows present exactly once.
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+        # Only the failed batch was pulled again; the PK query was not rerun.
+        self.assertIn("Patients__Male", second.completed)
+        self.assertNotIn("Patients__Female", second.completed)
+        self.assertNotIn("Patients/pk", second.completed)
+        self.assertIn(PK_DEST, self.tables, "the PK's Projects copy must be kept")
+
+    def test_an_interrupted_batch_is_cleared_before_it_is_pulled_again(self):
+        self.execute()
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        manifest.sessions[0].runs[1].data["status"] = "running"  # a crash mid-run
+        manifest.save()
+        self.execute()
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+
+    def test_a_finished_session_pulls_nothing(self):
+        self.execute()
+        again = self.execute()
+        self.assertEqual(again.completed, [])
+        self.assertTrue(any("nothing left" in label for label in again.skipped))
+
+    def test_starting_over_replaces_every_batch(self):
+        self.execute()
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        manifest.reset_all("re-pulled: --repull")
+        manifest.save()
+        again = self.execute()
+        self.assertIn("Patients/pk", again.completed)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+
+    def test_the_count_check_counts_only_this_batch(self):
+        # The destination holds every earlier batch too; comparing against all
+        # of it warned falsely from the second batch on.
+        report = self.execute()
+        self.assertFalse(any("did not carry everything" in w for w in report.warnings), report.warnings)
+
+    def test_a_failed_unit_is_rolled_back(self):
+        self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "boom"})
+        self.assertGreaterEqual(self.projects.rollbacks, 1)
+
+
+class RefreshTests(SessionTestCase):
+    """D51: a Cosmos refresh starts everything over; finished work is skipped."""
+
+    def setUp(self):
+        super().setUp()
+        self.make_batched()
+        self.tables: dict[str, Counter] = {}
+        self.stamps = [LAST_REFRESH]
+        self.opened: list[str] = []
+
+    def connect(self, conn_str, **_):
+        self.opened.append(conn_str)
+        if "PROJECTD" in conn_str:
+            return FakeConnection("projects", tables=self.tables)
+        return FakeConnection("cosmos", created=self.stamps.pop(0) if len(self.stamps) > 1 else self.stamps[0])
+
+    def execute(self, **flags):
+        args = argparse.Namespace(**{"env": None, "repull": False, "retry_failed": False, **flags})
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = cli.execute(manifest, args, connect_fn=self.connect)
+        return code, out.getvalue(), Manifest.load(self.root / "pullmanifest.yaml")
+
+    def test_records_create_date(self):
+        code, _, manifest = self.execute()
+        self.assertEqual(code, 0)
+        self.assertEqual(manifest.cosmos_refresh, {"Cosmos": "2026-09-17T19:34:56.450"})
+        self.assertEqual(
+            manifest.sessions[0].runtime["cosmos_created"], {"Cosmos": "2026-09-17T19:34:56.450"}
         )
-        self.assertTrue(
-            any(f"INSERT INTO {destination}" in sql for sql in executed[dropped_at:]),
-            "a destination dropped by setup must be refilled in the same session",
-        )
+
+    def test_a_finished_pull_opens_no_session(self):
+        self.execute()
+        self.opened.clear()
+        code, out, _ = self.execute()
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.opened), 1, "only the refresh check should connect")
+        self.assertIn("nothing left to pull", out)
+
+    def test_a_refresh_starts_everything_over(self):
+        self.execute()
+        self.stamps = [NEXT_REFRESH]
+        self.opened.clear()
+        code, out, manifest = self.execute()
+        self.assertEqual(code, 0)
+        self.assertIn("was refreshed", out)
+        self.assertGreater(len(self.opened), 1, "the finished session must be pulled again")
+        self.assertEqual(manifest.cosmos_refresh, {"Cosmos": "2026-10-15T19:30:02.100"})
+        self.assertTrue(all(run.status == "done" for run in manifest.sessions[0].runs))
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+
+    def test_a_refresh_during_the_run_stops_the_session(self):
+        # Checked before sessions open with one value, then Cosmos comes back
+        # rebuilt before the session connects.
+        self.stamps = [LAST_REFRESH, NEXT_REFRESH]
+        code, out, manifest = self.execute()
+        self.assertEqual(code, 1)
+        self.assertIn("refreshed while this pull was running", out)
+        self.assertNotIn(DEST, self.tables)
+
+    def test_repull_starts_a_finished_pull_over(self):
+        self.execute()
+        self.opened.clear()
+        code, out, _ = self.execute(repull=True)
+        self.assertEqual(code, 0)
+        self.assertGreater(len(self.opened), 1)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))

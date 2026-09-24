@@ -3,6 +3,12 @@
 Write mode is decided: the destination is dropped and created once per session
 in the setup phase, and every run appends. The old generator dropped inside
 each transfer block, which with batching leaves only the last batch.
+
+A session that resumes (D52) keeps its destinations: setup then creates only
+the tables that are missing. Every row a run lands carries its batch label in
+`_batch`, so a run first deletes its own label's rows, which makes a retry
+after a partial failure land each batch exactly once, and counts only its own
+rows when checking the transfer.
 """
 
 from __future__ import annotations
@@ -19,6 +25,10 @@ from .sql import (
     quote_literal,
     quote_name,
 )
+
+BATCH_COLUMN = "_batch"
+BATCH_COLUMN_TYPE = "NVARCHAR(200) NOT NULL"
+UNBATCHED_LABEL = "all"
 
 # Types whose stored length is worth measuring so templates can be tuned.
 _MEASURABLE = ("CHAR", "VARCHAR", "NCHAR", "NVARCHAR")
@@ -39,8 +49,26 @@ def _remote_query(dest: str, columns: list[dict[str, Any]]) -> str:
     return inner.replace("'", "''")
 
 
-def render_table_shell(cohort: dict[str, Any], project_db: str) -> str:
-    """Drop and create one destination table. Runs once per session."""
+def batch_label(doc: dict[str, Any]) -> str | None:
+    """The `_batch` value a run document's rows carry; None outside a run."""
+    context = doc.get("pull_context") or {}
+    if context.get("phase") != "run":
+        return None
+    return str((context.get("batch") or {}).get("name") or UNBATCHED_LABEL)
+
+
+def render_table_shell(
+    cohort: dict[str, Any],
+    project_db: str,
+    *,
+    keep: bool = False,
+    batch_column: bool = False,
+) -> str:
+    """Create one destination table. Runs once per session.
+
+    Dropped first on a fresh session. Kept on a resume, since it holds the rows
+    of the batches that already finished, and then only created if missing.
+    """
     dest = cohort.get("dest_table")
     if not dest:
         raise LocalRenderError(f"Cohort {cohort.get('name')!r} has no dest_table.")
@@ -48,14 +76,34 @@ def render_table_shell(cohort: dict[str, Any], project_db: str) -> str:
     if not columns:
         raise LocalRenderError(f"Cohort {dest!r} declares no columns.")
     table = destination(project_db, dest)
+    body = ddl_body(columns)
+    if batch_column:
+        body += f",\n    {quote_name(BATCH_COLUMN)} {BATCH_COLUMN_TYPE}"
+    create = f"CREATE TABLE {table}\n(\n{body}\n);"
+    if keep:
+        return (
+            f"-- session table shell for {dest}, kept: finished batches are in it\n"
+            f"IF OBJECT_ID(N{quote_literal(table)}, N'U') IS NULL\n{create}"
+        )
     return (
         f"-- session table shell for {dest}\n"
         f"DROP TABLE IF EXISTS {table};\n\n"
-        f"CREATE TABLE {table}\n(\n{ddl_body(columns)}\n);"
+        f"{create}"
     )
 
 
-def render_transfer(cohort: dict[str, Any], project_db: str, linked_server: str) -> str:
+def render_delete_batch(cohort: dict[str, Any], project_db: str, label: str) -> str:
+    """Remove a run's rows before it lands them, so a retry cannot double them."""
+    table = destination(project_db, str(cohort["dest_table"]))
+    return (
+        f"-- clear {label} from {table} before it is pulled\n"
+        f"DELETE FROM {table} WHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)};"
+    )
+
+
+def render_transfer(
+    cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+) -> str:
     """Pull one cohort from its global temp into the destination table.
 
     The slow OPENQUERY lands in a staging table outside the transaction, so no
@@ -72,6 +120,10 @@ def render_transfer(cohort: dict[str, Any], project_db: str, linked_server: str)
     table = destination(project_db, dest)
     staging = local_staging(dest)
     cols = column_list(columns)
+    insert_cols, select_cols = cols, cols
+    if label is not None:
+        insert_cols = f"{cols}, {quote_name(BATCH_COLUMN)}"
+        select_cols = f"{cols}, {quote_literal(label)}"
 
     return (
         f"-- transfer {global_temp(dest)} -> {table}\n"
@@ -83,16 +135,25 @@ def render_transfer(cohort: dict[str, Any], project_db: str, linked_server: str)
         f"    '{_remote_query(dest, columns)}'\n"
         f");\n\n"
         f"BEGIN TRANSACTION;\n"
-        f"INSERT INTO {table} ({cols})\n"
-        f"SELECT {cols} FROM {staging};\n"
+        f"INSERT INTO {table} ({insert_cols})\n"
+        f"SELECT {select_cols} FROM {staging};\n"
         f"COMMIT TRANSACTION;"
     )
 
 
-def render_row_counts(cohort: dict[str, Any], project_db: str, linked_server: str) -> str:
-    """Both sides of the transfer, so a mismatch is visible."""
+def render_row_counts(
+    cohort: dict[str, Any], project_db: str, linked_server: str, label: str | None = None
+) -> str:
+    """Both sides of the transfer, so a mismatch is visible.
+
+    In a run, the Projects side counts only this batch's rows: the destination
+    also holds every earlier batch, which the Cosmos temp does not.
+    """
     dest = str(cohort["dest_table"])
     table = destination(project_db, dest)
+    where = (
+        f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
+    )
     remote = f"SELECT 1 AS dummy FROM {global_temp(dest)}".replace("'", "''")
     return (
         "SELECT\n"
@@ -104,7 +165,7 @@ def render_row_counts(cohort: dict[str, Any], project_db: str, linked_server: st
         f"    {quote_literal(dest)} AS [DestTable],\n"
         "    'projects' AS [Side],\n"
         "    COUNT_BIG(1) AS [RowCount]\n"
-        f"FROM {table};"
+        f"FROM {table}{where};"
     )
 
 
@@ -135,8 +196,19 @@ def render_length_probe(cohort: dict[str, Any]) -> str | None:
     return "\n UNION ALL\n".join(selects) + ";"
 
 
-def render_setup(doc: dict[str, Any], cohorts: list[dict[str, Any]], block_prefix: str) -> list[SqlBlock]:
-    """One shell block per destination table for the whole session."""
+def render_setup(
+    doc: dict[str, Any],
+    cohorts: list[dict[str, Any]],
+    block_prefix: str,
+    *,
+    keep: bool = False,
+    batched: frozenset[str] | set[str] = frozenset(),
+) -> list[SqlBlock]:
+    """One shell block per destination table for the whole session.
+
+    `batched` names the destinations runs fill, which get the `_batch` column;
+    the PK's own destination is not one, since batches are selected from it.
+    """
     project_db = doc.get("project_db")
     if not project_db:
         raise LocalRenderError("Phase document has no `project_db`.")
@@ -148,7 +220,12 @@ def render_setup(doc: dict[str, Any], cohorts: list[dict[str, Any]], block_prefi
             SqlBlock(
                 block_id=f"{block_prefix}/shell/{cohort['dest_table']}",
                 side="local",
-                sql=render_table_shell(cohort, str(project_db)),
+                sql=render_table_shell(
+                    cohort,
+                    str(project_db),
+                    keep=keep,
+                    batch_column=str(cohort["dest_table"]) in batched,
+                ),
                 dest_table=str(cohort["dest_table"]),
                 meta={"destination": destination(str(project_db), cohort["dest_table"])},
             )
@@ -161,6 +238,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
     project_db = doc.get("project_db")
     if not project_db:
         raise LocalRenderError("Phase document has no `project_db`.")
+    label = batch_label(doc)
     blocks: list[SqlBlock] = []
     for cohort in doc.get("cohorts") or []:
         if not isinstance(cohort, dict) or not cohort.get("dest_table"):
@@ -169,9 +247,11 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
             continue
         dest = str(cohort["dest_table"])
         parts = [
-            render_transfer(cohort, str(project_db), linked_server),
-            render_row_counts(cohort, str(project_db), linked_server),
+            render_transfer(cohort, str(project_db), linked_server, label),
+            render_row_counts(cohort, str(project_db), linked_server, label),
         ]
+        if label is not None:
+            parts.insert(0, render_delete_batch(cohort, str(project_db), label))
         probe = render_length_probe(cohort)
         if probe:
             parts.append(probe)
