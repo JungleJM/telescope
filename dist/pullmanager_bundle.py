@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "149af0c93845241f0c25e79c032ccfe79da09ad1aef260c6dea53de37dff3d61",
+  "content_id": "44407d4c9d826c17ada4fc3bdaac564ed2c56a51ee5f34ddb0cec6a2b516bc49",
   "file_count": 37,
   "files": [
     {
@@ -579,14 +579,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/yaml_io.py",
       "policy": "replace",
-      "sha256": "dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18",
-      "size": 1844
+      "sha256": "c77d7bc18f3c76843fde13f7d5619faa50eecbf006f2fa584234b29cacca9c34",
+      "size": 1960
     },
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "e7f53ae4178a7082b5c52e85d1440013229fde59d877fad167e7e88c86e6c085",
-      "size": 168179
+      "sha256": "8430a57a01c7cf0a9b0541e7478515ca966e392339c7d33e9577b554f735fa9c",
+      "size": 169670
     }
   ]
 }'''
@@ -11140,7 +11140,7 @@ if __name__ == "__main__":
 #     return base
 #
 # === END FILE: pullmanager/uploads.py ===
-# === BEGIN FILE: pullmanager/yaml_io.py SHA256: dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18 SIZE: 1844 ===
+# === BEGIN FILE: pullmanager/yaml_io.py SHA256: c77d7bc18f3c76843fde13f7d5619faa50eecbf006f2fa584234b29cacca9c34 SIZE: 1960 ===
 # """YAML load/dump for Pullmanager.
 #
 # Mirrors the backend selection in scripts/makeYaml.py so manifests round-trip
@@ -11149,8 +11149,14 @@ if __name__ == "__main__":
 #
 # from __future__ import annotations
 #
+# import sys
 # from pathlib import Path
 # from typing import Any
+#
+# NO_BACKEND = (
+#     "No YAML backend available in this Python ({python}). Install one: "
+#     "`{python} -m pip install ruamel.yaml pyyaml`."
+# )
 #
 #
 # def _backend():
@@ -11189,7 +11195,7 @@ if __name__ == "__main__":
 #     if backend == "pyyaml":
 #         with path.open("r", encoding="utf-8") as handle:
 #             return mod.safe_load(handle)
-#     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
+#     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 #
 # def dump_yaml(data: Any, path: str | Path) -> None:
@@ -11204,10 +11210,10 @@ if __name__ == "__main__":
 #         with path.open("w", encoding="utf-8") as handle:
 #             mod.safe_dump(data, handle, sort_keys=False, default_flow_style=False)
 #         return
-#     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
+#     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: e7f53ae4178a7082b5c52e85d1440013229fde59d877fad167e7e88c86e6c085 SIZE: 168179 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 8430a57a01c7cf0a9b0541e7478515ca966e392339c7d33e9577b554f735fa9c SIZE: 169670 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11428,11 +11434,22 @@ if __name__ == "__main__":
 #         "print JSON.generate(YAML.load_file(ARGV[0]))",
 #         str(path),
 #     ]
+#     install = f"`{sys.executable} -m pip install ruamel.yaml pyyaml`"
 #     try:
 #         proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
-#     except Exception as exc:
+#     except FileNotFoundError as exc:
 #         raise RuntimeError(
-#             "No Python YAML backend available. Install ruamel.yaml or pyyaml."
+#             f"This Python ({sys.executable}) has no YAML package, and there is no Ruby to "
+#             f"fall back on. Install one: {install}."
+#         ) from exc
+#     except subprocess.CalledProcessError as exc:
+#         # Ruby read the file and found it broken: that is the error to report,
+#         # not the missing Python package that sent us to Ruby.
+#         lines = [line for line in (exc.stderr or "").splitlines() if line.strip()]
+#         detail = lines[0] if lines else "a syntax error"
+#         raise RuntimeError(
+#             f"{path} is not valid YAML: {detail}. (Read with Ruby because this Python "
+#             f"({sys.executable}) has no YAML package; {install} gives clearer errors.)"
 #         ) from exc
 #     return json.loads(proc.stdout)
 #
@@ -12226,6 +12243,17 @@ if __name__ == "__main__":
 #         dest = str(upload.get("dest_table") or upload.get("name"))
 #         where = f"{upload.get('_source', 'upload_cohorts')} ({upload.get('name')})"
 #         file_type = str(upload.get("file_type", "")).lower()
+#         suffix = Path(str(upload.get("file_loc") or "")).suffix.lower()
+#         if (file_type, suffix) in (("parquet", ".csv"), ("csv", ".parquet")):
+#             actual = suffix.lstrip(".")
+#             result.error(
+#                 "upload_type_mismatch",
+#                 f"`file_type: {file_type}` but `{upload.get('file_loc')}` is a {actual} file.",
+#                 f"{where}.file_type",
+#                 fix=f"Set `file_type: {actual}`.",
+#             )
+#             schemas[dest] = None
+#             continue
 #         if file_type == "csv" and upload.get("file_loc"):
 #             file_path = resolve_file(base_dir, upload["file_loc"])
 #             if not file_path.exists():
@@ -14906,6 +14934,12 @@ if __name__ == "__main__":
 #             "      - name: Code", "      - name: Nope"))
 #         self.assertHasError(res, "unknown_upload_column")
 #         self.assertIn("Code, Label", res.errors[0].fix)
+#
+#     def test_a_csv_labelled_parquet_is_named(self):
+#         self.write_codes()
+#         res = self.compile_template(extra=self.extra("parquet", "codes.csv"))
+#         self.assertHasError(res, "upload_type_mismatch")
+#         self.assertEqual(res.errors[0].fix, "Set `file_type: csv`.")
 #
 #     def test_an_unknown_type_is_refused(self):
 #         self.write_codes()
