@@ -163,32 +163,56 @@ no button to hand a split folder to Pullmanager.
 
 ### Primary And Foreign Keys In The Data Dictionary
 
-The dictionary already records key relationships, but as prose in the type:
+What is known so far, and how sure, is in design.md (Keys And Relationships In
+Cosmos). SQL cannot supply relationships; the interactive data dictionary
+shows them, one table at a time. What is left:
 
-```yaml
-PatientDurableKey:
-  type: bigint (foreign key to PatientDim.DurableKey)
-```
+1. **Gather them** for the tables in `datadictionary.yaml` (the ones recipes
+   use), from each table's dictionary page, read as design.md describes. By
+   hand, or by screenshot. The VM's AI said outright that its dictionary
+   answers were "paraphrased based on Epic's conventions, not exact text": it
+   has not seen the pages, so asked to fill in relationships it would guess.
+   It could transcribe a page's text if given it, told to write "not shown"
+   rather than guess, and checked.
+2. **Decide the shape.** A structured entry beside the prose, for example:
 
-Structured, it would let validation check **joins**, not just columns:
-`ON tc.TerminologyConceptKey = dt.DiagnosisKey` binds fine and is wrong.
+   ```yaml
+   DiagnosisEventFact:
+     primary_key: DiagnosisEventKey
+     partition_key: StartDateKey
+     columns:
+       PatientDurableKey:
+         type: bigint (foreign key to PatientDim.DurableKey)
+         references: PatientDim.DurableKey
+   PatientDim:
+     primary_key: PatientKey
+     one_row_per: [DurableKey]
+     when: IsCurrent = 1
+   DiagnosisTerminologyDim:
+     one_row_per: [DiagnosisKey, Type]
+   LabComponentResultFact:
+     columns:
+       LabComponentKey:
+         references: LabComponentDim.LabComponentKey
+         sentinels: {-1: unmapped}
+   ```
 
-Before it is worth building:
+   Open: these names; whether to replace or keep the prose annotation; how to
+   write annotations that name a table and no column, or two alternatives.
+3. **Confirm with data** on the VM, using the brief's queries: the permission
+   probe; `PatientDim.DurableKey` unique with and without `IsCurrent = 1`;
+   how many `DiagnosisKey`s repeat in `DiagnosisTerminologyDim`; how many `-1`
+   keys the fact tables hold. Run on `COSMOS_SneakPeek` first.
+4. **Decide what validation flags**, and whether as an error or a warning:
+   a join on columns that are not a declared relationship (deliberate non-key
+   joins exist); a join to a table with several rows per key and no filter
+   that makes it one (`DiagnosisTerminologyDim` without `Type`, `PatientDim`
+   without `IsCurrent = 1`); perhaps a large fact table read without its
+   partition key.
 
-- Structured fields (`primary_key: true`, `references: PatientDim.DurableKey`)
-  or parse the annotation? Parsing prose is brittle; restructuring touches every
-  entry.
-- Some annotations name a table with no column (`foreign key to
-  EncounterFact`), some name alternatives (`DiagnosisDim/DiagnosisTerminologyDim`).
-- Is a join off a declared relationship an error, a warning, or fine?
-  Deliberate non-key joins exist.
-- Does Cosmos enforce these relationships, or only document them?
+One correction is already known: our dictionary has `DiagnosisEventFact.DiagnosisKey`
+pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the interactive dictionary
+says `DiagnosisDim.DiagnosisKey`.
 
-What to find out on the VM is in `QMDs/keys_research/keys_research_for_vm.md`, a temporary
-brief to put to the VM's AI: where keys are declared, whether they hold in the
-data, and what the interactive data dictionary shows. The AI's answer is transcribed
-beside it (`vm_ai_answer.md`, from the screenshots there), not yet discussed or
-folded in; none of the queries has been run. Also there: the interactive
-dictionary's page for `DiagnosisEventFact`, the first example of what it
-shows. Delete the folder once its answers are folded in here and into
-`decisions.md`.
+`QMDs/keys_research/` (the brief, the AI's answer and the example page) stays
+until step 3 is done and folded in, then goes.

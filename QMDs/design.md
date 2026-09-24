@@ -411,6 +411,56 @@ Lengths are not compared: the dictionary records none. Nullability is not
 cross-checked, because `nullable: false` on a nullable column is the documented
 way to force an `IS NOT NULL` filter.
 
+### Keys And Relationships In Cosmos
+
+Validation checks that every column exists with the right type, not that a
+join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is
+wrong; a correct join can still multiply rows, if it meets a table with several
+rows per key and no filter. Knowing each table's keys, and what each foreign
+key points at, would let validation check joins. Three questions were put to
+the VM's AI (`QMDs/keys_research/`: the brief, and its answer transcribed): are
+keys declared where SQL can read them, do they hold in the data, and what does
+the interactive data dictionary show. It explained its queries rather than
+running them, so nothing below has been counted yet.
+
+| Finding | Source | How sure |
+| --- | --- | --- |
+| Keys are not readable through SQL: `INFORMATION_SCHEMA` constraints, `sys.foreign_keys` and `sys.indexes` are hidden from analyst logins, so an empty result means "cannot see", not "no keys" | VM AI; fits our narrow permissions (D33) | Likely. The permission probe (`HAS_PERMS_BY_NAME`) has not been run |
+| The dictionary cannot be exported; only Epic could supply it as a file | VM AI | Unverified |
+| The interactive data dictionary does declare keys: each table's own key, each foreign key with the table and column it points at, and how many rows match on each side | The `DiagnosisEventFact` page | Seen, for one table |
+| `DiagnosisTerminologyDim` holds a row per terminology, several per `DiagnosisKey`, so joining it on `DiagnosisKey` alone duplicates diagnoses; constrain `Type` (our recipes do) | VM AI | Likely; not counted |
+| `PatientDim` keeps history. Its own key is `PatientKey`, one per version of a patient; `DurableKey`, what other tables point at, is one per patient, and `IsCurrent = 1` picks one row for it | The diagram; VM AI | The keys seen; the history likely |
+| `-1` in a foreign key means unmapped or a mixture (`LabComponentKey`, `MedicationKey`), and fact tables carry placeholder rows with negative keys, so `-1` is not an orphan; `0` varies by column | VM AI, as Epic convention | Unverified |
+| `create_date` is when a database was created, not when its data was loaded | VM AI | True in general. D51 holds only if a refresh recreates the database, which the date matching the last refresh suggests; confirm across the next one |
+
+**Reading a dictionary page** (`DataDictionary DiagnosisEventFact example.png`):
+
+- **Columns tab:** each column's type, and for a foreign key the *table* it
+  points at, in blue. A `Partition key` badge (here `StartDateKey`) marks the
+  column that lets SQL Server skip most of the table when filtered; our recipes
+  filter it.
+- **ER Diagram:** the table's own key (filled key icon, `DiagnosisEventKey`),
+  then a "Foreign keys" list (outline key icons). A dashed line runs from each
+  foreign key to the table it points at, ending on the *column* it lands on,
+  which the Columns tab does not give. The ends give the cardinality: a crow's
+  foot on this side (many rows here), a bar on the other (one row there).
+- **For `DiagnosisEventFact`** that reads: `DiagnosisKey` → `DiagnosisDim.DiagnosisKey`;
+  `PatientDurableKey` → `PatientDim.DurableKey`; `EncounterKey` →
+  `EncounterFact.EncounterKey`; `AgeKey` → `DurationDim.DurationKey`;
+  `StartDateKey`, `EndDateKey`, `NotedDateKey_X`, `UserEnteredDateKey` →
+  `DateDim.DateKey`; `SourceComboKey` → `DiagnosisEventSourceBridge`, a bridge
+  from one combination key to several `SourceDim` rows. Our dictionary has
+  `DiagnosisKey` pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the
+  interactive dictionary says `DiagnosisDim`.
+
+What this means for a join check, still to plan (roadmap, Needs Research):
+relationships come from the interactive dictionary into
+`datadictionary.yaml` by hand, since SQL cannot supply them. Each needs more
+than a target table: the column it lands on, its cardinality, whatever filter
+makes the other side one row (`IsCurrent = 1`, a `Type`), and its sentinel
+values. Data checks then confirm it: the parent key unique under its filter,
+and no child rows without a parent, sentinels aside.
+
 ### Choosing The Cosmos Database
 
 `cosmos_vars.cosmos_db` in the template, never VM configuration:
