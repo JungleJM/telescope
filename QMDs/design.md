@@ -325,6 +325,13 @@ upload_cohorts:
   else `dest_table`).
 - A `file_loc` ending `.csv` under `file_type: parquet`, or the reverse, is
   `upload_type_mismatch`.
+- A **missing upload file** is a warning where the output is a plan that
+  travels, the transfer YAML and the UI, since the file may only exist on the
+  VM: the transfer is still written, and its listing marks the file "not here
+  yet". It is an error at the split, which needs the file, so on the VM the
+  launcher's Validate and Export split confirm every file is in place. Batching
+  columns on an uploaded PK whose file is not here are left unchecked, with a
+  warning (`batch_columns_unchecked`), until then.
 - Declarable types: `BIGINT`, `INT`, `SMALLINT`, `TINYINT`, `BIT`, `FLOAT`,
   `REAL`, `DECIMAL(p,s)`, `DATE`, `DATETIME`, `DATETIME2`, `VARCHAR(n)`,
   `NVARCHAR(n)`, `CHAR(n)`. Anything else is `bad_upload_type`; a declared
@@ -1009,7 +1016,7 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (106)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (110)
 python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (315)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only

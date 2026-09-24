@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "44407d4c9d826c17ada4fc3bdaac564ed2c56a51ee5f34ddb0cec6a2b516bc49",
+  "content_id": "94183ef0008ed4b74531f413da086b3f9386303f5b1d573e6b0d944be21f1015",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "8430a57a01c7cf0a9b0541e7478515ca966e392339c7d33e9577b554f735fa9c",
-      "size": 169670
+      "sha256": "7b1dada2dc060b27c4029c247446a6e0edddea33c8e38579e323a32b139309f1",
+      "size": 173880
     }
   ]
 }'''
@@ -11213,7 +11213,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 8430a57a01c7cf0a9b0541e7478515ca966e392339c7d33e9577b554f735fa9c SIZE: 169670 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 7b1dada2dc060b27c4029c247446a6e0edddea33c8e38579e323a32b139309f1 SIZE: 173880 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11992,6 +11992,7 @@ if __name__ == "__main__":
 #     analysis: dict[str, Any],
 #     result: CompileResult,
 #     base_dir: Path,
+#     uploads_elsewhere: bool = False,
 # ) -> list[dict[str, Any]]:
 #     uploads = upload_index(template)
 #     temp_prefix(template, result)
@@ -12007,7 +12008,7 @@ if __name__ == "__main__":
 #                 fix="Rename the variable. To choose the prefix, set top-level `temp_prefix:`.",
 #             )
 #     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
-#     table_schemas.update(upload_schemas(template, uploads, result, base_dir))
+#     table_schemas.update(upload_schemas(template, uploads, result, base_dir, uploads_elsewhere))
 #     uploaded_pk_table = find_uploaded_pk_table(template, result)
 #     generated_pk = [c for c in cohorts if str(c.get("type", "")).lower() == "pk"]
 #     if uploaded_pk_table and generated_pk:
@@ -12227,11 +12228,44 @@ if __name__ == "__main__":
 #             )
 #
 #
+# def report_missing_upload(
+#     upload: dict[str, Any],
+#     file_path: Path,
+#     where: str,
+#     base_dir: Path,
+#     result: CompileResult,
+#     uploads_elsewhere: bool,
+# ) -> None:
+#     """A missing upload file: an error where the pull is prepared, else a warning.
+#
+#     A transfer YAML (and the UI that builds one) is made on the Mac, where a
+#     file may not have arrived yet; it is supplied on the VM beside the transfer
+#     YAML, and the split there, which needs it, checks it again as an error.
+#     """
+#     if uploads_elsewhere:
+#         result.warn(
+#             "missing_upload_file",
+#             f"Upload file not here yet: {file_path}. Its columns cannot be checked until it is.",
+#             f"{where}.file_loc",
+#             fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the transfer "
+#             "YAML; the split there checks it. Or correct `file_loc` if the path is wrong.",
+#         )
+#         return
+#     result.error(
+#         "missing_upload_file",
+#         f"Upload file not found: {file_path}",
+#         f"{where}.file_loc",
+#         fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
+#         "copy the file to where it points.",
+#     )
+#
+#
 # def upload_schemas(
 #     template: dict[str, Any],
 #     uploads: dict[str, dict[str, Any]],
 #     result: CompileResult,
 #     base_dir: Path,
+#     uploads_elsewhere: bool = False,
 # ) -> dict[str, list[str] | None]:
 #     schemas: dict[str, list[str] | None] = {}
 #     seen: set[int] = set()
@@ -12257,13 +12291,7 @@ if __name__ == "__main__":
 #         if file_type == "csv" and upload.get("file_loc"):
 #             file_path = resolve_file(base_dir, upload["file_loc"])
 #             if not file_path.exists():
-#                 result.error(
-#                     "missing_upload_file",
-#                     f"Upload file not found: {file_path}",
-#                     f"{where}.file_loc",
-#                     fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
-#                     "copy the file to where it points.",
-#                 )
+#                 report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
 #                 schemas[dest] = None
 #                 continue
 #             try:
@@ -12282,13 +12310,7 @@ if __name__ == "__main__":
 #         elif file_type == "parquet" and upload.get("file_loc") and pyarrow_modules():
 #             file_path = resolve_file(base_dir, upload["file_loc"])
 #             if not file_path.exists():
-#                 result.error(
-#                     "missing_upload_file",
-#                     f"Upload file not found: {file_path}",
-#                     f"{where}.file_loc",
-#                     fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
-#                     "copy the file to where it points.",
-#                 )
+#                 report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
 #                 schemas[dest] = None
 #                 continue
 #             try:
@@ -12859,6 +12881,18 @@ if __name__ == "__main__":
 #         # An uploaded PK's columns are its file's (D54).
 #         pk_candidates.append(uploaded_pk)
 #     pk_cols = sorted({col for pk_table in pk_candidates for col in (table_schemas.get(str(pk_table)) or [])})
+#     # An uploaded PK whose file is not here (or a dbtable with no declared
+#     # columns) has columns nothing can see yet: check them where it can.
+#     unseen = [str(t) for t in pk_candidates if str(t) in table_schemas and table_schemas[str(t)] is None]
+#     if unseen and any(str(i.get("kind") or "column_values") != "row_chunk" for i in normalized):
+#         result.warn(
+#             "batch_columns_unchecked",
+#             f"The PK `{unseen[0]}`'s columns are not known here, so the batching columns "
+#             "cannot be checked against it.",
+#             "batching",
+#             fix="They are checked when the split runs where the file is. To check them "
+#             "now, list the PK's columns under its `columns:`.",
+#         )
 #     for item in normalized:
 #         where = f"{item.get('_source', 'batching')} ({item.get('name')})"
 #         kind = str(item.get("kind") or "column_values")
@@ -12892,7 +12926,7 @@ if __name__ == "__main__":
 #                 fix="Add `column: <PK column>`, e.g. `column: Sex`.",
 #             )
 #             continue
-#         if col not in pk_cols:
+#         if not unseen and col not in pk_cols:
 #             result.error(
 #                 "missing_batch_column",
 #                 f"Batching `{item.get('name')}` requires missing PK column `{col}`.",
@@ -13125,7 +13159,13 @@ if __name__ == "__main__":
 #     write: bool = False,
 #     report_path: str | Path | None = None,
 #     datadictionary_path: str | Path | None = None,
+#     uploads_elsewhere: bool = False,
 # ) -> CompileResult:
+#     """Validate and render a template.
+#
+#     `uploads_elsewhere` makes a missing upload file a warning: set where the
+#     output is a plan that travels (a transfer YAML, the UI), never for a split.
+#     """
 #     result = CompileResult()
 #     template_path = Path(template_path) if template_path else default_template_path()
 #     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
@@ -13154,7 +13194,9 @@ if __name__ == "__main__":
 #     cohorts = import_recipes(template, recipes_doc, result)
 #     cohorts = expand_multipliers(template, cohorts, result)
 #     analysis = analyze_cohorts(cohorts)
-#     cohorts = validate_and_resolve(template, recipes_doc, cohorts, analysis, result, template_path.parent)
+#     cohorts = validate_and_resolve(
+#         template, recipes_doc, cohorts, analysis, result, template_path.parent, uploads_elsewhere
+#     )
 #     assign_sessions(cohorts, find_uploaded_pk_table(template, CompileResult()))
 #     validate_cosmos(template, result)
 #     if result.errors:
@@ -13769,10 +13811,13 @@ if __name__ == "__main__":
 #                 "or move it under the template's folder and point `file_loc` there.",
 #             )
 #             continue
+#         source = resolve_file(template_dir, file_loc)
+#         if not source.is_file():
+#             continue  # already warned: it is supplied on the VM (missing_upload_file)
 #         if write:
 #             target = out_dir / rel
 #             target.parent.mkdir(parents=True, exist_ok=True)
-#             shutil.copyfile(resolve_file(template_dir, file_loc), target)
+#             shutil.copyfile(source, target)
 #     return listed
 #
 #
@@ -13797,6 +13842,7 @@ if __name__ == "__main__":
 #         template_path=template_path,
 #         recipes_path=recipes_path,
 #         datadictionary_path=datadictionary_path,
+#         uploads_elsewhere=True,
 #     )
 #     if result.errors:
 #         return result
@@ -13833,6 +13879,10 @@ if __name__ == "__main__":
 #     result.analysis["transfer_uploads"] = place_uploads(
 #         transfer, template_path.parent, out_path.parent, result, write
 #     )
+#     result.analysis["transfer_uploads_missing"] = [
+#         loc for loc in result.analysis["transfer_uploads"]
+#         if not resolve_file(template_path.parent, loc).is_file()
+#     ]
 #     result.finished_yaml = transfer
 #     result.output_path = str(out_path)
 #     if write:
@@ -14967,6 +15017,18 @@ if __name__ == "__main__":
 #         self.assertEqual([r["batch"]["name"] for r in runs], ["b1of2-Female", "b2of2-Male"])
 #         self.assertEqual([d["name"] for d in runs[0]["batch"]["runtime"]], ["chunk"])
 #
+#     def test_a_pk_file_not_here_yet_still_makes_a_transfer(self):
+#         (self.tmp / "pks.csv").write_text("x\n", encoding="utf-8")
+#         template, recipes = self.write_pair(
+#             "project_db: PROJECTD1\n" + uploaded_pk_template() + "batching:\n  - sex\n"
+#         )
+#         (self.tmp / "pks.csv").unlink()
+#         res = build_transfer(template, recipes, write=True)
+#         self.assertCompiles(res)
+#         self.assertHasWarning(res, "batch_columns_unchecked")
+#         split = write_split_artifacts(template, recipes, output_dir=self.tmp / "split")
+#         self.assertHasError(split, "missing_upload_file")
+#
 #     def test_split_after_build_on_an_uploaded_pk_is_refused(self):
 #         res, _ = self.split("""
 # multipliers:
@@ -15116,6 +15178,28 @@ if __name__ == "__main__":
 #         self.assertEqual(
 #             load_yaml(out)["upload_cohorts"][0]["file_loc"], f"../{shared.name}/codes.csv"
 #         )
+#
+#     def test_a_missing_upload_warns_and_the_transfer_is_still_written(self):
+#         # The file arrives on the VM later; the split there checks it.
+#         (self.tmp / "data" / "codes.csv").unlink()
+#         res = build_transfer(self.template, self.recipes, write=True)
+#         self.assertCompiles(res)
+#         self.assertHasWarning(res, "missing_upload_file")
+#         self.assertTrue(Path(res.output_path).is_file())
+#         self.assertEqual(res.analysis["transfer_uploads_missing"], ["data/codes.csv"])
+#
+#     def test_a_missing_upload_is_listed_not_copied_when_written_elsewhere(self):
+#         (self.tmp / "data" / "codes.csv").unlink()
+#         out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+#         res = build_transfer(self.template, self.recipes, output_path=out, write=True)
+#         self.assertCompiles(res)
+#         self.assertEqual(load_yaml(out)["upload_cohorts"][0]["file_loc"], "data/codes.csv")
+#         self.assertFalse((out.parent / "data").exists())
+#
+#     def test_the_split_still_refuses_a_missing_upload(self):
+#         (self.tmp / "data" / "codes.csv").unlink()
+#         res = write_split_artifacts(self.template, self.recipes, output_dir=self.tmp / "split")
+#         self.assertHasError(res, "missing_upload_file")
 #
 #     def test_an_invalid_template_writes_nothing(self):
 #         broken = write_temp_yaml(
@@ -15390,9 +15474,11 @@ if __name__ == "__main__":
 #         uploads = result.analysis.get("transfer_uploads") or []
 #         if uploads:
 #             folder = Path(result.output_path).parent
+#             missing = set(result.analysis.get("transfer_uploads_missing") or [])
 #             print(f"Carry these with it, at these paths relative to {folder}:")
 #             for upload in uploads:
-#                 print(f"  {upload}")
+#                 note = "  (not here yet: supply it on the VM)" if upload in missing else ""
+#                 print(f"  {upload}{note}")
 #         return 0
 #
 #     if args.export_split:

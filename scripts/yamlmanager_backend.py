@@ -26,11 +26,14 @@ def compile_dashboard(
     write: bool = False,
     datadictionary_path: str | Path | None = None,
 ) -> CompileResult:
+    # The UI builds templates on the Mac, where an upload file may not have
+    # arrived yet: that is a warning here, and the split on the VM checks it.
     return makeYaml.compile_yaml(
         template_path=template_path,
         recipes_path=recipes_path,
         write=write,
         datadictionary_path=datadictionary_path,
+        uploads_elsewhere=True,
     )
 
 
