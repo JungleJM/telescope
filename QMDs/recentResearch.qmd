@@ -1,0 +1,40 @@
+Some things I've found out from speaking to Epic and thinking about issues: 
+
+
+## GlobalTempTables
+the ##JVM_ is just standard because I'm JVM. but we coudl replace it with the first (upto)3 letters of each word/acronym. This woudl be based off the 'project_folder' name. For instance, 'IBD Ancestry' could be ##ibdanc, 'Test Run' could be ##tesrun. This would then truly be unique per table, and i dont' have to worry about 'patients' overwriting any other patients 
+
+# Data Refresh
+
+It seems there is a way, the data refresh is programmatically saved by the followign SQL query: 
+
+(query)
+#SELECT name AS database_name,
+create_date
+FROM sys.databases
+WHERE name like 'Cosmos%'
+
+(output, I tried to make this CSV, but it gives database name and tehn create_date as the values below). 
+database_name, create _date
+Cosmos, 2026-09-17 19:34:56.450
+Cosmos_SneakPeek, 2026-09-17 19:34:59.300
+
+We will ahve to see what the actual data format is, but it's once a month this updates so we can just look at 'yyyy-mm-dd' in whatever format it's set in. 
+
+## Cosmos Developer Qs
+- I suspect that yest PatientDurableKey is durable, and I think even if IsCurrent etc. change or don't change, if we detect a reset we should just run it again anyways. 
+
+
+## Chunk
+- for now i'll avoid chunking by volume, but yes this is a big deal. 
+- to that end, I asked once about how I do uploads. I am currently having an upload_cohort upload by a massive INSERT INTO, and manually adding the values via comma seperated value format. You mentioned that can be resource intensive, adn that there's a better way to do it. It's teh 'fast_executemany' system. Does any of that get changed based on this information? I like the idea of a reliable way to do this that isn't capped, because if we are talking about 250k or 1 million patients, I truly do want to be able to batch in large groups, and not need 250 batches. 
+
+ 
+## Resume-partial, and batching
+So I believe you were saying that this is always going to be an issue, so we can just remove it entirely. I think that's correct, but in the case of a batch 12 failing and the rest succeeding, I assume we would not use this system? We would instead just find the individual PKs of that batch and then upload those and redo the batch? To that end, how are we 'finding' this out after the fact? I could see just literally running the filtering process deterministically and then using the output, but can we be sure? 
+For isntance, say we have 8,000 patients, and we end up in 8 batches, by M/F, Blk/white, over every chunk 1,000. Now, to bet batch 2, you ahve to make sure you do the splitting in teh same order (gender, race, chunk, or however) to make sure you actually do get the same batch. Are we doing that now? 
+If we have a regular, deterministic system for this, I'm fine with removing resume-partial, as honestly its edge case was so rare (you have a download error and restart after the server is taken down and is reset with a new set of data) it didnt' matter. Once we know it's reset, we redo the whole thing anyways. 
+
+## Primary And Foreign Keys In The Data Dictionary
+This is one thing I dont' really know how to look up. Where woudul this sort of data be in? I can ask the team, sure, but I would like to know how much of this I can test by asking the VM's AI. It is the one that pulls up the data. There is also access to an interactive data dictionary that I can look at, and some instructions on said data dictionary. 
+
