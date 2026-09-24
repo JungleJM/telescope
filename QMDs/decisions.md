@@ -731,3 +731,123 @@ Dropping files from the bundle exposed a gap in "updating never destroys work":
 re-extraction deleted a dropped file even if it had been edited on the VM. A
 previously bundled file that was edited and is no longer shipped is now kept
 as `<name>.local`, like a replaced one.
+
+### D50. Temp tables carry a per-project prefix, and a clash adds a number
+
+**Context.** Every Cosmos global temp was `##JVM_<dest>`, after the author's
+initials. Global temps are instance-wide, so two pulls running at once that
+both produce `Patients` collide, and each opens with
+`DROP TABLE IF EXISTS ##JVM_Patients`: pull B drops pull A's table mid-run.
+Running several pulls at once is the intended way of working.
+
+**Decision.** The prefix is per project:
+
+- Derived from `project_folder`: the first (up to) three letters of each word,
+  lower-cased. `IBD Ancestry` is `ibdanc`, `Test Run` is `tesrun`. Optional
+  `temp_prefix:` in the template overrides it.
+- Recipes and cohorts write `{{prefix}}_{{Var}}` where they wrote
+  `##JVM_{{Var}}`. `{{prefix}}` renders as `##<prefix>`, so the global-temp
+  marker stays out of hand-written text. `##JVM_` in a template or recipe is an
+  error whose fix names the new form.
+- Pullmanager checks, when a session opens, whether any temp it is about to
+  create already exists (another pull holds it: a global temp lives only as
+  long as the connection that made it). If so it **does not fail**: it adds a
+  number (`ibdanc2`, `ibdanc3`, ...) until none exists, and uses that for the
+  whole session. These names are only temps, so looking tidy does not matter.
+
+**Consequences.** Replaces an invariant inherited from the old generator
+(`naming.py`). Every recipe changes once. Two pulls that derive the same prefix
+still work, because the clash check numbers the second. The check depends on
+`OBJECT_ID('tempdb..##name')` being visible to our login, which must be
+confirmed on the VM. Projects destinations are unaffected: they live in each
+project's own database. This does not fix the multiplier bug (roadmap), where
+one pull's sessions share temps; that is a split fault.
+
+### D51. A Cosmos refresh is detected from `sys.databases.create_date`, and re-pulls everything
+
+**Context.** Cosmos and SneakPeek are refreshed about monthly; the database
+goes down overnight and comes back rebuilt. Work pulled before a refresh cannot
+be mixed with work pulled after it, and the question "did Cosmos refresh
+between these connections" had been left to the Cosmos developers. On the VM:
+
+```sql
+SELECT name AS database_name, create_date
+FROM sys.databases
+WHERE name LIKE 'Cosmos%'
+-- Cosmos            2026-09-17 19:34:56.450
+-- Cosmos_SneakPeek  2026-09-17 19:34:59.300
+```
+
+The date matches the last refresh, so a refresh recreates the database.
+
+**Decision.** Every session records its Cosmos database's `create_date`, the
+full timestamp, when it opens, and the manifest keeps the value per database
+(`COSMOS`, `COSMOS_SneakPeek`; a `Dual` pull has both). An `--execute` that
+finds a different value from the one recorded says so loudly and re-pulls
+everything, finished sessions included. No partial result survives a refresh.
+
+**Consequences.** Answers the questions for the Cosmos developers without
+them. Whether `PatientDurableKey` is stable, or whether `IsCurrent`-style flags
+move between refreshes, no longer matters, because a refresh always means a
+full re-pull. Relies on a refresh recreating the database; confirm by noting the
+value either side of the next one. Makes D52 possible: with a refresh ruled
+out, work finished earlier is still valid.
+
+### D52. A failed batch is retried alone; `--resume-partial` is removed
+
+**Context.** D46 refused `--resume-partial`, which would have lost completed
+batches. Meanwhile any second `--execute` re-pulled everything: each session
+opens a new connection, every `done` node looks stale, and setup drops every
+destination. So one failed batch cost a whole session, and an overnight job
+could run twice. Reading the code for this also found:
+
+- A failed run can leave rows behind: each cohort's transfer commits on its
+  own, so a run that fails at its third cohort has landed the first two.
+- The Projects-side row count counts the whole destination, so from the second
+  batch on it never matches the Cosmos count, and warns falsely.
+
+**Decision.** `--resume-partial` goes. Instead, with Cosmos unrefreshed (D51):
+
+- A session whose runs are all `done` is skipped: its Projects tables are
+  complete. `--repull` forces everything to run again.
+- A session with work left keeps its destinations (setup creates only missing
+  tables), replays its uploads, and rebuilds the Cosmos PK temp from the
+  **Projects copy** of the PK rather than re-running the PK query, so the
+  population is the one the finished batches came from, by construction.
+- Before a run executes, its rows are deleted from each of its destinations.
+  To find them, every run destination gets a `_batch` column holding the run's
+  batch label. The row-count check counts `WHERE _batch = <label>`.
+- Then only the runs not `done` execute (`failed` ones only with
+  `--retry-failed`, as before).
+
+Batch membership is deterministic, so the rebuilt batch is the same rows:
+values dimensions are predicates combined with `AND`, so their order changes
+only the label; chunks are `ORDER BY` the PK's key columns, which are verified
+unique. Both read the Projects copy of the PK (D19).
+
+**Consequences.** Run destination tables gain a `_batch` column, which the
+parquet export also needs to honour `separate_parquets`. The PK's own
+destination does not get one: batches are selected from it. A session whose PK
+phase never finished is replayed in full. The test checks the **outcome**:
+after a failure and a retry, every batch's rows are present exactly once
+(D46's lesson).
+
+### D53. Batch labels are numbered, and chunks run inside their batch
+
+**Context.** Run labels were the bucket values joined (`LA-Female`). Two
+dimensions could produce the same label, which was an error, since a lost
+combination means patients silently not pulled. Chunks (`row_chunk`) are only
+known at run time, and it was undecided whether each becomes its own manifest
+node.
+
+**Decision.** A batch label is `b<i>of<n>` then the values:
+`b1of4-LA-Female`. The number makes every label unique, so a collision is
+impossible and the error goes. It also says how far through a session a run is.
+Chunks execute inside their run, one after another, each refilling the PK temp
+and appending. Progress is shown as `c<j>of<m>` on the run, not as new nodes. A
+failed chunk fails its run, and a retry (D52) redoes the whole run.
+
+**Consequences.** Run IDs, run YAML names and SQL file names change form.
+Retry granularity is the batch, not the chunk, so a failure late in a heavily
+chunked run redoes the earlier chunks. Correct and simple; revisit if chunked
+runs get long enough for that to hurt.

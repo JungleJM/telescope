@@ -500,6 +500,12 @@ drops the rest silently. Do not use `chunk:` until it is fixed (roadmap).
 Two dimensions that would produce the same run name are an error, since a lost
 combination means patients silently not pulled.
 
+Batch membership is deterministic. A values bucket is a predicate, and a run's
+buckets combine with `AND`, so the order of the dimensions changes only the
+label (`LA-Female` or `Female-LA`), never the rows. A chunk is `ORDER BY` the
+PK's key columns, verified unique after the PK phase. Both read the Projects
+copy of the PK (D19), which a Cosmos refresh does not move.
+
 ---
 
 ## The Manifest
@@ -615,7 +621,8 @@ Invariants, not preferences (`naming.py`):
 | Projects destination | `<project_db>.dbo.<dest>`, always fully qualified | `PROJECTD33A929.dbo.PKTable` |
 
 Global temps are instance-wide. Two pulls running at once with the same
-`dest_table` collide; see the roadmap.
+`dest_table` collide. D50 replaces `##JVM_` with a per-project prefix (roadmap,
+fix 4).
 
 ### Sessions, Epochs And Staleness
 

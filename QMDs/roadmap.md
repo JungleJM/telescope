@@ -23,8 +23,8 @@ When an item here is built, delete it from this file and describe the result in
 
 ## Known Bugs
 
-Found by reading the code; none has been hit yet, because nothing has run
-against a database.
+Found by reading the code or in a dry run; none has been hit against a
+database, because nothing has run against one yet.
 
 ### `chunk:` pulls only the first chunk
 
@@ -63,9 +63,49 @@ template that combines multipliers with fact cohorts.
 
 Every session opens a new connection, which makes every `done` node stale, so
 re-running a manifest to retry one failed session re-pulls every session that
-had already finished. Correct, but it can double an overnight job. A session
-whose status is `done` has complete Projects tables and could be skipped
-outright, with a flag to force it.
+had already finished. Correct, but it can double an overnight job. Fixed by
+D52 (fix 2 below).
+
+### A failed run can leave some of its rows behind
+
+Each cohort's transfer commits on its own, so a run that fails at its third
+cohort has landed the first two in Projects. A replay today is safe only
+because setup drops every destination first. Fixed by D52's `_batch` column
+and delete-before-run (fix 2 below).
+
+### The row-count check warns falsely from the second batch on
+
+The Projects-side count is `COUNT_BIG(1)` over the whole destination, while
+the Cosmos count is this batch alone, so every batch after the first reports
+"the transfer did not carry everything". Fixed by counting
+`WHERE _batch = <label>` (D52, fix 2 below).
+
+---
+
+## Next: Fixes, In Order
+
+Agreed order. Each is its own commit.
+
+1. **Every session runs every multiplied fact cohort** (Known Bugs). Filter a
+   session's runs to its own multiplier group and Cosmos variant, and bind an
+   `_sp` cohort's `PKTable` to the `_sp` PK. Outcome test on a template with
+   multipliers and `Dual`.
+2. **Refresh detection, then single-batch retry** (D51, D52). Record
+   `create_date` per Cosmos database; a change re-pulls everything. Skip
+   finished sessions (`--repull` forces them). Keep destinations, rebuild the
+   PK temp from its Projects copy, delete a run's `_batch` rows before it runs.
+   Remove `--resume-partial` (D46) entirely. Fixes the three bugs above.
+3. **`chunk:`** (Known Bugs, D53). Count the batch's PK rows and loop the
+   chunks inside the run. Wanted soon: PKs of 250k to 1M patients should run
+   in a few large batches, not hundreds. Uploads are already uncapped
+   (parameter arrays, 20,000 rows a call; design, Uploads), so the chunk loop
+   is the only limit.
+4. **Per-project temp prefix and numbered batch labels** (D50, D53).
+   `{{prefix}}_{{Var}}` in recipes, `##JVM_` refused with a fix, the clash
+   check that adds a number, and `b<i>of<n>-<values>` labels, which retire
+   `duplicate_batch_name`.
+5. **Keys in the data dictionary** (Needs Research): after the VM's AI has
+   worked through `QMDs/keys_research_for_vm.md`.
 
 ---
 
@@ -87,45 +127,16 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
    - An upload over 1000 rows succeeds.
    - A deliberately broken run fails alone while its siblings finish.
    - The manifest reads correctly afterwards, in the launcher's status tab too.
-4. Run two sessions at the same time and see whether they interfere (next
-   section).
+4. Run two sessions at the same time and see whether they interfere.
+5. Check what D50 and D51 rely on: `SELECT OBJECT_ID('tempdb..##<a temp that
+   exists>')` returns a number from our login, and the `sys.databases` query
+   runs from the Cosmos connection. Note `create_date` either side of the next
+   refresh to confirm a refresh changes it.
+6. An upload of around 250,000 rows, timed.
 
 ---
 
 ## Open Problems
-
-### Concurrent Pulls Collide On Temp Names
-
-Global temps are instance-wide, not connection-private: `##JVM_Patients` is
-visible to every session on the Cosmos instance. Two pulls running at once that
-both produce `Patients` collide, and generated SQL opens with
-`DROP TABLE IF EXISTS ##JVM_Patients`, so pull B drops pull A's table mid-run.
-A then fails confusingly, or transfers partial rows.
-
-Per-project folders do not help; the collision is in SQL Server's namespace.
-The fix is to namespace the temp, `##JVM_<project>_<dest>` or a short session
-token. Contained to `naming.py` and the naming contract, but it changes an
-invariant inherited from the old generator, so it needs a decision first.
-Blocking for running several pulls at once, which is the intended way of
-working.
-
-### A Resume That Keeps Completed Batches
-
-`--resume-partial` is refused (D46). A correct version needs all of:
-
-- Setup must not drop a destination that holds completed batches; today it
-  always does.
-- The completed runs' rows stay; only failed and unrun batches replay.
-- The PK must be the same population the completed batches were drawn from.
-  Batch selection already reads the Projects copy of the PK (D19), which does
-  not move under a Cosmos refresh, so the remaining check is that the rebuilt
-  server-side PK matches the row count recorded when it was first built, and
-  a refusal when it does not.
-- A test that checks the **outcome** (every batch's rows present exactly once
-  after resume), not just which nodes were skipped. The original test checked
-  the latter, which is how the data loss went unnoticed.
-
-Until then a full replay is always correct.
 
 ### Project Folder Layout
 
@@ -199,19 +210,6 @@ no button to hand a split folder to Pullmanager.
 
 ## Needs Research
 
-### Questions For The Cosmos Developers
-
-These decide whether a partial resume can ever be trusted across a refresh.
-Refreshes are every few weeks.
-
-1. Is `PatientDurableKey` stable across refreshes? (Expected yes: "durable".)
-2. **Is there a snapshot or version identifier that can be `SELECT`ed?** If so,
-   record it beside the epoch, and "did Cosmos refresh between these two
-   connections" becomes a check instead of a judgment.
-3. Do `IsCurrent`, `IsDeleted` and `UseInCosmosAnalytics_X` change for existing
-   patients between refreshes? Those flags are why a re-run PK query can return
-   a different set even with fixed date windows.
-
 ### Primary And Foreign Keys In The Data Dictionary
 
 The dictionary already records key relationships, but as prose in the type:
@@ -234,3 +232,8 @@ Before it is worth building:
 - Is a join off a declared relationship an error, a warning, or fine?
   Deliberate non-key joins exist.
 - Does Cosmos enforce these relationships, or only document them?
+
+What to find out on the VM is in `QMDs/keys_research_for_vm.md`, a temporary
+brief to put to the VM's AI: where keys are declared, whether they hold in the
+data, and what the interactive data dictionary shows. Delete it once its
+answers are folded in here and into `decisions.md`.

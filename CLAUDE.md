@@ -16,10 +16,32 @@ Read before working:
 
 - A fact lives in one of those three documents only. Status lives only in the
   roadmap.
-- When code changes behaviour, update `design.md` in the same commit. When an
-  item is built, delete it from the roadmap. When something is decided, add a
-  numbered decision.
-- Do not add new design documents.
+- When code changes behaviour, update `design.md` in the same commit, except
+  during a planned run of fixes (below), where the docs catch up after the
+  user has discussed the results. When an item is built, delete it from the
+  roadmap. When something is decided, add a numbered decision.
+- Do not add new design documents. A temporary brief for the VM (questions to
+  put to its AI) is the exception; delete it once its answers are folded in.
+
+## Planning And Doing Work
+
+The user works in this cycle; follow it for any change bigger than a small fix.
+
+1. **Respond topic by topic.** When the user brings research, notes or ideas,
+   read the code behind each topic first. For each, say what the code does
+   today, give a recommendation, and end with "For you to decide" where the
+   choice is theirs. Close with a numbered **Suggested order**: one line per
+   item, most urgent first, saying why it sits where it does.
+2. **Document before code.** Once the user agrees, write the numbered
+   decisions, put the order in `roadmap.md` as "Next: Fixes, In Order", and
+   fold any notes file into the three documents before deleting it. Commit and
+   push, so there is a clean slate to revert to.
+3. **Build in that order.** One commit per item (small ones may share), each
+   with its outcome tests and a rebuilt bundle if a bundled file changed. Push
+   at the end.
+4. **Report, discuss, then document.** Report what was built, what was chosen
+   along the way, and what the user needs to do or decide. Do not edit the
+   QMDs with the results until the user has discussed them.
 
 ## Constraints
 
