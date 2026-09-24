@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "f45f07bb2b56e34ec2bb955e9c86442aa53370fd2a0228a240088abd08488b05",
+  "content_id": "550e4b49fc8350fe21ca9eed62c182c1a33b6a1fcfdd16e562e789cc84398bc2",
   "file_count": 36,
   "files": [
     {
@@ -579,8 +579,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "653652e40c73e4763048ba149278172aa2fdbc8234e8c7f74f83f8c98d3bd30d",
-      "size": 141611
+      "sha256": "a6e1aeeb01f46cdd9afc6a3a428695243f00a02990e9da0a9cd34fef93efd0e9",
+      "size": 148151
     }
   ]
 }'''
@@ -10017,7 +10017,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 653652e40c73e4763048ba149278172aa2fdbc8234e8c7f74f83f8c98d3bd30d SIZE: 141611 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: a6e1aeeb01f46cdd9afc6a3a428695243f00a02990e9da0a9cd34fef93efd0e9 SIZE: 148151 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11536,15 +11536,47 @@ if __name__ == "__main__":
 # COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
 #
 #
+# TEMP_MARKER = "##JVM_"
+#
+#
+# def temp_base(name: Any) -> str:
+#     """`##JVM_Patients`, `JVM_Patients` or `Patients`: the bare table name."""
+#     text = str(name or "").strip().lstrip("#")
+#     if text.upper().startswith("JVM_"):
+#         text = text[4:]
+#     return text
+#
+#
+# def assign_sessions(cohorts: list[dict[str, Any]], uploaded_pk: str | None) -> None:
+#     """Record on each cohort, as `session_pk`, the PK whose session builds it.
+#
+#     A session is one PK and everything pulled for it. A PK cohort owns itself;
+#     any other cohort belongs to its multiplier group's PK, which is also the
+#     PK its `PKTable` is bound to (a template has one PK per group, or
+#     `multiple_pk_cohorts` stops it). With an uploaded PK there is one session.
+#     Without this, the split put every cohort in every session, where some
+#     joined another session's PK.
+#     """
+#     group_pk: dict[str, str] = {}
+#     for cohort in cohorts:
+#         if str(cohort.get("type", "")).lower() == "pk":
+#             group_pk.setdefault(str(cohort.get("_group_key", "")), str(cohort.get("dest_table") or cohort.get("name")))
+#     for cohort in cohorts:
+#         owner = group_pk.get(str(cohort.get("_group_key", ""))) or uploaded_pk
+#         if owner:
+#             cohort["session_pk"] = owner
+#
+#
 # def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
 #     cosmos = str(template.get("cosmos_db", "COSMOS"))
 #     value = cosmos.lower()
+#     generated = {str(c.get("dest_table") or c.get("name")) for c in cohorts}
 #     if value in ("cosmos",):
 #         return cohorts
 #     if value in ("cosmos_sneakpeek", "sneakpeek", "sp"):
-#         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
+#         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
 #     if value in ("dual", "both"):
-#         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
+#         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek", generated) for c in cohorts]
 #     result.error(
 #         "bad_cosmos_db",
 #         f"Unsupported cosmos_db value `{cosmos}`.",
@@ -11565,11 +11597,42 @@ if __name__ == "__main__":
 #         )
 #
 #
-# def with_cosmos_suffix(cohort: dict[str, Any], suffix: str, cosmos_db: str) -> dict[str, Any]:
+# def with_cosmos_suffix(
+#     cohort: dict[str, Any], suffix: str, cosmos_db: str, generated: set[str] | None = None
+# ) -> dict[str, Any]:
+#     """The cohort's copy for another Cosmos database, pointing at its own temps.
+#
+#     Renaming the cohort is not enough: its SQL names the temps of the cohorts
+#     it reads (`##JVM_Patients`), and the copy must read their copies
+#     (`##JVM_Patients_sp`), or it pulls for the other database's population.
+#     Uploads are shared by both copies, so they keep their names.
+#     """
 #     new = copy.deepcopy(cohort)
 #     new["name"] = f"{new.get('name')}{suffix}"
 #     new["dest_table"] = f"{new.get('dest_table', new.get('name'))}{suffix}"
 #     new["cosmos_db"] = cosmos_db
+#     if generated:
+#         pattern = re.compile(
+#             re.escape(TEMP_MARKER)
+#             + "("
+#             + "|".join(re.escape(name) for name in sorted(generated, key=len, reverse=True))
+#             + ")(?![A-Za-z0-9_])"
+#         )
+#
+#         def rename(value: Any) -> Any:
+#             if isinstance(value, str):
+#                 return pattern.sub(lambda m: f"{TEMP_MARKER}{m.group(1)}{suffix}", value)
+#             if isinstance(value, list):
+#                 return [rename(item) for item in value]
+#             if isinstance(value, dict):
+#                 return {k: rename(v) for k, v in value.items()}
+#             return value
+#
+#         for key, value in list(new.items()):
+#             if key not in ("name", "dest_table", "session_pk"):
+#                 new[key] = rename(value)
+#         if new.get("session_pk") in generated:
+#             new["session_pk"] = f"{new['session_pk']}{suffix}"
 #     return new
 #
 #
@@ -11653,6 +11716,7 @@ if __name__ == "__main__":
 #     cohorts = expand_multipliers(template, cohorts, result)
 #     analysis = analyze_cohorts(cohorts)
 #     cohorts = validate_and_resolve(template, recipes_doc, cohorts, analysis, result, template_path.parent)
+#     assign_sessions(cohorts, find_uploaded_pk_table(template, CompileResult()))
 #     validate_cosmos(template, result)
 #     if result.errors:
 #         rendered_cohorts = [{k: v for k, v in cohort.items() if not k.startswith("_")} for cohort in cohorts]
@@ -12029,7 +12093,9 @@ if __name__ == "__main__":
 #     ]
 #     fact_cohorts = [
 #         cohort for cohort in cohorts
-#         if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() != "pk"
+#         if isinstance(cohort, dict)
+#         and str(cohort.get("type", "")).lower() != "pk"
+#         and (pk_table is None or cohort.get("session_pk") in (None, pk_table))
 #     ]
 #     doc["pull_context"] = split_pull_context(session, phase, run)
 #     if phase == "upload_cohorts":
@@ -13190,6 +13256,96 @@ if __name__ == "__main__":
 #         self.assertNotIn("unbound_table_input", [m.code for m in res.errors])
 #
 #
+# class SessionMembershipTests(MakeYamlTest):
+#     """Each session builds only its own group's cohorts, against its own PK."""
+#
+#     GROUPED = """
+# multipliers:
+#   - name: Type
+#     stage: during_build
+#     levels:
+#       - strat: A
+#         vars:
+#           ICD_Value: A%
+#       - strat: B
+#         vars:
+#           ICD_Value: B%
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: black
+#         column: FirstRace
+#         values: [Black]
+#       - strat: white
+#         column: FirstRace
+#         values: [White]
+# """
+#
+#     def split(self, cosmos_db: str = "Dual") -> tuple[dict[str, Any], Path]:
+#         text = tiny_template(self.GROUPED).replace("cosmos_db: COSMOS", f"cosmos_db: {cosmos_db}")
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(text), output_dir=out)
+#         self.assertCompiles(res)
+#         return load_yaml(out / "pullmanifest.yaml"), out
+#
+#     def run_cohorts(self, manifest: dict[str, Any], out: Path) -> dict[str, list[dict[str, Any]]]:
+#         return {
+#             session["pk_table"]: [
+#                 cohort
+#                 for run in session["runs"]
+#                 for cohort in load_yaml(out / run["yaml"]).get("cohorts", [])
+#             ]
+#             for session in manifest["sessions"]
+#         }
+#
+#     def test_each_session_runs_only_its_own_cohorts(self):
+#         manifest, out = self.split()
+#         by_session = self.run_cohorts(manifest, out)
+#         self.assertEqual(len(by_session), 8)
+#         for pk_table, cohorts in by_session.items():
+#             with self.subTest(session=pk_table):
+#                 expected = pk_table.replace("Patients", "OtherDx")
+#                 self.assertEqual([c["dest_table"] for c in cohorts], [expected])
+#
+#     def test_each_cohort_joins_its_own_sessions_pk(self):
+#         # The outcome that matters: the population a fact table is pulled for.
+#         manifest, out = self.split()
+#         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
+#             for cohort in cohorts:
+#                 with self.subTest(session=pk_table, cohort=cohort["dest_table"]):
+#                     temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
+#                     self.assertEqual(temps, {f"##JVM_{pk_table}"})
+#
+#     def test_every_cohort_is_built_exactly_once(self):
+#         manifest, out = self.split()
+#         built = [c["dest_table"] for cs in self.run_cohorts(manifest, out).values() for c in cs]
+#         self.assertEqual(sorted(built), sorted(set(built)))
+#         self.assertEqual(len(built), 8)
+#
+#     def test_sneakpeek_alone_joins_the_sneakpeek_pk(self):
+#         manifest, out = self.split("COSMOS_SneakPeek")
+#         for pk_table, cohorts in self.run_cohorts(manifest, out).items():
+#             self.assertTrue(pk_table.endswith("_sp"), pk_table)
+#             for cohort in cohorts:
+#                 temps = set(re.findall(r"##JVM_[A-Za-z0-9_]+", json.dumps(cohort)))
+#                 self.assertEqual(temps, {f"##JVM_{pk_table}"})
+#
+#     def test_an_uploaded_pk_keeps_one_session_for_both_databases(self):
+#         text = uploaded_pk_template().replace("cosmos_db: COSMOS", "cosmos_db: Dual")
+#         (self.tmp / "pks.csv").write_text(
+#             "PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8"
+#         )
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(text), output_dir=out)
+#         self.assertCompiles(res)
+#         by_session = self.run_cohorts(load_yaml(out / "pullmanifest.yaml"), out)
+#         self.assertEqual(
+#             {pk: sorted(c["dest_table"] for c in cs) for pk, cs in by_session.items()},
+#             {"ClientPK": ["OtherDx", "OtherDx_sp"]},
+#         )
+#
+#
 # class TransferTests(MakeYamlTest):
 #     """The transfer YAML (D49): recipes written out, nothing applied."""
 #
@@ -13455,6 +13611,7 @@ if __name__ == "__main__":
 #     "uploaded_pk": UploadedPkTests,
 #     "datadictionary": DataDictionaryTests,
 #     "table_binding": TableBindingTests,
+#     "sessions": SessionMembershipTests,
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
 #     "fixes": FixTests,

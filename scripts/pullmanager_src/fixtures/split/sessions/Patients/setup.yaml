@@ -12,7 +12,7 @@ upload_cohorts:
 - name: HospitalICDCodes
   dest_table: HospitalICDCodes
   file_type: csv
-  file_loc: "fixtures/hospital_icd_codes.csv"
+  file_loc: uploads/hospital_icd_codes.csv
   push_this_cycle: true
 pull_context:
   session_id: Patients
