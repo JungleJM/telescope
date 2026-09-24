@@ -246,12 +246,21 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
             continue
         dest = str(cohort["dest_table"])
+        if label is not None:
+            # Its own block: a chunked run clears once, then lands every chunk.
+            blocks.append(
+                SqlBlock(
+                    block_id=f"{block_prefix}/{dest}/clear",
+                    side="local",
+                    sql=render_delete_batch(cohort, str(project_db), label),
+                    dest_table=dest,
+                    meta={"clears": label, "destination": destination(str(project_db), dest)},
+                )
+            )
         parts = [
             render_transfer(cohort, str(project_db), linked_server, label),
             render_row_counts(cohort, str(project_db), linked_server, label),
         ]
-        if label is not None:
-            parts.insert(0, render_delete_batch(cohort, str(project_db), label))
         probe = render_length_probe(cohort)
         if probe:
             parts.append(probe)

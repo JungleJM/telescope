@@ -7,12 +7,13 @@ epoch, what a resume must replay, and why uploads travel through the client.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from . import local_sql, refresh, server_sql, uploads
-from .batches import BatchError, select_batch_rows
+from .batches import BatchError, chunk_clause, count_batch_rows, select_batch_rows
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 from .executor import (
     Unit,
@@ -325,18 +326,59 @@ class SessionRunner:
     # ----------------------------------------------------------------- run
 
     def _run_run(self, node: Any, path: Path) -> int | None:
-        self._materialize_batch(node)
         unit = plan_unit(
             self.manifest, self.session, "run", node, path, self.report.linked_server,
             resuming=self.resuming,
         )
-        return self._run_pair(unit)
+        size = self._chunk_size(node)
+        if size is None:
+            self._materialize_batch(node)
+            return self._run_pair(unit)
+
+        # Chunks run inside their batch (D53): clear the batch's rows once,
+        # then refill the PK temp and land each chunk in turn. A failure fails
+        # the run, and a retry clears and redoes all of it.
+        total = self._count_batch(node)
+        chunks = max(1, math.ceil(total / size))
+        node.outputs["batch_pk_rows_total"] = total
+        self._run_blocks([b for b in unit.local_blocks if b.meta.get("clears")], self.projects)
+        server_total: dict[str, int] = {}
+        local_rows: dict[str, int] = {}
+        for index in range(chunks):
+            node.outputs["chunk"] = f"c{index + 1}of{chunks}"
+            self.manifest.save()
+            self._materialize_batch(node, chunk_index=index)
+            server_rows, local_rows = self._execute_unit(unit, clear=False)
+            for dest, count in server_rows.items():
+                server_total[dest] = server_total.get(dest, 0) + count
+        self._check_counts(server_total, local_rows)
+        return next(iter(server_total.values()), None)
+
+    def _chunk_size(self, node: Any) -> int | None:
+        """Rows per chunk, or None for a run that is not chunked."""
+        if not node.batch:
+            return None
+        try:
+            _, size = chunk_clause(node.batch, self._pk_key_columns(self._phase_doc("pk")))
+        except BatchError as exc:
+            raise SessionError(f"{node.label}: {exc}") from exc
+        return int(size) if size else None
+
+    def _count_batch(self, node: Any) -> int:
+        pk_table = self.session.pk_table
+        if not pk_table:
+            raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
+        selection = count_batch_rows(self.project_db, pk_table, node.batch)
+        cursor = self.projects.cursor()
+        cursor.execute(selection.sql, selection.params)
+        row = cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
 
     def _pk_is_generated(self) -> bool:
         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
         return not pk_source or pk_source.get("kind") == "generated"
 
-    def _materialize_batch(self, node: Any) -> None:
+    def _materialize_batch(self, node: Any, chunk_index: int = 0) -> None:
         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
 
         The run YAML joins the PK temp by name, so replacing its contents is
@@ -357,7 +399,9 @@ class SessionRunner:
         doc = self._phase_doc("pk")
         keys = self._pk_key_columns(doc)
         try:
-            selection = select_batch_rows(self.project_db, pk_table, batch, keys)
+            selection = select_batch_rows(
+                self.project_db, pk_table, batch, keys, chunk_index=chunk_index
+            )
         except BatchError as exc:
             raise SessionError(f"{node.label}: {exc}") from exc
 
@@ -393,6 +437,17 @@ class SessionRunner:
 
     def _run_pair(self, unit: Unit) -> int | None:
         """Server blocks, then the local transfer, then compare both counts."""
+        server_rows, local_rows = self._execute_unit(unit)
+        self._check_counts(server_rows, local_rows)
+        return next(iter(server_rows.values()), None)
+
+    def _run_blocks(self, blocks: list[Any], connection: Any) -> None:
+        for block in blocks:
+            execute_script(connection, block.sql, label=block.block_id)
+        connection.commit()
+
+    def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
+        """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
         server_rows: dict[str, int] = {}
         for block in unit.server_blocks:
             outcome = execute_script(self.cosmos, block.sql, label=block.block_id)
@@ -402,6 +457,8 @@ class SessionRunner:
 
         local_rows: dict[str, int] = {}
         for block in unit.local_blocks:
+            if block.meta.get("clears") and not clear:
+                continue
             outcome = execute_script(self.projects, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
                 if row["Side"] == "projects":
@@ -416,7 +473,9 @@ class SessionRunner:
                     f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
                 )
         self.projects.commit()
+        return server_rows, local_rows
 
+    def _check_counts(self, server_rows: dict[str, int], local_rows: dict[str, int]) -> None:
         for dest, count in server_rows.items():
             if count >= LARGE_ROW_WARNING:
                 self.report.warnings.append(
@@ -429,4 +488,3 @@ class SessionRunner:
                     f"{dest}: Cosmos reported {count:,} rows but {landed:,} landed in "
                     "Projects. The transfer did not carry everything."
                 )
-        return next(iter(server_rows.values()), None)

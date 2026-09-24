@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "e286746d51e8c25e4c39e9a5df39b46be59c634e850d2e1895a551e946fab709",
+  "content_id": "91234eeeeef0876c91659cc1a6da783fcd9309edafd8c479b82b02f06511e61f",
   "file_count": 37,
   "files": [
     {
@@ -429,8 +429,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/local_sql.py",
       "policy": "replace",
-      "sha256": "a763c5ff4f9faba5b51a378381d44de1cf6bd49f5f6299ff3dfcf9a98b2a448a",
-      "size": 9927
+      "sha256": "106ed8e8a9b5e242e0c0b112f3ae5303941e8c2166866764059a72eedbaf63e1",
+      "size": 10315
     },
     {
       "path": "pullmanager/manifest.py",
@@ -471,8 +471,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "57dbb7d243ab7e2f638190a411bb6b12a37d908d1c9e1e57c5490e137851bba9",
-      "size": 17653
+      "sha256": "18912d3a46a212e1cba9890c9d41ccf1c5ff760c1c34ddba0c44d55561281db6",
+      "size": 20484
     },
     {
       "path": "pullmanager/sql.py",
@@ -549,14 +549,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "25e7b4fb64a8d6e4a63280be1af0792add5f574205476d1f13ee3c216ab3fd89",
-      "size": 10629
+      "sha256": "fb25f07bdd9ce47cc2eabaffc4be695921d2f45d8ed0ae608311f76eec36e90b",
+      "size": 11294
     },
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "8f0f0ff46901429ea69f22dc1c17677471ee1c69c0910167df44542d546ea6cc",
-      "size": 19288
+      "sha256": "ba7ac3910a6d7d1d67f5a0b99d0df6e8c5ef5aaabbe4e23433bd74639ea4d1a6",
+      "size": 22522
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "a6e1aeeb01f46cdd9afc6a3a428695243f00a02990e9da0a9cd34fef93efd0e9",
-      "size": 148151
+      "sha256": "88a2448e9ade4c3a9ae6e6434a55d290bfdd0cae431c03b8e845bbdd08471d96",
+      "size": 147768
     }
   ]
 }'''
@@ -5160,7 +5160,7 @@ if __name__ == "__main__":
 #     return path
 #
 # === END FILE: pullmanager/launcher.py ===
-# === BEGIN FILE: pullmanager/local_sql.py SHA256: a763c5ff4f9faba5b51a378381d44de1cf6bd49f5f6299ff3dfcf9a98b2a448a SIZE: 9927 ===
+# === BEGIN FILE: pullmanager/local_sql.py SHA256: 106ed8e8a9b5e242e0c0b112f3ae5303941e8c2166866764059a72eedbaf63e1 SIZE: 10315 ===
 # """Projects-side SQL: destination tables and the transfer from Cosmos.
 #
 # Write mode is decided: the destination is dropped and created once per session
@@ -5409,12 +5409,21 @@ if __name__ == "__main__":
 #         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
 #             continue
 #         dest = str(cohort["dest_table"])
+#         if label is not None:
+#             # Its own block: a chunked run clears once, then lands every chunk.
+#             blocks.append(
+#                 SqlBlock(
+#                     block_id=f"{block_prefix}/{dest}/clear",
+#                     side="local",
+#                     sql=render_delete_batch(cohort, str(project_db), label),
+#                     dest_table=dest,
+#                     meta={"clears": label, "destination": destination(str(project_db), dest)},
+#                 )
+#             )
 #         parts = [
 #             render_transfer(cohort, str(project_db), linked_server, label),
 #             render_row_counts(cohort, str(project_db), linked_server, label),
 #         ]
-#         if label is not None:
-#             parts.insert(0, render_delete_batch(cohort, str(project_db), label))
 #         probe = render_length_probe(cohort)
 #         if probe:
 #             parts.append(probe)
@@ -6562,7 +6571,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 57dbb7d243ab7e2f638190a411bb6b12a37d908d1c9e1e57c5490e137851bba9 SIZE: 17653 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 18912d3a46a212e1cba9890c9d41ccf1c5ff760c1c34ddba0c44d55561281db6 SIZE: 20484 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6572,12 +6581,13 @@ if __name__ == "__main__":
 #
 # from __future__ import annotations
 #
+# import math
 # from dataclasses import dataclass, field
 # from pathlib import Path
 # from typing import Any, Callable
 #
 # from . import local_sql, refresh, server_sql, uploads
-# from .batches import BatchError, select_batch_rows
+# from .batches import BatchError, chunk_clause, count_batch_rows, select_batch_rows
 # from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 # from .executor import (
 #     Unit,
@@ -6890,18 +6900,59 @@ if __name__ == "__main__":
 #     # ----------------------------------------------------------------- run
 #
 #     def _run_run(self, node: Any, path: Path) -> int | None:
-#         self._materialize_batch(node)
 #         unit = plan_unit(
 #             self.manifest, self.session, "run", node, path, self.report.linked_server,
 #             resuming=self.resuming,
 #         )
-#         return self._run_pair(unit)
+#         size = self._chunk_size(node)
+#         if size is None:
+#             self._materialize_batch(node)
+#             return self._run_pair(unit)
+#
+#         # Chunks run inside their batch (D53): clear the batch's rows once,
+#         # then refill the PK temp and land each chunk in turn. A failure fails
+#         # the run, and a retry clears and redoes all of it.
+#         total = self._count_batch(node)
+#         chunks = max(1, math.ceil(total / size))
+#         node.outputs["batch_pk_rows_total"] = total
+#         self._run_blocks([b for b in unit.local_blocks if b.meta.get("clears")], self.projects)
+#         server_total: dict[str, int] = {}
+#         local_rows: dict[str, int] = {}
+#         for index in range(chunks):
+#             node.outputs["chunk"] = f"c{index + 1}of{chunks}"
+#             self.manifest.save()
+#             self._materialize_batch(node, chunk_index=index)
+#             server_rows, local_rows = self._execute_unit(unit, clear=False)
+#             for dest, count in server_rows.items():
+#                 server_total[dest] = server_total.get(dest, 0) + count
+#         self._check_counts(server_total, local_rows)
+#         return next(iter(server_total.values()), None)
+#
+#     def _chunk_size(self, node: Any) -> int | None:
+#         """Rows per chunk, or None for a run that is not chunked."""
+#         if not node.batch:
+#             return None
+#         try:
+#             _, size = chunk_clause(node.batch, self._pk_key_columns(self._phase_doc("pk")))
+#         except BatchError as exc:
+#             raise SessionError(f"{node.label}: {exc}") from exc
+#         return int(size) if size else None
+#
+#     def _count_batch(self, node: Any) -> int:
+#         pk_table = self.session.pk_table
+#         if not pk_table:
+#             raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
+#         selection = count_batch_rows(self.project_db, pk_table, node.batch)
+#         cursor = self.projects.cursor()
+#         cursor.execute(selection.sql, selection.params)
+#         row = cursor.fetchone()
+#         return int(row[0]) if row and row[0] is not None else 0
 #
 #     def _pk_is_generated(self) -> bool:
 #         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
 #         return not pk_source or pk_source.get("kind") == "generated"
 #
-#     def _materialize_batch(self, node: Any) -> None:
+#     def _materialize_batch(self, node: Any, chunk_index: int = 0) -> None:
 #         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
 #
 #         The run YAML joins the PK temp by name, so replacing its contents is
@@ -6922,7 +6973,9 @@ if __name__ == "__main__":
 #         doc = self._phase_doc("pk")
 #         keys = self._pk_key_columns(doc)
 #         try:
-#             selection = select_batch_rows(self.project_db, pk_table, batch, keys)
+#             selection = select_batch_rows(
+#                 self.project_db, pk_table, batch, keys, chunk_index=chunk_index
+#             )
 #         except BatchError as exc:
 #             raise SessionError(f"{node.label}: {exc}") from exc
 #
@@ -6958,6 +7011,17 @@ if __name__ == "__main__":
 #
 #     def _run_pair(self, unit: Unit) -> int | None:
 #         """Server blocks, then the local transfer, then compare both counts."""
+#         server_rows, local_rows = self._execute_unit(unit)
+#         self._check_counts(server_rows, local_rows)
+#         return next(iter(server_rows.values()), None)
+#
+#     def _run_blocks(self, blocks: list[Any], connection: Any) -> None:
+#         for block in blocks:
+#             execute_script(connection, block.sql, label=block.block_id)
+#         connection.commit()
+#
+#     def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
+#         """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
 #         server_rows: dict[str, int] = {}
 #         for block in unit.server_blocks:
 #             outcome = execute_script(self.cosmos, block.sql, label=block.block_id)
@@ -6967,6 +7031,8 @@ if __name__ == "__main__":
 #
 #         local_rows: dict[str, int] = {}
 #         for block in unit.local_blocks:
+#             if block.meta.get("clears") and not clear:
+#                 continue
 #             outcome = execute_script(self.projects, block.sql, label=block.block_id)
 #             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
 #                 if row["Side"] == "projects":
@@ -6981,7 +7047,9 @@ if __name__ == "__main__":
 #                     f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
 #                 )
 #         self.projects.commit()
+#         return server_rows, local_rows
 #
+#     def _check_counts(self, server_rows: dict[str, int], local_rows: dict[str, int]) -> None:
 #         for dest, count in server_rows.items():
 #             if count >= LARGE_ROW_WARNING:
 #                 self.report.warnings.append(
@@ -6994,7 +7062,6 @@ if __name__ == "__main__":
 #                     f"{dest}: Cosmos reported {count:,} rows but {landed:,} landed in "
 #                     "Projects. The transfer did not carry everything."
 #                 )
-#         return next(iter(server_rows.values()), None)
 #
 # === END FILE: pullmanager/session.py ===
 # === BEGIN FILE: pullmanager/sql.py SHA256: e894b41f2d51392c0690d2f9e7c04d1d617fb3288505a65fccfe22dbf03dbc2c SIZE: 5320 ===
@@ -9315,7 +9382,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 25e7b4fb64a8d6e4a63280be1af0792add5f574205476d1f13ee3c216ab3fd89 SIZE: 10629 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: fb25f07bdd9ce47cc2eabaffc4be695921d2f45d8ed0ae608311f76eec36e90b SIZE: 11294 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9541,9 +9608,19 @@ if __name__ == "__main__":
 #         doc = self.phase("runs/run.yaml")
 #         server, _ = server_sql.render_phase(doc, "Patients/run")
 #         local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
-#         self.assertEqual([b.dest_table for b in server], [b.dest_table for b in local])
+#         transfers = [b for b in local if not b.meta.get("clears")]
+#         self.assertEqual([b.dest_table for b in server], [b.dest_table for b in transfers])
 #         self.assertTrue(all(b.side == "server" for b in server))
 #         self.assertTrue(all(b.side == "local" for b in local))
+#
+#     def test_a_run_clears_its_batch_before_landing_it(self):
+#         # D52: the clear is its own block, ahead of the transfer, so a chunked
+#         # run can clear once and land every chunk.
+#         doc = self.phase("runs/run.yaml")
+#         local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
+#         self.assertEqual([bool(b.meta.get("clears")) for b in local], [True, False])
+#         self.assertIn("DELETE FROM PROJECTD33A929.dbo.OtherHospitalizations WHERE [_batch] = 'all'", local[0].sql)
+#         self.assertIn(", 'all' FROM #Local_OtherHospitalizations", local[1].sql)
 #
 #     def test_block_ids_are_unique_and_addressable(self):
 #         doc = self.phase("runs/run.yaml")
@@ -9553,7 +9630,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 8f0f0ff46901429ea69f22dc1c17677471ee1c69c0910167df44542d546ea6cc SIZE: 19288 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ba7ac3910a6d7d1d67f5a0b99d0df6e8c5ef5aaabbe4e23433bd74639ea4d1a6 SIZE: 22522 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9650,7 +9727,8 @@ if __name__ == "__main__":
 #     """
 #
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
-#                  fail_once=None, tables=None, created=LAST_REFRESH):
+#                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
+#                  pk_rows=3):
 #         self.side = side
 #         self.rows = rows
 #         self.distinct = rows if distinct is None else distinct
@@ -9659,6 +9737,9 @@ if __name__ == "__main__":
 #         self.fail_once = fail_once if fail_once is not None else {}
 #         self.tables = tables if tables is not None else {}
 #         self.created = created
+#         self.pk_rows = pk_rows
+#         # pattern -> [matches left before failing, message]
+#         self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
 #         self.executed: list[str] = []
 #         self.inserted: list = []
 #         self.commits = 0
@@ -9685,6 +9766,12 @@ if __name__ == "__main__":
 #             for pattern in list(self.fail_once):
 #                 if re.search(pattern, statement, re.I):
 #                     raise RuntimeError(self.fail_once.pop(pattern))
+#             for pattern, state in list(self.fail_nth.items()):
+#                 if re.search(pattern, statement, re.I):
+#                     state[0] -= 1
+#                     if state[0] == 0:
+#                         del self.fail_nth[pattern]
+#                         raise RuntimeError(state[1])
 #             if self.side == "projects":
 #                 self._model(statement)
 #
@@ -9708,6 +9795,8 @@ if __name__ == "__main__":
 #                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
 #         if "COUNT_BIG(DISTINCT" in sql:
 #             return [(["total", "distinct"], [(self.rows, self.distinct)])]
+#         if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
+#             return [(["count"], [(self.pk_rows,)])]
 #         if "SELECT * FROM" in sql:
 #             return [(["PatientDurableKey", "Sex"], [(i, "Female") for i in range(3)])]
 #         sets = []
@@ -9758,7 +9847,7 @@ if __name__ == "__main__":
 #         doc["cohorts"][0]["key_column"] = column
 #         dump_yaml(doc, path)
 #
-#     def make_batched(self):
+#     def make_batched(self, runtime=None):
 #         """Give the fixture's session two batches, Female and Male."""
 #         runs_dir = self.root / "sessions" / "Patients" / "runs"
 #         doc = load_yaml(runs_dir / "run.yaml")
@@ -9769,7 +9858,7 @@ if __name__ == "__main__":
 #                 "dimensions": [
 #                     {"name": "sex", "kind": "column_values", "column": "Sex", "value": value}
 #                 ],
-#                 "runtime": [],
+#                 "runtime": list(runtime or []),
 #             }
 #             doc["pull_context"]["batch"] = batch
 #             doc["pull_context"]["run_id"] = f"Patients__{value}"
@@ -10025,6 +10114,61 @@ if __name__ == "__main__":
 #         self.assertEqual(code, 0)
 #         self.assertGreater(len(self.opened), 1)
 #         self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+#
+#
+# class ChunkTests(SessionTestCase):
+#     """D53: every chunk of a batch is pulled, inside its run, exactly once."""
+#
+#     CHUNK = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": 2000, "applies_to": "PKTable"}
+#
+#     def setUp(self):
+#         super().setUp()
+#         self.declare_pk_key()
+#         self.make_batched(runtime=[self.CHUNK])
+#         self.tables: dict[str, Counter] = {}
+#
+#     def execute(self, retry_failed=False, **projects):
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         settings = {"tables": self.tables, "pk_rows": 4500, **projects}
+#         with self.runner(projects=settings, retry_failed=retry_failed) as runner:
+#             return runner.execute()
+#
+#     def windows(self):
+#         return [
+#             (int(offset), int(size))
+#             for sql in self.projects.executed
+#             for offset, size in re.findall(r"OFFSET (\d+) ROWS FETCH NEXT (\d+) ROWS ONLY", sql)
+#         ]
+#
+#     def test_every_chunk_is_pulled(self):
+#         # 4,500 PK rows in chunks of 2,000: rows 0-2000, 2000-4000, 4000-4500,
+#         # for each batch. Before, only the first chunk was pulled, silently.
+#         report = self.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(self.windows(), [(0, 2000), (2000, 2000), (4000, 2000)] * 2)
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+#         self.assertFalse(any("did not carry everything" in w for w in report.warnings), report.warnings)
+#
+#     def test_progress_is_recorded_on_the_run(self):
+#         self.execute()
+#         run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+#         self.assertEqual(run.outputs["chunk"], "c3of3")
+#         self.assertEqual(run.outputs["batch_pk_rows_total"], 4500)
+#
+#     def test_a_batch_failing_mid_chunks_lands_once_after_a_retry(self):
+#         # Male's first chunk lands, its second fails.
+#         first = self.execute(fail_nth={r", 'Male' FROM #Local_": (2, "timeout")})
+#         self.assertEqual([label for label, _ in first.failed], ["Patients__Male"])
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 10}))
+#         second = self.execute(retry_failed=True)
+#         self.assertTrue(second.ok, second.failed)
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+#         self.assertNotIn("Patients__Female", second.completed)
+#
+#     def test_an_empty_batch_still_runs_once(self):
+#         report = self.execute(pk_rows=0)
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(self.windows(), [(0, 2000)] * 2)
 #
 # === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
@@ -10602,7 +10746,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: a6e1aeeb01f46cdd9afc6a3a428695243f00a02990e9da0a9cd34fef93efd0e9 SIZE: 148151 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 88a2448e9ade4c3a9ae6e6434a55d290bfdd0cae431c03b8e845bbdd08471d96 SIZE: 147768 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -12072,14 +12216,6 @@ if __name__ == "__main__":
 #                     f"{where}.rows_per_batch",
 #                     fix="Give it a size: `chunk: 2000`, or `rows_per_batch: 2000` in a "
 #                     "full definition.",
-#                 )
-#             else:
-#                 result.warn(
-#                     "chunk_pulls_first_chunk_only",
-#                     "`chunk` batching currently pulls only the first chunk of each run, "
-#                     "with no error (roadmap, Known Bugs).",
-#                     where,
-#                     fix="Batch with explicit `values:` on a PK column instead until it is fixed.",
 #                 )
 #             continue
 #         col = item.get("column")
@@ -14121,10 +14257,10 @@ if __name__ == "__main__":
 #         # The `chunk` batching recipe ships with `rows_per_batch: required`.
 #         self.assertFlags(self.check("  - chunk\n"), "bad_chunk_size", ".rows_per_batch")
 #
-#     def test_chunking_warns_of_the_known_bug(self):
+#     def test_a_sized_chunk_compiles_cleanly(self):
 #         res = self.check("  - chunk: 2000\n")
 #         self.assertCompiles(res)
-#         self.assertFlags(res, "chunk_pulls_first_chunk_only", "batching[0] (chunk)")
+#         self.assertFalse([m for m in res.warnings if "chunk" in m.code], summarize_result(res))
 #
 #     def test_values_all_warns_before_the_pull_does(self):
 #         res = self.check("  - state\n")

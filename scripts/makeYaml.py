@@ -1468,14 +1468,6 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
                     fix="Give it a size: `chunk: 2000`, or `rows_per_batch: 2000` in a "
                     "full definition.",
                 )
-            else:
-                result.warn(
-                    "chunk_pulls_first_chunk_only",
-                    "`chunk` batching currently pulls only the first chunk of each run, "
-                    "with no error (roadmap, Known Bugs).",
-                    where,
-                    fix="Batch with explicit `values:` on a PK column instead until it is fixed.",
-                )
             continue
         col = item.get("column")
         if not col:
@@ -3516,10 +3508,10 @@ class BatchingDefinitionTests(MakeYamlTest):
         # The `chunk` batching recipe ships with `rows_per_batch: required`.
         self.assertFlags(self.check("  - chunk\n"), "bad_chunk_size", ".rows_per_batch")
 
-    def test_chunking_warns_of_the_known_bug(self):
+    def test_a_sized_chunk_compiles_cleanly(self):
         res = self.check("  - chunk: 2000\n")
         self.assertCompiles(res)
-        self.assertFlags(res, "chunk_pulls_first_chunk_only", "batching[0] (chunk)")
+        self.assertFalse([m for m in res.warnings if "chunk" in m.code], summarize_result(res))
 
     def test_values_all_warns_before_the_pull_does(self):
         res = self.check("  - state\n")

@@ -223,9 +223,19 @@ class FixtureRenderTests(unittest.TestCase):
         doc = self.phase("runs/run.yaml")
         server, _ = server_sql.render_phase(doc, "Patients/run")
         local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
-        self.assertEqual([b.dest_table for b in server], [b.dest_table for b in local])
+        transfers = [b for b in local if not b.meta.get("clears")]
+        self.assertEqual([b.dest_table for b in server], [b.dest_table for b in transfers])
         self.assertTrue(all(b.side == "server" for b in server))
         self.assertTrue(all(b.side == "local" for b in local))
+
+    def test_a_run_clears_its_batch_before_landing_it(self):
+        # D52: the clear is its own block, ahead of the transfer, so a chunked
+        # run can clear once and land every chunk.
+        doc = self.phase("runs/run.yaml")
+        local = local_sql.render_phase(doc, "Patients/run", "et4003vpdsql032")
+        self.assertEqual([bool(b.meta.get("clears")) for b in local], [True, False])
+        self.assertIn("DELETE FROM PROJECTD33A929.dbo.OtherHospitalizations WHERE [_batch] = 'all'", local[0].sql)
+        self.assertIn(", 'all' FROM #Local_OtherHospitalizations", local[1].sql)
 
     def test_block_ids_are_unique_and_addressable(self):
         doc = self.phase("runs/run.yaml")

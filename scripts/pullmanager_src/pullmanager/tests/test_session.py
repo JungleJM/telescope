@@ -94,7 +94,8 @@ class FakeConnection:
     """
 
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
-                 fail_once=None, tables=None, created=LAST_REFRESH):
+                 fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
+                 pk_rows=3):
         self.side = side
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
@@ -103,6 +104,9 @@ class FakeConnection:
         self.fail_once = fail_once if fail_once is not None else {}
         self.tables = tables if tables is not None else {}
         self.created = created
+        self.pk_rows = pk_rows
+        # pattern -> [matches left before failing, message]
+        self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
         self.executed: list[str] = []
         self.inserted: list = []
         self.commits = 0
@@ -129,6 +133,12 @@ class FakeConnection:
             for pattern in list(self.fail_once):
                 if re.search(pattern, statement, re.I):
                     raise RuntimeError(self.fail_once.pop(pattern))
+            for pattern, state in list(self.fail_nth.items()):
+                if re.search(pattern, statement, re.I):
+                    state[0] -= 1
+                    if state[0] == 0:
+                        del self.fail_nth[pattern]
+                        raise RuntimeError(state[1])
             if self.side == "projects":
                 self._model(statement)
 
@@ -152,6 +162,8 @@ class FakeConnection:
                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
         if "COUNT_BIG(DISTINCT" in sql:
             return [(["total", "distinct"], [(self.rows, self.distinct)])]
+        if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
+            return [(["count"], [(self.pk_rows,)])]
         if "SELECT * FROM" in sql:
             return [(["PatientDurableKey", "Sex"], [(i, "Female") for i in range(3)])]
         sets = []
@@ -202,7 +214,7 @@ class SessionTestCase(unittest.TestCase):
         doc["cohorts"][0]["key_column"] = column
         dump_yaml(doc, path)
 
-    def make_batched(self):
+    def make_batched(self, runtime=None):
         """Give the fixture's session two batches, Female and Male."""
         runs_dir = self.root / "sessions" / "Patients" / "runs"
         doc = load_yaml(runs_dir / "run.yaml")
@@ -213,7 +225,7 @@ class SessionTestCase(unittest.TestCase):
                 "dimensions": [
                     {"name": "sex", "kind": "column_values", "column": "Sex", "value": value}
                 ],
-                "runtime": [],
+                "runtime": list(runtime or []),
             }
             doc["pull_context"]["batch"] = batch
             doc["pull_context"]["run_id"] = f"Patients__{value}"
@@ -469,3 +481,58 @@ class RefreshTests(SessionTestCase):
         self.assertEqual(code, 0)
         self.assertGreater(len(self.opened), 1)
         self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+
+
+class ChunkTests(SessionTestCase):
+    """D53: every chunk of a batch is pulled, inside its run, exactly once."""
+
+    CHUNK = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": 2000, "applies_to": "PKTable"}
+
+    def setUp(self):
+        super().setUp()
+        self.declare_pk_key()
+        self.make_batched(runtime=[self.CHUNK])
+        self.tables: dict[str, Counter] = {}
+
+    def execute(self, retry_failed=False, **projects):
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        settings = {"tables": self.tables, "pk_rows": 4500, **projects}
+        with self.runner(projects=settings, retry_failed=retry_failed) as runner:
+            return runner.execute()
+
+    def windows(self):
+        return [
+            (int(offset), int(size))
+            for sql in self.projects.executed
+            for offset, size in re.findall(r"OFFSET (\d+) ROWS FETCH NEXT (\d+) ROWS ONLY", sql)
+        ]
+
+    def test_every_chunk_is_pulled(self):
+        # 4,500 PK rows in chunks of 2,000: rows 0-2000, 2000-4000, 4000-4500,
+        # for each batch. Before, only the first chunk was pulled, silently.
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(self.windows(), [(0, 2000), (2000, 2000), (4000, 2000)] * 2)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+        self.assertFalse(any("did not carry everything" in w for w in report.warnings), report.warnings)
+
+    def test_progress_is_recorded_on_the_run(self):
+        self.execute()
+        run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+        self.assertEqual(run.outputs["chunk"], "c3of3")
+        self.assertEqual(run.outputs["batch_pk_rows_total"], 4500)
+
+    def test_a_batch_failing_mid_chunks_lands_once_after_a_retry(self):
+        # Male's first chunk lands, its second fails.
+        first = self.execute(fail_nth={r", 'Male' FROM #Local_": (2, "timeout")})
+        self.assertEqual([label for label, _ in first.failed], ["Patients__Male"])
+        self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 10}))
+        second = self.execute(retry_failed=True)
+        self.assertTrue(second.ok, second.failed)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+        self.assertNotIn("Patients__Female", second.completed)
+
+    def test_an_empty_batch_still_runs_once(self):
+        report = self.execute(pk_rows=0)
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(self.windows(), [(0, 2000)] * 2)
