@@ -314,25 +314,85 @@ class SessionRunner:
     # ------------------------------------------------------------- uploads
 
     def _run_uploads(self, path: Path) -> int | None:
+        """Land each upload in Projects, then load its Cosmos temp from that copy (D54).
+
+        Resuming, the copies are kept and the files are not read: the copy is
+        the source, so the batches still to run see what the finished ones saw.
+        """
         doc = load_yaml(path) or {}
         enabled = uploads.enabled_uploads(doc)
         if not enabled:
             return None
         uploaded = 0
         for cohort in enabled:
-            kind = uploads.upload_kind(cohort)
-            if kind == "csv":
-                plan = uploads.plan_csv_upload(cohort, self.upload_root, self.prefix)
+            dest = uploads.upload_dest(cohort)
+            copy = destination(self.project_db, uploads.copy_table(dest))
+            if self.resuming:
+                if not self._projects_table_exists(copy):
+                    raise SessionError(
+                        f"{copy} is missing. The finished batches were pulled with it, so "
+                        "landing the file again could mix populations. Run --repull."
+                    )
             else:
-                plan = uploads.plan_dbtable_upload(
-                    self.projects, cohort, self.project_db, self.prefix
-                )
-            self.report.warnings.extend(plan.notes)
-            uploaded += uploads.materialize(
-                self.cosmos, plan, chunk_size=self.settings.upload_chunk
-            )
-            self.cosmos.commit()
+                self._land_upload(cohort, copy)
+            uploaded += self._load_temp_from_copy(dest, copy)
         return uploaded
+
+    def _land_upload(self, cohort: dict[str, Any], copy: str) -> None:
+        """The file (or dbtable) into its typed Projects copy, committed."""
+        if uploads.upload_kind(cohort) == "dbtable":
+            source = cohort.get("source_table") or uploads.upload_dest(cohort)
+            self._execute(
+                self.projects,
+                uploads.render_copy_dbtable(copy, destination(self.project_db, source)),
+                label=f"upload {cohort.get('name')} copy",
+            )
+            self.projects.commit()
+            return
+        table = uploads.read_parquet(cohort, self.upload_root)
+        self.report.warnings.extend(table.notes)
+        self._execute(
+            self.projects, uploads.render_create(copy, table.columns),
+            label=f"upload {cohort.get('name')} copy",
+        )
+        if table.rows:
+            bulk_insert(
+                self.projects, copy, table.column_names, table.rows,
+                chunk_size=self.settings.upload_chunk,
+            )
+        self.projects.commit()
+
+    def _projects_table_exists(self, table: str) -> bool:
+        cursor = self.projects.cursor()
+        cursor.execute(f"SELECT OBJECT_ID(N'{table}', N'U');")
+        row = cursor.fetchone()
+        return bool(row and row[0] is not None)
+
+    def _describe(self, table: str) -> list[tuple[str, str]]:
+        """A Projects table's columns and their types."""
+        sql, params = uploads.describe_sql(self.project_db, table)
+        cursor = self.projects.cursor()
+        cursor.execute(sql, params)
+        columns = [(str(row[0]), uploads.type_from_info(*row[1:6])) for row in cursor.fetchall()]
+        if not columns:
+            raise SessionError(f"Could not read the columns of {self.project_db}.dbo.{table}.")
+        return columns
+
+    def _load_temp_from_copy(self, dest: str, copy: str) -> int:
+        """Create the Cosmos temp with the copy's types, and fill it from the copy."""
+        columns = self._describe(uploads.copy_table(dest))
+        temp = global_temp(dest, self.prefix)
+        self._execute(self.cosmos, uploads.render_create(temp, columns), label=f"upload {dest}")
+        cursor = self.projects.cursor()
+        cursor.execute(f"SELECT * FROM {copy};")
+        rows = [tuple(row) for row in cursor.fetchall()]
+        if rows:
+            bulk_insert(
+                self.cosmos, temp, [name for name, _ in columns], rows,
+                chunk_size=self.settings.upload_chunk,
+            )
+        self.cosmos.commit()
+        return len(rows)
 
     # ------------------------------------------------------------------ pk
 
@@ -345,19 +405,28 @@ class SessionRunner:
         )
         rows = self._run_pair(unit)
         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
-        node.outputs["local_table"] = destination(self.project_db, self.session.pk_table or "")
-        self._verify_pk_uniqueness(doc)
-        return rows
+        node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
+        total = self._verify_pk_uniqueness(doc)
+        return rows if rows is not None else total
 
-    def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> None:
+    def _pk_copy(self) -> str:
+        """The PK's Projects copy, which uniqueness, batches and chunks read.
+
+        A generated PK lands under its own name; an uploaded one as its
+        `upload_` copy (D54).
+        """
+        pk_table = self.session.pk_table or ""
+        return pk_table if self._pk_is_generated() else uploads.copy_table(pk_table)
+
+    def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> int | None:
         """A non-unique key makes ORDER BY arbitrary, so chunks stop being stable."""
         keys = self._pk_key_columns(doc)
         if not keys:
             self.report.warnings.append(
                 "PK declares no key_column, so chunk ordering cannot be verified as stable."
             )
-            return
-        table = destination(self.project_db, self.session.pk_table or "")
+            return None
+        table = destination(self.project_db, self._pk_copy())
         columns = ", ".join(f"[{k}]" for k in keys)
         cursor = self.projects.cursor()
         # COUNT(DISTINCT a, b) is not T-SQL; count the distinct rows instead.
@@ -368,7 +437,7 @@ class SessionRunner:
         )
         row = cursor.fetchone()
         if not row:
-            return
+            return None
         total, distinct = int(row[0]), int(row[1])
         if total != distinct:
             raise SessionError(
@@ -381,6 +450,7 @@ class SessionRunner:
                 f"PK {table} has {total:,} rows, past the {LARGE_ROW_WARNING:,} warning "
                 "threshold. Check the filter before running the fact pulls."
             )
+        return total
 
     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
         for cohort in doc.get("cohorts") or []:
@@ -441,7 +511,7 @@ class SessionRunner:
         pk_table = self.session.pk_table
         if not pk_table:
             raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
-        selection = count_batch_rows(self.project_db, pk_table, node.batch)
+        selection = count_batch_rows(self.project_db, self._pk_copy(), node.batch)
         cursor = self.projects.cursor()
         cursor.execute(selection.sql, selection.params)
         row = cursor.fetchone()
@@ -473,7 +543,7 @@ class SessionRunner:
         keys = self._pk_key_columns(doc)
         try:
             selection = select_batch_rows(
-                self.project_db, pk_table, batch, keys, chunk_index=chunk_index
+                self.project_db, self._pk_copy(), batch, keys, chunk_index=chunk_index
             )
         except BatchError as exc:
             raise SessionError(f"{node.label}: {exc}") from exc
@@ -488,15 +558,19 @@ class SessionRunner:
             )
 
         temp = global_temp(pk_table, self.prefix)
-        pk_doc_cohort = next(
-            (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
-             and c.get("dest_table") == pk_table),
-            None,
-        )
-        if pk_doc_cohort is None:
-            raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
-        shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
-        create_only = shell.split("INSERT INTO")[0]
+        if self._pk_is_generated():
+            pk_doc_cohort = next(
+                (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
+                 and c.get("dest_table") == pk_table),
+                None,
+            )
+            if pk_doc_cohort is None:
+                raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
+            shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
+            create_only = shell.split("INSERT INTO")[0]
+        else:
+            # An uploaded PK's temp takes its copy's types.
+            create_only = uploads.render_create(temp, self._describe(self._pk_copy()))
         self._execute(self.cosmos, create_only, label=f"{node.label} batch shell")
         if rows:
             bulk_insert(

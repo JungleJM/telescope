@@ -1,20 +1,27 @@
-"""Upload cohorts: getting local data up into a Cosmos global temp.
+"""Upload cohorts: files into Projects, then up into a Cosmos global temp (D54).
 
-There is no linked server from Cosmos back to Projects, so everything here
+Every upload lands in Projects first, as a typed table named `upload_<dest>`:
+a parquet file read with pyarrow, or a `dbtable` copied server-side. That copy
+is the source from then on. The Cosmos temp is loaded from it, an uploaded
+PK's batches are drawn from it, and a resume or retry never re-reads the file,
+so a file edited between runs cannot mix populations.
+
+There is no linked server from Cosmos back to Projects, so the Cosmos side
 travels through the client and lands via parameter binding.
 """
 
 from __future__ import annotations
 
-import csv
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
-from .db import DatabaseError, bulk_insert, execute_script
-from .naming import DEFAULT_TEMP_PREFIX, global_temp
+from .naming import base_name
 from .normalize import normalize_bool
+from .sql import quote_name
+
+UPLOAD_COPY_PREFIX = "upload_"
 
 # Room above the widest value seen, so a later file with slightly longer
 # values does not immediately fail.
@@ -22,8 +29,21 @@ LENGTH_HEADROOM = 50
 MIN_COLUMN_WIDTH = 50
 MAX_COLUMN_WIDTH = 4000
 
-_LEADING_DIGIT = re.compile(r"^\d")
-_UNSAFE = re.compile(r"[^\w]+")
+PYARROW_HINT = (
+    "Reading parquet needs pyarrow, which the VM has (22.0.0). Elsewhere: "
+    "`python -m pip install pyarrow==22.0.0`."
+)
+
+# Declared types an upload column can take, and the Arrow type each converts
+# to. YAML Manager converts a CSV with the same table (D54).
+DECLARED_TYPES = {
+    "BIGINT": "int64", "INT": "int32", "INTEGER": "int32", "SMALLINT": "int16",
+    "TINYINT": "uint8", "BIT": "bool", "FLOAT": "float64", "REAL": "float32",
+    "DECIMAL": "decimal", "NUMERIC": "decimal", "DATE": "date32",
+    "DATETIME": "timestamp", "DATETIME2": "timestamp", "SMALLDATETIME": "timestamp",
+    "VARCHAR": "string", "NVARCHAR": "string", "CHAR": "string", "NCHAR": "string",
+}
+_SQL_TYPE = re.compile(r"^\s*([A-Za-z0-9]+)\s*(?:\(\s*(MAX|\d+)\s*(?:,\s*(\d+)\s*)?\))?\s*$", re.I)
 
 
 class UploadError(ValueError):
@@ -31,156 +51,30 @@ class UploadError(ValueError):
 
 
 @dataclass
-class UploadPlan:
+class UploadTable:
+    """A file's rows, typed, ready to land in Projects."""
+
     name: str
     dest_table: str
-    global_temp: str
-    columns: list[str]
+    columns: list[tuple[str, str]]  # (name, SQL type)
     rows: list[tuple]
-    widths: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
     @property
-    def row_count(self) -> int:
-        return len(self.rows)
+    def column_names(self) -> list[str]:
+        return [name for name, _ in self.columns]
 
 
-def safe_identifier(header: str, position: int) -> str:
-    """Turn a CSV header into something SQL can name."""
-    cleaned = _UNSAFE.sub("_", str(header or "").strip()).strip("_")
-    if not cleaned:
-        cleaned = f"Column{position + 1}"
-    if _LEADING_DIGIT.match(cleaned):
-        cleaned = f"_{cleaned}"
-    return cleaned
+def copy_table(dest_table: str | None) -> str:
+    """The Projects copy of an upload: `upload_HospitalICDCodes`."""
+    return UPLOAD_COPY_PREFIX + base_name(dest_table)
 
 
-def read_csv(path: Path) -> tuple[list[str], list[tuple]]:
-    """Read a CSV, BOM-safe, with headers normalized to SQL identifiers."""
-    if not path.is_file():
-        raise UploadError(f"Upload file not found: {path}")
-    # utf-8-sig strips a byte order mark, which otherwise becomes part of the
-    # first column name and silently breaks every reference to it.
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.reader(handle)
-        try:
-            header = next(reader)
-        except StopIteration:
-            raise UploadError(f"Upload file is empty: {path}") from None
-        columns = [safe_identifier(name, i) for i, name in enumerate(header)]
-        if not columns:
-            raise UploadError(f"Upload file has no header columns: {path}")
-        seen: dict[str, int] = {}
-        for index, name in enumerate(columns):
-            if name in seen:
-                seen[name] += 1
-                columns[index] = f"{name}_{seen[name]}"
-            else:
-                seen[name] = 0
-        width = len(columns)
-        rows: list[tuple] = []
-        for record in reader:
-            if not any(str(cell).strip() for cell in record):
-                continue
-            padded = list(record[:width]) + [None] * max(0, width - len(record))
-            rows.append(tuple(cell if str(cell) != "" else None for cell in padded))
-    return columns, rows
-
-
-def measure_widths(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> dict[str, int]:
-    """Size each column from the data actually present.
-
-    This works for an upload because the whole file is in hand before the table
-    is created. It does not work for a batched pull, where the table exists
-    before any batch runs.
-    """
-    widths = {name: MIN_COLUMN_WIDTH for name in columns}
-    for row in rows:
-        for name, value in zip(columns, row):
-            if value is None:
-                continue
-            widths[name] = max(widths[name], len(str(value)) + LENGTH_HEADROOM)
-    return {name: min(width, MAX_COLUMN_WIDTH) for name, width in widths.items()}
-
-
-def resolve_path(file_loc: str, root: Path) -> Path:
-    candidate = Path(file_loc)
-    return candidate if candidate.is_absolute() else (root / candidate)
-
-
-def plan_csv_upload(
-    cohort: dict[str, Any], root: Path, prefix: str = DEFAULT_TEMP_PREFIX
-) -> UploadPlan:
+def upload_dest(cohort: dict[str, Any]) -> str:
     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
     if not dest:
         raise UploadError("Upload cohort has neither dest_table nor name.")
-    file_loc = cohort.get("file_loc")
-    if not file_loc:
-        raise UploadError(f"Upload cohort {dest!r} is file_type csv but has no file_loc.")
-    path = resolve_path(str(file_loc), root)
-    columns, rows = read_csv(path)
-    plan = UploadPlan(
-        name=str(cohort.get("name") or dest),
-        dest_table=dest,
-        global_temp=global_temp(dest, prefix),
-        columns=columns,
-        rows=rows,
-        widths=measure_widths(columns, rows),
-    )
-    if not rows:
-        plan.notes.append(f"{path.name} has a header but no data rows; uploading an empty table.")
-    return plan
-
-
-def render_create(plan: UploadPlan) -> str:
-    body = ",\n".join(
-        f"    [{name}] NVARCHAR({plan.widths.get(name, MIN_COLUMN_WIDTH)}) NULL"
-        for name in plan.columns
-    )
-    return (
-        f"DROP TABLE IF EXISTS {plan.global_temp};\n\n"
-        f"CREATE TABLE {plan.global_temp}\n(\n{body}\n);"
-    )
-
-
-def materialize(connection: Any, plan: UploadPlan, *, chunk_size: int) -> int:
-    """Create the temp table and bind the rows into it."""
-    execute_script(connection, render_create(plan), label=f"upload {plan.dest_table}")
-    if not plan.rows:
-        return 0
-    try:
-        return bulk_insert(
-            connection,
-            plan.global_temp,
-            plan.columns,
-            plan.rows,
-            chunk_size=chunk_size,
-        )
-    except DatabaseError as exc:
-        raise UploadError(f"Upload of {plan.dest_table!r} failed: {exc}") from exc
-
-
-def plan_dbtable_upload(
-    projects_connection: Any,
-    cohort: dict[str, Any],
-    project_db: str,
-    prefix: str = DEFAULT_TEMP_PREFIX,
-) -> UploadPlan:
-    """Read an existing Projects table and carry it up through the client."""
-    dest = str(cohort.get("dest_table") or cohort.get("name") or "")
-    source = str(cohort.get("source_table") or dest)
-    cursor = projects_connection.cursor()
-    cursor.execute(f"SELECT * FROM {project_db}.dbo.{source};")
-    columns = [column[0] for column in cursor.description or []]
-    rows = [tuple(row) for row in cursor.fetchall()]
-    return UploadPlan(
-        name=str(cohort.get("name") or dest),
-        dest_table=dest,
-        global_temp=global_temp(dest, prefix),
-        columns=columns,
-        rows=rows,
-        widths=measure_widths(columns, rows),
-    )
+    return dest
 
 
 def enabled_uploads(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -193,14 +87,181 @@ def enabled_uploads(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 def upload_kind(cohort: dict[str, Any]) -> str:
     kind = str(cohort.get("file_type") or "").strip().lower()
-    if kind == "parquet":
+    if kind == "csv":
         raise UploadError(
-            f"Upload cohort {cohort.get('name')!r} is file_type parquet, which Cosmos "
-            "cannot read. Convert it to CSV, or load it into Projects and use dbtable."
+            f"Upload cohort {cohort.get('name')!r} is still a CSV. Splits convert CSVs to "
+            "parquet with their declared column types (D54); this one was made before "
+            "that. Export the split again."
         )
-    if kind not in ("csv", "dbtable"):
+    if kind not in ("parquet", "dbtable"):
         raise UploadError(
             f"Upload cohort {cohort.get('name')!r} has unsupported file_type "
-            f"{cohort.get('file_type')!r}. Expected csv or dbtable."
+            f"{cohort.get('file_type')!r}. Expected parquet or dbtable."
         )
     return kind
+
+
+def _pyarrow():
+    try:
+        import pyarrow
+        import pyarrow.compute
+        import pyarrow.parquet
+    except ImportError as exc:
+        raise UploadError(PYARROW_HINT) from exc
+    return pyarrow, pyarrow.compute, pyarrow.parquet
+
+
+def arrow_type_for(sql_type: str):
+    """The Arrow type a declared SQL type converts a column to."""
+    pa = _pyarrow()[0]
+    match = _SQL_TYPE.match(str(sql_type or ""))
+    if not match or match.group(1).upper() not in DECLARED_TYPES:
+        raise UploadError(
+            f"`{sql_type}` is not a type an upload column can take. Use one of: "
+            + ", ".join(sorted(DECLARED_TYPES))
+        )
+    kind = DECLARED_TYPES[match.group(1).upper()]
+    if kind == "decimal":
+        return pa.decimal128(int(match.group(2) or 18), int(match.group(3) or 0))
+    if kind == "timestamp":
+        return pa.timestamp("us")
+    if kind == "bool":
+        return pa.bool_()
+    return getattr(pa, kind)()
+
+
+def _string_width(column) -> int:
+    pa, pc, _ = _pyarrow()
+    longest = pc.max(pc.utf8_length(pc.cast(column, pa.string()))).as_py() or 0
+    return max(MIN_COLUMN_WIDTH, longest + LENGTH_HEADROOM)
+
+
+def sql_type_for(name: str, column) -> str:
+    """The SQL type a parquet column lands as, from its Arrow type."""
+    pa = _pyarrow()[0]
+    t = column.type
+    types = pa.types
+    if types.is_dictionary(t):
+        t = t.value_type
+    if types.is_int8(t) or types.is_int16(t):
+        return "SMALLINT"
+    if types.is_uint8(t):
+        return "TINYINT"
+    if types.is_int32(t) or types.is_uint16(t):
+        return "INT"
+    if types.is_int64(t) or types.is_uint32(t):
+        return "BIGINT"
+    if types.is_uint64(t):
+        return "DECIMAL(20,0)"
+    if types.is_boolean(t):
+        return "BIT"
+    if types.is_float16(t) or types.is_float32(t):
+        return "REAL"
+    if types.is_float64(t):
+        return "FLOAT"
+    if types.is_decimal(t):
+        return f"DECIMAL({t.precision},{t.scale})"
+    if types.is_date(t):
+        return "DATE"
+    if types.is_timestamp(t):
+        return "DATETIME2(7)"
+    if types.is_time(t):
+        return "TIME(7)"
+    if types.is_null(t):
+        return f"NVARCHAR({MIN_COLUMN_WIDTH})"
+    if types.is_string(t) or types.is_large_string(t):
+        width = _string_width(column)
+        return f"NVARCHAR({width})" if width <= MAX_COLUMN_WIDTH else "NVARCHAR(MAX)"
+    raise UploadError(
+        f"Column `{name}` is {t}, which cannot be uploaded. Convert it to text, a "
+        "number or a date in the file."
+    )
+
+
+def read_parquet(cohort: dict[str, Any], root: Path) -> UploadTable:
+    """Read a parquet upload, applying the types declared under `columns:`."""
+    pa, pc, pq = _pyarrow()
+    dest = upload_dest(cohort)
+    file_loc = cohort.get("file_loc")
+    if not file_loc:
+        raise UploadError(f"Upload cohort {dest!r} is file_type parquet but has no file_loc.")
+    path = Path(str(file_loc))
+    path = path if path.is_absolute() else root / path
+    if not path.is_file():
+        raise UploadError(f"Upload file not found: {path}")
+    table = pq.read_table(str(path))
+    declared = {
+        str(c["name"]): str(c["type"])
+        for c in cohort.get("columns") or []
+        if isinstance(c, dict) and c.get("name") and c.get("type")
+    }
+    missing = [name for name in declared if name not in table.column_names]
+    if missing:
+        raise UploadError(
+            f"Upload {dest!r}: declared column(s) {', '.join(missing)} are not in "
+            f"{path.name} ({', '.join(table.column_names)})."
+        )
+    notes: list[str] = []
+    columns: list[tuple[str, str]] = []
+    for index, name in enumerate(table.column_names):
+        column = table.column(index)
+        if name in declared:
+            try:
+                column = pc.cast(column, arrow_type_for(declared[name]), safe=True)
+            except pa.ArrowInvalid as exc:
+                raise UploadError(
+                    f"Upload {dest!r}, column `{name}`: {str(exc).splitlines()[0]}. Fix the "
+                    f"value in {path.name}, or declare a type that fits."
+                ) from exc
+            table = table.set_column(index, name, column)
+            columns.append((name, declared[name].upper()))
+            continue
+        if pa.types.is_timestamp(column.type) and column.type.tz is not None:
+            # SQL Server's DATETIME2 has no zone; land UTC and say so.
+            column = pc.cast(column, pa.timestamp(column.type.unit))
+            table = table.set_column(index, name, column)
+            notes.append(f"{dest}.{name} had time zone {column.type}; landed as UTC.")
+        columns.append((name, sql_type_for(name, column)))
+    values = [table.column(i).to_pylist() for i in range(table.num_columns)]
+    rows = list(zip(*values)) if values else []
+    if not rows:
+        notes.append(f"{path.name} has no rows; landing an empty table.")
+    return UploadTable(name=str(cohort.get("name") or dest), dest_table=dest,
+                       columns=columns, rows=rows, notes=notes)
+
+
+def column_ddl(columns: list[tuple[str, str]]) -> str:
+    return ",\n".join(f"    {quote_name(name)} {sql_type} NULL" for name, sql_type in columns)
+
+
+def render_create(table: str, columns: list[tuple[str, str]]) -> str:
+    """Drop and create a table, a Projects copy or a Cosmos temp, with these columns."""
+    return f"DROP TABLE IF EXISTS {table};\n\nCREATE TABLE {table}\n(\n{column_ddl(columns)}\n);"
+
+
+def render_copy_dbtable(copy_fq: str, source_fq: str) -> str:
+    """A dbtable upload's copy, made server-side, types and all."""
+    return f"DROP TABLE IF EXISTS {copy_fq};\n\nSELECT * INTO {copy_fq} FROM {source_fq};"
+
+
+def describe_sql(project_db: str, table: str) -> tuple[str, list[Any]]:
+    """The columns of a Projects table, in order, with their types."""
+    return (
+        "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
+        "NUMERIC_SCALE, DATETIME_PRECISION "
+        f"FROM {project_db}.INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION;",
+        [base_name(table)],
+    )
+
+
+def type_from_info(data_type: Any, length: Any, precision: Any, scale: Any, dt_precision: Any) -> str:
+    """Rebuild a column's SQL type from INFORMATION_SCHEMA.COLUMNS."""
+    base = str(data_type).upper()
+    if base in ("VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "VARBINARY", "BINARY"):
+        return f"{base}({'MAX' if length in (-1, None) else int(length)})"
+    if base in ("DECIMAL", "NUMERIC"):
+        return f"DECIMAL({int(precision)},{int(scale or 0)})"
+    if base in ("DATETIME2", "TIME", "DATETIMEOFFSET") and dt_precision is not None:
+        return f"{base}({int(dt_precision)})"
+    return base

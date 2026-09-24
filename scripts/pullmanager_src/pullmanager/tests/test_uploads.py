@@ -1,4 +1,4 @@
-"""CSV and dbtable uploads."""
+"""Uploads (D54): parquet and dbtable, landing typed in Projects first."""
 
 from __future__ import annotations
 
@@ -8,151 +8,127 @@ from pathlib import Path
 
 from ..uploads import (
     LENGTH_HEADROOM,
-    MAX_COLUMN_WIDTH,
-    MIN_COLUMN_WIDTH,
     UploadError,
+    copy_table,
     enabled_uploads,
-    measure_widths,
-    plan_csv_upload,
-    read_csv,
+    read_parquet,
+    render_copy_dbtable,
     render_create,
-    safe_identifier,
+    type_from_info,
     upload_kind,
 )
 
-
-class IdentifierTests(unittest.TestCase):
-    def test_normalizes_awkward_headers(self):
-        cases = [
-            ("Medication Key", "Medication_Key"),
-            ("Therapeutic-Class", "Therapeutic_Class"),
-            ("2ndCode", "_2ndCode"),
-            ("  spaced  ", "spaced"),
-            ("a.b.c", "a_b_c"),
-        ]
-        for raw, expected in cases:
-            with self.subTest(raw=raw):
-                self.assertEqual(safe_identifier(raw, 0), expected)
-
-    def test_blank_header_gets_a_position_name(self):
-        self.assertEqual(safe_identifier("", 3), "Column4")
+try:
+    import pyarrow
+    import pyarrow.parquet
+except ImportError:  # the VM has it; tests needing it skip elsewhere
+    pyarrow = None
 
 
-class CsvTests(unittest.TestCase):
+class NamingTests(unittest.TestCase):
+    def test_the_copy_is_marked_as_an_upload(self):
+        self.assertEqual(copy_table("HospitalICDCodes"), "upload_HospitalICDCodes")
+        self.assertEqual(copy_table("##JVM_HospitalICDCodes"), "upload_HospitalICDCodes")
+
+
+class KindTests(unittest.TestCase):
+    def test_accepts_parquet_and_dbtable(self):
+        for kind in ("parquet", "dbtable"):
+            self.assertEqual(upload_kind({"name": "x", "file_type": kind}), kind)
+
+    def test_a_csv_is_sent_back_to_the_split(self):
+        # Splits convert CSVs to typed parquet (D54); one arriving here is old.
+        with self.assertRaises(UploadError) as caught:
+            upload_kind({"name": "x", "file_type": "csv"})
+        self.assertIn("Export the split again", str(caught.exception))
+
+    def test_unknown_kind_is_refused(self):
+        with self.assertRaises(UploadError):
+            upload_kind({"name": "x", "file_type": "xlsx"})
+
+    def test_push_this_cycle_gates_uploads(self):
+        doc = {"upload_cohorts": [
+            {"name": "a"}, {"name": "b", "push_this_cycle": False}, "not a mapping",
+        ]}
+        self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["a"])
+
+
+class RenderTests(unittest.TestCase):
+    def test_create_declares_each_type(self):
+        sql = render_create("PROJECTD1.dbo.upload_X", [("Key", "BIGINT"), ("Label", "NVARCHAR(60)")])
+        self.assertIn("DROP TABLE IF EXISTS PROJECTD1.dbo.upload_X;", sql)
+        self.assertIn("[Key] BIGINT NULL", sql)
+        self.assertIn("[Label] NVARCHAR(60) NULL", sql)
+
+    def test_a_dbtable_is_copied_server_side(self):
+        sql = render_copy_dbtable("P.dbo.upload_X", "P.dbo.X")
+        self.assertIn("SELECT * INTO P.dbo.upload_X FROM P.dbo.X;", sql)
+
+    def test_types_are_rebuilt_from_information_schema(self):
+        self.assertEqual(type_from_info("nvarchar", -1, None, None, None), "NVARCHAR(MAX)")
+        self.assertEqual(type_from_info("varchar", 40, None, None, None), "VARCHAR(40)")
+        self.assertEqual(type_from_info("decimal", None, 10, 2, None), "DECIMAL(10,2)")
+        self.assertEqual(type_from_info("datetime2", None, None, None, 7), "DATETIME2(7)")
+        self.assertEqual(type_from_info("bigint", None, 19, 0, None), "BIGINT")
+
+
+@unittest.skipUnless(pyarrow, "needs pyarrow")
+class ParquetTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
 
-    def write(self, text, name="codes.csv", encoding="utf-8"):
-        path = self.root / name
-        path.write_text(text, encoding=encoding)
-        return path
+    def write(self, columns: dict) -> dict:
+        pyarrow.parquet.write_table(pyarrow.table(columns), str(self.root / "f.parquet"))
+        return {"name": "F", "dest_table": "F", "file_type": "parquet", "file_loc": "f.parquet"}
 
-    def test_reads_headers_and_rows(self):
-        path = self.write("Key,Name\n46,RISANKIZUMAB\n403,HUMIRA\n")
-        columns, rows = read_csv(path)
-        self.assertEqual(columns, ["Key", "Name"])
-        self.assertEqual(rows, [("46", "RISANKIZUMAB"), ("403", "HUMIRA")])
+    def test_the_files_types_become_sql_types(self):
+        import datetime
+        import decimal
 
-    def test_strips_a_byte_order_mark(self):
-        # A BOM otherwise becomes part of the first column name and silently
-        # breaks every reference to it.
-        path = self.write("Key,Name\n1,x\n", encoding="utf-8-sig")
-        columns, _ = read_csv(path)
-        self.assertEqual(columns[0], "Key")
+        table = read_parquet(self.write({
+            "Key": pyarrow.array([1, 2], pyarrow.int64()),
+            "Small": pyarrow.array([1, 2], pyarrow.int32()),
+            "Score": pyarrow.array([1.5, 2.5]),
+            "Flag": pyarrow.array([True, False]),
+            "Day": pyarrow.array([datetime.date(2024, 1, 1), None]),
+            "Amount": pyarrow.array([decimal.Decimal("1.25"), None], pyarrow.decimal128(10, 2)),
+            "Label": pyarrow.array(["abc", None]),
+        }), self.root)
+        self.assertEqual(dict(table.columns), {
+            "Key": "BIGINT", "Small": "INT", "Score": "FLOAT", "Flag": "BIT", "Day": "DATE",
+            "Amount": "DECIMAL(10,2)", "Label": f"NVARCHAR({3 + LENGTH_HEADROOM})",
+        })
+        self.assertEqual(table.rows[0][0], 1)
 
-    def test_empty_cells_become_null(self):
-        path = self.write("Key,Name\n1,\n")
-        _, rows = read_csv(path)
-        self.assertEqual(rows, [("1", None)])
+    def test_text_is_sized_from_the_longest_value(self):
+        table = read_parquet(self.write({"Label": ["x" * 120]}), self.root)
+        self.assertEqual(table.columns, [("Label", f"NVARCHAR({120 + LENGTH_HEADROOM})")])
 
-    def test_short_rows_are_padded(self):
-        path = self.write("A,B,C\n1,2\n")
-        _, rows = read_csv(path)
-        self.assertEqual(rows, [("1", "2", None)])
+    def test_a_declared_type_converts_the_column(self):
+        # R writes large IDs as doubles; declaring BIGINT lands them as numbers.
+        cohort = self.write({"PatientDurableKey": [1.0, 2.0]})
+        cohort["columns"] = [{"name": "PatientDurableKey", "type": "BIGINT"}]
+        table = read_parquet(cohort, self.root)
+        self.assertEqual(table.columns, [("PatientDurableKey", "BIGINT")])
+        self.assertEqual([row[0] for row in table.rows], [1, 2])
+        self.assertIsInstance(table.rows[0][0], int)
 
-    def test_blank_lines_are_dropped(self):
-        path = self.write("A\n1\n\n2\n")
-        _, rows = read_csv(path)
-        self.assertEqual(rows, [("1",), ("2",)])
-
-    def test_duplicate_headers_are_made_unique(self):
-        path = self.write("Name,Name\n1,2\n")
-        columns, _ = read_csv(path)
-        self.assertEqual(columns, ["Name", "Name_1"])
-
-    def test_quotes_survive_binding(self):
-        # Values are bound, not interpolated, so an apostrophe needs no escaping.
-        path = self.write("Name\n\"HUMIRA(CF) CROHN'S STARTER\"\n")
-        _, rows = read_csv(path)
-        self.assertEqual(rows[0][0], "HUMIRA(CF) CROHN'S STARTER")
-
-    def test_missing_file_is_refused(self):
-        with self.assertRaises(UploadError):
-            read_csv(self.root / "nope.csv")
-
-    def test_empty_file_is_refused(self):
-        with self.assertRaises(UploadError):
-            read_csv(self.write(""))
-
-    def test_header_only_uploads_an_empty_table_with_a_note(self):
-        self.write("Key,Name\n")
-        plan = plan_csv_upload(
-            {"name": "U", "dest_table": "U", "file_type": "csv", "file_loc": "codes.csv"},
-            self.root,
-        )
-        self.assertEqual(plan.rows, [])
-        self.assertTrue(plan.notes)
-
-
-class WidthTests(unittest.TestCase):
-    def test_sizes_from_the_data_with_headroom(self):
-        # The whole file is in hand before the table exists, so measuring works
-        # here even though it cannot for a batched pull.
-        widths = measure_widths(["A"], [("x" * 100,)])
-        self.assertEqual(widths["A"], 150)
-
-    def test_width_is_the_longest_value_plus_headroom(self):
-        self.assertEqual(measure_widths(["A"], [("x",)])["A"], 1 + LENGTH_HEADROOM)
-
-    def test_an_all_null_column_falls_back_to_the_floor(self):
-        # The floor only binds when there is nothing to measure.
-        self.assertEqual(measure_widths(["A"], [(None,)])["A"], MIN_COLUMN_WIDTH)
-
-    def test_width_is_capped(self):
-        self.assertEqual(measure_widths(["A"], [("x" * 9000,)])["A"], MAX_COLUMN_WIDTH)
-
-    def test_create_uses_the_measured_widths(self):
-        from ..uploads import UploadPlan
-
-        plan = UploadPlan(
-            name="U", dest_table="U", global_temp="##JVM_U",
-            columns=["A"], rows=[("x" * 100,)], widths={"A": 150},
-        )
-        sql = render_create(plan)
-        self.assertIn("DROP TABLE IF EXISTS ##JVM_U;", sql)
-        self.assertIn("[A] NVARCHAR(150) NULL", sql)
-
-
-class KindTests(unittest.TestCase):
-    def test_accepts_csv_and_dbtable(self):
-        self.assertEqual(upload_kind({"file_type": "csv"}), "csv")
-        self.assertEqual(upload_kind({"file_type": "DBTable"}), "dbtable")
-
-    def test_parquet_is_refused_with_guidance(self):
+    def test_a_value_that_does_not_fit_names_its_column(self):
+        cohort = self.write({"PatientDurableKey": [1.5]})
+        cohort["columns"] = [{"name": "PatientDurableKey", "type": "BIGINT"}]
         with self.assertRaises(UploadError) as caught:
-            upload_kind({"name": "U", "file_type": "parquet"})
-        self.assertIn("Cosmos cannot read", str(caught.exception))
+            read_parquet(cohort, self.root)
+        self.assertIn("`PatientDurableKey`", str(caught.exception))
 
-    def test_unknown_kind_is_refused(self):
+    def test_a_declared_column_the_file_lacks_is_refused(self):
+        cohort = self.write({"Key": [1]})
+        cohort["columns"] = [{"name": "Nope", "type": "BIGINT"}]
+        with self.assertRaises(UploadError) as caught:
+            read_parquet(cohort, self.root)
+        self.assertIn("Nope", str(caught.exception))
+
+    def test_a_missing_file_is_refused(self):
         with self.assertRaises(UploadError):
-            upload_kind({"name": "U", "file_type": "xlsx"})
-
-    def test_push_this_cycle_gates_uploads(self):
-        doc = {"upload_cohorts": [
-            {"name": "A", "push_this_cycle": True},
-            {"name": "B", "push_this_cycle": False},
-            {"name": "C"},
-        ]}
-        self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["A", "C"])
+            read_parquet({"name": "F", "file_type": "parquet", "file_loc": "gone.parquet"}, self.root)

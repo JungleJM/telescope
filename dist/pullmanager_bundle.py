@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "79b756e6bb97f978d5ef3647422fad5bad42d1ef57774ed5023c36c5b9c92dc7",
+  "content_id": "bc2eb7d57a792a93a60feb18540c7e81e155df956f1fb36a19972821e74192e7",
   "file_count": 37,
   "files": [
     {
@@ -411,8 +411,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/executor.py",
       "policy": "replace",
-      "sha256": "b589c652de136efe817e7ad187a7a3ac98efa543d6037ae992f78c11894f45d0",
-      "size": 10812
+      "sha256": "7e41afe3e3acefe7f712c72fc1e8b96a5ea87aed96566231523258ccc80e79c3",
+      "size": 11126
     },
     {
       "path": "pullmanager/gui.py",
@@ -471,8 +471,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "35304f6a95d97a0cb7de5c5bcc15227bdcf8fa80ca21955d6d3e1ab06245c34d",
-      "size": 24693
+      "sha256": "7b632160653c02416d01041896b6cbbff507d11e630e4e5d5790cefc83680986",
+      "size": 28174
     },
     {
       "path": "pullmanager/sql.py",
@@ -555,8 +555,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "ac4583c3b78709d2885359a9b70a21f3ab4eb7fc157b5738ab777f56076e66be",
-      "size": 27292
+      "sha256": "1a696580e99166d13f616b190f7b948c457cd96c48a8ff8ed36d0637cd3dde45",
+      "size": 32994
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -567,14 +567,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_uploads.py",
       "policy": "replace",
-      "sha256": "433529c848a599c7348f5fa202e1b551fa9cb3dc2d66351e7cd37103a7d2f669",
-      "size": 5626
+      "sha256": "a1f7d8a4fcac0687af0ce2e48aa1f74b54550f2efed233c6e689fe5b923b83b3",
+      "size": 5763
     },
     {
       "path": "pullmanager/uploads.py",
       "policy": "replace",
-      "sha256": "f3bfeb3655ab66795d593c04ca64d383cd8362536e4db51a5937508ee8b02dbd",
-      "size": 7203
+      "sha256": "8975397fb267e2f16f4905f5202878a4c3d2603f48903a27c7593fa13161cddd",
+      "size": 10321
     },
     {
       "path": "pullmanager/yaml_io.py",
@@ -4273,7 +4273,7 @@ if __name__ == "__main__":
 #     return connection
 #
 # === END FILE: pullmanager/db.py ===
-# === BEGIN FILE: pullmanager/executor.py SHA256: b589c652de136efe817e7ad187a7a3ac98efa543d6037ae992f78c11894f45d0 SIZE: 10812 ===
+# === BEGIN FILE: pullmanager/executor.py SHA256: 7e41afe3e3acefe7f712c72fc1e8b96a5ea87aed96566231523258ccc80e79c3 SIZE: 11126 ===
 # """Traversal and planning.
 #
 # Walks a manifest in order and produces the work a session implies. Nothing
@@ -4476,11 +4476,18 @@ if __name__ == "__main__":
 #             u for u in uploads
 #             if isinstance(u, dict) and normalize_bool(u.get("push_this_cycle"), default=True)
 #         ]
-#         unit.notes.append(
-#             f"{len(enabled)} upload cohort(s); uploaded through the client, since there is "
-#             "no linked server from Cosmos back to Projects"
-#             if enabled else "no upload cohorts"
-#         )
+#         if not enabled:
+#             unit.notes.append("no upload cohorts")
+#         elif resuming:
+#             unit.notes.append(
+#                 f"{len(enabled)} upload(s): their Projects copies (upload_<dest>) are kept, "
+#                 "not re-read from the files, and loaded into Cosmos again (D54)"
+#             )
+#         else:
+#             unit.notes.append(
+#                 f"{len(enabled)} upload(s): each lands in Projects as upload_<dest>, typed, "
+#                 "then goes up to Cosmos from that copy through the client (D54)"
+#             )
 #         return unit
 #
 #     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
@@ -6592,7 +6599,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 35304f6a95d97a0cb7de5c5bcc15227bdcf8fa80ca21955d6d3e1ab06245c34d SIZE: 24693 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 7b632160653c02416d01041896b6cbbff507d11e630e4e5d5790cefc83680986 SIZE: 28174 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6909,25 +6916,85 @@ if __name__ == "__main__":
 #     # ------------------------------------------------------------- uploads
 #
 #     def _run_uploads(self, path: Path) -> int | None:
+#         """Land each upload in Projects, then load its Cosmos temp from that copy (D54).
+#
+#         Resuming, the copies are kept and the files are not read: the copy is
+#         the source, so the batches still to run see what the finished ones saw.
+#         """
 #         doc = load_yaml(path) or {}
 #         enabled = uploads.enabled_uploads(doc)
 #         if not enabled:
 #             return None
 #         uploaded = 0
 #         for cohort in enabled:
-#             kind = uploads.upload_kind(cohort)
-#             if kind == "csv":
-#                 plan = uploads.plan_csv_upload(cohort, self.upload_root, self.prefix)
+#             dest = uploads.upload_dest(cohort)
+#             copy = destination(self.project_db, uploads.copy_table(dest))
+#             if self.resuming:
+#                 if not self._projects_table_exists(copy):
+#                     raise SessionError(
+#                         f"{copy} is missing. The finished batches were pulled with it, so "
+#                         "landing the file again could mix populations. Run --repull."
+#                     )
 #             else:
-#                 plan = uploads.plan_dbtable_upload(
-#                     self.projects, cohort, self.project_db, self.prefix
-#                 )
-#             self.report.warnings.extend(plan.notes)
-#             uploaded += uploads.materialize(
-#                 self.cosmos, plan, chunk_size=self.settings.upload_chunk
-#             )
-#             self.cosmos.commit()
+#                 self._land_upload(cohort, copy)
+#             uploaded += self._load_temp_from_copy(dest, copy)
 #         return uploaded
+#
+#     def _land_upload(self, cohort: dict[str, Any], copy: str) -> None:
+#         """The file (or dbtable) into its typed Projects copy, committed."""
+#         if uploads.upload_kind(cohort) == "dbtable":
+#             source = cohort.get("source_table") or uploads.upload_dest(cohort)
+#             self._execute(
+#                 self.projects,
+#                 uploads.render_copy_dbtable(copy, destination(self.project_db, source)),
+#                 label=f"upload {cohort.get('name')} copy",
+#             )
+#             self.projects.commit()
+#             return
+#         table = uploads.read_parquet(cohort, self.upload_root)
+#         self.report.warnings.extend(table.notes)
+#         self._execute(
+#             self.projects, uploads.render_create(copy, table.columns),
+#             label=f"upload {cohort.get('name')} copy",
+#         )
+#         if table.rows:
+#             bulk_insert(
+#                 self.projects, copy, table.column_names, table.rows,
+#                 chunk_size=self.settings.upload_chunk,
+#             )
+#         self.projects.commit()
+#
+#     def _projects_table_exists(self, table: str) -> bool:
+#         cursor = self.projects.cursor()
+#         cursor.execute(f"SELECT OBJECT_ID(N'{table}', N'U');")
+#         row = cursor.fetchone()
+#         return bool(row and row[0] is not None)
+#
+#     def _describe(self, table: str) -> list[tuple[str, str]]:
+#         """A Projects table's columns and their types."""
+#         sql, params = uploads.describe_sql(self.project_db, table)
+#         cursor = self.projects.cursor()
+#         cursor.execute(sql, params)
+#         columns = [(str(row[0]), uploads.type_from_info(*row[1:6])) for row in cursor.fetchall()]
+#         if not columns:
+#             raise SessionError(f"Could not read the columns of {self.project_db}.dbo.{table}.")
+#         return columns
+#
+#     def _load_temp_from_copy(self, dest: str, copy: str) -> int:
+#         """Create the Cosmos temp with the copy's types, and fill it from the copy."""
+#         columns = self._describe(uploads.copy_table(dest))
+#         temp = global_temp(dest, self.prefix)
+#         self._execute(self.cosmos, uploads.render_create(temp, columns), label=f"upload {dest}")
+#         cursor = self.projects.cursor()
+#         cursor.execute(f"SELECT * FROM {copy};")
+#         rows = [tuple(row) for row in cursor.fetchall()]
+#         if rows:
+#             bulk_insert(
+#                 self.cosmos, temp, [name for name, _ in columns], rows,
+#                 chunk_size=self.settings.upload_chunk,
+#             )
+#         self.cosmos.commit()
+#         return len(rows)
 #
 #     # ------------------------------------------------------------------ pk
 #
@@ -6940,19 +7007,28 @@ if __name__ == "__main__":
 #         )
 #         rows = self._run_pair(unit)
 #         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
-#         node.outputs["local_table"] = destination(self.project_db, self.session.pk_table or "")
-#         self._verify_pk_uniqueness(doc)
-#         return rows
+#         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
+#         total = self._verify_pk_uniqueness(doc)
+#         return rows if rows is not None else total
 #
-#     def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> None:
+#     def _pk_copy(self) -> str:
+#         """The PK's Projects copy, which uniqueness, batches and chunks read.
+#
+#         A generated PK lands under its own name; an uploaded one as its
+#         `upload_` copy (D54).
+#         """
+#         pk_table = self.session.pk_table or ""
+#         return pk_table if self._pk_is_generated() else uploads.copy_table(pk_table)
+#
+#     def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> int | None:
 #         """A non-unique key makes ORDER BY arbitrary, so chunks stop being stable."""
 #         keys = self._pk_key_columns(doc)
 #         if not keys:
 #             self.report.warnings.append(
 #                 "PK declares no key_column, so chunk ordering cannot be verified as stable."
 #             )
-#             return
-#         table = destination(self.project_db, self.session.pk_table or "")
+#             return None
+#         table = destination(self.project_db, self._pk_copy())
 #         columns = ", ".join(f"[{k}]" for k in keys)
 #         cursor = self.projects.cursor()
 #         # COUNT(DISTINCT a, b) is not T-SQL; count the distinct rows instead.
@@ -6963,7 +7039,7 @@ if __name__ == "__main__":
 #         )
 #         row = cursor.fetchone()
 #         if not row:
-#             return
+#             return None
 #         total, distinct = int(row[0]), int(row[1])
 #         if total != distinct:
 #             raise SessionError(
@@ -6976,6 +7052,7 @@ if __name__ == "__main__":
 #                 f"PK {table} has {total:,} rows, past the {LARGE_ROW_WARNING:,} warning "
 #                 "threshold. Check the filter before running the fact pulls."
 #             )
+#         return total
 #
 #     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
 #         for cohort in doc.get("cohorts") or []:
@@ -7036,7 +7113,7 @@ if __name__ == "__main__":
 #         pk_table = self.session.pk_table
 #         if not pk_table:
 #             raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
-#         selection = count_batch_rows(self.project_db, pk_table, node.batch)
+#         selection = count_batch_rows(self.project_db, self._pk_copy(), node.batch)
 #         cursor = self.projects.cursor()
 #         cursor.execute(selection.sql, selection.params)
 #         row = cursor.fetchone()
@@ -7068,7 +7145,7 @@ if __name__ == "__main__":
 #         keys = self._pk_key_columns(doc)
 #         try:
 #             selection = select_batch_rows(
-#                 self.project_db, pk_table, batch, keys, chunk_index=chunk_index
+#                 self.project_db, self._pk_copy(), batch, keys, chunk_index=chunk_index
 #             )
 #         except BatchError as exc:
 #             raise SessionError(f"{node.label}: {exc}") from exc
@@ -7083,15 +7160,19 @@ if __name__ == "__main__":
 #             )
 #
 #         temp = global_temp(pk_table, self.prefix)
-#         pk_doc_cohort = next(
-#             (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
-#              and c.get("dest_table") == pk_table),
-#             None,
-#         )
-#         if pk_doc_cohort is None:
-#             raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
-#         shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
-#         create_only = shell.split("INSERT INTO")[0]
+#         if self._pk_is_generated():
+#             pk_doc_cohort = next(
+#                 (c for c in doc.get("cohorts") or [] if isinstance(c, dict)
+#                  and c.get("dest_table") == pk_table),
+#                 None,
+#             )
+#             if pk_doc_cohort is None:
+#                 raise SessionError(f"{node.label}: no PK cohort named {pk_table!r} in pk.yaml.")
+#             shell, _ = server_sql.render_cohort(pk_doc_cohort, doc)
+#             create_only = shell.split("INSERT INTO")[0]
+#         else:
+#             # An uploaded PK's temp takes its copy's types.
+#             create_only = uploads.render_create(temp, self._describe(self._pk_copy()))
 #         self._execute(self.cosmos, create_only, label=f"{node.label} batch shell")
 #         if rows:
 #             bulk_insert(
@@ -9755,7 +9836,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ac4583c3b78709d2885359a9b70a21f3ab4eb7fc157b5738ab777f56076e66be SIZE: 27292 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 1a696580e99166d13f616b190f7b948c457cd96c48a8ff8ed36d0637cd3dde45 SIZE: 32994 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9853,7 +9934,7 @@ if __name__ == "__main__":
 #
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
 #                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-#                  pk_rows=3, existing_temps=(), transactional=False):
+#                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None):
 #         self.side = side
 #         self.rows = rows
 #         self.distinct = rows if distinct is None else distinct
@@ -9863,6 +9944,11 @@ if __name__ == "__main__":
 #         self.tables = tables if tables is not None else {}
 #         self.created = created
 #         self.pk_rows = pk_rows
+#         # What INFORMATION_SCHEMA reports for an upload's Projects copy.
+#         self.upload_columns = upload_columns or [
+#             ("DiagnosisCode", "nvarchar", 55, None, None, None),
+#             ("Description", "nvarchar", 82, None, None, None),
+#         ]
 #         # Transactional: changes apply to a working copy that a commit makes
 #         # durable and a rollback discards. Off by default: the worst case.
 #         self.transactional = transactional
@@ -9922,6 +10008,8 @@ if __name__ == "__main__":
 #         tables = self._working()
 #         if match := re.search(r"DROP TABLE IF EXISTS (PROJECTD\S+)", statement):
 #             tables.pop(match.group(1), None)
+#         if match := re.search(r"SELECT \* INTO (PROJECTD\S+) FROM", statement):
+#             tables[match.group(1)] = Counter()
 #         if match := re.search(r"CREATE TABLE (PROJECTD\S+)", statement):
 #             if "IF OBJECT_ID" not in statement or match.group(1) not in tables:
 #                 tables[match.group(1)] = Counter()
@@ -9934,6 +10022,11 @@ if __name__ == "__main__":
 #     def results_for(self, sql):
 #         if "@@SERVERNAME" in sql:
 #             return [(["CosmosServerName"], [(INSTANCE,)])]
+#         if match := re.search(r"SELECT OBJECT_ID\(N'(PROJECTD[^']+)', N'U'\)", sql):
+#             return [(["id"], [(99 if match.group(1) in self._working() else None,)])]
+#         if "INFORMATION_SCHEMA.COLUMNS" in sql:
+#             return [(["COLUMN_NAME", "DATA_TYPE", "CHARACTER_MAXIMUM_LENGTH", "NUMERIC_PRECISION",
+#                       "NUMERIC_SCALE", "DATETIME_PRECISION"], list(self.upload_columns))]
 #         if "OBJECT_ID(N'tempdb.." in sql:
 #             names = re.findall(r"OBJECT_ID\(N'tempdb\.\.([^']+)'\)", sql)
 #             return [(names, [tuple(
@@ -9977,6 +10070,10 @@ if __name__ == "__main__":
 #     def setUp(self):
 #         if not FIXTURES.is_dir():
 #             self.skipTest(f"fixtures not found at {FIXTURES}")
+#         try:
+#             import pyarrow  # noqa: F401  the fixture's upload is parquet (D54)
+#         except ImportError:
+#             self.skipTest("needs pyarrow")
 #         self._tmp = tempfile.TemporaryDirectory()
 #         self.addCleanup(self._tmp.cleanup)
 #         self.root = Path(self._tmp.name) / "split"
@@ -10394,6 +10491,104 @@ if __name__ == "__main__":
 #         self.assertNotIn("COUNT_BIG(DISTINCT", sent)
 #         self.assertIn("SELECT DISTINCT [PatientDurableKey], [DiagnosisEventKey]", sent)
 #
+#
+# class UploadCopyTests(SessionTestCase):
+#     """D54: uploads land typed in Projects first, and that copy is the source."""
+#
+#     COPY = "PROJECTD33A929.dbo.upload_HospitalICDCodes"
+#     TEMP = "##manvalbas_HospitalICDCodes"
+#
+#     def setUp(self):
+#         super().setUp()
+#         self.make_batched()
+#         self.tables: dict[str, Counter] = {}
+#
+#     def execute(self, **projects):
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         retry = projects.pop("retry_failed", False)
+#         with self.runner(projects={"tables": self.tables, **projects}, retry_failed=retry) as runner:
+#             return runner.execute()
+#
+#     def test_an_upload_lands_in_projects_then_goes_up_from_the_copy(self):
+#         report = self.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertIn(self.COPY, self.tables)
+#         projects = "\n".join(self.projects.executed)
+#         self.assertIn(f"CREATE TABLE {self.COPY}", projects)
+#         self.assertIn(f"SELECT * FROM {self.COPY};", projects)
+#         cosmos = "\n".join(self.cosmos.executed)
+#         # The temp takes the copy's types, not text for everything.
+#         self.assertIn(f"CREATE TABLE {self.TEMP}\n(\n    [DiagnosisCode] NVARCHAR(55) NULL", cosmos)
+#         self.assertTrue(any(self.TEMP in sql for sql, _ in self.cosmos.inserted))
+#
+#     def test_a_retry_uses_the_copy_not_the_file(self):
+#         # The file is gone (or changed) by the retry; the copy is what counts.
+#         first = self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})
+#         self.assertFalse(first.ok)
+#         (self.root / "uploads" / "hospital_icd_codes.parquet").unlink()
+#         second = self.execute(retry_failed=True)
+#         self.assertTrue(second.ok, second.failed)
+#         self.assertNotIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+#
+#     def test_a_copy_missing_on_resume_points_at_repull(self):
+#         self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})
+#         del self.tables[self.COPY]
+#         report = self.execute(retry_failed=True)
+#         self.assertTrue(any("--repull" in message for _, message in report.failed), report.failed)
+#
+#
+# class UploadedPkTests(SessionTestCase):
+#     """D54: an uploaded PK's checks and batches read its Projects copy."""
+#
+#     def setUp(self):
+#         super().setUp()
+#         import pyarrow
+#         import pyarrow.parquet
+#
+#         self.make_batched()
+#         pyarrow.parquet.write_table(
+#             pyarrow.table({"PatientDurableKey": pyarrow.array([1, 2], pyarrow.int64()),
+#                            "Sex": ["Female", "Male"]}),
+#             str(self.root / "uploads" / "pks.parquet"),
+#         )
+#         source = {"kind": "uploaded_cohort", "upload_name": "ClientPK", "table": "ClientPK",
+#                   "key_columns": ["PatientDurableKey"]}
+#         uploads_path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+#         doc = load_yaml(uploads_path)
+#         doc["upload_cohorts"].append({
+#             "name": "ClientPK", "dest_table": "ClientPK", "type": "pk", "file_type": "parquet",
+#             "file_loc": "uploads/pks.parquet", "key_columns": ["PatientDurableKey"],
+#         })
+#         dump_yaml(doc, uploads_path)
+#         pk_path = self.root / "sessions" / "Patients" / "pk.yaml"
+#         doc = load_yaml(pk_path)
+#         doc["cohorts"] = []
+#         doc["pull_context"]["pk_source"] = source
+#         dump_yaml(doc, pk_path)
+#         data = load_yaml(self.root / "pullmanifest.yaml")
+#         data["sessions"][0]["pk_table"] = "ClientPK"
+#         data["sessions"][0]["phases"]["pk"]["pk_source"] = source
+#         dump_yaml(data, self.root / "pullmanifest.yaml")
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#
+#     def test_its_uniqueness_and_batches_read_the_copy(self):
+#         copy = "PROJECTD33A929.dbo.upload_ClientPK"
+#         pk_columns = [("PatientDurableKey", "bigint", None, 19, 0, None),
+#                       ("Sex", "nvarchar", 56, None, None, None)]
+#         with self.runner(projects={"upload_columns": pk_columns}) as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         projects = "\n".join(self.projects.executed)
+#         self.assertIn(f"SELECT DISTINCT [PatientDurableKey] FROM {copy}", projects)
+#         self.assertIn(f"SELECT * FROM {copy}\nWHERE [Sex] = ?", projects)
+#         self.assertNotIn("dbo.ClientPK", projects.replace("upload_ClientPK", ""))
+#         # The PK temp each batch refills takes the copy's types.
+#         self.assertIn(
+#             "CREATE TABLE ##manvalbas_ClientPK\n(\n    [PatientDurableKey] BIGINT NULL",
+#             "\n".join(self.cosmos.executed),
+#         )
+#
 # === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
 # """SQL construction, with the WHERE builder as the main risk."""
@@ -10538,8 +10733,8 @@ if __name__ == "__main__":
 #         self.assertIn("[B] VARCHAR(400) NULL", body)
 #
 # === END FILE: pullmanager/tests/test_sql.py ===
-# === BEGIN FILE: pullmanager/tests/test_uploads.py SHA256: 433529c848a599c7348f5fa202e1b551fa9cb3dc2d66351e7cd37103a7d2f669 SIZE: 5626 ===
-# """CSV and dbtable uploads."""
+# === BEGIN FILE: pullmanager/tests/test_uploads.py SHA256: a1f7d8a4fcac0687af0ce2e48aa1f74b54550f2efed233c6e689fe5b923b83b3 SIZE: 5763 ===
+# """Uploads (D54): parquet and dbtable, landing typed in Projects first."""
 #
 # from __future__ import annotations
 #
@@ -10549,174 +10744,157 @@ if __name__ == "__main__":
 #
 # from ..uploads import (
 #     LENGTH_HEADROOM,
-#     MAX_COLUMN_WIDTH,
-#     MIN_COLUMN_WIDTH,
 #     UploadError,
+#     copy_table,
 #     enabled_uploads,
-#     measure_widths,
-#     plan_csv_upload,
-#     read_csv,
+#     read_parquet,
+#     render_copy_dbtable,
 #     render_create,
-#     safe_identifier,
+#     type_from_info,
 #     upload_kind,
 # )
 #
-#
-# class IdentifierTests(unittest.TestCase):
-#     def test_normalizes_awkward_headers(self):
-#         cases = [
-#             ("Medication Key", "Medication_Key"),
-#             ("Therapeutic-Class", "Therapeutic_Class"),
-#             ("2ndCode", "_2ndCode"),
-#             ("  spaced  ", "spaced"),
-#             ("a.b.c", "a_b_c"),
-#         ]
-#         for raw, expected in cases:
-#             with self.subTest(raw=raw):
-#                 self.assertEqual(safe_identifier(raw, 0), expected)
-#
-#     def test_blank_header_gets_a_position_name(self):
-#         self.assertEqual(safe_identifier("", 3), "Column4")
+# try:
+#     import pyarrow
+#     import pyarrow.parquet
+# except ImportError:  # the VM has it; tests needing it skip elsewhere
+#     pyarrow = None
 #
 #
-# class CsvTests(unittest.TestCase):
+# class NamingTests(unittest.TestCase):
+#     def test_the_copy_is_marked_as_an_upload(self):
+#         self.assertEqual(copy_table("HospitalICDCodes"), "upload_HospitalICDCodes")
+#         self.assertEqual(copy_table("##JVM_HospitalICDCodes"), "upload_HospitalICDCodes")
+#
+#
+# class KindTests(unittest.TestCase):
+#     def test_accepts_parquet_and_dbtable(self):
+#         for kind in ("parquet", "dbtable"):
+#             self.assertEqual(upload_kind({"name": "x", "file_type": kind}), kind)
+#
+#     def test_a_csv_is_sent_back_to_the_split(self):
+#         # Splits convert CSVs to typed parquet (D54); one arriving here is old.
+#         with self.assertRaises(UploadError) as caught:
+#             upload_kind({"name": "x", "file_type": "csv"})
+#         self.assertIn("Export the split again", str(caught.exception))
+#
+#     def test_unknown_kind_is_refused(self):
+#         with self.assertRaises(UploadError):
+#             upload_kind({"name": "x", "file_type": "xlsx"})
+#
+#     def test_push_this_cycle_gates_uploads(self):
+#         doc = {"upload_cohorts": [
+#             {"name": "a"}, {"name": "b", "push_this_cycle": False}, "not a mapping",
+#         ]}
+#         self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["a"])
+#
+#
+# class RenderTests(unittest.TestCase):
+#     def test_create_declares_each_type(self):
+#         sql = render_create("PROJECTD1.dbo.upload_X", [("Key", "BIGINT"), ("Label", "NVARCHAR(60)")])
+#         self.assertIn("DROP TABLE IF EXISTS PROJECTD1.dbo.upload_X;", sql)
+#         self.assertIn("[Key] BIGINT NULL", sql)
+#         self.assertIn("[Label] NVARCHAR(60) NULL", sql)
+#
+#     def test_a_dbtable_is_copied_server_side(self):
+#         sql = render_copy_dbtable("P.dbo.upload_X", "P.dbo.X")
+#         self.assertIn("SELECT * INTO P.dbo.upload_X FROM P.dbo.X;", sql)
+#
+#     def test_types_are_rebuilt_from_information_schema(self):
+#         self.assertEqual(type_from_info("nvarchar", -1, None, None, None), "NVARCHAR(MAX)")
+#         self.assertEqual(type_from_info("varchar", 40, None, None, None), "VARCHAR(40)")
+#         self.assertEqual(type_from_info("decimal", None, 10, 2, None), "DECIMAL(10,2)")
+#         self.assertEqual(type_from_info("datetime2", None, None, None, 7), "DATETIME2(7)")
+#         self.assertEqual(type_from_info("bigint", None, 19, 0, None), "BIGINT")
+#
+#
+# @unittest.skipUnless(pyarrow, "needs pyarrow")
+# class ParquetTests(unittest.TestCase):
 #     def setUp(self):
 #         self._tmp = tempfile.TemporaryDirectory()
 #         self.addCleanup(self._tmp.cleanup)
 #         self.root = Path(self._tmp.name)
 #
-#     def write(self, text, name="codes.csv", encoding="utf-8"):
-#         path = self.root / name
-#         path.write_text(text, encoding=encoding)
-#         return path
+#     def write(self, columns: dict) -> dict:
+#         pyarrow.parquet.write_table(pyarrow.table(columns), str(self.root / "f.parquet"))
+#         return {"name": "F", "dest_table": "F", "file_type": "parquet", "file_loc": "f.parquet"}
 #
-#     def test_reads_headers_and_rows(self):
-#         path = self.write("Key,Name\n46,RISANKIZUMAB\n403,HUMIRA\n")
-#         columns, rows = read_csv(path)
-#         self.assertEqual(columns, ["Key", "Name"])
-#         self.assertEqual(rows, [("46", "RISANKIZUMAB"), ("403", "HUMIRA")])
+#     def test_the_files_types_become_sql_types(self):
+#         import datetime
+#         import decimal
 #
-#     def test_strips_a_byte_order_mark(self):
-#         # A BOM otherwise becomes part of the first column name and silently
-#         # breaks every reference to it.
-#         path = self.write("Key,Name\n1,x\n", encoding="utf-8-sig")
-#         columns, _ = read_csv(path)
-#         self.assertEqual(columns[0], "Key")
+#         table = read_parquet(self.write({
+#             "Key": pyarrow.array([1, 2], pyarrow.int64()),
+#             "Small": pyarrow.array([1, 2], pyarrow.int32()),
+#             "Score": pyarrow.array([1.5, 2.5]),
+#             "Flag": pyarrow.array([True, False]),
+#             "Day": pyarrow.array([datetime.date(2024, 1, 1), None]),
+#             "Amount": pyarrow.array([decimal.Decimal("1.25"), None], pyarrow.decimal128(10, 2)),
+#             "Label": pyarrow.array(["abc", None]),
+#         }), self.root)
+#         self.assertEqual(dict(table.columns), {
+#             "Key": "BIGINT", "Small": "INT", "Score": "FLOAT", "Flag": "BIT", "Day": "DATE",
+#             "Amount": "DECIMAL(10,2)", "Label": f"NVARCHAR({3 + LENGTH_HEADROOM})",
+#         })
+#         self.assertEqual(table.rows[0][0], 1)
 #
-#     def test_empty_cells_become_null(self):
-#         path = self.write("Key,Name\n1,\n")
-#         _, rows = read_csv(path)
-#         self.assertEqual(rows, [("1", None)])
+#     def test_text_is_sized_from_the_longest_value(self):
+#         table = read_parquet(self.write({"Label": ["x" * 120]}), self.root)
+#         self.assertEqual(table.columns, [("Label", f"NVARCHAR({120 + LENGTH_HEADROOM})")])
 #
-#     def test_short_rows_are_padded(self):
-#         path = self.write("A,B,C\n1,2\n")
-#         _, rows = read_csv(path)
-#         self.assertEqual(rows, [("1", "2", None)])
+#     def test_a_declared_type_converts_the_column(self):
+#         # R writes large IDs as doubles; declaring BIGINT lands them as numbers.
+#         cohort = self.write({"PatientDurableKey": [1.0, 2.0]})
+#         cohort["columns"] = [{"name": "PatientDurableKey", "type": "BIGINT"}]
+#         table = read_parquet(cohort, self.root)
+#         self.assertEqual(table.columns, [("PatientDurableKey", "BIGINT")])
+#         self.assertEqual([row[0] for row in table.rows], [1, 2])
+#         self.assertIsInstance(table.rows[0][0], int)
 #
-#     def test_blank_lines_are_dropped(self):
-#         path = self.write("A\n1\n\n2\n")
-#         _, rows = read_csv(path)
-#         self.assertEqual(rows, [("1",), ("2",)])
-#
-#     def test_duplicate_headers_are_made_unique(self):
-#         path = self.write("Name,Name\n1,2\n")
-#         columns, _ = read_csv(path)
-#         self.assertEqual(columns, ["Name", "Name_1"])
-#
-#     def test_quotes_survive_binding(self):
-#         # Values are bound, not interpolated, so an apostrophe needs no escaping.
-#         path = self.write("Name\n\"HUMIRA(CF) CROHN'S STARTER\"\n")
-#         _, rows = read_csv(path)
-#         self.assertEqual(rows[0][0], "HUMIRA(CF) CROHN'S STARTER")
-#
-#     def test_missing_file_is_refused(self):
-#         with self.assertRaises(UploadError):
-#             read_csv(self.root / "nope.csv")
-#
-#     def test_empty_file_is_refused(self):
-#         with self.assertRaises(UploadError):
-#             read_csv(self.write(""))
-#
-#     def test_header_only_uploads_an_empty_table_with_a_note(self):
-#         self.write("Key,Name\n")
-#         plan = plan_csv_upload(
-#             {"name": "U", "dest_table": "U", "file_type": "csv", "file_loc": "codes.csv"},
-#             self.root,
-#         )
-#         self.assertEqual(plan.rows, [])
-#         self.assertTrue(plan.notes)
-#
-#
-# class WidthTests(unittest.TestCase):
-#     def test_sizes_from_the_data_with_headroom(self):
-#         # The whole file is in hand before the table exists, so measuring works
-#         # here even though it cannot for a batched pull.
-#         widths = measure_widths(["A"], [("x" * 100,)])
-#         self.assertEqual(widths["A"], 150)
-#
-#     def test_width_is_the_longest_value_plus_headroom(self):
-#         self.assertEqual(measure_widths(["A"], [("x",)])["A"], 1 + LENGTH_HEADROOM)
-#
-#     def test_an_all_null_column_falls_back_to_the_floor(self):
-#         # The floor only binds when there is nothing to measure.
-#         self.assertEqual(measure_widths(["A"], [(None,)])["A"], MIN_COLUMN_WIDTH)
-#
-#     def test_width_is_capped(self):
-#         self.assertEqual(measure_widths(["A"], [("x" * 9000,)])["A"], MAX_COLUMN_WIDTH)
-#
-#     def test_create_uses_the_measured_widths(self):
-#         from ..uploads import UploadPlan
-#
-#         plan = UploadPlan(
-#             name="U", dest_table="U", global_temp="##JVM_U",
-#             columns=["A"], rows=[("x" * 100,)], widths={"A": 150},
-#         )
-#         sql = render_create(plan)
-#         self.assertIn("DROP TABLE IF EXISTS ##JVM_U;", sql)
-#         self.assertIn("[A] NVARCHAR(150) NULL", sql)
-#
-#
-# class KindTests(unittest.TestCase):
-#     def test_accepts_csv_and_dbtable(self):
-#         self.assertEqual(upload_kind({"file_type": "csv"}), "csv")
-#         self.assertEqual(upload_kind({"file_type": "DBTable"}), "dbtable")
-#
-#     def test_parquet_is_refused_with_guidance(self):
+#     def test_a_value_that_does_not_fit_names_its_column(self):
+#         cohort = self.write({"PatientDurableKey": [1.5]})
+#         cohort["columns"] = [{"name": "PatientDurableKey", "type": "BIGINT"}]
 #         with self.assertRaises(UploadError) as caught:
-#             upload_kind({"name": "U", "file_type": "parquet"})
-#         self.assertIn("Cosmos cannot read", str(caught.exception))
+#             read_parquet(cohort, self.root)
+#         self.assertIn("`PatientDurableKey`", str(caught.exception))
 #
-#     def test_unknown_kind_is_refused(self):
+#     def test_a_declared_column_the_file_lacks_is_refused(self):
+#         cohort = self.write({"Key": [1]})
+#         cohort["columns"] = [{"name": "Nope", "type": "BIGINT"}]
+#         with self.assertRaises(UploadError) as caught:
+#             read_parquet(cohort, self.root)
+#         self.assertIn("Nope", str(caught.exception))
+#
+#     def test_a_missing_file_is_refused(self):
 #         with self.assertRaises(UploadError):
-#             upload_kind({"name": "U", "file_type": "xlsx"})
-#
-#     def test_push_this_cycle_gates_uploads(self):
-#         doc = {"upload_cohorts": [
-#             {"name": "A", "push_this_cycle": True},
-#             {"name": "B", "push_this_cycle": False},
-#             {"name": "C"},
-#         ]}
-#         self.assertEqual([u["name"] for u in enabled_uploads(doc)], ["A", "C"])
+#             read_parquet({"name": "F", "file_type": "parquet", "file_loc": "gone.parquet"}, self.root)
 #
 # === END FILE: pullmanager/tests/test_uploads.py ===
-# === BEGIN FILE: pullmanager/uploads.py SHA256: f3bfeb3655ab66795d593c04ca64d383cd8362536e4db51a5937508ee8b02dbd SIZE: 7203 ===
-# """Upload cohorts: getting local data up into a Cosmos global temp.
+# === BEGIN FILE: pullmanager/uploads.py SHA256: 8975397fb267e2f16f4905f5202878a4c3d2603f48903a27c7593fa13161cddd SIZE: 10321 ===
+# """Upload cohorts: files into Projects, then up into a Cosmos global temp (D54).
 #
-# There is no linked server from Cosmos back to Projects, so everything here
+# Every upload lands in Projects first, as a typed table named `upload_<dest>`:
+# a parquet file read with pyarrow, or a `dbtable` copied server-side. That copy
+# is the source from then on. The Cosmos temp is loaded from it, an uploaded
+# PK's batches are drawn from it, and a resume or retry never re-reads the file,
+# so a file edited between runs cannot mix populations.
+#
+# There is no linked server from Cosmos back to Projects, so the Cosmos side
 # travels through the client and lands via parameter binding.
 # """
 #
 # from __future__ import annotations
 #
-# import csv
 # import re
 # from dataclasses import dataclass, field
 # from pathlib import Path
-# from typing import Any, Sequence
+# from typing import Any
 #
-# from .db import DatabaseError, bulk_insert, execute_script
-# from .naming import DEFAULT_TEMP_PREFIX, global_temp
+# from .naming import base_name
 # from .normalize import normalize_bool
+# from .sql import quote_name
+#
+# UPLOAD_COPY_PREFIX = "upload_"
 #
 # # Room above the widest value seen, so a later file with slightly longer
 # # values does not immediately fail.
@@ -10724,8 +10902,21 @@ if __name__ == "__main__":
 # MIN_COLUMN_WIDTH = 50
 # MAX_COLUMN_WIDTH = 4000
 #
-# _LEADING_DIGIT = re.compile(r"^\d")
-# _UNSAFE = re.compile(r"[^\w]+")
+# PYARROW_HINT = (
+#     "Reading parquet needs pyarrow, which the VM has (22.0.0). Elsewhere: "
+#     "`python -m pip install pyarrow==22.0.0`."
+# )
+#
+# # Declared types an upload column can take, and the Arrow type each converts
+# # to. YAML Manager converts a CSV with the same table (D54).
+# DECLARED_TYPES = {
+#     "BIGINT": "int64", "INT": "int32", "INTEGER": "int32", "SMALLINT": "int16",
+#     "TINYINT": "uint8", "BIT": "bool", "FLOAT": "float64", "REAL": "float32",
+#     "DECIMAL": "decimal", "NUMERIC": "decimal", "DATE": "date32",
+#     "DATETIME": "timestamp", "DATETIME2": "timestamp", "SMALLDATETIME": "timestamp",
+#     "VARCHAR": "string", "NVARCHAR": "string", "CHAR": "string", "NCHAR": "string",
+# }
+# _SQL_TYPE = re.compile(r"^\s*([A-Za-z0-9]+)\s*(?:\(\s*(MAX|\d+)\s*(?:,\s*(\d+)\s*)?\))?\s*$", re.I)
 #
 #
 # class UploadError(ValueError):
@@ -10733,156 +10924,30 @@ if __name__ == "__main__":
 #
 #
 # @dataclass
-# class UploadPlan:
+# class UploadTable:
+#     """A file's rows, typed, ready to land in Projects."""
+#
 #     name: str
 #     dest_table: str
-#     global_temp: str
-#     columns: list[str]
+#     columns: list[tuple[str, str]]  # (name, SQL type)
 #     rows: list[tuple]
-#     widths: dict[str, int] = field(default_factory=dict)
 #     notes: list[str] = field(default_factory=list)
 #
 #     @property
-#     def row_count(self) -> int:
-#         return len(self.rows)
+#     def column_names(self) -> list[str]:
+#         return [name for name, _ in self.columns]
 #
 #
-# def safe_identifier(header: str, position: int) -> str:
-#     """Turn a CSV header into something SQL can name."""
-#     cleaned = _UNSAFE.sub("_", str(header or "").strip()).strip("_")
-#     if not cleaned:
-#         cleaned = f"Column{position + 1}"
-#     if _LEADING_DIGIT.match(cleaned):
-#         cleaned = f"_{cleaned}"
-#     return cleaned
+# def copy_table(dest_table: str | None) -> str:
+#     """The Projects copy of an upload: `upload_HospitalICDCodes`."""
+#     return UPLOAD_COPY_PREFIX + base_name(dest_table)
 #
 #
-# def read_csv(path: Path) -> tuple[list[str], list[tuple]]:
-#     """Read a CSV, BOM-safe, with headers normalized to SQL identifiers."""
-#     if not path.is_file():
-#         raise UploadError(f"Upload file not found: {path}")
-#     # utf-8-sig strips a byte order mark, which otherwise becomes part of the
-#     # first column name and silently breaks every reference to it.
-#     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-#         reader = csv.reader(handle)
-#         try:
-#             header = next(reader)
-#         except StopIteration:
-#             raise UploadError(f"Upload file is empty: {path}") from None
-#         columns = [safe_identifier(name, i) for i, name in enumerate(header)]
-#         if not columns:
-#             raise UploadError(f"Upload file has no header columns: {path}")
-#         seen: dict[str, int] = {}
-#         for index, name in enumerate(columns):
-#             if name in seen:
-#                 seen[name] += 1
-#                 columns[index] = f"{name}_{seen[name]}"
-#             else:
-#                 seen[name] = 0
-#         width = len(columns)
-#         rows: list[tuple] = []
-#         for record in reader:
-#             if not any(str(cell).strip() for cell in record):
-#                 continue
-#             padded = list(record[:width]) + [None] * max(0, width - len(record))
-#             rows.append(tuple(cell if str(cell) != "" else None for cell in padded))
-#     return columns, rows
-#
-#
-# def measure_widths(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> dict[str, int]:
-#     """Size each column from the data actually present.
-#
-#     This works for an upload because the whole file is in hand before the table
-#     is created. It does not work for a batched pull, where the table exists
-#     before any batch runs.
-#     """
-#     widths = {name: MIN_COLUMN_WIDTH for name in columns}
-#     for row in rows:
-#         for name, value in zip(columns, row):
-#             if value is None:
-#                 continue
-#             widths[name] = max(widths[name], len(str(value)) + LENGTH_HEADROOM)
-#     return {name: min(width, MAX_COLUMN_WIDTH) for name, width in widths.items()}
-#
-#
-# def resolve_path(file_loc: str, root: Path) -> Path:
-#     candidate = Path(file_loc)
-#     return candidate if candidate.is_absolute() else (root / candidate)
-#
-#
-# def plan_csv_upload(
-#     cohort: dict[str, Any], root: Path, prefix: str = DEFAULT_TEMP_PREFIX
-# ) -> UploadPlan:
+# def upload_dest(cohort: dict[str, Any]) -> str:
 #     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
 #     if not dest:
 #         raise UploadError("Upload cohort has neither dest_table nor name.")
-#     file_loc = cohort.get("file_loc")
-#     if not file_loc:
-#         raise UploadError(f"Upload cohort {dest!r} is file_type csv but has no file_loc.")
-#     path = resolve_path(str(file_loc), root)
-#     columns, rows = read_csv(path)
-#     plan = UploadPlan(
-#         name=str(cohort.get("name") or dest),
-#         dest_table=dest,
-#         global_temp=global_temp(dest, prefix),
-#         columns=columns,
-#         rows=rows,
-#         widths=measure_widths(columns, rows),
-#     )
-#     if not rows:
-#         plan.notes.append(f"{path.name} has a header but no data rows; uploading an empty table.")
-#     return plan
-#
-#
-# def render_create(plan: UploadPlan) -> str:
-#     body = ",\n".join(
-#         f"    [{name}] NVARCHAR({plan.widths.get(name, MIN_COLUMN_WIDTH)}) NULL"
-#         for name in plan.columns
-#     )
-#     return (
-#         f"DROP TABLE IF EXISTS {plan.global_temp};\n\n"
-#         f"CREATE TABLE {plan.global_temp}\n(\n{body}\n);"
-#     )
-#
-#
-# def materialize(connection: Any, plan: UploadPlan, *, chunk_size: int) -> int:
-#     """Create the temp table and bind the rows into it."""
-#     execute_script(connection, render_create(plan), label=f"upload {plan.dest_table}")
-#     if not plan.rows:
-#         return 0
-#     try:
-#         return bulk_insert(
-#             connection,
-#             plan.global_temp,
-#             plan.columns,
-#             plan.rows,
-#             chunk_size=chunk_size,
-#         )
-#     except DatabaseError as exc:
-#         raise UploadError(f"Upload of {plan.dest_table!r} failed: {exc}") from exc
-#
-#
-# def plan_dbtable_upload(
-#     projects_connection: Any,
-#     cohort: dict[str, Any],
-#     project_db: str,
-#     prefix: str = DEFAULT_TEMP_PREFIX,
-# ) -> UploadPlan:
-#     """Read an existing Projects table and carry it up through the client."""
-#     dest = str(cohort.get("dest_table") or cohort.get("name") or "")
-#     source = str(cohort.get("source_table") or dest)
-#     cursor = projects_connection.cursor()
-#     cursor.execute(f"SELECT * FROM {project_db}.dbo.{source};")
-#     columns = [column[0] for column in cursor.description or []]
-#     rows = [tuple(row) for row in cursor.fetchall()]
-#     return UploadPlan(
-#         name=str(cohort.get("name") or dest),
-#         dest_table=dest,
-#         global_temp=global_temp(dest, prefix),
-#         columns=columns,
-#         rows=rows,
-#         widths=measure_widths(columns, rows),
-#     )
+#     return dest
 #
 #
 # def enabled_uploads(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -10895,17 +10960,184 @@ if __name__ == "__main__":
 #
 # def upload_kind(cohort: dict[str, Any]) -> str:
 #     kind = str(cohort.get("file_type") or "").strip().lower()
-#     if kind == "parquet":
+#     if kind == "csv":
 #         raise UploadError(
-#             f"Upload cohort {cohort.get('name')!r} is file_type parquet, which Cosmos "
-#             "cannot read. Convert it to CSV, or load it into Projects and use dbtable."
+#             f"Upload cohort {cohort.get('name')!r} is still a CSV. Splits convert CSVs to "
+#             "parquet with their declared column types (D54); this one was made before "
+#             "that. Export the split again."
 #         )
-#     if kind not in ("csv", "dbtable"):
+#     if kind not in ("parquet", "dbtable"):
 #         raise UploadError(
 #             f"Upload cohort {cohort.get('name')!r} has unsupported file_type "
-#             f"{cohort.get('file_type')!r}. Expected csv or dbtable."
+#             f"{cohort.get('file_type')!r}. Expected parquet or dbtable."
 #         )
 #     return kind
+#
+#
+# def _pyarrow():
+#     try:
+#         import pyarrow
+#         import pyarrow.compute
+#         import pyarrow.parquet
+#     except ImportError as exc:
+#         raise UploadError(PYARROW_HINT) from exc
+#     return pyarrow, pyarrow.compute, pyarrow.parquet
+#
+#
+# def arrow_type_for(sql_type: str):
+#     """The Arrow type a declared SQL type converts a column to."""
+#     pa = _pyarrow()[0]
+#     match = _SQL_TYPE.match(str(sql_type or ""))
+#     if not match or match.group(1).upper() not in DECLARED_TYPES:
+#         raise UploadError(
+#             f"`{sql_type}` is not a type an upload column can take. Use one of: "
+#             + ", ".join(sorted(DECLARED_TYPES))
+#         )
+#     kind = DECLARED_TYPES[match.group(1).upper()]
+#     if kind == "decimal":
+#         return pa.decimal128(int(match.group(2) or 18), int(match.group(3) or 0))
+#     if kind == "timestamp":
+#         return pa.timestamp("us")
+#     if kind == "bool":
+#         return pa.bool_()
+#     return getattr(pa, kind)()
+#
+#
+# def _string_width(column) -> int:
+#     pa, pc, _ = _pyarrow()
+#     longest = pc.max(pc.utf8_length(pc.cast(column, pa.string()))).as_py() or 0
+#     return max(MIN_COLUMN_WIDTH, longest + LENGTH_HEADROOM)
+#
+#
+# def sql_type_for(name: str, column) -> str:
+#     """The SQL type a parquet column lands as, from its Arrow type."""
+#     pa = _pyarrow()[0]
+#     t = column.type
+#     types = pa.types
+#     if types.is_dictionary(t):
+#         t = t.value_type
+#     if types.is_int8(t) or types.is_int16(t):
+#         return "SMALLINT"
+#     if types.is_uint8(t):
+#         return "TINYINT"
+#     if types.is_int32(t) or types.is_uint16(t):
+#         return "INT"
+#     if types.is_int64(t) or types.is_uint32(t):
+#         return "BIGINT"
+#     if types.is_uint64(t):
+#         return "DECIMAL(20,0)"
+#     if types.is_boolean(t):
+#         return "BIT"
+#     if types.is_float16(t) or types.is_float32(t):
+#         return "REAL"
+#     if types.is_float64(t):
+#         return "FLOAT"
+#     if types.is_decimal(t):
+#         return f"DECIMAL({t.precision},{t.scale})"
+#     if types.is_date(t):
+#         return "DATE"
+#     if types.is_timestamp(t):
+#         return "DATETIME2(7)"
+#     if types.is_time(t):
+#         return "TIME(7)"
+#     if types.is_null(t):
+#         return f"NVARCHAR({MIN_COLUMN_WIDTH})"
+#     if types.is_string(t) or types.is_large_string(t):
+#         width = _string_width(column)
+#         return f"NVARCHAR({width})" if width <= MAX_COLUMN_WIDTH else "NVARCHAR(MAX)"
+#     raise UploadError(
+#         f"Column `{name}` is {t}, which cannot be uploaded. Convert it to text, a "
+#         "number or a date in the file."
+#     )
+#
+#
+# def read_parquet(cohort: dict[str, Any], root: Path) -> UploadTable:
+#     """Read a parquet upload, applying the types declared under `columns:`."""
+#     pa, pc, pq = _pyarrow()
+#     dest = upload_dest(cohort)
+#     file_loc = cohort.get("file_loc")
+#     if not file_loc:
+#         raise UploadError(f"Upload cohort {dest!r} is file_type parquet but has no file_loc.")
+#     path = Path(str(file_loc))
+#     path = path if path.is_absolute() else root / path
+#     if not path.is_file():
+#         raise UploadError(f"Upload file not found: {path}")
+#     table = pq.read_table(str(path))
+#     declared = {
+#         str(c["name"]): str(c["type"])
+#         for c in cohort.get("columns") or []
+#         if isinstance(c, dict) and c.get("name") and c.get("type")
+#     }
+#     missing = [name for name in declared if name not in table.column_names]
+#     if missing:
+#         raise UploadError(
+#             f"Upload {dest!r}: declared column(s) {', '.join(missing)} are not in "
+#             f"{path.name} ({', '.join(table.column_names)})."
+#         )
+#     notes: list[str] = []
+#     columns: list[tuple[str, str]] = []
+#     for index, name in enumerate(table.column_names):
+#         column = table.column(index)
+#         if name in declared:
+#             try:
+#                 column = pc.cast(column, arrow_type_for(declared[name]), safe=True)
+#             except pa.ArrowInvalid as exc:
+#                 raise UploadError(
+#                     f"Upload {dest!r}, column `{name}`: {str(exc).splitlines()[0]}. Fix the "
+#                     f"value in {path.name}, or declare a type that fits."
+#                 ) from exc
+#             table = table.set_column(index, name, column)
+#             columns.append((name, declared[name].upper()))
+#             continue
+#         if pa.types.is_timestamp(column.type) and column.type.tz is not None:
+#             # SQL Server's DATETIME2 has no zone; land UTC and say so.
+#             column = pc.cast(column, pa.timestamp(column.type.unit))
+#             table = table.set_column(index, name, column)
+#             notes.append(f"{dest}.{name} had time zone {column.type}; landed as UTC.")
+#         columns.append((name, sql_type_for(name, column)))
+#     values = [table.column(i).to_pylist() for i in range(table.num_columns)]
+#     rows = list(zip(*values)) if values else []
+#     if not rows:
+#         notes.append(f"{path.name} has no rows; landing an empty table.")
+#     return UploadTable(name=str(cohort.get("name") or dest), dest_table=dest,
+#                        columns=columns, rows=rows, notes=notes)
+#
+#
+# def column_ddl(columns: list[tuple[str, str]]) -> str:
+#     return ",\n".join(f"    {quote_name(name)} {sql_type} NULL" for name, sql_type in columns)
+#
+#
+# def render_create(table: str, columns: list[tuple[str, str]]) -> str:
+#     """Drop and create a table, a Projects copy or a Cosmos temp, with these columns."""
+#     return f"DROP TABLE IF EXISTS {table};\n\nCREATE TABLE {table}\n(\n{column_ddl(columns)}\n);"
+#
+#
+# def render_copy_dbtable(copy_fq: str, source_fq: str) -> str:
+#     """A dbtable upload's copy, made server-side, types and all."""
+#     return f"DROP TABLE IF EXISTS {copy_fq};\n\nSELECT * INTO {copy_fq} FROM {source_fq};"
+#
+#
+# def describe_sql(project_db: str, table: str) -> tuple[str, list[Any]]:
+#     """The columns of a Projects table, in order, with their types."""
+#     return (
+#         "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
+#         "NUMERIC_SCALE, DATETIME_PRECISION "
+#         f"FROM {project_db}.INFORMATION_SCHEMA.COLUMNS "
+#         "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION;",
+#         [base_name(table)],
+#     )
+#
+#
+# def type_from_info(data_type: Any, length: Any, precision: Any, scale: Any, dt_precision: Any) -> str:
+#     """Rebuild a column's SQL type from INFORMATION_SCHEMA.COLUMNS."""
+#     base = str(data_type).upper()
+#     if base in ("VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "VARBINARY", "BINARY"):
+#         return f"{base}({'MAX' if length in (-1, None) else int(length)})"
+#     if base in ("DECIMAL", "NUMERIC"):
+#         return f"DECIMAL({int(precision)},{int(scale or 0)})"
+#     if base in ("DATETIME2", "TIME", "DATETIMEOFFSET") and dt_precision is not None:
+#         return f"{base}({int(dt_precision)})"
+#     return base
 #
 # === END FILE: pullmanager/uploads.py ===
 # === BEGIN FILE: pullmanager/yaml_io.py SHA256: dca04d852f7873c8abcac4d0e9f0f0e1883c96117a9bcacdf7766fbae4255c18 SIZE: 1844 ===

@@ -200,11 +200,18 @@ def plan_unit(
             u for u in uploads
             if isinstance(u, dict) and normalize_bool(u.get("push_this_cycle"), default=True)
         ]
-        unit.notes.append(
-            f"{len(enabled)} upload cohort(s); uploaded through the client, since there is "
-            "no linked server from Cosmos back to Projects"
-            if enabled else "no upload cohorts"
-        )
+        if not enabled:
+            unit.notes.append("no upload cohorts")
+        elif resuming:
+            unit.notes.append(
+                f"{len(enabled)} upload(s): their Projects copies (upload_<dest>) are kept, "
+                "not re-read from the files, and loaded into Cosmos again (D54)"
+            )
+        else:
+            unit.notes.append(
+                f"{len(enabled)} upload(s): each lands in Projects as upload_<dest>, typed, "
+                "then goes up to Cosmos from that copy through the client (D54)"
+            )
         return unit
 
     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)

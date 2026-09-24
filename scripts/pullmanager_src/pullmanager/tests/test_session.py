@@ -95,7 +95,7 @@ class FakeConnection:
 
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-                 pk_rows=3, existing_temps=(), transactional=False):
+                 pk_rows=3, existing_temps=(), transactional=False, upload_columns=None):
         self.side = side
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
@@ -105,6 +105,11 @@ class FakeConnection:
         self.tables = tables if tables is not None else {}
         self.created = created
         self.pk_rows = pk_rows
+        # What INFORMATION_SCHEMA reports for an upload's Projects copy.
+        self.upload_columns = upload_columns or [
+            ("DiagnosisCode", "nvarchar", 55, None, None, None),
+            ("Description", "nvarchar", 82, None, None, None),
+        ]
         # Transactional: changes apply to a working copy that a commit makes
         # durable and a rollback discards. Off by default: the worst case.
         self.transactional = transactional
@@ -164,6 +169,8 @@ class FakeConnection:
         tables = self._working()
         if match := re.search(r"DROP TABLE IF EXISTS (PROJECTD\S+)", statement):
             tables.pop(match.group(1), None)
+        if match := re.search(r"SELECT \* INTO (PROJECTD\S+) FROM", statement):
+            tables[match.group(1)] = Counter()
         if match := re.search(r"CREATE TABLE (PROJECTD\S+)", statement):
             if "IF OBJECT_ID" not in statement or match.group(1) not in tables:
                 tables[match.group(1)] = Counter()
@@ -176,6 +183,11 @@ class FakeConnection:
     def results_for(self, sql):
         if "@@SERVERNAME" in sql:
             return [(["CosmosServerName"], [(INSTANCE,)])]
+        if match := re.search(r"SELECT OBJECT_ID\(N'(PROJECTD[^']+)', N'U'\)", sql):
+            return [(["id"], [(99 if match.group(1) in self._working() else None,)])]
+        if "INFORMATION_SCHEMA.COLUMNS" in sql:
+            return [(["COLUMN_NAME", "DATA_TYPE", "CHARACTER_MAXIMUM_LENGTH", "NUMERIC_PRECISION",
+                      "NUMERIC_SCALE", "DATETIME_PRECISION"], list(self.upload_columns))]
         if "OBJECT_ID(N'tempdb.." in sql:
             names = re.findall(r"OBJECT_ID\(N'tempdb\.\.([^']+)'\)", sql)
             return [(names, [tuple(
@@ -219,6 +231,10 @@ class SessionTestCase(unittest.TestCase):
     def setUp(self):
         if not FIXTURES.is_dir():
             self.skipTest(f"fixtures not found at {FIXTURES}")
+        try:
+            import pyarrow  # noqa: F401  the fixture's upload is parquet (D54)
+        except ImportError:
+            self.skipTest("needs pyarrow")
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name) / "split"
@@ -635,3 +651,101 @@ class CommitTests(SessionTestCase):
         sent = "\n".join(self.projects.executed)
         self.assertNotIn("COUNT_BIG(DISTINCT", sent)
         self.assertIn("SELECT DISTINCT [PatientDurableKey], [DiagnosisEventKey]", sent)
+
+
+class UploadCopyTests(SessionTestCase):
+    """D54: uploads land typed in Projects first, and that copy is the source."""
+
+    COPY = "PROJECTD33A929.dbo.upload_HospitalICDCodes"
+    TEMP = "##manvalbas_HospitalICDCodes"
+
+    def setUp(self):
+        super().setUp()
+        self.make_batched()
+        self.tables: dict[str, Counter] = {}
+
+    def execute(self, **projects):
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        retry = projects.pop("retry_failed", False)
+        with self.runner(projects={"tables": self.tables, **projects}, retry_failed=retry) as runner:
+            return runner.execute()
+
+    def test_an_upload_lands_in_projects_then_goes_up_from_the_copy(self):
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertIn(self.COPY, self.tables)
+        projects = "\n".join(self.projects.executed)
+        self.assertIn(f"CREATE TABLE {self.COPY}", projects)
+        self.assertIn(f"SELECT * FROM {self.COPY};", projects)
+        cosmos = "\n".join(self.cosmos.executed)
+        # The temp takes the copy's types, not text for everything.
+        self.assertIn(f"CREATE TABLE {self.TEMP}\n(\n    [DiagnosisCode] NVARCHAR(55) NULL", cosmos)
+        self.assertTrue(any(self.TEMP in sql for sql, _ in self.cosmos.inserted))
+
+    def test_a_retry_uses_the_copy_not_the_file(self):
+        # The file is gone (or changed) by the retry; the copy is what counts.
+        first = self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})
+        self.assertFalse(first.ok)
+        (self.root / "uploads" / "hospital_icd_codes.parquet").unlink()
+        second = self.execute(retry_failed=True)
+        self.assertTrue(second.ok, second.failed)
+        self.assertNotIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+
+    def test_a_copy_missing_on_resume_points_at_repull(self):
+        self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})
+        del self.tables[self.COPY]
+        report = self.execute(retry_failed=True)
+        self.assertTrue(any("--repull" in message for _, message in report.failed), report.failed)
+
+
+class UploadedPkTests(SessionTestCase):
+    """D54: an uploaded PK's checks and batches read its Projects copy."""
+
+    def setUp(self):
+        super().setUp()
+        import pyarrow
+        import pyarrow.parquet
+
+        self.make_batched()
+        pyarrow.parquet.write_table(
+            pyarrow.table({"PatientDurableKey": pyarrow.array([1, 2], pyarrow.int64()),
+                           "Sex": ["Female", "Male"]}),
+            str(self.root / "uploads" / "pks.parquet"),
+        )
+        source = {"kind": "uploaded_cohort", "upload_name": "ClientPK", "table": "ClientPK",
+                  "key_columns": ["PatientDurableKey"]}
+        uploads_path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+        doc = load_yaml(uploads_path)
+        doc["upload_cohorts"].append({
+            "name": "ClientPK", "dest_table": "ClientPK", "type": "pk", "file_type": "parquet",
+            "file_loc": "uploads/pks.parquet", "key_columns": ["PatientDurableKey"],
+        })
+        dump_yaml(doc, uploads_path)
+        pk_path = self.root / "sessions" / "Patients" / "pk.yaml"
+        doc = load_yaml(pk_path)
+        doc["cohorts"] = []
+        doc["pull_context"]["pk_source"] = source
+        dump_yaml(doc, pk_path)
+        data = load_yaml(self.root / "pullmanifest.yaml")
+        data["sessions"][0]["pk_table"] = "ClientPK"
+        data["sessions"][0]["phases"]["pk"]["pk_source"] = source
+        dump_yaml(data, self.root / "pullmanifest.yaml")
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+
+    def test_its_uniqueness_and_batches_read_the_copy(self):
+        copy = "PROJECTD33A929.dbo.upload_ClientPK"
+        pk_columns = [("PatientDurableKey", "bigint", None, 19, 0, None),
+                      ("Sex", "nvarchar", 56, None, None, None)]
+        with self.runner(projects={"upload_columns": pk_columns}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        projects = "\n".join(self.projects.executed)
+        self.assertIn(f"SELECT DISTINCT [PatientDurableKey] FROM {copy}", projects)
+        self.assertIn(f"SELECT * FROM {copy}\nWHERE [Sex] = ?", projects)
+        self.assertNotIn("dbo.ClientPK", projects.replace("upload_ClientPK", ""))
+        # The PK temp each batch refills takes the copy's types.
+        self.assertIn(
+            "CREATE TABLE ##manvalbas_ClientPK\n(\n    [PatientDurableKey] BIGINT NULL",
+            "\n".join(self.cosmos.executed),
+        )

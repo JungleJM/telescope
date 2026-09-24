@@ -11,8 +11,8 @@ vars:
 upload_cohorts:
 - name: HospitalICDCodes
   dest_table: HospitalICDCodes
-  file_type: csv
-  file_loc: uploads/hospital_icd_codes.csv
+  file_type: parquet
+  file_loc: uploads/hospital_icd_codes.parquet
   push_this_cycle: true
 temp_prefix: manvalbas
 pull_context:
