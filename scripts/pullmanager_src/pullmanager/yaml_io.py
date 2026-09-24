@@ -6,8 +6,14 @@ through the same representation YAML Manager wrote them with.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
+
+NO_BACKEND = (
+    "No YAML backend available in this Python ({python}). Install one: "
+    "`{python} -m pip install ruamel.yaml pyyaml`."
+)
 
 
 def _backend():
@@ -46,7 +52,7 @@ def load_yaml(path: str | Path) -> Any:
     if backend == "pyyaml":
         with path.open("r", encoding="utf-8") as handle:
             return mod.safe_load(handle)
-    raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
+    raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 
 
 def dump_yaml(data: Any, path: str | Path) -> None:
@@ -61,4 +67,4 @@ def dump_yaml(data: Any, path: str | Path) -> None:
         with path.open("w", encoding="utf-8") as handle:
             mod.safe_dump(data, handle, sort_keys=False, default_flow_style=False)
         return
-    raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
+    raise RuntimeError(NO_BACKEND.format(python=sys.executable))

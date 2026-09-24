@@ -81,9 +81,16 @@ sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3
 ```
 
 Without a YAML package the runtime cannot read YAML at all (`No YAML backend
-available`); `makeYaml` alone falls back to Ruby. Without `pyarrow`, nothing
-can read or write a parquet upload, and the tests that need it skip. All four
-suites pass under `python3.13` with nothing skipped.
+available`); `makeYaml` alone falls back to Ruby, and names the Python that
+sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write
+a parquet upload, and the tests that need it skip. All four suites pass under
+`python3.13` with nothing skipped.
+
+`requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv:
+`python -m pip install -r requirements-vm.txt`. Every Python on the Mac has the
+packages, so whichever one an editor picks can run the tools: the VM's
+versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that
+fit in brew's 3.14, Apple's 3.9 and the project venvs.
 
 **`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.**
 Check it before depending on anything outside the standard library; if it is
@@ -316,6 +323,8 @@ upload_cohorts:
   [--out FILE.parquet] [--column NAME=TYPE ...]` converts one file by hand.
 - A **dbtable** is a table already in the project database (`source_table`,
   else `dest_table`).
+- A `file_loc` ending `.csv` under `file_type: parquet`, or the reverse, is
+  `upload_type_mismatch`.
 - Declarable types: `BIGINT`, `INT`, `SMALLINT`, `TINYINT`, `BIT`, `FLOAT`,
   `REAL`, `DECIMAL(p,s)`, `DATE`, `DATETIME`, `DATETIME2`, `VARCHAR(n)`,
   `NVARCHAR(n)`, `CHAR(n)`. Anything else is `bad_upload_type`; a declared
@@ -544,6 +553,15 @@ the page.
 - **Save as Recipe**, on an added custom table, writes it into `recipes.yaml`
   (D56). A name already there is refused. A page opened as a file, not served,
   cannot write, and downloads the recipe instead.
+
+**Save & Refresh**, at the end of the tab bar, saves the Builder's draft and
+reloads every tab from it, so Validation, Graph, Exports and YAML show what
+was just built. It writes `<project_folder>_temp.yaml` beside the template the
+page opened with, so upload paths relative to the template still resolve, and
+the template itself is never overwritten; saving again from a `_temp.yaml`
+overwrites that file. The draft is written with the YAML library and read back
+before it replaces anything. The tab that was open stays open. A page opened
+as a file, not served, cannot save.
 
 The **Cohorts** tab opens with a read-only line each for the multipliers
 (`IBDType: UC/Crohns, Race: black/white`) and the batching
@@ -991,10 +1009,10 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (105)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (106)
 python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (315)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
-python3 scripts/yamlmanager.py --tdd                        # browser UI (6), Mac only
+python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```
 
 Tests that read or write parquet need `pyarrow` and skip without it: they
@@ -1015,7 +1033,8 @@ upload is parquet).
   manifest (bar `source`), as the template split with recipes, for the tiny
   template and for test cases `01` and `02`.
 - **UI** tests cover saving a recipe (comments and layout kept, a duplicate
-  refused with the file unchanged, the entry placed inside `recipes:`) and the
+  refused with the file unchanged, the entry placed inside `recipes:`), Save &
+  Refresh (named for the project, beside the template, never over it) and the
   section notes.
 
 Fixtures:

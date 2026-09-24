@@ -161,6 +161,36 @@ def run_summary(result: Any) -> str:
     )
 
 
+def temp_template_path(current: Path, draft: dict[str, Any]) -> Path:
+    """Where the Builder's draft is saved: `<project>_temp.yaml` beside the template.
+
+    Beside it, so upload paths relative to the template still resolve. Never the
+    template itself, unless the template already is a `_temp.yaml`.
+    """
+    if current.name.endswith("_temp.yaml"):
+        return current
+    folder = (draft.get("project_vars") or {}).get("project_folder") or draft.get("project_folder")
+    clean = re.sub(r"[^A-Za-z0-9]+", "_", str(folder or "")).strip("_") or "draft"
+    return current.parent / f"{clean}_temp.yaml"
+
+
+def save_template(current: Path, draft: Any) -> tuple[int, str, Path | None]:
+    """Write the Builder's draft to its `_temp.yaml`, parsed back before it lands."""
+    if not isinstance(draft, dict) or not draft:
+        return 400, "Nothing to save: the Builder's draft is empty.", None
+    target = temp_template_path(current, draft)
+    temp = target.with_name(target.name + ".tmp")
+    try:
+        temp.write_text(yaml_text(draft) + "\n", encoding="utf-8")
+        if not isinstance(backend.load_document(temp), dict):
+            raise ValueError("it did not read back as a template")
+        os.replace(temp, target)
+    except Exception as exc:  # noqa: BLE001 - reported to the page
+        temp.unlink(missing_ok=True)
+        return 500, f"Could not save {target.name}: {exc}", None
+    return 200, f"Saved {target.name}.", target
+
+
 def save_recipe(recipes_path: Path, recipe: Any) -> tuple[int, str]:
     """Add one recipe to recipes.yaml, keeping the file's comments and layout.
 
@@ -821,7 +851,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <button class="tab" data-tab="graph">Graph</button>
       <button class="tab" data-tab="exports">Exports</button>
       <button class="tab" data-tab="yaml">YAML</button>
+      <button id="saveRefresh" class="save-refresh" title="Save the Builder's draft as &lt;project&gt;_temp.yaml beside the template, then reload every tab from it">Save &amp; Refresh</button>
     </nav>
+    <div id="saveRefreshMessage" class="message hidden"></div>
 
     <section id="validation" class="panel active">
       <div class="grid two">
@@ -1134,6 +1166,7 @@ main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .metric.error strong { color: var(--err); }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
 .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+.save-refresh { margin-left: auto; border-color: var(--ok); color: var(--ok); font-weight: 650; }
 .panel { display: none; }
 .panel.active { display: block; }
 .grid { display: grid; gap: 14px; }
@@ -1277,8 +1310,15 @@ document.querySelectorAll('.tab').forEach(button => {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     button.classList.add('active');
     document.getElementById(button.dataset.tab).classList.add('active');
+    try { sessionStorage.setItem('yamlmanagerTab', button.dataset.tab); } catch (err) { /* private mode */ }
   });
 });
+
+// Save & Refresh reloads the page; come back to the tab that was open.
+try {
+  const lastTab = sessionStorage.getItem('yamlmanagerTab');
+  if (lastTab) document.querySelector(`.tab[data-tab="${lastTab}"]`)?.click();
+} catch (err) { /* private mode */ }
 
 document.getElementById('themeToggle').addEventListener('click', () => {
   document.body.classList.toggle('light');
@@ -2587,8 +2627,12 @@ function cleanDownloadName(value) {
 }
 
 function updateDraftYaml() {
+  document.getElementById('draftYaml').textContent = toYaml(draftDocument());
+}
+
+function draftDocument() {
   ensureDraftShape();
-  const clean = {
+  return {
     cosmos_vars: draftTemplate.cosmos_vars || {},
     run_vars: draftTemplate.run_vars || {},
     test_options: draftTemplate.test_options || {},
@@ -2599,7 +2643,36 @@ function updateDraftYaml() {
     batching: draftTemplate.batching || [],
     cohorts: draftTemplate.cohorts || []
   };
-  document.getElementById('draftYaml').textContent = toYaml(clean);
+}
+
+document.getElementById('saveRefresh')?.addEventListener('click', async () => {
+  const templatePath = document.getElementById('templatePathInput')?.value || '';
+  const recipesPath = document.querySelector('input[name="recipes"]')?.value || '';
+  if (window.location.protocol === 'file:') {
+    showMessage('saveRefreshMessage', 'This page was opened as a file, so it cannot save. Serve it (python3.13 scripts/yamlmanager.py) to use Save & Refresh; Builder > Draft YAML > Download works meanwhile.', 'warn');
+    return;
+  }
+  try {
+    const response = await fetch('/save-template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft: draftDocument(), template: templatePath })
+    });
+    const body = await response.json();
+    if (!body.ok) {
+      showMessage('saveRefreshMessage', body.message);
+      return;
+    }
+    window.location.href = `/?${new URLSearchParams({ template: body.template, recipes: recipesPath })}`;
+  } catch (err) {
+    showMessage('saveRefreshMessage', `Could not reach the YAML Manager server to save: ${err}`);
+  }
+});
+
+function isEmptyCollection(value) {
+  if (Array.isArray(value)) return value.length === 0;
+  return Boolean(value) && typeof value === 'object'
+    && Object.values(value).filter(v => v !== undefined).length === 0;
 }
 
 function toYaml(value, indent = 0) {
@@ -2612,6 +2685,7 @@ function toYaml(value, indent = 0) {
         if (entries.length === 0) return `${pad}- {}`;
         return entries.map(([key, val], idx) => {
           const prefix = idx === 0 ? `${pad}- ${key}:` : `${pad}  ${key}:`;
+          if (isEmptyCollection(val)) return `${prefix} ${Array.isArray(val) ? '[]' : '{}'}`;
           if (val && typeof val === 'object') return `${prefix}\n${toYaml(val, indent + 4)}`;
           return `${prefix} ${formatScalar(val)}`;
         }).join('\n');
@@ -2624,6 +2698,9 @@ function toYaml(value, indent = 0) {
     const entries = Object.entries(value).filter(([, val]) => val !== undefined);
     if (entries.length === 0) return '{}';
     return entries.map(([key, val]) => {
+      // An empty mapping or list stays on its key's line: `vars: {}`. On the
+      // next line, as it used to be written, it is not valid YAML.
+      if (isEmptyCollection(val)) return `${pad}${key}: ${Array.isArray(val) ? '[]' : '{}'}`;
       if (val && typeof val === 'object') return `${pad}${key}:\n${toYaml(val, indent + 2)}`;
       return `${pad}${key}: ${formatScalar(val)}`;
     }).join('\n');
@@ -2770,17 +2847,28 @@ def serve_dashboard(
         def do_POST(self) -> None:
             """The one write the page can make: a custom table saved as a recipe."""
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path != "/save-recipe":
+            if parsed.path not in ("/save-recipe", "/save-template"):
                 self.send_error(404)
                 return
+            reply: dict[str, Any] = {}
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length) or b"{}")
-                recipes_path = resolve_workspace_path(body.get("recipes") or default_recipes)
-                status, message = save_recipe(recipes_path, body.get("recipe"))
+                if parsed.path == "/save-recipe":
+                    recipes_path = resolve_workspace_path(body.get("recipes") or default_recipes)
+                    status, message = save_recipe(recipes_path, body.get("recipe"))
+                else:
+                    current = resolve_workspace_path(body.get("template") or default_template)
+                    status, message, saved = save_template(current, body.get("draft"))
+                    if saved is not None:
+                        try:
+                            reply["template"] = str(saved.relative_to(PROJECT_ROOT))
+                        except ValueError:
+                            reply["template"] = str(saved)
             except (ValueError, OSError) as exc:
                 status, message = 400, f"Could not save: {exc}"
-            data = json.dumps({"ok": status == 200, "message": message}).encode("utf-8")
+            reply.update({"ok": status == 200, "message": message})
+            data = json.dumps(reply).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
@@ -2882,6 +2970,35 @@ recipes:
         self.assertEqual([r["name"] for r in doc["batching_recipes"]], ["sex"])
 
 
+class SaveTemplateTests(unittest.TestCase):
+    """Save & Refresh writes <project>_temp.yaml and never the template."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.template = Path(self._tmp.name) / "template.yaml"
+        self.template.write_text("# the real template\nproject_vars: {project_folder: Test}\n", encoding="utf-8")
+
+    def draft(self, folder="IBD Ancestry"):
+        return {"project_vars": {"project_folder": folder}, "vars": {}, "cohorts": []}
+
+    def test_saved_beside_the_template_named_for_the_project(self):
+        status, _, saved = save_template(self.template, self.draft())
+        self.assertEqual(status, 200)
+        self.assertEqual(saved, self.template.parent / "IBD_Ancestry_temp.yaml")
+        self.assertEqual(backend.load_document(saved)["project_vars"]["project_folder"], "IBD Ancestry")
+        self.assertIn("# the real template", self.template.read_text(encoding="utf-8"))
+
+    def test_saving_a_temp_again_overwrites_it(self):
+        _, _, first = save_template(self.template, self.draft())
+        _, _, second = save_template(first, self.draft("Renamed"))
+        self.assertEqual(first, second)
+        self.assertEqual(backend.load_document(second)["project_vars"]["project_folder"], "Renamed")
+
+    def test_an_empty_draft_is_refused(self):
+        self.assertEqual(save_template(self.template, {})[0], 400)
+
+
 class SectionNoteTests(unittest.TestCase):
     def test_inline_and_preceding_comments_become_notes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2912,7 +3029,7 @@ class SectionNoteTests(unittest.TestCase):
 
 def run_tdd() -> int:
     suite = unittest.TestSuite()
-    for case in (SaveRecipeTests, SectionNoteTests):
+    for case in (SaveRecipeTests, SaveTemplateTests, SectionNoteTests):
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
