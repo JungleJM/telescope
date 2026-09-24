@@ -194,6 +194,19 @@ def read_bundle(bundle_path: Path) -> tuple[list[dict], dict]:
     return sections, manifest
 
 
+def previous_extraction_hashes(target: Path) -> dict[str, str]:
+    """Path to SHA-256 of every file the previous extraction wrote, or {}."""
+    try:
+        recorded = json.loads((target / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        return {
+            str(entry["path"]): str(entry["sha256"])
+            for entry in recorded.get("files", [])
+            if isinstance(entry, dict) and "path" in entry and "sha256" in entry
+        }
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
 def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     """Verify a bundle fully, then swap its contents into `target`."""
     sections, manifest = read_bundle(bundle_path)
@@ -215,7 +228,25 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if scratch.exists():
             shutil.rmtree(scratch)
 
+    previous_hashes = previous_extraction_hashes(target)
+    shipped_paths = {section["path"] for section in sections}
     preserved: list[str] = []
+    dropped_kept: list[str] = []
+    dropped: list[str] = []
+    carried: list[str] = []
+
+    def edited_here(rel: str, current: bytes, shipped: bytes | None) -> bool:
+        """Was this file changed on this machine since it was extracted?
+
+        Judged against the hash the previous extraction recorded, so a file
+        that merely changed between releases is not mistaken for an edit.
+        With no record (a first or forced extraction), any difference from
+        what is about to be shipped counts, to be safe.
+        """
+        recorded = previous_hashes.get(rel)
+        if recorded is not None:
+            return hashlib.sha256(current).hexdigest() != recorded
+        return shipped is None or current != shipped
 
     try:
         for section in sections:
@@ -227,7 +258,7 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
             if existing.is_file():
                 current = existing.read_bytes()
-                if current != shipped:
+                if current != shipped and edited_here(rel, current, shipped):
                     # Replaced, but an edit made here is not simply destroyed.
                     aside = staging / (rel + ".local")
                     aside.parent.mkdir(parents=True, exist_ok=True)
@@ -236,6 +267,32 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
             # Explicit bytes so Windows does not translate newlines and break hashes.
             out_path.write_bytes(shipped)
+
+        # A file the previous bundle shipped and this one does not: removed,
+        # unless it was edited here, in which case it is kept aside like a
+        # replaced file. Dropping a file must not be a way to lose work.
+        for rel in sorted(set(previous_hashes) - shipped_paths):
+            existing = target / rel
+            if not existing.is_file():
+                continue
+            if edited_here(rel, existing.read_bytes(), None):
+                aside = staging / (rel + ".local")
+                aside.parent.mkdir(parents=True, exist_ok=True)
+                aside.write_bytes(existing.read_bytes())
+                dropped_kept.append(rel)
+            else:
+                dropped.append(rel)
+
+        # Copies set aside by earlier updates stay until the user deletes them.
+        if target.is_dir():
+            for old_local in sorted(target.rglob("*.local")):
+                rel = old_local.relative_to(target).as_posix()
+                destination = staging / rel
+                if destination.exists():
+                    continue  # a newer copy of the same file was just set aside
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old_local, destination)
+                carried.append(rel)
 
         (staging / MANIFEST_FILENAME).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -262,6 +319,12 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
     for rel in preserved:
         print(f"replaced   {rel}  (your previous copy saved as {rel}.local)")
+    for rel in dropped_kept:
+        print(f"no longer shipped   {rel}  (your edited copy kept as {rel}.local)")
+    for rel in dropped:
+        print(f"no longer shipped   {rel}  (removed; it had not been edited)")
+    for rel in carried:
+        print(f"kept       {rel}  (set aside by an earlier update; delete it when done)")
     return [section["path"] for section in sections]
 
 

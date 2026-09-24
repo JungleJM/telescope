@@ -183,6 +183,19 @@ def read_bundle(bundle_path: Path) -> tuple[list[dict], dict]:
     return sections, manifest
 
 
+def previous_extraction_hashes(target: Path) -> dict[str, str]:
+    """Path to SHA-256 of every file the previous extraction wrote, or {}."""
+    try:
+        recorded = json.loads((target / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        return {
+            str(entry["path"]): str(entry["sha256"])
+            for entry in recorded.get("files", [])
+            if isinstance(entry, dict) and "path" in entry and "sha256" in entry
+        }
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
 def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     """Verify a bundle fully, then swap its contents into `target`."""
     sections, manifest = read_bundle(bundle_path)
@@ -204,7 +217,25 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
         if scratch.exists():
             shutil.rmtree(scratch)
 
+    previous_hashes = previous_extraction_hashes(target)
+    shipped_paths = {section["path"] for section in sections}
     preserved: list[str] = []
+    dropped_kept: list[str] = []
+    dropped: list[str] = []
+    carried: list[str] = []
+
+    def edited_here(rel: str, current: bytes, shipped: bytes | None) -> bool:
+        """Was this file changed on this machine since it was extracted?
+
+        Judged against the hash the previous extraction recorded, so a file
+        that merely changed between releases is not mistaken for an edit.
+        With no record (a first or forced extraction), any difference from
+        what is about to be shipped counts, to be safe.
+        """
+        recorded = previous_hashes.get(rel)
+        if recorded is not None:
+            return hashlib.sha256(current).hexdigest() != recorded
+        return shipped is None or current != shipped
 
     try:
         for section in sections:
@@ -216,7 +247,7 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
             if existing.is_file():
                 current = existing.read_bytes()
-                if current != shipped:
+                if current != shipped and edited_here(rel, current, shipped):
                     # Replaced, but an edit made here is not simply destroyed.
                     aside = staging / (rel + ".local")
                     aside.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +256,32 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
             # Explicit bytes so Windows does not translate newlines and break hashes.
             out_path.write_bytes(shipped)
+
+        # A file the previous bundle shipped and this one does not: removed,
+        # unless it was edited here, in which case it is kept aside like a
+        # replaced file. Dropping a file must not be a way to lose work.
+        for rel in sorted(set(previous_hashes) - shipped_paths):
+            existing = target / rel
+            if not existing.is_file():
+                continue
+            if edited_here(rel, existing.read_bytes(), None):
+                aside = staging / (rel + ".local")
+                aside.parent.mkdir(parents=True, exist_ok=True)
+                aside.write_bytes(existing.read_bytes())
+                dropped_kept.append(rel)
+            else:
+                dropped.append(rel)
+
+        # Copies set aside by earlier updates stay until the user deletes them.
+        if target.is_dir():
+            for old_local in sorted(target.rglob("*.local")):
+                rel = old_local.relative_to(target).as_posix()
+                destination = staging / rel
+                if destination.exists():
+                    continue  # a newer copy of the same file was just set aside
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old_local, destination)
+                carried.append(rel)
 
         (staging / MANIFEST_FILENAME).write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -251,6 +308,12 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
 
     for rel in preserved:
         print(f"replaced   {rel}  (your previous copy saved as {rel}.local)")
+    for rel in dropped_kept:
+        print(f"no longer shipped   {rel}  (your edited copy kept as {rel}.local)")
+    for rel in dropped:
+        print(f"no longer shipped   {rel}  (removed; it had not been edited)")
+    for rel in carried:
+        print(f"kept       {rel}  (set aside by an earlier update; delete it when done)")
     return [section["path"] for section in sections]
 
 
@@ -300,26 +363,14 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "5a450c3d1910b30826d2eba8939961945ee7ce92fadb6a19189f73826dfc8257",
-  "file_count": 40,
+  "content_id": "f45f07bb2b56e34ec2bb955e9c86442aa53370fd2a0228a240088abd08488b05",
+  "file_count": 36,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
       "policy": "replace",
       "sha256": "25d874ec0b312bce8af471a5614b41026369980a27a1c5ea66c55ff6a202656c",
       "size": 97788
-    },
-    {
-      "path": "YAMLs/recipes.yaml",
-      "policy": "replace",
-      "sha256": "7b9cd0b6659af2b197542b8efadac197090b6193d29a1428aca51221cb35e014",
-      "size": 12723
-    },
-    {
-      "path": "YAMLs/template.yaml.example",
-      "policy": "replace",
-      "sha256": "708e8ee0e094bc19ceeb0507183057c50b210529c19f00944425d3fba6f569a3",
-      "size": 8152
     },
     {
       "path": "pullmanager.py",
@@ -366,14 +417,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "6e4ecb5860155092cdf80f92d3b27dca41b71b046197822820051992023c6ec2",
-      "size": 11041
+      "sha256": "fed3c3037ae9ec592164480e1e337689fc97858ad9cba8a1a660cca4c2b81101",
+      "size": 11018
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "4e4c0b3c167132c38d7f83ad9542ffc26ffea33ae10fd8be330fda41ca1b62dc",
-      "size": 9693
+      "sha256": "d8088d73ae03148406efddb260fded64947a4aa4de126cbeda3d8d85e06c140a",
+      "size": 9806
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -456,14 +507,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "11c2577984d550d6aa18168ea6978cc4580ac340386c883ebd2cc554c23adbf8",
-      "size": 7011
+      "sha256": "d6a43781765be821c2b50279109eb3a88f2da94c59011d3273502b712a8acc9f",
+      "size": 7012
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "9b627fdad3bcdc3fd21552d485a2bf444ba7a1206fe3215dbdad9b0d7d9207e3",
-      "size": 10477
+      "sha256": "513ea36725a7f38f4c77d7f9a81e528115782ac1edaec78e170197b528bfcc92",
+      "size": 11091
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -528,20 +579,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "3477283ea74721402addb5a73ed1966f87cc2d819ee18e1a731f33d1bcf667b2",
-      "size": 110255
-    },
-    {
-      "path": "scripts/yamlmanager.py",
-      "policy": "replace",
-      "sha256": "94d6c97d4178b04e96b5e6e6566e93a214e0bbcfa30b4cfa0940b0a5a7c1ef01",
-      "size": 108227
-    },
-    {
-      "path": "scripts/yamlmanager_backend.py",
-      "policy": "replace",
-      "sha256": "7dbd3c2d0a9f11053fd8169e1c56738e0dbf6507f153bfd1d0ed7cfdd146b7d0",
-      "size": 2926
+      "sha256": "653652e40c73e4763048ba149278172aa2fdbc8234e8c7f74f83f8c98d3bd30d",
+      "size": 141611
     }
   ]
 }'''
@@ -3389,655 +3428,6 @@ if __name__ == "__main__":
 #           TerminologyConceptSetDim.
 #
 # === END FILE: YAMLs/datadictionary.yaml ===
-# === BEGIN FILE: YAMLs/recipes.yaml SHA256: 7b9cd0b6659af2b197542b8efadac197090b6193d29a1428aca51221cb35e014 SIZE: 12723 ===
-# batching_recipes:
-#   - name: state
-#     description: Split each expanded PK table by patient state abbreviation.
-#     kind: column_values
-#     applies_to: PKTable
-#     column: StateOrProvinceAbbreviation
-#     values: all
-#     separate_parquets: true
-#
-#   - name: sex
-#     description: Split each expanded PK table by patient sex.
-#     kind: column_values
-#     applies_to: PKTable
-#     column: Sex
-#     values:
-#       - Female
-#       - Male
-#     separate_parquets: true
-#
-#   - name: chunk
-#     description: Split each expanded PK table into row-count chunks; downstream fact tables join to the matching PK chunk.
-#     kind: row_chunk
-#     applies_to: PKTable
-#     rows_per_batch: required
-#     separate_parquets: true
-#
-# recipes:
-#   - name: PatientWithDx
-#     description: First DiagnosisEvent of diseaseX for patient, with patient info (sex, birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
-#     type: PK
-#     pull_this_cycle: true
-#     dest_table: Patients
-#     dedup_keys:
-#       - [PatientDurableKey]
-#     dedup_order_by:
-#       - IndexDate
-#     columns:
-#       - source: dxf.PatientDurableKey
-#         name: PatientDurableKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: p.Sex
-#         name: Sex
-#         type: VARCHAR(50)
-#         nullable: true
-#
-#       - source: dt.NameAndCode
-#         name: ICDName
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dur.Years
-#         name: AgeAtIndexDiagnosis
-#         type: BIGINT
-#         nullable: true
-#
-#       - source: p.BirthDate
-#         name: BirthDate
-#         type: DATE
-#         nullable: true
-#
-#       - source: p.StateOrProvince
-#         name: StateOrProvince
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.StateOrProvinceAbbreviation
-#         name: StateOrProvinceAbbreviation
-#         type: VARCHAR(300)
-#         nullable: false
-#
-#       - source: p.Country
-#         name: Country
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: dt.Value
-#         name: ICDCode
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dxf.StartDateKey
-#         name: IndexDate
-#         type: INT
-#         nullable: true
-#
-#       # Everything else:
-#       - source: dxf.DiagnosisEventKey
-#         name: DiagnosisEventKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: dxf.EncounterKey
-#         name: IndexEncounter
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: p.DurableKey
-#         name: DurableKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: p.FirstRace
-#         name: FirstRace
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.SecondRace
-#         name: SecondRace
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.ThirdRace
-#         name: ThirdRace
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.FourthRace
-#         name: FourthRace
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.FifthRace
-#         name: FifthRace
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-#         name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-#         type: FLOAT
-#         nullable: true
-#
-#       - source: p.SviOverallPctlRankByZip2020_X
-#         name: SviOverallPctlRankByZip2020_X
-#         type: FLOAT
-#         nullable: true
-#
-#       - source: p.SviSocioeconomicPctlRankByZip2020_X
-#         name: SviSocioeconomicPctlRankByZip2020_X
-#         type: FLOAT
-#         nullable: true
-#
-#     filter:
-#       from:
-#         - DiagnosisEventFact as dxf
-#       join:
-#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
-#         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
-#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey"
-#       where:
-#         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-#         - "dxf.StartDateKey >= 0"
-#         - "dxf._IsDeleted = 0"
-#         - "dt._IsDeleted = 0"
-#         - "p.IsValid = 1"
-#         - "p.IsCurrent = 1"
-#         - "p.UseInCosmosAnalytics_X = 1"
-#         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
-#         - "{{sql_condition('dt.Value', ICD_Value)}}"
-#
-#   - name: IndexDiagnosis
-#     description: Patient's first time diagnoses with the condition, with date, age at diagnosis, event data
-#     dedup_keys:
-#       - [BillingCodeValue]
-#     dedup_order_by: 
-#       - IndexDate
-#     pull_this_cycle: true 
-#     type: fact
-#     dest_table: OtherDiagnoses
-#     columns:
-#       - source: def.DiagnosisEventKey
-#         name: DiagnosisEventKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: tc.StandardName
-#         name: BillingCodeType
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dt.Value
-#         name: BillingCodeValue
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dt.NameAndCode
-#         name: NameAndCode
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dur.Years
-#         name: AgeAtDiagnosis
-#         type: INT
-#         nullable: true
-#
-#       - source: def.IsPrimary
-#         name: IsPrimary
-#         type: BIT
-#         nullable: true
-#
-#       - source: dt.ReferenceBillingCode
-#         name: IsReferenceBillingCode
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: def.Type
-#         name: TypeOfDx
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: tc.Concept
-#         name: TerminologyConcept
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: tc.Name
-#         name: TerminologyName
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: def.Status
-#         name: Status
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: def.StartDateKey
-#         name: StartDateKey
-#         type: INT
-#         nullable: true
-#
-#       - source: def.EndDateKey
-#         name: EndDateKey
-#         type: INT
-#         nullable: true
-#
-#       - source: def.PatientDurableKey
-#         name: PatientDurableKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: def.DiagnosisKey
-#         name: DiagnosisKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: def.EncounterKey
-#         name: EncounterKey
-#         type: BIGINT
-#         nullable: false
-#
-#     filter:
-#       from:
-#         - DiagnosisEventFact AS def
-#       join:
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
-#         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
-#         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
-#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
-#       where:
-#         - "def._IsDeleted = 0"
-#         - "dt._IsDeleted = 0"
-#         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
-#
-#   - name: OtherDiagnoses
-#     description: Patient's diagnoses besides the index diagnosis - one per diagnosis, not time-based. For seeing if they have other conditions
-#     dedup_keys:
-#       - [BillingCodeValue]
-#     pull_this_cycle: true 
-#     type: fact
-#     dest_table: OtherDiagnoses
-#     columns:
-#       - source: def.DiagnosisEventKey
-#         name: DiagnosisEventKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: tc.StandardName
-#         name: BillingCodeType
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dt.Value
-#         name: BillingCodeValue
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dt.NameAndCode
-#         name: NameAndCode
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dur.Years
-#         name: AgeAtDiagnosis
-#         type: INT
-#         nullable: true
-#
-#       - source: def.IsPrimary
-#         name: IsPrimary
-#         type: BIT
-#         nullable: true
-#
-#       - source: dt.ReferenceBillingCode
-#         name: IsReferenceBillingCode
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: def.Type
-#         name: TypeOfDx
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: tc.Concept
-#         name: TerminologyConcept
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: tc.Name
-#         name: TerminologyName
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: def.Status
-#         name: Status
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       - source: def.StartDateKey
-#         name: StartDateKey
-#         type: INT
-#         nullable: true
-#
-#       - source: def.EndDateKey
-#         name: EndDateKey
-#         type: INT
-#         nullable: true
-#
-#       - source: def.PatientDurableKey
-#         name: PatientDurableKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: def.DiagnosisKey
-#         name: DiagnosisKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: def.EncounterKey
-#         name: EncounterKey
-#         type: BIGINT
-#         nullable: false
-#
-#     filter:
-#       from:
-#         - DiagnosisEventFact AS def
-#       join:
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
-#         - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
-#         - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
-#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
-#       where:
-#         - "def._IsDeleted = 0"
-#         - "dt._IsDeleted = 0"
-#         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
-#
-#   - name: OtherHospitalizations
-#     type: fact
-#     pull_this_cycle: true
-#     dest_table: OtherHospitalizations
-#     dedup_keys:
-#       - [InpatientEncounterKey]
-#     columns:
-#       - source: haf.HospitalAdmissionKey
-#         name: HospitalAdmissionKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: haf.EncounterKey
-#         name: InpatientEncounterKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: haf.PatientDurableKey
-#         name: PatientDurableKey
-#         type: BIGINT
-#         nullable: false
-#
-#       - source: haf.AdmissionDateKey
-#         name: AdmissionDateKey
-#         type: INT
-#         nullable: false
-#
-#       - source: haf.InpatientAdmissionInstant
-#         name: InpatientAdmissionInstant
-#         type: DATETIME2(7)
-#         nullable: false
-#
-#       - source: haf.DischargeDateKey
-#         name: DischargeDateKey
-#         type: INT
-#         nullable: true
-#
-#       - source: haf.DischargeInstant
-#         name: DischargeInstant
-#         type: DATETIME2(7)
-#         nullable: true
-#
-#       - source: haf.DischargeDisposition
-#         name: DischargeDisposition
-#         type: VARCHAR(300)
-#         nullable: true
-#
-#       - source: haf.InpatientLengthOfStayInDays
-#         name: InpatientLengthOfStayInDays
-#         type: INT
-#         nullable: true
-#
-#       - source: haf.LengthOfStayInDays
-#         name: LengthOfStayInDays
-#         type: INT
-#         nullable: true
-#
-#       - source: haf.DaysSincePriorAdmission_X
-#         name: DaysSincePriorAdmission_X
-#         type: INT
-#         nullable: true
-#
-#       - source: haf.ReadmissionCausedByKey_X
-#         name: ReadmissionCausedByKey_X
-#         type: BIGINT
-#         nullable: true
-#
-#       - source: haf.IsPlannedReadmission_X
-#         name: IsPlannedReadmission_X
-#         type: BIT
-#         nullable: true
-#
-#       - source: haf.IsUnplannedReadmission_X
-#         name: IsUnplannedReadmission_X
-#         type: BIT
-#         nullable: true
-#
-#       - source: haf.EncounterType
-#         name: EncounterType
-#         type: NVARCHAR(300)
-#         nullable: true
-#
-#       - source: haf.FinancialClass
-#         name: FinancialClass
-#         type: VARCHAR(100)
-#         nullable: true
-#
-#       # optional: ICD for the qualifying diagnosis
-#       - source: dt.Value
-#         name: ICDCode
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#       - source: dt.NameAndCode
-#         name: ICDName
-#         type: VARCHAR(400)
-#         nullable: true
-#
-#     filter:
-#       from:
-#         - HospitalAdmissionFact AS haf
-#       join:
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
-#         # Bring in diagnosis events on the same encounter
-#         - "INNER JOIN DiagnosisEventFact AS dxf ON dxf.EncounterKey = haf.EncounterKey"
-#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
-#         - "INNER JOIN ##JVM_{{HospitalICDTable}} AS ih ON ih.DiagnosisCode = dt.Value"
-#       where:
-#         - "haf._IsDeleted = 0"
-#         - "haf.AdmissionDateKey IS NOT NULL"
-#         - "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-#         - "dxf._IsDeleted = 0"
-#         - "dt._IsDeleted = 0"
-#         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
-#
-# === END FILE: YAMLs/recipes.yaml ===
-# === BEGIN FILE: YAMLs/template.yaml.example SHA256: 708e8ee0e094bc19ceeb0507183057c50b210529c19f00944425d3fba6f569a3 SIZE: 8152 ===
-# # Cosmos variables
-# cosmos_vars:
-#   project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
-#   cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
-#                            # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
-#
-# # Initial variables. Dates in format YYYYMMDD
-# run_vars: 
-#   min_date_key: 19900101
-#   max_date_key: 20260601
-#
-# # Test Vars
-# test_options:
-#   smallset: false              # If true, will just make a table up to 'stop_at' number of rows for the PKTable
-#   stop_at_for_pk_table: 10     # limits to SELECT TOP(value)
-#   stop_at_for_non_pk_tables: 0 # 0 or blank means 'don't stop_at'
-#   random_pk_sample: false      # For controls in multiplier will always be random
-#   printout_md: true            # Can print out a Markdown of the run and its results (rows, time, etc). in the r_dump root
-#
-# # Data Science Variables.
-# # Generates R scripts to run in R Studio to make Parquet files of what you just pulled
-# project_vars:
-#   project_folder: "Test Run"     # Folder within QueryGenerator. 
-#
-# multipliers: # for each multiplier, makes a copy of the cohort tables and prefixes title (eg CrohnsPatients). Cartesian - each multiplier stacks, so here it's BlackCrohns, WhiteUC, etc.
-#   - name: IBDType
-#     stage: during_build
-#     levels:
-#       - strat: UC
-#         vars:
-#           ICD_Value:
-#             - K51.%
-#       - strat: Crohns
-#         vars:
-#           ICD_Value:
-#             - K50.%
-#   - name: Race
-#     stage: split_after_build
-#     applies_to: PKTable
-#     levels:
-#       - strat: black
-#         column: FirstRace
-#         values:
-#           - "Black %"
-#       - strat: white
-#         role: control
-#         column: FirstRace
-#         values:
-#           - "White %"
-#         row_mult: 4
-# batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
-#   - name: state
-#     column: StateOrProvinceAbbreviation
-#     values:
-#       - LA
-#       - MS
-#       - GA
-#       - NC
-#     separate_parquets: true
-#   - name: sex
-#     column: Sex
-#     values:
-#       - Female
-#       - Male
-#     separate_parquets: true
-#   - chunk: 2000 # if a number, splits into batches (not sure how to do yet)
-#
-# upload_cohorts:
-#   - name: PKTable              # PROJECTS.<project_db>.dbo.(name))
-#     dest_table: PKTable        # Cosmos global temp: ##JVM_PKTable
-#     file_type: dbtable         # parquet, csv or dbtable (pulls from PROJECTS'.dbo.project_db)
-#     push_this_cycle: true      # optional; defaults to true
-#
-#   - name: HospitalICDCodes
-#     dest_table: HospitalICDCodes
-#     file_type: csv
-#     file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
-#     scope: global #global or per_group
-#     push_this_cycle: true
-#
-# cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
-#   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
-#     name: Patients
-#   - recipe: OtherHospitalizations
-#
-#   # Make as many cohorts as you need, each is its own table. 
-#   # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you're deriving from
-#
-#   #Example Cohorts - will be ignored, just for the sake of being an example on the template
-# example_cohorts: 
-#   - name: Pts
-#     type: example # PK is generally the index all the others check against. non-PK tables are 'fact'. 'example' means ignore. 
-#     pull_this_cycle: false # if true, will become part of the cohort cycle. Sometimes you just want to update some and not others. 
-#     dest_table: Patients #Optional - if not specified, it just uses the same name as name:
-#     columns: #Try to have everything you'll need for any future cohort to find info needed. For instance,
-#       # If later you need ED visit and vitals info, you likely need ArrivalDateKey, EncounterKey.
-#       # If it's all in one table it's much easier to pull later data, even if it's not a "primary key"
-#       - source: pk.x
-#         name: # Name in the output table. If you leave alone, skill.md will fill with same name as (column)
-#         type: # Filled by skill.mg
-#         nullable: # Filled by skill.mg
-#       - source: pk.x # repeat as necessary
-#       - source: pk.x
-#       - source: dt.x # data from a joined table, which you declare in the 'join:' section. 
-#     # PK cohort: EdVisitFact + DiagnosisEventFact, no DurationDim, with pediatric age filter via AgeKey and ED primary diagnosis restriction.
-#     filter:
-#       from: # the general collection on Cosmos ('All ED visits' is EDVisitFacts, etc. Look at Data Dictionary for what it contains).
-#          DiagnosisEventFact as pk
-#       join: # You join another table for filtering or for getting other information -
-#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey" # for filtering by dt.value, dxf.StartDateKey
-#         - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey" # for getting more information about patient and adding it to table
-#         - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey" # Sometimes you just need one conversion. AgeKey doesn't give an age, it's a key that needs a translation to Years by DurationDim.
-#         # likely INNER JOIN COSMOS.{cosmos_db}.dbo.(someFact) as sf.(CommonKey) = pk.(CommonKey)
-#         # IF EMPTY MUST USE []
-#       where:
-#         # Your filtering logic. Date ranges, "Had RSV," "Diagnosed with IBD", etc.
-#         # Will likely use your join to do some logic filtering here, as well as variables like date ranges
-#         - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-#         - "dxf.StartDateKey >= 0"
-#         - "dxf._IsDeleted = 0"
-#         - "dt._IsDeleted = 0"
-#         - "p.IsValid = 1"
-#         - "p.IsCurrent = 1"
-#         - "p.UseInCosmosAnalytics_X = 1"
-#         - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
-#         - "{{sql_condition('dt.Value', ICD_Value)}}"
-#
-#   # You can also make custom ones - example below of things you'd need. 
-#   - name: BirthFact #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
-#     pull_this_cycle: true
-#     type: example
-#     dest_table: #PROJECTS-local table name. Cosmos will Pre-pend "JVM_" to Cosmos tables to make them unique.
-#     vars: 
-#       PKTable: "##JVM_Patients" # If you want to override teh standard cohort PKTable, this table exists
-#     columns: # Each 'source' below is a column in your table, you'll define the anchor in 'filter' below.
-#       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
-#       - source: bpf.x
-#         name:
-#         type:
-#         nullable:
-#     filter:
-#       from: PatientDim as p # the general collection on Cosmos.
-#       join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = p.DurableKey" # Joining another table at the key from PKTable and pulling data into a
-#       where: #Logic for filtering things out ("AgeKey >18," etc.)
-#   - name: MotherOfPatients #Flavor of what you want to pull - for instance, if it's a baby and you also want the mother's record
-#     pull_this_cycle: true
-#     type: example
-#     dest_table: #PROJECTS-local table name. Cosmos will Pre-pend "JVM_" to Cosmos tables to make them unique.
-#     vars: 
-#       PKTable: "JVM_Patients" # If you want to have this one override the standard PKTable from the cohort, assuming a Mothers exists
-#     columns: # Each 'source' below is a column in your table, you'll define the anchor in 'filter' below.
-#       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
-#       - source: bpf.x
-#         name:
-#         type:
-#         nullable:
-#     filter:
-#       from: PatientDim as p # the general collection on Cosmos.
-#       join: #how you are using PKTable to get the data - where you use the joins to find the linked Dim/Fact
-#         - "INNER JOIN ##JVM_{{PKTable}} AS pk ON pk.EncounterKey = p.DurableKey" # Joining another table at the key from PKTable and pulling data into a
-#       where: #Logic for filtering things out ("AgeKey >18," etc.)
-#
-# === END FILE: YAMLs/template.yaml.example ===
 # === BEGIN FILE: pullmanager.py SHA256: ebdc02f9ba0685fc16b3aaea58c6563e0b91f3e69bcbce40bf953e414f787add SIZE: 408 ===
 # #!/usr/bin/env python3
 # """Launcher for the extracted Pullmanager runtime.
@@ -5075,7 +4465,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: 6e4ecb5860155092cdf80f92d3b27dca41b71b046197822820051992023c6ec2 SIZE: 11041 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: fed3c3037ae9ec592164480e1e337689fc97858ad9cba8a1a660cca4c2b81101 SIZE: 11018 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -5108,8 +4498,7 @@ if __name__ == "__main__":
 #
 # FIELDS = (
 #     # attribute, label, kind, hint
-#     ("template", "Template", "file", "required"),
-#     ("recipes", "Recipes", "file", "blank = bundled copy"),
+#     ("template", "Transfer YAML", "file", "from the Mac: makeYaml --export-transfer"),
 #     ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
 #     ("split_dir", "Split folder", "dir", "written by Export split"),
 #     ("sql_dir", "SQL folder", "dir", "written by Dry run"),
@@ -5363,7 +4752,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: 4e4c0b3c167132c38d7f83ad9542ffc26ffea33ae10fd8be330fda41ca1b62dc SIZE: 9693 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: d8088d73ae03148406efddb260fded64947a4aa4de126cbeda3d8d85e06c140a SIZE: 9806 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -5427,10 +4816,14 @@ if __name__ == "__main__":
 #
 # @dataclass
 # class Paths:
-#     """What the user has chosen. Blank optional fields fall back to defaults."""
+#     """What the user has chosen. Blank optional fields fall back to defaults.
+#
+#     `template` is a transfer YAML (D49): recipes already written out, so there
+#     is no recipes file to choose. Settings saved by an older launcher may still
+#     name one; unknown keys are ignored on load.
+#     """
 #
 #     template: str = ""
-#     recipes: str = ""
 #     datadictionary: str = ""
 #     split_dir: str = "split"
 #     sql_dir: str = "sql"
@@ -5451,10 +4844,8 @@ if __name__ == "__main__":
 #
 #
 # def _yaml_inputs(paths: Paths) -> list[str]:
-#     args = ["--template", _require(paths.template, "template")]
+#     args = ["--template", _require(paths.template, "transfer YAML")]
 #     # Optional: blank means the tool's own default, which is the bundled copy.
-#     if paths.recipes.strip():
-#         args += ["--recipes", paths.recipes.strip()]
 #     if paths.datadictionary.strip():
 #         args += ["--datadictionary", paths.datadictionary.strip()]
 #     return args
@@ -8241,7 +7632,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 11c2577984d550d6aa18168ea6978cc4580ac340386c883ebd2cc554c23adbf8 SIZE: 7011 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: d6a43781765be821c2b50279109eb3a88f2da94c59011d3273502b712a8acc9f SIZE: 7012 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -8355,7 +7746,7 @@ if __name__ == "__main__":
 #     def test_builds_a_field_for_every_input(self):
 #         self.assertEqual(
 #             set(self.app.vars),
-#             {"template", "recipes", "datadictionary", "split_dir", "sql_dir"},
+#             {"template", "datadictionary", "split_dir", "sql_dir"},
 #         )
 #
 #     def test_starts_from_the_defaults(self):
@@ -8365,11 +7756,11 @@ if __name__ == "__main__":
 #     def test_restores_remembered_choices(self):
 #         from ..launcher import Paths, save_settings
 #
-#         save_settings(Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml"), self.work)
+#         save_settings(Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml"), self.work)
 #         from ..launcher import locate_tools
 #         app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
-#         self.assertEqual(app.vars["template"].get(), "IBDTest.yaml")
-#         self.assertEqual(app.vars["recipes"].get(), "../data/recipes.yaml")
+#         self.assertEqual(app.vars["template"].get(), "IBD_transfer.yaml")
+#         self.assertEqual(app.vars["datadictionary"].get(), "../data/d.yaml")
 #
 #
 # class ActionTests(GuiTestCase):
@@ -8432,7 +7823,7 @@ if __name__ == "__main__":
 #         self.assertIn("Export a split", message)
 #
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 9b627fdad3bcdc3fd21552d485a2bf444ba7a1206fe3215dbdad9b0d7d9207e3 SIZE: 10477 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 513ea36725a7f38f4c77d7f9a81e528115782ac1edaec78e170197b528bfcc92 SIZE: 11091 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -8505,20 +7896,24 @@ if __name__ == "__main__":
 #
 # class CommandTests(unittest.TestCase):
 #     def test_validate_passes_every_input(self):
-#         paths = Paths(template="T.yaml", recipes="../data/r.yaml", datadictionary="../data/d.yaml")
+#         paths = Paths(template="T_transfer.yaml", datadictionary="../data/d.yaml")
 #         command = command_validate(TOOLS, paths)
 #         self.assertEqual(command[0], sys.executable)
 #         self.assertEqual(command[1], str(TOOLS.make_yaml))
 #         self.assertEqual(
 #             command[2:],
-#             ["--template", "T.yaml", "--recipes", "../data/r.yaml",
-#              "--datadictionary", "../data/d.yaml", "--validate"],
+#             ["--template", "T_transfer.yaml", "--datadictionary", "../data/d.yaml", "--validate"],
 #         )
 #
 #     def test_blank_optional_inputs_fall_back_to_the_bundled_copies(self):
 #         command = command_validate(TOOLS, Paths(template="T.yaml"))
-#         self.assertNotIn("--recipes", command)
 #         self.assertNotIn("--datadictionary", command)
+#
+#     def test_never_passes_recipes(self):
+#         # D49: a transfer YAML carries its recipes; none ship to the VM.
+#         for build in (command_validate, command_export_split):
+#             with self.subTest(command=build.__name__):
+#                 self.assertNotIn("--recipes", build(TOOLS, Paths(template="T.yaml")))
 #
 #     def test_a_template_is_required(self):
 #         for build in (command_validate, command_export_split):
@@ -8672,7 +8067,7 @@ if __name__ == "__main__":
 #
 # class SettingsTests(TempDirTestCase):
 #     def test_round_trips(self):
-#         paths = Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml", split_dir="out")
+#         paths = Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml", split_dir="out")
 #         save_settings(paths, self.tmp)
 #         self.assertEqual(load_settings(self.tmp), paths)
 #
@@ -8686,6 +8081,13 @@ if __name__ == "__main__":
 #         self.assertEqual(load_settings(self.tmp), Paths())
 #         (self.tmp / launcher.SETTINGS_FILENAME).write_text("{not json", encoding="utf-8")
 #         self.assertEqual(load_settings(self.tmp), Paths())
+#
+#     def test_settings_from_before_d49_still_load(self):
+#         # Older launchers remembered a recipes file; that choice no longer exists.
+#         (self.tmp / launcher.SETTINGS_FILENAME).write_text(
+#             '{"template": "IBDTest.yaml", "recipes": "../data/recipes.yaml"}', encoding="utf-8"
+#         )
+#         self.assertEqual(load_settings(self.tmp), Paths(template="IBDTest.yaml"))
 #
 #     def test_unknown_keys_are_ignored(self):
 #         (self.tmp / launcher.SETTINGS_FILENAME).write_text(
@@ -10615,7 +10017,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 3477283ea74721402addb5a73ed1966f87cc2d819ee18e1a731f33d1bcf667b2 SIZE: 110255 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 653652e40c73e4763048ba149278172aa2fdbc8234e8c7f74f83f8c98d3bd30d SIZE: 141611 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -10626,8 +10028,11 @@ if __name__ == "__main__":
 # from __future__ import annotations
 #
 # import argparse
+# import contextlib
 # import copy
 # import csv
+# import hashlib
+# import io
 # import json
 # import os
 # import re
@@ -10645,6 +10050,7 @@ if __name__ == "__main__":
 # OUTPUT_SUFFIX = "_Full"
 # PREYAML_SUFFIX = "_preyaml"
 # EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
+# TRANSFER_SUFFIX = "_transfer"
 # WILDCARD_CHARS = ("%", "_", "[", "]")
 # DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
 # DEFAULT_SPLIT_DIR = Path("split")
@@ -10661,6 +10067,9 @@ if __name__ == "__main__":
 #     code: str
 #     message: str
 #     context: str = ""
+#     # What to change, and where. On the VM the YAML is edited by hand (D49), so
+#     # an error that only says what is wrong leaves the reader guessing.
+#     fix: str = ""
 #
 #     def to_dict(self) -> dict[str, str]:
 #         return {
@@ -10668,6 +10077,7 @@ if __name__ == "__main__":
 #             "code": self.code,
 #             "message": self.message,
 #             "context": self.context,
+#             "fix": self.fix,
 #         }
 #
 #
@@ -10681,12 +10091,12 @@ if __name__ == "__main__":
 #     graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
 #     output_path: str | None = None
 #
-#     def error(self, code: str, message: str, context: str = "") -> None:
+#     def error(self, code: str, message: str, context: str = "", fix: str = "") -> None:
 #         self.ok = False
-#         self.errors.append(Message("ERROR", code, message, context))
+#         self.errors.append(Message("ERROR", code, message, context, fix))
 #
-#     def warn(self, code: str, message: str, context: str = "") -> None:
-#         self.warnings.append(Message("WARN", code, message, context))
+#     def warn(self, code: str, message: str, context: str = "", fix: str = "") -> None:
+#         self.warnings.append(Message("WARN", code, message, context, fix))
 #
 #
 # @dataclass
@@ -10937,23 +10347,23 @@ if __name__ == "__main__":
 #     return project_root() / "YAMLs" / "recipes.yaml"
 #
 #
+# YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
+# MISSING_TEMPLATE_FIX = (
+#     "Pass `--template` with the file to use. On the VM that is a transfer YAML, "
+#     "exported on the Mac with `makeYaml.py --export-transfer`."
+# )
+#
+#
 # def missing_template_message(template_path: Path) -> str | None:
 #     """A useful sentence for a template that does not exist, or None if it does.
 #
-#     The bundle ships the template as template.yaml.example so updates never land
-#     on a real one -- which means running without --template from an extracted
-#     bundle points at a file that is deliberately absent.
+#     The bundle ships no template (D49): the VM works from transfer YAMLs, so
+#     running without --template from an extracted bundle points at nothing.
 #     """
 #     path = Path(template_path)
 #     if path.is_file():
 #         return None
-#     example = path.with_name(path.name + ".example")
-#     if example.is_file():
-#         return (
-#             f"No template at {path}. Pass --template with your own file, or copy "
-#             f"{example.name} to start one."
-#         )
-#     return f"No template at {path}. Pass --template with the file to use."
+#     return f"No template at {path}."
 #
 #
 # def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
@@ -10990,32 +10400,121 @@ if __name__ == "__main__":
 #     return {recipe["name"]: recipe for recipe in recipes_doc.get("recipes", []) or []}
 #
 #
+# def batching_reference(item: Any) -> str | None:
+#     """The batching recipe a batching item names, or None if it stands alone.
+#
+#     `sex` and `{state: {values: [...]}}` lean on recipes.yaml; `2000`,
+#     `{chunk: 2000}` and a full definition with a `name` do not.
+#     """
+#     if isinstance(item, str):
+#         return item
+#     if isinstance(item, dict) and len(item) == 1:
+#         key = next(iter(item))
+#         if key not in ("chunk", "name"):
+#             return str(key)
+#     return None
+#
+#
+# def recipe_references(template: dict[str, Any]) -> list[str]:
+#     """Every place a template leans on a recipes file, as field paths.
+#
+#     A transfer YAML (D49) has none, which is what lets it split with no
+#     recipes file at all.
+#     """
+#     refs = []
+#     for idx, cohort in enumerate(template.get("cohorts", []) or []):
+#         if isinstance(cohort, dict) and "recipe" in cohort:
+#             refs.append(f"cohorts[{idx}].recipe: {cohort['recipe']}")
+#     for idx, item in enumerate(template.get("batching", []) or []):
+#         name = batching_reference(item)
+#         if name:
+#             refs.append(f"batching[{idx}]: {name}")
+#     return refs
+#
+#
+# def load_recipes(recipes_path: Path, template: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+#     """The recipes document, read only when the template refers to it.
+#
+#     None means an error was recorded. A template that refers to nothing gets an
+#     empty document, so a missing or unreadable recipes file cannot stop it.
+#     """
+#     refs = recipe_references(template)
+#     if not refs:
+#         return {}
+#     if not recipes_path.is_file():
+#         result.error(
+#             "recipes_not_found",
+#             f"This YAML refers to recipes ({'; '.join(refs)}), but there is no "
+#             f"recipes file at {recipes_path}.",
+#             refs[0].split(":")[0],
+#             fix="Recipes are kept on the Mac (D49). There, export this template with "
+#             "`makeYaml.py --export-transfer`, which writes every recipe out in full, and "
+#             "bring that file across. Or pass `--recipes` with the recipes file.",
+#         )
+#         return None
+#     try:
+#         return load_yaml(recipes_path) or {}
+#     except Exception as exc:
+#         result.error(
+#             "yaml_load_error",
+#             f"Could not read the recipes file: {exc}",
+#             str(recipes_path),
+#             fix="Correct the YAML syntax at the line named above.",
+#         )
+#         return None
+#
+#
+# def cohort_label(cohort: dict[str, Any]) -> str:
+#     """Where a cohort is in the file and what it is called: `cohorts[1] (Patients)`."""
+#     name = cohort.get("name") or cohort.get("dest_table") or "cohort"
+#     source = cohort.get("_source")
+#     return f"{source} ({name})" if source else str(name)
+#
+#
 # def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
 #     recipes = recipe_index(recipes_doc)
 #     imported: list[dict[str, Any]] = []
 #     for idx, cohort in enumerate(template.get("cohorts", []) or []):
 #         if not isinstance(cohort, dict):
-#             result.error("invalid_cohort", "Each cohort must be a mapping.", f"cohorts[{idx}]")
+#             result.error(
+#                 "invalid_cohort",
+#                 "Each cohort must be a mapping.",
+#                 f"cohorts[{idx}]",
+#                 fix="Write the cohort as keys under a `- `, e.g. `- name: Patients` "
+#                 "followed by `type:`, `from:` and `columns:`.",
+#             )
 #             continue
 #         if "recipe" in cohort:
 #             recipe_name = cohort["recipe"]
 #             if recipe_name not in recipes:
-#                 result.error("missing_recipe", f"Recipe `{recipe_name}` was not found.", f"cohorts[{idx}]")
+#                 available = ", ".join(sorted(recipes)) or "none"
+#                 result.error(
+#                     "missing_recipe",
+#                     f"Recipe `{recipe_name}` was not found.",
+#                     f"cohorts[{idx}].recipe",
+#                     fix=f"Correct the name. Recipes available: {available}.",
+#                 )
 #                 continue
 #             merged = deep_merge(copy.deepcopy(recipes[recipe_name]), cohort)
 #             merged["_recipe"] = recipe_name
 #             merged.pop("recipe", None)
 #         else:
 #             merged = copy.deepcopy(cohort)
+#         merged["_source"] = f"cohorts[{idx}]"
 #         if not merged.get("name"):
 #             merged["name"] = merged.get("dest_table") or merged.get("_recipe") or f"cohort_{idx + 1}"
-#             result.warn("default_name", "Cohort had no name; a generated name was assigned.", f"cohorts[{idx}]")
+#             result.warn(
+#                 "default_name",
+#                 f"Cohort had no name; `{merged['name']}` was assigned.",
+#                 f"cohorts[{idx}]",
+#                 fix="Add `name:` to the cohort.",
+#             )
 #         if not merged.get("dest_table"):
 #             merged["dest_table"] = merged["name"]
 #             result.warn(
 #                 "default_dest_table",
 #                 f"`dest_table` defaulted to cohort name `{merged['name']}`.",
-#                 merged["name"],
+#                 cohort_label(merged),
 #             )
 #         imported.append(merged)
 #     return imported
@@ -11183,7 +10682,9 @@ if __name__ == "__main__":
 #         result.error(
 #             "multiple_pk_cohorts",
 #             "Cannot infer PKTable because multiple type: PK cohorts exist.",
-#             ", ".join(str(c.get("name")) for c in pk),
+#             ", ".join(cohort_label(c) for c in pk),
+#             fix="Keep `type: PK` on one cohort, or bind `vars: {PKTable: <table>}` "
+#             "on each cohort that reads the PK.",
 #         )
 #     return None
 #
@@ -11198,6 +10699,7 @@ if __name__ == "__main__":
 #             "multiple_uploaded_pk",
 #             "Only one upload cohort may be marked `type: pk`.",
 #             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+#             fix="Remove `type: pk` from all but one entry under `upload_cohorts`.",
 #         )
 #         return None
 #     if not pk_uploads:
@@ -11207,7 +10709,9 @@ if __name__ == "__main__":
 #         result.error(
 #             "uploaded_pk_missing_keys",
 #             "Uploaded PK cohort must declare `key_columns`.",
-#             str(upload.get("name")),
+#             f"upload_cohorts ({upload.get('name')}).key_columns",
+#             fix="Add `key_columns: [<column>, ...]` naming the columns in the file "
+#             "that identify a row, e.g. `[PatientDurableKey]`.",
 #         )
 #     return str(upload.get("dest_table") or upload.get("name"))
 #
@@ -11221,8 +10725,8 @@ if __name__ == "__main__":
 #     meta: dict[str, Any],
 #     table_schemas: dict[str, list[str] | None],
 #     upload_tables: set[str],
-# ) -> str:
-#     """Explain an unbound table input and name what could fill it.
+# ) -> tuple[str, str]:
+#     """Explain an unbound table input and name what could fill it, as (message, fix).
 #
 #     It suggests; it never picks. Binding the wrong table would produce SQL that
 #     runs and returns the wrong rows, so the choice stays with the author. The
@@ -11269,8 +10773,7 @@ if __name__ == "__main__":
 #     example = (fits or unknown or ["<table>"])[0].split(" (")[0]
 #     recipe = cohort.get("_recipe")
 #     where = f"the cohort using recipe `{recipe}`" if recipe else "this cohort"
-#     parts.append(f"Bind it on {where}: `vars: {{{table_var}: {example}}}`.")
-#     return " ".join(parts)
+#     return " ".join(parts), f"Bind it on {where}: `vars: {{{table_var}: {example}}}`."
 #
 #
 # def validate_and_resolve(
@@ -11290,7 +10793,10 @@ if __name__ == "__main__":
 #         result.error(
 #             "uploaded_pk_with_generated_pk",
 #             "A template may not define both an uploaded PK cohort and generated type: PK cohorts.",
-#             uploaded_pk_table,
+#             f"upload_cohorts ({uploaded_pk_table}); "
+#             + ", ".join(cohort_label(c) for c in generated_pk),
+#             fix="Use one PK: remove `type: pk` from the upload, or remove `type: PK` "
+#             "from the cohorts named here.",
 #         )
 #     resolved_cohorts: list[dict[str, Any]] = []
 #     for cohort in cohorts:
@@ -11308,18 +10814,22 @@ if __name__ == "__main__":
 #             if var in table_inputs:
 #                 # A table input is not a plain value: say what kind of table it
 #                 # needs and which ones in this template could supply it.
+#                 message, fix = unbound_table_input_message(
+#                     cohort, var, table_inputs[var], table_schemas, set(uploads)
+#                 )
 #                 result.error(
 #                     "unbound_table_input",
-#                     unbound_table_input_message(
-#                         cohort, var, table_inputs[var], table_schemas, set(uploads)
-#                     ),
-#                     ", ".join(paths),
+#                     message,
+#                     f"{cohort_label(cohort)}: " + ", ".join(paths),
+#                     fix=fix,
 #                 )
 #             else:
 #                 result.error(
 #                     "missing_variable",
 #                     f"Cohort `{name}` requires variable `{var}`, but no value was provided.",
-#                     ", ".join(paths),
+#                     f"{cohort_label(cohort)}: " + ", ".join(paths),
+#                     fix=f"Add `{var}: <value>` under the top-level `vars`, or under this "
+#                     "cohort's own `vars`.",
 #                 )
 #         for table_var, cols in analysis["required_table_columns"].get(name, {}).items():
 #             table_name = vars_for_cohort.get(table_var)
@@ -11327,10 +10837,13 @@ if __name__ == "__main__":
 #                 continue
 #             table_name = str(table_name)
 #             if table_name not in table_schemas:
+#                 known = ", ".join(sorted(table_schemas)) or "none"
 #                 result.error(
 #                     "missing_input_table",
 #                     f"Cohort `{name}` uses `{table_var}={table_name}`, but no cohort/upload table provides it.",
-#                     table_var,
+#                     f"{cohort_label(cohort)}: vars.{table_var}",
+#                     fix=f"Set `{table_var}` to the `dest_table` of a cohort or upload in this "
+#                     f"file ({known}), or add an upload that provides `{table_name}`.",
 #                 )
 #                 continue
 #             if table_schemas[table_name] is None:
@@ -11340,7 +10853,9 @@ if __name__ == "__main__":
 #                 result.error(
 #                     "missing_input_column",
 #                     f"Cohort `{name}` uses `{table_var}={table_name}`, but `{table_name}` is missing columns: {', '.join(missing)}.",
-#                     table_var,
+#                     f"{cohort_label(cohort)}: vars.{table_var}",
+#                     fix=f"Add {', '.join(missing)} to `{table_name}` (its `columns`, or the "
+#                     f"upload file's header), or bind `{table_var}` to a table that has them.",
 #                 )
 #         resolved = copy.deepcopy(cohort)
 #         resolved["_resolved_vars"] = vars_for_cohort
@@ -11353,9 +10868,10 @@ if __name__ == "__main__":
 #
 # def upload_index(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
 #     uploads = {}
-#     for upload in template.get("upload_cohorts", []) or []:
+#     for idx, upload in enumerate(template.get("upload_cohorts", []) or []):
 #         if isinstance(upload, dict) and upload.get("name"):
 #             item = copy.deepcopy(upload)
+#             item["_source"] = f"upload_cohorts[{idx}]"
 #             item.setdefault("dest_table", item["name"])
 #             item.setdefault("scope", "global")
 #             item.setdefault("push_this_cycle", True)
@@ -11384,11 +10900,18 @@ if __name__ == "__main__":
 #             continue
 #         seen.add(ident)
 #         dest = str(upload.get("dest_table") or upload.get("name"))
+#         where = f"{upload.get('_source', 'upload_cohorts')} ({upload.get('name')})"
 #         file_type = str(upload.get("file_type", "")).lower()
 #         if file_type == "csv" and upload.get("file_loc"):
 #             file_path = resolve_file(base_dir, upload["file_loc"])
 #             if not file_path.exists():
-#                 result.error("missing_upload_file", f"Upload file not found: {file_path}", dest)
+#                 result.error(
+#                     "missing_upload_file",
+#                     f"Upload file not found: {file_path}",
+#                     f"{where}.file_loc",
+#                     fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
+#                     "copy the file to where it points.",
+#                 )
 #                 schemas[dest] = None
 #                 continue
 #             try:
@@ -11396,7 +10919,12 @@ if __name__ == "__main__":
 #                     reader = csv.reader(handle)
 #                     schemas[dest] = next(reader, [])
 #             except Exception as exc:
-#                 result.error("upload_read_error", f"Could not read upload CSV `{file_path}`: {exc}", dest)
+#                 result.error(
+#                     "upload_read_error",
+#                     f"Could not read upload CSV `{file_path}`: {exc}",
+#                     f"{where}.file_loc",
+#                     fix="Save the file as a UTF-8 CSV with a header row.",
+#                 )
 #                 schemas[dest] = []
 #         elif file_type in ("dbtable", "parquet"):
 #             schema = upload.get("columns") or upload.get("schema") or []
@@ -11410,7 +10938,12 @@ if __name__ == "__main__":
 #                 # reads as missing -- when the truth is only that nothing
 #                 # locally can check.
 #                 schemas[dest] = None
-#                 result.warn("upload_schema_unknown", f"Upload `{dest}` has no locally discoverable schema.", dest)
+#                 result.warn(
+#                     "upload_schema_unknown",
+#                     f"Upload `{dest}` has no locally discoverable schema.",
+#                     where,
+#                     fix="List its columns under `columns:` so the cohorts that read it can be checked.",
+#                 )
 #         else:
 #             schemas[dest] = []
 #     return schemas
@@ -11446,7 +10979,9 @@ if __name__ == "__main__":
 #             result.error(
 #                 "upload_not_pushed",
 #                 f"Upload `{name}` is referenced but has push_this_cycle: false.",
-#                 name,
+#                 f"{upload.get('_source', 'upload_cohorts')} ({name}).push_this_cycle",
+#                 fix="Set `push_this_cycle: true`, or add `assume_exists: true` if the table "
+#                 "is already in the Projects database.",
 #             )
 #
 #
@@ -11494,12 +11029,24 @@ if __name__ == "__main__":
 #         if expr.startswith("sql_condition"):
 #             args = split_args(re.match(r"^sql_condition\((.*)\)$", expr).group(1)) if re.match(r"^sql_condition\((.*)\)$", expr) else []
 #             if len(args) < 2:
-#                 result.error("bad_sql_condition", f"Could not parse sql_condition expression `{expr}`.", context)
+#                 result.error(
+#                     "bad_sql_condition",
+#                     f"Could not parse sql_condition expression `{expr}`.",
+#                     context,
+#                     fix="Write it as `{{ sql_condition('Column', VarName) }}`: a quoted "
+#                     "column, then the variable holding the values.",
+#                 )
 #                 return match.group(0)
 #             column = strip_quotes(args[0])
 #             var_name = args[1].strip()
 #             if var_name not in vars_for_cohort:
-#                 result.error("missing_variable", f"`sql_condition` references missing variable `{var_name}`.", context)
+#                 result.error(
+#                     "missing_variable",
+#                     f"`sql_condition` references missing variable `{var_name}`.",
+#                     context,
+#                     fix=f"Add `{var_name}: <value or list>` under the top-level `vars`, or "
+#                     "under this cohort's own `vars`.",
+#                 )
 #                 return match.group(0)
 #             return render_sql_condition(column, vars_for_cohort[var_name], result, context)
 #         if "|" in expr and "sql_condition" in expr:
@@ -11510,7 +11057,13 @@ if __name__ == "__main__":
 #                 return render_sql_condition(column, vars_for_cohort[var_name], result, context)
 #         if expr in vars_for_cohort:
 #             return str(vars_for_cohort[expr])
-#         result.error("missing_variable", f"Missing variable `{expr}`.", context)
+#         result.error(
+#             "missing_variable",
+#             f"Missing variable `{expr}`.",
+#             context,
+#             fix=f"Add `{expr}: <value>` under the top-level `vars`, or under this "
+#             "cohort's own `vars`.",
+#         )
 #         return match.group(0)
 #
 #     return JINJA_EXPR_RE.sub(repl, text)
@@ -11528,7 +11081,11 @@ if __name__ == "__main__":
 #     for cohort in cohorts:
 #         vars_for_cohort = cohort.get("_resolved_vars", {})
 #         clean = {k: v for k, v in cohort.items() if not k.startswith("_")}
-#         rendered.append(render_value(clean, vars_for_cohort, result, str(cohort.get("name"))))
+#         out = render_value(clean, vars_for_cohort, result, cohort_label(cohort))
+#         # Kept so later checks can say where the cohort is; stripped before output.
+#         if "_source" in cohort:
+#             out["_source"] = cohort["_source"]
+#         rendered.append(out)
 #     return rendered
 #
 #
@@ -11600,51 +11157,87 @@ if __name__ == "__main__":
 #
 # def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
 #     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
-#     for mult in template.get("multipliers", []) or []:
+#     for idx, mult in enumerate(template.get("multipliers", []) or []):
 #         if not isinstance(mult, dict):
 #             continue
+#         where = f"multipliers[{idx}] ({mult.get('name')})"
 #         stage = mult.get("stage")
 #         if stage not in ("during_build", "split_after_build"):
-#             result.error("bad_multiplier_stage", f"Unsupported multiplier stage `{stage}`.", str(mult.get("name")))
+#             result.error(
+#                 "bad_multiplier_stage",
+#                 f"Unsupported multiplier stage `{stage}`.",
+#                 f"{where}.stage",
+#                 fix="Use `stage: during_build` (each level builds its own cohorts) or "
+#                 "`stage: split_after_build` (one build, split by a PK column).",
+#             )
 #         if stage == "split_after_build":
 #             targets = pk_candidates if mult.get("applies_to") == "PKTable" else [mult.get("applies_to")]
 #             target_cols = sorted({col for target in targets for col in (table_schemas.get(str(target)) or [])})
-#             for level in mult.get("levels", []) or []:
+#             for level_idx, level in enumerate(mult.get("levels", []) or []):
 #                 col = level.get("column") if isinstance(level, dict) else None
 #                 if col and col not in target_cols:
 #                     result.error(
 #                         "missing_split_column",
 #                         f"Multiplier `{mult.get('name')}` references missing column `{col}` on `{mult.get('applies_to')}`.",
-#                         str(level.get("strat")),
+#                         f"{where}.levels[{level_idx}] ({level.get('strat')}).column",
+#                         fix=f"Add `{col}` to the columns of `{mult.get('applies_to')}`, or "
+#                         "correct `column` to one it has: "
+#                         f"{', '.join(target_cols) or 'none known'}.",
 #                     )
 #
 #
 # def expand_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
-#     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
+#     normalized = public_batching(normalize_batching(template.get("batching", []) or [], recipes_doc, CompileResult()))
 #     for cohort in cohorts:
 #         cohort["batching"] = normalized
 #     return cohorts
 #
 #
+# BATCHING_FORMS = (
+#     "Write each batching item as a batching recipe name (`sex`, Mac only), "
+#     "`chunk: <rows>`, or a full definition: `{name: sex, kind: column_values, "
+#     "applies_to: PKTable, column: Sex, values: [Female, Male]}`."
+# )
+#
+#
 # def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
+#     """Every batching item as a full definition, with its template overrides applied.
+#
+#     Each carries `_source` (its place under `batching`) for error messages; it
+#     is stripped wherever a definition is written out.
+#     """
 #     presets = {item["name"]: item for item in recipes_doc.get("batching_recipes", []) or [] if isinstance(item, dict) and item.get("name")}
 #     normalized = []
-#     for item in batch_items:
-#         if isinstance(item, int):
-#             normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item, "applies_to": "PKTable"})
+#     for idx, item in enumerate(batch_items):
+#         where = f"batching[{idx}]"
+#         if isinstance(item, int) and not isinstance(item, bool):
+#             entry = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": item, "applies_to": "PKTable"}
 #         elif isinstance(item, dict) and "chunk" in item:
-#             normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item["chunk"], "applies_to": "PKTable"})
+#             entry = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": item["chunk"], "applies_to": "PKTable"}
 #         elif isinstance(item, str) and item in presets:
-#             normalized.append(copy.deepcopy(presets[item]))
+#             entry = copy.deepcopy(presets[item])
 #         elif isinstance(item, dict) and len(item) == 1 and next(iter(item)) in presets:
 #             name = next(iter(item))
-#             merged = deep_merge(presets[name], item[name] or {})
-#             normalized.append(merged)
+#             entry = deep_merge(presets[name], item[name] or {})
 #         elif isinstance(item, dict) and item.get("name"):
-#             normalized.append(item)
+#             entry = copy.deepcopy(item)
 #         else:
-#             result.error("bad_batching", f"Could not understand batching item `{item}`.", "batching")
+#             available = ", ".join(sorted(presets))
+#             known = f" Batching recipes available: {available}." if available else ""
+#             result.error(
+#                 "bad_batching",
+#                 f"Could not understand batching item `{item}`.",
+#                 where,
+#                 fix=BATCHING_FORMS + known,
+#             )
+#             continue
+#         entry["_source"] = where
+#         normalized.append(entry)
 #     return normalized
+#
+#
+# def public_batching(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#     return [{k: v for k, v in item.items() if not k.startswith("_")} for item in items]
 #
 #
 # # =============================================================================
@@ -11737,7 +11330,7 @@ if __name__ == "__main__":
 #     for cohort in cohorts:
 #         if not isinstance(cohort, dict):
 #             continue
-#         label = str(cohort.get("dest_table") or cohort.get("name") or "cohort")
+#         label = cohort_label(cohort)
 #         aliases = cohort_aliases(cohort)
 #
 #         for table in sorted(set(aliases.values())):
@@ -11746,9 +11339,10 @@ if __name__ == "__main__":
 #             if table not in dictionary:
 #                 result.error(
 #                     "unknown_table",
-#                     f"Table `{table}` is not in the data dictionary. Add it to "
-#                     f"YAMLs/datadictionary.yaml, or correct the name.",
-#                     label,
+#                     f"Table `{table}` is not in the data dictionary.",
+#                     f"{label}: from/join",
+#                     fix=f"Correct the table name in `from` or `join`, or add `{table}` to "
+#                     "YAMLs/datadictionary.yaml on the Mac and rebuild the bundle.",
 #                 )
 #
 #         for column in cohort.get("columns") or []:
@@ -11763,18 +11357,21 @@ if __name__ == "__main__":
 #                     "dd_source_not_checked",
 #                     f"Source `{source}` is not a plain `alias.Column`, so its type "
 #                     f"cannot be checked against the data dictionary.",
-#                     label,
+#                     f"{label}: columns ({column.get('name')})",
 #                 )
 #                 continue
 #
 #             alias, column_name = match.group("alias"), match.group("column")
 #             table = aliases.get(alias)
 #             if table is None:
+#                 declared_aliases = ", ".join(sorted(aliases)) or "none"
 #                 result.error(
 #                     "unknown_alias",
 #                     f"Source `{source}` uses alias `{alias}`, which is not declared "
 #                     f"in this cohort's `from` or `join`.",
-#                     label,
+#                     f"{label}: columns ({column.get('name')}).source",
+#                     fix=f"Use one of this cohort's aliases ({declared_aliases}), or add a "
+#                     f"`join` that declares `{alias}`.",
 #                 )
 #                 continue
 #             if is_generated_reference(table) or table not in dictionary:
@@ -11785,8 +11382,10 @@ if __name__ == "__main__":
 #                 result.error(
 #                     "unknown_column",
 #                     f"Column `{column_name}` is not listed under `{table}` in the "
-#                     f"data dictionary. Check the alias and the spelling.",
-#                     label,
+#                     f"data dictionary.",
+#                     f"{label}: columns ({column.get('name')}).source",
+#                     fix=f"Check the spelling of `{column_name}`, and that `{alias}` is the "
+#                     "alias of the table that has it.",
 #                 )
 #                 continue
 #
@@ -11800,16 +11399,17 @@ if __name__ == "__main__":
 #                     "dd_unknown_family",
 #                     f"Data dictionary type `{family}` for `{table}.{column_name}` is "
 #                     f"not a family this checker knows, so `{declared}` was not verified.",
-#                     label,
+#                     f"{label}: columns ({column.get('name')}).type",
 #                 )
 #                 continue
 #             if tsql_base_type(declared) not in accepted:
+#                 dd_type = (dd_columns[column_name] or {}).get("type")
 #                 result.error(
 #                     "dd_type_mismatch",
 #                     f"`{source}` is declared `{declared}`, but the data dictionary "
-#                     f"says `{table}.{column_name}` is "
-#                     f"`{(dd_columns[column_name] or {}).get('type')}`.",
-#                     label,
+#                     f"says `{table}.{column_name}` is `{dd_type}`.",
+#                     f"{label}: columns ({column.get('name')}).type",
+#                     fix=f"Change `type` to a type compatible with `{dd_type}`.",
 #                 )
 #
 #
@@ -11852,16 +11452,88 @@ if __name__ == "__main__":
 #
 #
 #
+# BATCHING_KINDS = ("column_values", "row_chunk")
+#
+#
 # def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
+#     """Check each batching definition field by field.
+#
+#     On the VM these are written out in full and edited by hand (D49), so a
+#     missing `column` or a chunk with no size has to be caught here, with the
+#     field named, rather than surface as a confusing split or a failed run.
+#     """
 #     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
 #     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
 #     pk_cols = sorted({col for pk_table in pk_candidates for col in (table_schemas.get(str(pk_table)) or [])})
 #     for item in normalized:
-#         if item.get("kind") == "row_chunk":
+#         where = f"{item.get('_source', 'batching')} ({item.get('name')})"
+#         kind = str(item.get("kind") or "column_values")
+#         if kind not in BATCHING_KINDS:
+#             result.error(
+#                 "bad_batching_kind",
+#                 f"Batching `{item.get('name')}` has unknown kind `{kind}`.",
+#                 f"{where}.kind",
+#                 fix="Use `kind: column_values` (one run per value of a PK column) or "
+#                 "`kind: row_chunk` (fixed-size slices of the PK).",
+#             )
+#             continue
+#         if kind == "row_chunk":
+#             size = item.get("rows_per_batch")
+#             if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+#                 result.error(
+#                     "bad_chunk_size",
+#                     f"Batching `{item.get('name')}` needs a whole number of rows per "
+#                     f"batch, not `{size}`.",
+#                     f"{where}.rows_per_batch",
+#                     fix="Give it a size: `chunk: 2000`, or `rows_per_batch: 2000` in a "
+#                     "full definition.",
+#                 )
+#             else:
+#                 result.warn(
+#                     "chunk_pulls_first_chunk_only",
+#                     "`chunk` batching currently pulls only the first chunk of each run, "
+#                     "with no error (roadmap, Known Bugs).",
+#                     where,
+#                     fix="Batch with explicit `values:` on a PK column instead until it is fixed.",
+#                 )
 #             continue
 #         col = item.get("column")
-#         if col and col not in pk_cols:
-#             result.error("missing_batch_column", f"Batching `{item.get('name')}` requires missing PK column `{col}`.", "PKTable")
+#         if not col:
+#             result.error(
+#                 "batching_missing_column",
+#                 f"Batching `{item.get('name')}` does not say which PK column to split on.",
+#                 f"{where}.column",
+#                 fix="Add `column: <PK column>`, e.g. `column: Sex`.",
+#             )
+#             continue
+#         if col not in pk_cols:
+#             result.error(
+#                 "missing_batch_column",
+#                 f"Batching `{item.get('name')}` requires missing PK column `{col}`.",
+#                 f"{where}.column",
+#                 fix=f"Output `{col}` from the PK cohort, or correct `column` to one it has: "
+#                 f"{', '.join(pk_cols) or 'none known'}.",
+#             )
+#         values = item.get("values")
+#         if values == "all":
+#             result.warn(
+#                 "batching_values_all",
+#                 f"Batching `{item.get('name')}` uses `values: all`, which is not supported "
+#                 "yet: the pull stops when it reaches this batch.",
+#                 f"{where}.values",
+#                 fix="List the values: `values: [LA, MS, ...]`, with `include_other: true` "
+#                 "to catch the rest.",
+#             )
+#         elif not isinstance(values, list) or not values:
+#             result.error(
+#                 "batching_missing_values",
+#                 f"Batching `{item.get('name')}` has no `values` to split `{col}` by.",
+#                 f"{where}.values",
+#                 fix="Add `values: [<value>, ...]`, with `include_other: true` to catch the rest.",
+#             )
+#
+#
+# COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
 #
 #
 # def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
@@ -11873,14 +11545,24 @@ if __name__ == "__main__":
 #         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
 #     if value in ("dual", "both"):
 #         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
-#     result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{cosmos}`.", "cosmos_db")
+#     result.error(
+#         "bad_cosmos_db",
+#         f"Unsupported cosmos_db value `{cosmos}`.",
+#         "cosmos_db",
+#         fix=COSMOS_DB_FIX,
+#     )
 #     return cohorts
 #
 #
 # def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
 #     value = str(template.get("cosmos_db", "COSMOS")).lower()
 #     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
-#         result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.", "cosmos_db")
+#         result.error(
+#             "bad_cosmos_db",
+#             f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.",
+#             "cosmos_db",
+#             fix=COSMOS_DB_FIX,
+#         )
 #
 #
 # def with_cosmos_suffix(cohort: dict[str, Any], suffix: str, cosmos_db: str) -> dict[str, Any]:
@@ -11904,6 +11586,8 @@ if __name__ == "__main__":
 #     if result.errors:
 #         for msg in result.errors:
 #             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+#             if msg.fix:
+#                 lines.append(f"  - Fix: {msg.fix}")
 #     else:
 #         lines.append("- None")
 #     lines.append("")
@@ -11911,6 +11595,8 @@ if __name__ == "__main__":
 #     if result.warnings:
 #         for msg in result.warnings:
 #             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+#             if msg.fix:
+#                 lines.append(f"  - Fix: {msg.fix}")
 #     else:
 #         lines.append("- None")
 #     lines.append("")
@@ -11943,13 +11629,24 @@ if __name__ == "__main__":
 #     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
 #     missing = missing_template_message(template_path)
 #     if missing:
-#         result.error("template_not_found", missing, str(template_path))
+#         result.error("template_not_found", missing, str(template_path), fix=MISSING_TEMPLATE_FIX)
 #         return result
 #     try:
-#         template = normalize_template(load_yaml(template_path), result)
-#         recipes_doc = load_yaml(recipes_path) or {}
+#         raw = load_yaml(template_path)
 #     except Exception as exc:
-#         result.error("yaml_load_error", str(exc), str(template_path))
+#         result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
+#         return result
+#     if raw is not None and not isinstance(raw, dict):
+#         result.error(
+#             "invalid_template",
+#             "Template YAML must be a mapping.",
+#             str(template_path),
+#             fix="Start the file with top-level keys such as `project_folder:` and `cohorts:`.",
+#         )
+#         return result
+#     template = normalize_template(raw, result)
+#     recipes_doc = load_recipes(recipes_path, template, result)
+#     if recipes_doc is None:
 #         return result
 #
 #     cohorts = import_recipes(template, recipes_doc, result)
@@ -11971,7 +11668,7 @@ if __name__ == "__main__":
 #         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 #
 #     finished = copy.deepcopy(template)
-#     finished["cohorts"] = rendered_cohorts
+#     finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
 #     finished.pop("example_cohorts", None)
 #     result.finished_yaml = finished
 #     result.analysis = analysis
@@ -12005,7 +11702,7 @@ if __name__ == "__main__":
 #     try:
 #         recipes_doc = load_yaml(recipes_path) or {}
 #     except Exception as exc:
-#         result.error("yaml_load_error", str(exc), str(recipes_path))
+#         result.error("yaml_load_error", str(exc), str(recipes_path), fix=YAML_SYNTAX_FIX)
 #         return result
 #     result.analysis = {
 #         "recipes": [r.get("name") for r in recipes_doc.get("recipes", []) or []],
@@ -12038,6 +11735,7 @@ if __name__ == "__main__":
 #             "multiple_uploaded_pk",
 #             "Only one upload cohort may be marked `type: pk`.",
 #             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+#             fix="Remove `type: pk` from all but one entry under `upload_cohorts`.",
 #         )
 #         return None
 #     if not pk_uploads:
@@ -12048,7 +11746,9 @@ if __name__ == "__main__":
 #         result.error(
 #             "uploaded_pk_missing_keys",
 #             "Uploaded PK cohort must declare `key_columns`.",
-#             str(upload.get("name")),
+#             f"upload_cohorts ({upload.get('name')}).key_columns",
+#             fix="Add `key_columns: [<column>, ...]` naming the columns in the file "
+#             "that identify a row, e.g. `[PatientDurableKey]`.",
 #         )
 #     return {
 #         "kind": "uploaded_cohort",
@@ -12155,8 +11855,10 @@ if __name__ == "__main__":
 #                 result.error(
 #                     "duplicate_batch_name",
 #                     f"Batch combination `{name}` is not unique in session `{session_id}`. "
-#                     "Two batching dimensions produce the same label; rename a value.",
-#                     session_id,
+#                     "Two batching dimensions produce the same label.",
+#                     "batching",
+#                     fix="Change one of the `values` so the labels differ; labels keep only "
+#                     "letters, digits, `-` and `_`, so `A B` and `A-B` collide.",
 #                 )
 #             continue
 #         seen.add(name)
@@ -12225,12 +11927,15 @@ if __name__ == "__main__":
 #             )
 #         )
 #
+#     source: dict[str, Any] = {"template": str(template_path), "recipes": str(recipes_path)}
+#     if isinstance(finished_yaml.get("transfer"), dict):
+#         # A transfer YAML carries its recipes inline (D49); whatever --recipes
+#         # defaulted to was never read, so naming it would mislead.
+#         source["recipes"] = None
+#         source["transfer"] = copy.deepcopy(finished_yaml["transfer"])
 #     return SplitPlan(
 #         project=project_metadata(finished_yaml),
-#         source={
-#             "template": str(template_path),
-#             "recipes": str(recipes_path),
-#         },
+#         source=source,
 #         sessions=sessions,
 #     )
 #
@@ -12284,6 +11989,7 @@ if __name__ == "__main__":
 #     doc.pop("multipliers", None)
 #     doc.pop("batching", None)
 #     doc.pop("example_cohorts", None)
+#     doc.pop("transfer", None)
 #     return doc
 #
 #
@@ -12446,23 +12152,31 @@ if __name__ == "__main__":
 #     try:
 #         template = load_yaml(template_path) or {}
 #     except Exception as exc:
-#         result.error("yaml_load_error", str(exc), str(template_path))
+#         result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
 #         return result
 #     if not isinstance(template, dict):
-#         result.error("invalid_template", "Template YAML must be a mapping.", str(template_path))
+#         result.error(
+#             "invalid_template",
+#             "Template YAML must be a mapping.",
+#             str(template_path),
+#             fix="Start the file with top-level keys such as `project_folder:` and `cohorts:`.",
+#         )
 #         return result
 #     if mode not in ("symbolic", "expanded-recipes"):
-#         result.error("bad_preyaml_mode", f"Unsupported pre-YAML mode `{mode}`.", mode)
+#         result.error(
+#             "bad_preyaml_mode",
+#             f"Unsupported pre-YAML mode `{mode}`.",
+#             mode,
+#             fix="Use `symbolic` or `expanded-recipes`.",
+#         )
 #         return result
 #
 #     if mode == "symbolic":
 #         preyaml = copy.deepcopy(template)
 #         suffix = PREYAML_SUFFIX
 #     else:
-#         try:
-#             recipes_doc = load_yaml(recipes_path) or {}
-#         except Exception as exc:
-#             result.error("yaml_load_error", str(exc), str(recipes_path))
+#         recipes_doc = load_recipes(recipes_path, template, result)
+#         if recipes_doc is None:
 #             return result
 #         normalized = normalize_template(template, result)
 #         cohorts = import_recipes(normalized, recipes_doc, result)
@@ -12481,6 +12195,122 @@ if __name__ == "__main__":
 #         report_out = Path(report_path)
 #         report_out.parent.mkdir(parents=True, exist_ok=True)
 #         report_out.write_text(build_report(result), encoding="utf-8")
+#     return result
+#
+#
+# def transfer_output_path(template: dict[str, Any], template_path: Path) -> Path:
+#     """`<project>_transfer.yaml`, beside the template it came from."""
+#     name = str(template.get("project_folder") or template_path.stem).strip() or "project"
+#     clean = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "project"
+#     return template_path.parent / f"{clean}{TRANSFER_SUFFIX}.yaml"
+#
+#
+# def place_uploads(
+#     transfer: dict[str, Any],
+#     template_dir: Path,
+#     out_dir: Path,
+#     result: CompileResult,
+#     write: bool,
+# ) -> list[str]:
+#     """Keep every upload at its `file_loc`, relative to the transfer YAML.
+#
+#     `file_loc` is never rewritten: it is what the VM resolves, relative to the
+#     transfer YAML. Written beside the template, the files are already in place.
+#     Written elsewhere, each is copied into the output folder at the same
+#     relative path, so that folder is the unit to carry across. A `file_loc`
+#     that leaves the template's folder (`..`) or is absolute cannot be copied
+#     that way; it is left as written, with a warning.
+#
+#     Returns each upload as `file_loc`, the path the VM will look for.
+#     """
+#     listed: list[str] = []
+#     same_place = out_dir.resolve() == template_dir.resolve()
+#     for idx, upload in enumerate(transfer.get("upload_cohorts", []) or []):
+#         if not isinstance(upload, dict) or not upload.get("file_loc"):
+#             continue
+#         file_loc = str(upload["file_loc"])
+#         listed.append(file_loc)
+#         if same_place:
+#             continue
+#         rel = Path(file_loc)
+#         if rel.is_absolute() or ".." in rel.parts:
+#             result.warn(
+#                 "upload_not_copied",
+#                 f"`{file_loc}` is outside the template's folder, so it was not copied "
+#                 "beside the transfer YAML.",
+#                 f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
+#                 fix="Put the file at that path relative to the transfer YAML on the VM, "
+#                 "or move it under the template's folder and point `file_loc` there.",
+#             )
+#             continue
+#         if write:
+#             target = out_dir / rel
+#             target.parent.mkdir(parents=True, exist_ok=True)
+#             shutil.copyfile(resolve_file(template_dir, file_loc), target)
+#     return listed
+#
+#
+# def build_transfer(
+#     template_path: str | Path | None = None,
+#     recipes_path: str | Path | None = None,
+#     output_path: str | Path | None = None,
+#     write: bool = False,
+#     datadictionary_path: str | Path | None = None,
+# ) -> CompileResult:
+#     """The template with every recipe written out in full, for the VM (D49).
+#
+#     Cohort recipes are merged into their cohorts and batching recipes replaced
+#     by their full definitions. Multipliers and batching are not applied: they
+#     stay declared for the split on the VM. Written only if the template passes
+#     full validation here, so a file that will not split never leaves the Mac.
+#     Written to another folder, its upload files are copied alongside it.
+#     """
+#     template_path = Path(template_path) if template_path else default_template_path()
+#     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+#     result = compile_yaml(
+#         template_path=template_path,
+#         recipes_path=recipes_path,
+#         datadictionary_path=datadictionary_path,
+#     )
+#     if result.errors:
+#         return result
+#
+#     # Validation passed, so these cannot fail; their messages were already
+#     # reported by the compile above and would only repeat.
+#     quiet = CompileResult()
+#     template = normalize_template(load_yaml(template_path), quiet)
+#     recipes_doc = load_recipes(recipes_path, template, quiet) or {}
+#     used = [str(cohort["recipe"]) for cohort in template.get("cohorts", []) or [] if isinstance(cohort, dict) and "recipe" in cohort]
+#
+#     body = copy.deepcopy(template)
+#     body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet)]
+#     if body.get("batching"):
+#         body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
+#     body.pop("example_cohorts", None)
+#     body.pop("transfer", None)
+#
+#     refs = recipe_references(template)
+#     provenance: dict[str, Any] = {"from_template": template_path.name}
+#     if refs:
+#         provenance["recipes_sha256"] = hashlib.sha256(recipes_path.read_bytes()).hexdigest()[:12]
+#         provenance["recipes_used"] = sorted(set(used)) + sorted(
+#             {ref.split(": ", 1)[1] for ref in refs if ref.startswith("batching")}
+#         )
+#     elif isinstance(template.get("transfer"), dict):
+#         # Re-exporting a transfer YAML keeps the record of where it came from.
+#         provenance = copy.deepcopy(template["transfer"])
+#     transfer = {"transfer": provenance, **body}
+#
+#     out_path = Path(output_path) if output_path else transfer_output_path(template, template_path)
+#     if write:
+#         out_path.parent.mkdir(parents=True, exist_ok=True)
+#     result.analysis["transfer_uploads"] = place_uploads(
+#         transfer, template_path.parent, out_path.parent, result, write
+#     )
+#     result.finished_yaml = transfer
+#     result.output_path = str(out_path)
+#     if write:
+#         dump_yaml(transfer, out_path)
 #     return result
 #
 #
@@ -13224,18 +13054,13 @@ if __name__ == "__main__":
 #             with self.subTest(route=name):
 #                 self.assertHasError(route(), "unknown_table")
 #
-#     def test_missing_template_explains_the_example(self):
-#         # The bundle ships template.yaml.example, so the default is absent by
-#         # design; the error has to say so rather than report a bare errno.
-#         (self.tmp / "template.yaml.example").write_text("x: 1\n", encoding="utf-8")
-#         res = compile_yaml(self.tmp / "template.yaml", tiny_recipes_path(self.tmp))
-#         self.assertHasError(res, "template_not_found")
-#         self.assertIn("template.yaml.example", res.errors[0].message)
-#
-#     def test_missing_template_without_an_example(self):
+#     def test_missing_template_points_at_the_transfer_export(self):
+#         # The bundle ships no template (D49), so the default is absent by
+#         # design; the error has to say what to pass rather than a bare errno.
 #         res = compile_yaml(self.tmp / "nope.yaml", tiny_recipes_path(self.tmp))
 #         self.assertHasError(res, "template_not_found")
-#         self.assertIn("--template", res.errors[0].message)
+#         self.assertIn("--template", res.errors[0].fix)
+#         self.assertIn("--export-transfer", res.errors[0].fix)
 #
 #     def test_real_dictionary_accepts_the_bundled_recipes(self):
 #         # The shipped recipes and dictionary must agree, or every template
@@ -13334,8 +13159,8 @@ if __name__ == "__main__":
 #         self.assertIn("No table in this template provides those columns", message)
 #
 #     def test_shows_how_to_bind_it(self):
-#         message = self.binding_error(self.compile())
-#         self.assertIn("vars: {CodesTable: Codes}", message)
+#         errors = [m for m in self.compile().errors if m.code == "unbound_table_input"]
+#         self.assertIn("vars: {CodesTable: Codes}", errors[0].fix)
 #
 #     def test_binding_on_the_cohort_resolves_it(self):
 #         # The recommended place: next to the recipe that needs it, rather than
@@ -13365,6 +13190,253 @@ if __name__ == "__main__":
 #         self.assertNotIn("unbound_table_input", [m.code for m in res.errors])
 #
 #
+# class TransferTests(MakeYamlTest):
+#     """The transfer YAML (D49): recipes written out, nothing applied."""
+#
+#     EXTRA = """
+# upload_cohorts:
+#   - name: Codes
+#     dest_table: Codes
+#     file_type: csv
+#     file_loc: data/codes.csv
+# multipliers:
+#   - name: Type
+#     stage: during_build
+#     levels:
+#       - strat: A
+#         vars:
+#           ICD_Value: A%
+#       - strat: B
+#         vars:
+#           ICD_Value: B%
+# batching:
+#   - sex
+#   - state:
+#       values: [LA, MS]
+#       include_other: true
+# """
+#
+#     def setUp(self):
+#         super().setUp()
+#         (self.tmp / "data").mkdir()
+#         (self.tmp / "data" / "codes.csv").write_text("Code\nK50\n", encoding="utf-8")
+#         self.template, self.recipes = self.write_pair(extra=self.EXTRA)
+#         self.no_recipes = self.tmp / "no_such_recipes.yaml"
+#
+#     def export(self, out: Path | None = None) -> CompileResult:
+#         res = build_transfer(self.template, self.recipes, output_path=out, write=True)
+#         self.assertCompiles(res)
+#         return res
+#
+#     def split_tree(self, template: Path, recipes: Path, out: Path) -> dict[str, str]:
+#         res = write_split_artifacts(template, recipes, output_dir=out)
+#         self.assertCompiles(res)
+#         tree = {}
+#         for path in sorted(out.rglob("*")):
+#             if path.is_file():
+#                 tree[path.relative_to(out).as_posix()] = path.read_text(encoding="utf-8")
+#         manifest = load_yaml(out / "pullmanifest.yaml")
+#         manifest.pop("source")
+#         tree["pullmanifest.yaml"] = json.dumps(manifest, sort_keys=True, default=str)
+#         return tree
+#
+#     def test_splits_alone_exactly_as_the_template_does(self):
+#         # The outcome that matters: with no recipes file at all, the VM gets
+#         # the same sessions, runs and SQL inputs the Mac would have produced.
+#         transfer = Path(self.export().output_path)
+#         expected = self.split_tree(self.template, self.recipes, self.tmp / "from_template")
+#         actual = self.split_tree(transfer, self.no_recipes, self.tmp / "from_transfer")
+#         self.assertEqual(sorted(expected), sorted(actual))
+#         for rel in expected:
+#             with self.subTest(file=rel):
+#                 self.assertEqual(expected[rel], actual[rel])
+#
+#     def test_the_realistic_templates_split_alone_too(self):
+#         cases = project_root() / "YAMLs" / "manager_test_cases"
+#         recipes = default_recipes_path()
+#         if not recipes.is_file() or not cases.is_dir():
+#             self.skipTest("needs the repo's recipes and test cases")
+#         for name in ("01_valid_basic.yaml", "02_valid_multipliers_batching.yaml"):
+#             with self.subTest(template=name):
+#                 work = self.tmp / name
+#                 shutil.copytree(cases, work)
+#                 template = work / name
+#                 res = build_transfer(template, recipes, write=True)
+#                 self.assertCompiles(res)
+#                 expected = self.split_tree(template, recipes, work / "a")
+#                 actual = self.split_tree(Path(res.output_path), self.no_recipes, work / "b")
+#                 self.assertEqual(expected, actual)
+#
+#     def test_refers_to_no_recipes(self):
+#         transfer = load_yaml(self.export().output_path)
+#         self.assertEqual(recipe_references(transfer), [])
+#         self.assertEqual(transfer["batching"][0]["column"], "Sex")
+#         self.assertEqual(transfer["batching"][1]["values"], ["LA", "MS"])
+#         self.assertTrue(transfer["batching"][1]["include_other"])
+#
+#     def test_applies_neither_multipliers_nor_batching(self):
+#         transfer = load_yaml(self.export().output_path)
+#         self.assertEqual([c["name"] for c in transfer["cohorts"]], ["Patients", "OtherDx"])
+#         self.assertEqual(len(transfer["multipliers"]), 1)
+#         self.assertNotIn("batching", transfer["cohorts"][0])
+#
+#     def test_named_for_the_project_beside_the_template(self):
+#         self.assertEqual(Path(self.export().output_path), self.tmp / "Test_Run_transfer.yaml")
+#
+#     def test_records_where_it_came_from(self):
+#         provenance = load_yaml(self.export().output_path)["transfer"]
+#         self.assertEqual(provenance["from_template"], "template.yaml")
+#         self.assertEqual(
+#             provenance["recipes_sha256"],
+#             hashlib.sha256(self.recipes.read_bytes()).hexdigest()[:12],
+#         )
+#         self.assertIn("PatientWithDx", provenance["recipes_used"])
+#         self.assertIn("sex", provenance["recipes_used"])
+#
+#     def test_same_inputs_give_the_same_file(self):
+#         first = Path(self.export().output_path).read_bytes()
+#         second = Path(self.export().output_path).read_bytes()
+#         self.assertEqual(first, second)
+#
+#     def test_written_elsewhere_its_folder_is_self_contained(self):
+#         # file_loc is what the VM resolves, so it must not become a path that
+#         # only exists on this machine; the file moves instead.
+#         out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+#         res = self.export(out)
+#         self.assertEqual(load_yaml(out)["upload_cohorts"][0]["file_loc"], "data/codes.csv")
+#         self.assertEqual(res.analysis["transfer_uploads"], ["data/codes.csv"])
+#         self.assertEqual((out.parent / "data" / "codes.csv").read_text(encoding="utf-8"), "Code\nK50\n")
+#         (self.tmp / "data" / "codes.csv").unlink()
+#         self.assertCompiles(compile_yaml(out, self.no_recipes))
+#
+#     def test_an_upload_outside_the_template_folder_is_left_with_a_warning(self):
+#         shared = self.tmp.parent / f"{self.tmp.name}_shared"
+#         shared.mkdir()
+#         self.addCleanup(shutil.rmtree, shared, True)
+#         (shared / "codes.csv").write_text("Code\nK50\n", encoding="utf-8")
+#         template = write_temp_yaml(
+#             self.tmp, "outside.yaml",
+#             tiny_template(self.EXTRA.replace("data/codes.csv", f"../{shared.name}/codes.csv")),
+#         )
+#         out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+#         res = build_transfer(template, self.recipes, output_path=out, write=True)
+#         self.assertCompiles(res)
+#         self.assertHasWarning(res, "upload_not_copied")
+#         self.assertEqual(
+#             load_yaml(out)["upload_cohorts"][0]["file_loc"], f"../{shared.name}/codes.csv"
+#         )
+#
+#     def test_an_invalid_template_writes_nothing(self):
+#         broken = write_temp_yaml(
+#             self.tmp, "broken.yaml", tiny_template().replace("cosmos_db: COSMOS", "cosmos_db: Nowhere")
+#         )
+#         res = build_transfer(broken, self.recipes, write=True)
+#         self.assertHasError(res, "bad_cosmos_db")
+#         self.assertFalse((self.tmp / "Test_Run_transfer.yaml").exists())
+#
+#     def test_a_template_without_its_recipes_points_at_the_export(self):
+#         res = compile_yaml(self.template, self.no_recipes)
+#         self.assertHasError(res, "recipes_not_found")
+#         self.assertIn("--export-transfer", res.errors[0].fix)
+#         self.assertIn("cohorts[0].recipe: PatientWithDx", res.errors[0].message)
+#         self.assertEqual(len(res.errors), 1)
+#
+#     def test_an_unreadable_recipes_file_is_ignored_when_nothing_refers_to_it(self):
+#         transfer = Path(self.export().output_path)
+#         garbage = write_temp_yaml(self.tmp, "garbage.yaml", "recipes: [unclosed")
+#         self.assertCompiles(compile_yaml(transfer, garbage))
+#
+#
+# class BatchingDefinitionTests(MakeYamlTest):
+#     """Batching written out in full is checked field by field (D49)."""
+#
+#     def check(self, batching: str) -> CompileResult:
+#         return self.compile_template(extra="batching:\n" + batching)
+#
+#     def assertFlags(self, res: CompileResult, code: str, field: str) -> None:
+#         found = [m for m in res.errors + res.warnings if m.code == code]
+#         self.assertTrue(found, summarize_result(res))
+#         self.assertTrue(found[0].context.endswith(field), found[0].context)
+#         self.assertTrue(found[0].fix, "no fix")
+#
+#     def test_a_full_definition_compiles(self):
+#         self.assertCompiles(self.check(
+#             "  - {name: sex, kind: column_values, applies_to: PKTable, column: Sex, values: [Female]}\n"
+#         ))
+#
+#     def test_missing_column_is_named(self):
+#         res = self.check("  - {name: sex, kind: column_values, values: [Female]}\n")
+#         self.assertFlags(res, "batching_missing_column", "batching[0] (sex).column")
+#
+#     def test_missing_values_is_named(self):
+#         res = self.check("  - {name: sex, kind: column_values, column: Sex}\n")
+#         self.assertFlags(res, "batching_missing_values", ".values")
+#
+#     def test_unknown_kind_is_named(self):
+#         res = self.check("  - {name: sex, kind: by_value, column: Sex, values: [F]}\n")
+#         self.assertFlags(res, "bad_batching_kind", ".kind")
+#
+#     def test_a_chunk_without_a_size_is_refused(self):
+#         # The `chunk` batching recipe ships with `rows_per_batch: required`.
+#         self.assertFlags(self.check("  - chunk\n"), "bad_chunk_size", ".rows_per_batch")
+#
+#     def test_chunking_warns_of_the_known_bug(self):
+#         res = self.check("  - chunk: 2000\n")
+#         self.assertCompiles(res)
+#         self.assertFlags(res, "chunk_pulls_first_chunk_only", "batching[0] (chunk)")
+#
+#     def test_values_all_warns_before_the_pull_does(self):
+#         res = self.check("  - state\n")
+#         self.assertCompiles(res)
+#         self.assertFlags(res, "batching_values_all", ".values")
+#
+#     def test_an_unknown_item_lists_the_forms(self):
+#         res = self.check("  - nosuch\n")
+#         self.assertFlags(res, "bad_batching", "batching[0]")
+#         self.assertIn("chunk: <rows>", res.errors[0].fix)
+#
+#
+# class FixTests(unittest.TestCase):
+#     """Every error says what to change (D49): on the VM the YAML is edited by hand."""
+#
+#     def test_every_error_carries_a_fix(self):
+#         import ast
+#
+#         tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+#         missing = []
+#         for node in ast.walk(tree):
+#             if (
+#                 isinstance(node, ast.Call)
+#                 and isinstance(node.func, ast.Attribute)
+#                 and node.func.attr == "error"
+#                 and isinstance(node.func.value, ast.Name)
+#                 and node.func.value.id == "result"
+#                 and not any(kw.arg == "fix" for kw in node.keywords)
+#             ):
+#                 missing.append(node.lineno)
+#         self.assertEqual(missing, [], "result.error(...) without fix= at these lines")
+#
+#     def test_the_fix_is_printed_under_its_error(self):
+#         result = CompileResult()
+#         result.error("x", "Broken.", "cohorts[0]", fix="Mend it.")
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out):
+#             print_messages(result)
+#         self.assertEqual(
+#             out.getvalue().splitlines(),
+#             ["ERROR [x] at cohorts[0]: Broken.", "      fix: Mend it."],
+#         )
+#
+#     def test_errors_point_at_the_cohort_by_position_and_name(self):
+#         with tempfile.TemporaryDirectory() as d:
+#             tmp = Path(d)
+#             template = write_temp_yaml(tmp, "t.yaml", tiny_template().replace("ICD_Value:", "Unused:"))
+#             res = compile_yaml(template, tiny_recipes_path(tmp))
+#         contexts = [m.context for m in res.errors if m.code == "missing_variable"]
+#         self.assertTrue(contexts, summarize_result(res))
+#         self.assertTrue(contexts[0].startswith("cohorts[0] (Patients)"), contexts[0])
+#
+#
 # TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
 #     "loading": LoadingTests,
 #     "recipes": RecipeTests,
@@ -13383,6 +13455,9 @@ if __name__ == "__main__":
 #     "uploaded_pk": UploadedPkTests,
 #     "datadictionary": DataDictionaryTests,
 #     "table_binding": TableBindingTests,
+#     "transfer": TransferTests,
+#     "batching_definitions": BatchingDefinitionTests,
+#     "fixes": FixTests,
 # }
 #
 #
@@ -13408,10 +13483,12 @@ if __name__ == "__main__":
 #
 #
 # def print_messages(result: CompileResult) -> None:
-#     for msg in result.errors:
-#         print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
-#     for msg in result.warnings:
-#         print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
+#     for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings)):
+#         for msg in messages:
+#             where = f" at {msg.context}" if msg.context else ""
+#             print(f"{label} [{msg.code}]{where}: {msg.message}")
+#             if msg.fix:
+#                 print(f"      fix: {msg.fix}")
 #
 #
 # def main(argv: list[str] | None = None) -> int:
@@ -13429,6 +13506,12 @@ if __name__ == "__main__":
 #     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
 #     parser.add_argument("--inspect-recipes", action="store_true")
 #     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
+#     parser.add_argument(
+#         "--export-transfer",
+#         action="store_true",
+#         help="Write <project>_transfer.yaml for the VM: recipes written out in full, "
+#         "multipliers and batching left for the split (D49). --out chooses the file.",
+#     )
 #     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")
 #     parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
 #     parser.add_argument("--report", action="store_true")
@@ -13463,6 +13546,27 @@ if __name__ == "__main__":
 #         else:
 #             print("FAILED: errors block pre-YAML export")
 #         return 0 if result.ok else 1
+#
+#     if args.export_transfer:
+#         result = build_transfer(
+#             template_path=args.template,
+#             recipes_path=args.recipes,
+#             output_path=args.out,
+#             write=not args.validate,
+#             datadictionary_path=args.datadictionary,
+#         )
+#         print_messages(result)
+#         if not result.ok:
+#             print("FAILED: errors block the transfer YAML")
+#             return 1
+#         print(f"{'OK: transfer YAML ready at' if args.validate else 'Wrote'} {result.output_path}")
+#         uploads = result.analysis.get("transfer_uploads") or []
+#         if uploads:
+#             folder = Path(result.output_path).parent
+#             print(f"Carry these with it, at these paths relative to {folder}:")
+#             for upload in uploads:
+#                 print(f"  {upload}")
+#         return 0
 #
 #     if args.export_split:
 #         result = write_split_artifacts(
@@ -13503,2649 +13607,3 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/makeYaml.py ===
-# === BEGIN FILE: scripts/yamlmanager.py SHA256: 94d6c97d4178b04e96b5e6e6566e93a214e0bbcfa30b4cfa0940b0a5a7c1ef01 SIZE: 108227 ===
-# #!/usr/bin/env python3
-# """
-# Generate a self-contained HTML prototype UI for YAML Manager.
-#
-# This is intentionally a dependency-light script. It reads YAML Manager
-# template/recipes files through a configurable backend and writes one static
-# HTML dashboard.
-# """
-#
-# from __future__ import annotations
-#
-# import argparse
-# import html
-# import http.server
-# import importlib
-# import ipaddress
-# import json
-# import os
-# import re
-# import socket
-# import sys
-# import urllib.parse
-# import webbrowser
-# from pathlib import Path
-# from typing import Any
-#
-# SCRIPT_DIR = Path(__file__).resolve().parent
-# PROJECT_ROOT = SCRIPT_DIR.parent
-# sys.pycache_prefix = str(PROJECT_ROOT / "cleanup" / "python_cache")
-# if str(SCRIPT_DIR) not in sys.path:
-#     sys.path.insert(0, str(SCRIPT_DIR))
-#
-#
-# DEFAULT_OUT = PROJECT_ROOT / "UI" / "manager_dashboard.html"
-# DEFAULT_DATA_DICTIONARY = Path(
-#     os.environ.get("YAMLMANAGER_DATA_DICTIONARY", PROJECT_ROOT / "YAMLs" / "datadictionary.yaml")
-# )
-# # The dictionary actually in use. main() replaces it from --datadictionary, and
-# # every compile reads it at call time so validation and the dictionary tab can
-# # never disagree about which file they are looking at.
-# DATA_DICTIONARY_PATH = DEFAULT_DATA_DICTIONARY
-# BACKEND_MODULE = os.environ.get(
-#     "YAMLMANAGER_BACKEND_MODULE",
-#     "yamlmanager_backend",
-# )
-# try:
-#     backend = importlib.import_module(BACKEND_MODULE)
-# except ImportError as exc:
-#     raise SystemExit(
-#         f"[yamlmanager] Could not import backend module {BACKEND_MODULE!r}. "
-#         "Set YAMLMANAGER_BACKEND_MODULE to a Python module on PYTHONPATH."
-#     ) from exc
-#
-#
-# def env_int(names: tuple[str, ...], fallback: int) -> int:
-#     for name in names:
-#         value = os.environ.get(name)
-#         if not value:
-#             continue
-#         try:
-#             return int(value)
-#         except ValueError:
-#             print(f"[yamlmanager] Ignoring invalid {name}={value!r}; using {fallback}.", file=sys.stderr)
-#             return fallback
-#     return fallback
-#
-#
-# DEFAULT_HOST = os.environ.get(
-#     "YAMLMANAGER_HOST",
-#     os.environ.get("MANAGER_UI_HOST", "127.0.0.1"),
-# )
-# DEFAULT_PORT = env_int(("YAMLMANAGER_PORT", "MANAGER_UI_PORT"), 8765)
-#
-#
-# def e(value: Any) -> str:
-#     return html.escape("" if value is None else str(value), quote=True)
-#
-#
-# def slug(value: str) -> str:
-#     return re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-").lower() or "item"
-#
-#
-# def yaml_text(value: Any) -> str:
-#     return backend.dump_yaml_text(value).rstrip()
-#
-#
-# def load_data_dictionary(path: Path | None = None) -> dict[str, Any]:
-#     path = path or DATA_DICTIONARY_PATH
-#     try:
-#         doc = backend.load_document(path) or {}
-#     except FileNotFoundError:
-#         return {}
-#     data = doc.get("DataDictionary", doc) if isinstance(doc, dict) else {}
-#     return data if isinstance(data, dict) else {}
-#
-#
-# def json_payload(value: Any) -> str:
-#     return (
-#         json.dumps(value)
-#         .replace("&", "\\u0026")
-#         .replace("<", "\\u003c")
-#         .replace(">", "\\u003e")
-#     )
-#
-#
-# def print_messages(result: Any) -> None:
-#     for msg in getattr(result, "errors", []):
-#         print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
-#     for msg in getattr(result, "warnings", []):
-#         print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
-#
-#
-# def message_rows(messages: list[Any]) -> str:
-#     if not messages:
-#         return '<div class="empty">None</div>'
-#     rows = []
-#     for msg in messages:
-#         rows.append(
-#             f"""
-#             <div class="message {e(msg.level.lower())}">
-#               <div class="message-code">{e(msg.code)}</div>
-#               <div class="message-body">{e(msg.message)}</div>
-#               <div class="message-context">{e(msg.context)}</div>
-#             </div>
-#             """
-#         )
-#     return "\n".join(rows)
-#
-#
-# def badge(text: str, kind: str = "neutral") -> str:
-#     return f'<span class="badge {e(kind)}">{e(text)}</span>'
-#
-#
-# def value_list(values: list[str], limit: int = 9) -> str:
-#     if not values:
-#         return '<span class="muted">None detected</span>'
-#     shown = values[:limit]
-#     body = "".join(f"<li>{e(v)}</li>" for v in shown)
-#     extras = values[limit:]
-#     if extras:
-#         body += "".join(f'<li class="extra-item hidden">{e(v)}</li>' for v in extras)
-#         body += f'<li><button class="linklike" data-show-more-list>+ {len(extras)} more</button></li>'
-#     return f"<ul>{body}</ul>"
-#
-#
-# def session_label(name: str, pk_table: str) -> str:
-#     for suffix in ("Patients", "PKTable"):
-#         if name.endswith(suffix):
-#             return name[: -len(suffix)] or name
-#     for suffix in ("OtherHospitalizations", "Hospitalizations", "OtherDx"):
-#         if name.endswith(suffix):
-#             return name[: -len(suffix)] or name
-#     return pk_table or name
-#
-#
-# def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], dict[str, str]]:
-#     cohorts = result.finished_yaml.get("cohorts", []) or []
-#     required_cols = (result.analysis or {}).get("required_table_columns", {})
-#     outgoing: dict[str, list[dict[str, Any]]] = {}
-#     incoming: dict[str, list[dict[str, Any]]] = {}
-#     sessions: dict[str, str] = {}
-#     current_pk_dest = ""
-#     color_by_source: dict[str, int] = {}
-#     for cohort in cohorts:
-#         dest = str(cohort.get("dest_table", cohort.get("name", "")))
-#         name = str(cohort.get("name", dest))
-#         if str(cohort.get("type", "")).lower() == "pk":
-#             current_pk_dest = dest
-#         sessions[name] = session_label(name, current_pk_dest)
-#         resolved_vars = cohort.get("_resolved_vars", {})
-#         for table_var, cols in (required_cols.get(name) or {}).items():
-#             target = str(resolved_vars.get(table_var) or table_var)
-#             if table_var == "PKTable" and current_pk_dest:
-#                 target = current_pk_dest
-#             if target not in color_by_source:
-#                 color_by_source[target] = len(color_by_source) % 8
-#             item = {
-#                 "source": target,
-#                 "target": name,
-#                 "table_var": table_var,
-#                 "columns": cols,
-#                 "color": color_by_source[target],
-#             }
-#             outgoing.setdefault(target, []).append(item)
-#             incoming.setdefault(name, []).append(item)
-#     return outgoing, incoming, sessions
-#
-#
-# def upload_dest(upload: dict[str, Any]) -> str:
-#     return str(upload.get("dest_table") or upload.get("name") or "")
-#
-#
-# def upload_columns(upload: dict[str, Any]) -> list[str]:
-#     schema = upload.get("columns") or upload.get("schema") or []
-#     if not schema:
-#         return []
-#     if isinstance(schema, list) and schema and isinstance(schema[0], dict):
-#         return [str(column.get("name")) for column in schema if column.get("name")]
-#     if isinstance(schema, list):
-#         return [str(column) for column in schema]
-#     return []
-#
-#
-# def upload_has_error(upload: dict[str, Any], result: backend.CompileResult) -> bool:
-#     name = str(upload.get("name") or "")
-#     dest = upload_dest(upload)
-#     for msg in result.errors:
-#         haystack = f"{msg.context} {msg.message}"
-#         if (name and name in haystack) or (dest and dest in haystack):
-#             return True
-#     return False
-#
-#
-# def connection_chips(items: list[dict[str, Any]], compact: bool = False, side: str = "incoming") -> str:
-#     if not items:
-#         return '<span class="muted">None detected</span>'
-#     chips = []
-#     max_items = 4 if compact else len(items)
-#     for item in items[:max_items]:
-#         cols = item.get("columns") or []
-#         col_text = ", ".join(cols[:3])
-#         if len(cols) > 3:
-#             col_text += f", +{len(cols) - 3} more"
-#         label = item.get("source") if side == "incoming" else item.get("target")
-#         chips.append(
-#             f'<span class="connection-chip c{item.get("color", 0)}">'
-#             f'{e(label)}: {e(col_text or item.get("table_var"))}</span>'
-#         )
-#     if compact and len(items) > max_items:
-#         chips.append('<span class="muted">(click to expand)</span>')
-#     return f'<span class="connection-chips">{"".join(chips)}</span>'
-#
-#
-# def source_connection_columns(items: list[dict[str, Any]]) -> str:
-#     cols: dict[str, int] = {}
-#     for item in items:
-#         for col in item.get("columns") or []:
-#             text = str(col)
-#             cols.setdefault(text, item.get("color", 0))
-#     if not cols:
-#         return '<span class="muted">None detected</span>'
-#     chips = "".join(f'<span class="connection-chip c{color}">{e(col)}</span>' for col, color in cols.items())
-#     return f'<span class="connection-chips">{chips}</span>'
-#
-#
-# def grouped_outgoing_chips(items: list[dict[str, Any]], compact: bool = False) -> str:
-#     if not items:
-#         return '<span class="muted">None detected</span>'
-#     grouped: dict[str, dict[str, Any]] = {}
-#     fallback_counter = 0
-#     for item in items:
-#         columns = item.get("columns") or [item.get("table_var")]
-#         for column in columns:
-#             col = str(column)
-#             if col not in grouped:
-#                 grouped[col] = {"targets": [], "color": item.get("color", fallback_counter % 8)}
-#                 fallback_counter += 1
-#             target = str(item.get("target") or "")
-#             if target and target not in grouped[col]["targets"]:
-#                 grouped[col]["targets"].append(target)
-#     pairs = list(grouped.items())
-#     max_items = 4 if compact else len(pairs)
-#     chips = []
-#     for column, meta in pairs[:max_items]:
-#         targets = meta["targets"]
-#         target_text = ", ".join(targets[:4])
-#         if len(targets) > 4:
-#             target_text += f", +{len(targets) - 4} more"
-#         chips.append(
-#             f'<span class="connection-chip c{meta.get("color", 0)}">'
-#             f'{e(column)}: {e(target_text)}</span>'
-#         )
-#     if compact and len(pairs) > max_items:
-#         chips.append('<span class="muted">(click to expand)</span>')
-#     return f'<span class="connection-chips">{"".join(chips)}</span>'
-#
-#
-# def connection_details(items: list[dict[str, Any]], side: str = "outgoing") -> str:
-#     if not items:
-#         return '<div class="empty">None</div>'
-#     blocks = []
-#     for item in items:
-#         title = item.get("source") if side == "incoming" else item.get("target")
-#         blocks.append(
-#             f"""
-#             <div class="connection-detail c{item.get("color", 0)}">
-#               <strong>{e(title)}</strong>
-#               <span class="muted">via {e(item.get("table_var"))}</span>
-#               {value_list(item.get("columns") or [], 12)}
-#             </div>
-#             """
-#         )
-#     return "".join(blocks)
-#
-#
-# def column_list(values: list[str], connections: list[dict[str, Any]], limit: int = 12) -> str:
-#     if not values:
-#         return '<span class="muted">None detected</span>'
-#     refs_by_col: dict[str, list[dict[str, Any]]] = {}
-#     for item in connections:
-#         for col in item.get("columns") or []:
-#             refs_by_col.setdefault(str(col), []).append(item)
-#     items = []
-#     for idx, value in enumerate(values):
-#         refs = refs_by_col.get(str(value), [])
-#         ref_marks = "".join(
-#             f'<span class="column-ref c{ref.get("color", 0)}" title="Referenced by {e(ref.get("target"))} via {e(ref.get("table_var"))}"></span>'
-#             for ref in refs
-#         )
-#         hidden = ' class="extra-item hidden"' if idx >= limit else ""
-#         items.append(f"<li{hidden}>{ref_marks}{e(value)}</li>")
-#     if len(values) > limit:
-#         items.append(f'<li><button class="linklike" data-show-more-list>+ {len(values) - limit} more</button></li>')
-#     return f"<ul>{''.join(items)}</ul>"
-#
-#
-# def upload_cards(template: dict[str, Any], result: backend.CompileResult) -> str:
-#     uploads = template.get("upload_cohorts", []) or []
-#     if not uploads:
-#         return '<div class="empty">No upload cohorts defined.</div>'
-#     upload_errors = " ".join(f"{m.context} {m.message}" for m in result.errors)
-#     cards = []
-#     for upload in uploads:
-#         name = upload.get("name")
-#         dest = upload.get("dest_table", name)
-#         has_error = str(name) in upload_errors or str(dest) in upload_errors
-#         kind = "error" if has_error else "ok"
-#         cards.append(
-#             f"""
-#             <details class="card" open>
-#               <summary>
-#                 <span>{e(name)}</span>
-#                 {badge("error" if has_error else "registered", kind)}
-#               </summary>
-#               <dl>
-#                 <dt>Destination</dt><dd>{e(dest)}</dd>
-#                 <dt>Type</dt><dd>{e(upload.get("file_type", ""))}</dd>
-#                 <dt>Scope</dt><dd>{e(upload.get("scope", "global"))}</dd>
-#                 <dt>Push This Cycle</dt><dd>{e(upload.get("push_this_cycle", True))}</dd>
-#                 <dt>File</dt><dd>{e(upload.get("file_loc", ""))}</dd>
-#               </dl>
-#             </details>
-#             """
-#         )
-#     return "\n".join(cards)
-#
-#
-# def cohort_cards(result: backend.CompileResult) -> str:
-#     cohorts = result.finished_yaml.get("cohorts", []) or []
-#     uploads = result.finished_yaml.get("upload_cohorts", []) or []
-#     analysis = result.analysis or {}
-#     required_vars = analysis.get("required_vars", {})
-#     required_cols = analysis.get("required_table_columns", {})
-#     outputs = analysis.get("output_columns", {})
-#     outgoing_connections, incoming_connections, sessions = build_connection_maps(result)
-#     if not cohorts and not uploads:
-#         return '<div class="empty">No cohorts or uploads available.</div>'
-#     cards = []
-#     known_tables: set[str] = set()
-#     for cohort in cohorts:
-#         name = cohort.get("name", "")
-#         dest = cohort.get("dest_table", name)
-#         known_tables.update({str(name), str(dest)})
-#         ctype = str(cohort.get("type", "fact"))
-#         kind = "pk" if ctype.lower() == "pk" else "neutral"
-#         req_var_names = sorted((required_vars.get(name) or {}).keys())
-#         table_inputs = required_cols.get(name) or {}
-#         table_bits = []
-#         for table_var, cols in table_inputs.items():
-#             table_bits.append(f"<h4>{e(table_var)}</h4>{value_list(cols)}")
-#         outgoing = outgoing_connections.get(str(dest), [])
-#         incoming = incoming_connections.get(str(name), [])
-#         group = sessions.get(str(name), str(dest))
-#         summary = source_connection_columns(outgoing) if outgoing else connection_chips(incoming, compact=True, side="incoming")
-#         split = cohort.get("split_after_build")
-#         batching = cohort.get("batching")
-#         cards.append(
-#             f"""
-#             <details class="card cohort-card" id="cohort-{slug(str(name))}">
-#               <summary>
-#                 <span>
-#                   <strong>{e(name)}</strong>
-#                   <span class="summary-connections">Cohort: {e(group)}</span>
-#                   <span class="summary-connections">Connections: {summary}</span>
-#                 </span>
-#                 <span>{badge(ctype, kind)}</span>
-#               </summary>
-#               <div class="grid two">
-#                 <section>
-#                   <h4>Required Variables</h4>
-#                   {value_list(req_var_names)}
-#                 </section>
-#                 <section>
-#                   <h4>Output Columns</h4>
-#                   {column_list(outputs.get(dest, []), outgoing, 12)}
-#                 </section>
-#               </div>
-#               <section>
-#                 <h4>Required Input Tables</h4>
-#                 {''.join(table_bits) if table_bits else '<div class="empty">None</div>'}
-#               </section>
-#               <section>
-#                 <h4>Connected To</h4>
-#                 {connection_details(incoming, side="incoming") if incoming else '<div class="empty">None</div>'}
-#               </section>
-#               <section>
-#                 <h4>Used By Tables</h4>
-#                 {connection_details(outgoing)}
-#               </section>
-#               <section>
-#                 <h4>Split After Build</h4>
-#                 <pre>{e(yaml_text(split) if split else "None")}</pre>
-#               </section>
-#               <section>
-#                 <h4>Batching</h4>
-#                 <pre>{e(yaml_text(batching) if batching else "None")}</pre>
-#               </section>
-#             </details>
-#             """
-#         )
-#     seen_uploads: set[int] = set()
-#     for upload in uploads:
-#         if not isinstance(upload, dict):
-#             continue
-#         ident = id(upload)
-#         if ident in seen_uploads:
-#             continue
-#         seen_uploads.add(ident)
-#         name = str(upload.get("name") or upload_dest(upload))
-#         dest = upload_dest(upload) or name
-#         known_tables.update({name, dest})
-#         outgoing = outgoing_connections.get(dest, []) + ([] if name == dest else outgoing_connections.get(name, []))
-#         cols = upload_columns(upload)
-#         kind = "error" if upload_has_error(upload, result) else "upload"
-#         type_badges = badge("upload", kind)
-#         if str(upload.get("type", "")).lower() == "pk":
-#             type_badges += " " + badge("PK", "pk")
-#         detail_bits = [
-#             ("Destination", dest),
-#             ("File Type", upload.get("file_type", "")),
-#             ("Scope", upload.get("scope", "global")),
-#             ("Push This Cycle", upload.get("push_this_cycle", True)),
-#             ("File/Table", upload.get("file_loc", "")),
-#         ]
-#         cards.append(
-#             f"""
-#             <details class="card cohort-card upload-card" id="cohort-{slug(name)}">
-#               <summary>
-#                 <span>
-#                   <strong>{e(name)}</strong>
-#                   <span class="summary-connections">Upload: {e(dest)}</span>
-#                   <span class="summary-connections">Connections: {grouped_outgoing_chips(outgoing, compact=True)}</span>
-#                 </span>
-#                 <span>{type_badges}</span>
-#               </summary>
-#               <div class="grid two">
-#                 <section>
-#                   <h4>Upload Details</h4>
-#                   <dl>{''.join(f'<dt>{e(label)}</dt><dd>{e(value)}</dd>' for label, value in detail_bits if value not in ("", None))}</dl>
-#                 </section>
-#                 <section>
-#                   <h4>Output Columns</h4>
-#                   {column_list(cols, outgoing, 12)}
-#                 </section>
-#               </div>
-#               <section>
-#                 <h4>Used By Tables</h4>
-#                 {connection_details(outgoing)}
-#               </section>
-#             </details>
-#             """
-#         )
-#     unresolved_sources = [
-#         source for source in outgoing_connections
-#         if source and source not in known_tables
-#     ]
-#     for source in unresolved_sources:
-#         outgoing = outgoing_connections.get(source, [])
-#         cards.append(
-#             f"""
-#             <details class="card cohort-card unresolved-card" id="cohort-{slug(source)}">
-#               <summary>
-#                 <span>
-#                   <strong>{e(source)}</strong>
-#                   <span class="summary-connections">Required input table</span>
-#                   <span class="summary-connections">Connections: {grouped_outgoing_chips(outgoing, compact=True)}</span>
-#                 </span>
-#                 <span>{badge("unresolved", "warn")}</span>
-#               </summary>
-#               <section>
-#                 <h4>Used By Tables</h4>
-#                 {connection_details(outgoing)}
-#               </section>
-#             </details>
-#             """
-#         )
-#     return "\n".join(cards)
-#
-#
-# def recipe_cards(recipes_doc: dict[str, Any]) -> str:
-#     recipes = recipes_doc.get("recipes", []) or []
-#     if not recipes:
-#         return '<div class="empty">No recipes found.</div>'
-#     cards = []
-#     for recipe in recipes:
-#         name = recipe.get("name", "")
-#         outputs = backend.recipe_output_columns(recipe)
-#         req_vars = sorted(backend.recipe_required_vars(recipe).keys())
-#         inputs = backend.recipe_table_inputs(recipe)
-#         input_bits = []
-#         for table_var, meta in inputs.items():
-#             input_bits.append(f"<h4>{e(table_var)} as {e(meta.get('alias'))}</h4>{value_list(meta.get('required_columns', []))}")
-#         cards.append(
-#             f"""
-#             <details class="card">
-#               <summary>
-#                 <span>{e(name)}</span>
-#                 {badge(e(recipe.get("type", "fact")), "pk" if str(recipe.get("type", "")).lower() == "pk" else "neutral")}
-#               </summary>
-#               <p>{e(recipe.get("description", ""))}</p>
-#               <div class="grid three">
-#                 <section><h4>Required Variables</h4>{value_list(req_vars)}</section>
-#                 <section><h4>Output Columns</h4>{value_list(outputs, 12)}</section>
-#                 <section><h4>Table Inputs</h4>{''.join(input_bits) if input_bits else '<div class="empty">None</div>'}</section>
-#               </div>
-#             </details>
-#             """
-#         )
-#     return "\n".join(cards)
-#
-#
-# def graph_panel(result: backend.CompileResult) -> str:
-#     cohorts = result.finished_yaml.get("cohorts", []) or []
-#     uploads = result.finished_yaml.get("upload_cohorts", []) or []
-#     _, incoming_connections, _ = build_connection_maps(result)
-#     nodes = []
-#     edges = []
-#     for upload in uploads:
-#         if isinstance(upload, dict):
-#             nodes.append(upload_dest(upload) or str(upload.get("name", "")))
-#     for cohort in cohorts:
-#         name = str(cohort.get("name", ""))
-#         nodes.append(name)
-#         for item in incoming_connections.get(name, []):
-#             edges.append((str(item.get("source")), name, str(item.get("table_var"))))
-#     if not nodes:
-#         return '<div class="empty">No dependency graph available.</div>'
-#     unique_nodes = []
-#     for item in nodes + [edge[0] for edge in edges]:
-#         if item and item not in unique_nodes:
-#             unique_nodes.append(item)
-#     node_html = "".join(f'<div class="node" data-node="{e(n)}">{e(n)}</div>' for n in unique_nodes)
-#     edge_html = "".join(f'<li><button class="linklike" data-target="{e(dst)}">{e(src)} -> {e(dst)}</button> <span class="muted">({e(label)})</span></li>' for src, dst, label in edges)
-#     return f"""
-#       <div class="graph-layout">
-#         <div class="node-list">{node_html}</div>
-#         <div>
-#           <h3>Dependencies</h3>
-#           <ul class="edge-list">{edge_html or '<li class="muted">No table-input edges detected.</li>'}</ul>
-#         </div>
-#       </div>
-#     """
-#
-#
-# def pipeline_panel(result: backend.CompileResult) -> str:
-#     steps = [
-#         ("Load YAML", True),
-#         ("Import Recipes", not any(m.code == "missing_recipe" for m in result.errors)),
-#         ("Infer Variables", bool(result.analysis)),
-#         ("Validate Uploads", not any(m.code.startswith("missing_upload") or m.code == "upload_read_error" for m in result.errors)),
-#         ("Validate Columns", not any("column" in m.code for m in result.errors)),
-#         ("Render Output", result.ok),
-#         ("Ready For VM", result.ok),
-#     ]
-#     return "".join(
-#         f'<div class="pipeline-step {"pass" if ok else "fail"}"><span>{idx}</span><strong>{e(label)}</strong><em>{"pass" if ok else "blocked"}</em></div>'
-#         for idx, (label, ok) in enumerate(steps, 1)
-#     )
-#
-#
-# def export_preview_block(title: str, artifact_id: str, filename: str, result: Any) -> str:
-#     if getattr(result, "ok", False):
-#         text = yaml_text(result.finished_yaml)
-#     else:
-#         messages = [m.to_dict() for m in getattr(result, "errors", [])]
-#         text = json.dumps({"errors": messages}, indent=2)
-#     return f"""
-#       <section class="block export-block">
-#         <div class="export-head">
-#           <h2>{e(title)}</h2>
-#           <div class="toolbar compact">
-#             <button data-copy-artifact="{e(artifact_id)}">Copy</button>
-#             <button data-download-artifact="{e(artifact_id)}" data-filename="{e(filename)}">Download</button>
-#           </div>
-#         </div>
-#         <pre id="{e(artifact_id)}">{e(text)}</pre>
-#       </section>
-#     """
-#
-#
-# def exports_panel(template_path: Path, recipes_path: Path) -> str:
-#     symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
-#     expanded = backend.build_preyaml(template_path, recipes_path, mode="expanded-recipes")
-#     manifest = backend.build_pullmanifest(
-#         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
-#     )
-#     return f"""
-#       <div class="grid three">
-#         {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
-#         {export_preview_block("Expanded Recipes pre-YAML", "exportPreyamlExpanded", "preyaml.expanded.yaml", expanded)}
-#         {export_preview_block("pullmanifest.yaml", "exportPullmanifest", "pullmanifest.yaml", manifest)}
-#       </div>
-#       <section class="block">
-#         <h2>Handoff</h2>
-#         <p>Pullmanager handoff remains file-based. Once Pullmanager's CLI contract is available, YAML Manager can call it with the generated manifest path.</p>
-#         <pre>pullmanager split/pullmanifest.yaml</pre>
-#       </section>
-#     """
-#
-#
-# def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> str:
-#     cohorts = result.finished_yaml.get("cohorts", []) or []
-#     uploads = template.get("upload_cohorts", []) or []
-#     status = "Ready" if result.ok else "Blocked"
-#     return f"""
-#       <div class="summary">
-#         <div class="metric {('ok' if result.ok else 'error')}"><span>Status</span><strong>{status}</strong></div>
-#         <div class="metric"><span>Errors</span><strong>{len(result.errors)}</strong></div>
-#         <div class="metric"><span>Warnings</span><strong>{len(result.warnings)}</strong></div>
-#         <div class="metric"><span>Cohorts</span><strong>{len(cohorts)}</strong></div>
-#         <div class="metric"><span>Uploads</span><strong>{len(uploads)}</strong></div>
-#       </div>
-#     """
-#
-#
-# def build_html(template_path: Path, recipes_path: Path, result: backend.CompileResult, auto_refresh: int = 0) -> str:
-#     template = backend.load_document(template_path) or {}
-#     recipes_doc = backend.load_document(recipes_path) or {}
-#     data_dictionary = load_data_dictionary()
-#     source_text = template_path.read_text(encoding="utf-8")
-#     finished_text = yaml_text(result.finished_yaml)
-#     refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
-#     data_json = html.escape(json.dumps({
-#         "errors": [m.to_dict() for m in result.errors],
-#         "warnings": [m.to_dict() for m in result.warnings],
-#         "analysis": result.analysis,
-#     }, indent=2), quote=False)
-#     recipe_defs = [recipe for recipe in recipes_doc.get("recipes", []) or [] if recipe.get("name")]
-#     recipe_names = [recipe.get("name") for recipe in recipe_defs]
-#     batching_recipes = [recipe for recipe in recipes_doc.get("batching_recipes", []) or [] if recipe.get("name")]
-#     batching_names = [recipe.get("name") for recipe in batching_recipes]
-#     return f"""<!doctype html>
-# <html lang="en">
-# <head>
-#   <meta charset="utf-8">
-#   <meta name="viewport" content="width=device-width, initial-scale=1">
-#   {refresh_meta}
-#   <title>YAML Manager</title>
-#   <style>{CSS}</style>
-# </head>
-# <body class="dark">
-#   <header>
-#     <div class="header-main">
-#       <h1>YAML Manager</h1>
-#       <form id="templatePathForm" class="header-path-form" method="get" action="/">
-#         <label for="templatePathInput">Template YAML</label>
-#         <input id="templatePathInput" name="template" type="text" value="{e(template_path)}">
-#         <input name="recipes" type="hidden" value="{e(recipes_path)}">
-#         <button id="refreshPage" type="submit" title="Reload dashboard">Refresh</button>
-#       </form>
-#     </div>
-#     <div class="header-actions">
-#       <button id="themeToggle" title="Toggle dark mode">Theme</button>
-#     </div>
-#   </header>
-#
-#   <main>
-#     {summary_cards(template, result)}
-#
-#     <nav class="tabs" aria-label="Dashboard sections">
-#       <button class="tab active" data-tab="validation">Validation</button>
-#       <button class="tab" data-tab="builder">Builder</button>
-#       <button class="tab" data-tab="pipeline">Pipeline</button>
-#       <button class="tab" data-tab="cohorts">Cohorts</button>
-#       <button class="tab" data-tab="recipes">Recipes</button>
-#       <button class="tab" data-tab="graph">Graph</button>
-#       <button class="tab" data-tab="exports">Exports</button>
-#       <button class="tab" data-tab="yaml">YAML</button>
-#     </nav>
-#
-#     <section id="validation" class="panel active">
-#       <div class="grid two">
-#         <section class="block">
-#           <h2>Errors</h2>
-#           {message_rows(result.errors)}
-#         </section>
-#         <section class="block">
-#           <h2>Warnings</h2>
-#           {message_rows(result.warnings)}
-#         </section>
-#       </div>
-#     </section>
-#
-#     <section id="builder" class="panel">
-#       <div class="builder-layout">
-#         <aside class="builder-nav">
-#           <button class="builder-link active" data-builder-section="builderProject">Project</button>
-#           <button class="builder-link" data-builder-section="builderUploads">Uploads</button>
-#           <button class="builder-link" data-builder-section="builderBatching">Batching</button>
-#           <button class="builder-link" data-builder-section="builderCohorts">Cohorts</button>
-#           <button class="builder-link" data-builder-section="builderDraft">Draft YAML</button>
-#         </aside>
-#         <div class="builder-main">
-#           <section id="builderProject" class="builder-section active block">
-#             <h2>Project</h2>
-#             <div class="form-grid">
-#               <label>Project Folder<input id="builderProjectFolder" type="text"></label>
-#               <label>Project DB<input id="builderProjectDb" type="text"></label>
-#               <label>Cosmos DB
-#                 <select id="builderCosmosDb">
-#                   <option value="COSMOS">COSMOS</option>
-#                   <option value="COSMOS_SneakPeek">COSMOS_SneakPeek</option>
-#                   <option value="Dual">Dual</option>
-#                 </select>
-#               </label>
-#               <label>Min Date Key<input id="builderMinDate" type="text"></label>
-#               <label>Max Date Key<input id="builderMaxDate" type="text"></label>
-#             </div>
-#             <h3>Test Options</h3>
-#             <div class="form-grid">
-#               <label class="checkbox-label"><input id="builderSmallset" type="checkbox"> Small set</label>
-#               <label>PK Row Limit<input id="builderStopAtPk" type="number" min="0"></label>
-#               <label>Fact Row Limit<input id="builderStopAtNonPk" type="number" min="0"></label>
-#               <label class="checkbox-label"><input id="builderRandomPkSample" type="checkbox"> Random PK sample</label>
-#               <label class="checkbox-label"><input id="builderPrintoutMd" type="checkbox"> Print markdown</label>
-#             </div>
-#             <div class="toolbar compact">
-#               <button id="builderNewTemplate">New Blank Template</button>
-#               <button id="builderUseCurrent">Reload Current Template</button>
-#             </div>
-#           </section>
-#
-#           <section id="builderUploads" class="builder-section block">
-#             <h2>Uploads</h2>
-#             <div class="inline-form">
-#               <select id="newUploadType">
-#                 <option value="dbtable">dbtable</option>
-#                 <option value="csv">csv</option>
-#                 <option value="parquet">parquet</option>
-#               </select>
-#               <input id="newUploadName" type="text" placeholder="name">
-#               <input id="newUploadPath" type="text" placeholder="file_loc or table hint">
-#               <button id="addUpload">Add Upload</button>
-#             </div>
-#             <div id="uploadEditorRows" class="editor-rows"></div>
-#           </section>
-#
-#           <section id="builderBatching" class="builder-section block">
-#             <h2>Batching</h2>
-#             <div class="inline-form">
-#               <select id="newBatchingRecipe"></select>
-#               <input id="newBatchingValue" type="text" placeholder="value or chunk size" list="batchingValueSuggestions">
-#               <button id="addBatching">Add Batching</button>
-#             </div>
-#             <datalist id="batchingValueSuggestions"></datalist>
-#             <p id="batchingHelp" class="helper-text"></p>
-#             <div id="batchingEditorRows" class="editor-rows"></div>
-#           </section>
-#
-#           <section id="builderCohorts" class="builder-section block">
-#             <h2>Cohorts</h2>
-#             <h3>Recipes</h3>
-#             <div class="inline-form">
-#               <select id="newCohortRecipe"></select>
-#               <input id="newCohortName" type="text" placeholder="cohort name">
-#               <button id="addCohort">Add Recipe</button>
-#             </div>
-#             <div id="cohortEditorRows" class="editor-rows"></div>
-#             <h3>Custom</h3>
-#             <div class="custom-builder">
-#               <div id="pkWarning" class="message warn hidden">
-#                 <div class="message-code">PK warning</div>
-#                 <div class="message-body">This draft already has a PK cohort. Only one PK cohort should be used.</div>
-#               </div>
-#               <div class="form-grid">
-#                 <label>Name<input id="customName" type="text" placeholder="Mothers"></label>
-#                 <label>Destination<input id="customDestTable" type="text" placeholder="Mothers"></label>
-#                 <label>Type
-#                   <select id="customType">
-#                     <option value="fact">fact</option>
-#                     <option value="PK">PK</option>
-#                   </select>
-#                 </label>
-#                 <label class="checkbox-label"><input id="customPullThisCycle" type="checkbox" checked> Pull this cycle</label>
-#                 <label>From Table<select id="customFromTable"></select></label>
-#                 <label>AS<input id="customFromAlias" type="text" placeholder="bpf"></label>
-#               </div>
-#               <div class="subsection-head">
-#                 <h4>Columns</h4>
-#               </div>
-#               <div class="column-picker">
-#                 <section>
-#                   <h4>Pulling</h4>
-#                   <div id="customSelectedColumns" class="column-list"></div>
-#                 </section>
-#                 <section>
-#                   <h4>Removed</h4>
-#                   <div id="customRemovedColumns" class="column-list removed"></div>
-#                 </section>
-#               </div>
-#               <div class="subsection-head">
-#                 <h4>Joins</h4>
-#                 <button id="addCustomJoin">Add Join</button>
-#               </div>
-#               <div class="join-builder">
-#                 <label>Join Type<select id="joinType">
-#                     <option value="INNER">INNER</option>
-#                     <option value="LEFT">LEFT</option>
-#                     <option value="RIGHT">RIGHT</option>
-#                     <option value="FULL">FULL</option>
-#                   </select>
-#                 </label>
-#                 <label>This Column<select id="joinBaseColumn"></select></label>
-#                 <label>Join<select id="joinOperator">
-#                     <option value="=">=</option>
-#                     <option value="&lt;&gt;">&lt;&gt;</option>
-#                   </select>
-#                 </label>
-#                 <label>Available Table<select id="joinTable"></select></label>
-#                 <label>Join Column<select id="joinColumn"></select></label>
-#                 <span id="joinCheck" class="join-check muted"></span>
-#               </div>
-#               <div id="customJoinRows" class="editor-rows"></div>
-#               <div class="subsection-head">
-#                 <h4>Where</h4>
-#                 <button id="addCustomWhere">Add Where</button>
-#               </div>
-#               <div id="customWhereRows" class="editor-rows"></div>
-#               <div class="toolbar compact">
-#                 <button id="addCustomCohort">Add Custom Cohort</button>
-#                 <button id="resetCustomCohort">Reset Custom Form</button>
-#                 <button id="copyCustomRecipe">Copy Custom As Recipe</button>
-#                 <button id="downloadCustomRecipe">Download Custom Recipe</button>
-#               </div>
-#             </div>
-#           </section>
-#
-#           <section id="builderDraft" class="builder-section block">
-#             <h2>Draft YAML</h2>
-#             <div class="form-grid single">
-#               <label>Download Name<input id="builderDraftFilename" type="text" placeholder="Test_Run_Full.yaml"></label>
-#             </div>
-#             <div class="toolbar compact">
-#               <button id="copyDraftYaml">Copy Draft</button>
-#               <button id="downloadDraftYaml">Download Draft</button>
-#             </div>
-#             <pre id="draftYaml"></pre>
-#           </section>
-#         </div>
-#       </div>
-#     </section>
-#
-#     <section id="pipeline" class="panel">
-#       <section class="block">
-#         <h2>Compiler Pipeline</h2>
-#         <div class="pipeline">{pipeline_panel(result)}</div>
-#       </section>
-#     </section>
-#
-#     <section id="cohorts" class="panel">
-#       <div class="toolbar">
-#         <input id="cohortSearch" type="search" placeholder="Filter cohorts">
-#         <button data-expand="cohorts">Expand All</button>
-#         <button data-collapse="cohorts">Collapse All</button>
-#       </div>
-#       <div id="cohortCards">{cohort_cards(result)}</div>
-#     </section>
-#
-#     <section id="recipes" class="panel">
-#       <section class="block">
-#         <h2>Recipes</h2>
-#         {recipe_cards(recipes_doc)}
-#       </section>
-#     </section>
-#
-#     <section id="graph" class="panel">
-#       <section class="block">
-#         <h2>Dependency Graph</h2>
-#         {graph_panel(result)}
-#       </section>
-#     </section>
-#
-#     <section id="exports" class="panel">
-#       {exports_panel(template_path, recipes_path)}
-#     </section>
-#
-#     <section id="yaml" class="panel">
-#       <div class="grid two">
-#         <section class="block">
-#           <h2>Source YAML</h2>
-#           <pre>{e(source_text)}</pre>
-#         </section>
-#         <section class="block">
-#           <h2>Finished YAML Preview</h2>
-#           <pre>{e(finished_text)}</pre>
-#         </section>
-#       </div>
-#       <section class="block">
-#         <h2>Analysis JSON</h2>
-#         <pre>{data_json}</pre>
-#       </section>
-#     </section>
-#   </main>
-#
-#   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
-#   <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
-#   <script id="recipeNamesData" type="application/json">{json_payload(recipe_names)}</script>
-#   <script id="batchingNamesData" type="application/json">{json_payload(batching_names)}</script>
-#   <script id="batchingRecipesData" type="application/json">{json_payload(batching_recipes)}</script>
-#   <script id="dataDictionaryData" type="application/json">{json_payload(data_dictionary)}</script>
-#   <script>{JS}</script>
-# </body>
-# </html>
-# """
-#
-#
-# CSS = r"""
-# :root {
-#   color-scheme: dark;
-#   --bg: #16181b;
-#   --panel: #20242a;
-#   --ink: #edf0f3;
-#   --muted: #a7b0bb;
-#   --line: #343a42;
-#   --accent: #6fb1cf;
-#   --ok: #74c69d;
-#   --warn: #e4b363;
-#   --err: #ff8a8a;
-#   --chip: #2b3138;
-# }
-# body.light {
-#   color-scheme: light;
-#   --bg: #f6f7f9;
-#   --panel: #ffffff;
-#   --ink: #20242a;
-#   --muted: #69717d;
-#   --line: #d9dee5;
-#   --accent: #256f8f;
-#   --ok: #26734d;
-#   --warn: #9a6200;
-#   --err: #a13737;
-#   --chip: #eef2f5;
-# }
-# * { box-sizing: border-box; }
-# body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-# header { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 4; }
-# h1 { margin: 0; font-size: 22px; }
-# h2 { margin: 0 0 14px; font-size: 18px; }
-# h3 { margin: 0 0 12px; font-size: 15px; }
-# h4 { margin: 12px 0 8px; font-size: 13px; }
-# p { color: var(--muted); margin: 4px 0 0; }
-# button, input, select { font: inherit; }
-# button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 11px; border-radius: 7px; cursor: pointer; }
-# button:hover { border-color: var(--accent); }
-# input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
-# .header-actions { display: flex; gap: 8px; align-items: center; }
-# .header-main { display: grid; gap: 8px; min-width: 0; flex: 1; }
-# .header-path-form { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; gap: 10px; align-items: center; max-width: 980px; }
-# .header-path-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
-# .header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
-# main { padding: 22px; max-width: 1500px; margin: 0 auto; }
-# .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
-# .path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
-# .path-form input { width: 100%; }
-# .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 12px; margin-bottom: 18px; }
-# .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-# .metric span { display: block; color: var(--muted); font-size: 12px; }
-# .metric strong { display: block; font-size: 24px; margin-top: 6px; }
-# .metric.ok strong { color: var(--ok); }
-# .metric.error strong { color: var(--err); }
-# .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
-# .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
-# .panel { display: none; }
-# .panel.active { display: block; }
-# .grid { display: grid; gap: 14px; }
-# .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-# .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-# .block, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 15px; margin-bottom: 12px; }
-# .card summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; font-weight: 700; }
-# .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 8px; background: var(--chip); color: var(--ink); font-size: 12px; font-weight: 600; }
-# .badge.ok, .badge.pk, .badge.upload { color: var(--ok); }
-# .badge.warn { color: var(--warn); }
-# .badge.error { color: var(--err); }
-# .message { border-left: 4px solid var(--line); padding: 10px 12px; background: var(--chip); border-radius: 6px; margin-bottom: 9px; }
-# .message.error { border-left-color: var(--err); }
-# .message.warn { border-left-color: var(--warn); }
-# .message-code { font-weight: 800; font-size: 13px; }
-# .message-context, .muted { color: var(--muted); font-size: 12px; }
-# dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; }
-# dt { color: var(--muted); }
-# dd { margin: 0; overflow-wrap: anywhere; }
-# ul { padding-left: 18px; margin: 8px 0; }
-# pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1px solid var(--line); border-radius: 7px; padding: 12px; max-height: 520px; }
-# .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
-# .toolbar input { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); }
-# .toolbar.compact { margin-top: 14px; margin-bottom: 0; flex-wrap: wrap; }
-# .export-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-# .export-head .toolbar { margin-top: 0; }
-# .export-block pre { max-height: 420px; }
-# .builder-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
-# .builder-nav { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; position: sticky; top: 88px; display: grid; gap: 8px; }
-# .builder-link { text-align: left; }
-# .builder-link.active { background: var(--accent); border-color: var(--accent); color: white; }
-# .builder-section { display: none; }
-# .builder-section.active { display: block; }
-# .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-# .form-grid.single { grid-template-columns: minmax(220px, 520px); margin-bottom: 12px; }
-# .form-grid label, .editor-row label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
-# .checkbox-label { align-content: end; grid-template-columns: max-content 1fr; align-items: center; min-height: 62px; }
-# .form-grid input, .form-grid select, .editor-row input, .editor-row select { width: 100%; color: var(--ink); font-weight: 400; }
-# .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
-# .editor-rows { display: grid; gap: 10px; }
-# .editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
-# .editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto; }
-# .editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto; }
-# .editor-row.custom-column { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
-# .editor-row.line-editor { grid-template-columns: minmax(220px, 1fr) auto; }
-# .custom-builder { display: grid; gap: 12px; margin-top: 10px; }
-# .column-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-# .column-list { display: grid; gap: 6px; align-content: start; min-height: 42px; }
-# .column-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, .35fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
-# .column-item.removed { opacity: .78; }
-# .column-title { display: grid; gap: 2px; min-width: 0; }
-# .column-title strong { overflow-wrap: anywhere; }
-# .column-actions { display: inline-flex; gap: 5px; justify-content: end; }
-# .column-actions button { padding: 4px 7px; min-width: 28px; }
-# .join-builder { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(150px, 1fr) 70px minmax(170px, 1fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
-# .join-builder label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
-# .join-builder label select, .join-builder label input { width: 100%; color: var(--ink); font-weight: 400; }
-# .join-check.ok { color: var(--ok); }
-# .join-check.error { color: var(--err); }
-# .subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
-# .subsection-head h4 { margin: 0; }
-# .helper-text { margin: 0 0 12px; }
-# .tag-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 38px; align-items: center; }
-# .tag { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); padding: 5px 8px; color: var(--ink); }
-# .tag button { border: 0; background: transparent; padding: 0 2px; color: var(--muted); }
-# .tag-note { color: var(--muted); font-size: 12px; }
-# .summary-connections { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
-# .connection-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
-# .connection-chip { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 999px; padding: 3px 7px; background: color-mix(in srgb, currentColor 16%, transparent); color: var(--accent); }
-# .connection-detail { border-left: 4px solid currentColor; background: var(--chip); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
-# .column-ref { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: -1px; }
-# .c0 { color: #6fb1cf; }
-# .c1 { color: #74c69d; }
-# .c2 { color: #e4b363; }
-# .c3 { color: #ff8a8a; }
-# .c4 { color: #b99cff; }
-# .c5 { color: #7bdff2; }
-# .c6 { color: #f7a072; }
-# .c7 { color: #b8d8ba; }
-# .danger { color: var(--err); }
-# .pipeline { display: grid; gap: 10px; }
-# .pipeline-step { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-# .pipeline-step span { display: grid; place-items: center; height: 26px; width: 26px; border-radius: 50%; background: var(--chip); }
-# .pipeline-step.pass em { color: var(--ok); }
-# .pipeline-step.fail em { color: var(--err); }
-# .graph-layout { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 18px; }
-# .node-list { display: grid; gap: 8px; }
-# .node { border: 1px solid var(--line); background: var(--chip); border-radius: 8px; padding: 10px; font-weight: 650; }
-# .edge-list { margin-top: 0; }
-# .linklike { border: 0; background: transparent; padding: 0; color: var(--accent); text-decoration: underline; }
-# .empty { color: var(--muted); padding: 8px 0; }
-# .hidden { display: none; }
-# @media (max-width: 900px) {
-#   .summary, .grid.two, .grid.three, .graph-layout, .builder-layout, .form-grid, .inline-form, .editor-row, .editor-row.cohort, .editor-row.batch, .column-picker, .join-builder { grid-template-columns: 1fr; }
-#   header { position: static; align-items: stretch; flex-direction: column; }
-#   .header-actions { align-self: flex-end; }
-#   .header-path-form { grid-template-columns: 1fr; }
-#   .builder-nav { position: static; }
-# }
-# """
-#
-#
-# JS = r"""
-# const initialTemplate = JSON.parse(document.getElementById('initialTemplateData').textContent);
-# const recipeDefs = JSON.parse(document.getElementById('recipeDefsData').textContent);
-# const recipeNames = JSON.parse(document.getElementById('recipeNamesData').textContent);
-# const batchingNames = JSON.parse(document.getElementById('batchingNamesData').textContent);
-# const batchingRecipes = JSON.parse(document.getElementById('batchingRecipesData').textContent);
-# const dataDictionaryRaw = JSON.parse(document.getElementById('dataDictionaryData').textContent);
-# const dataDictionary = normalizeDataDictionary(dataDictionaryRaw);
-# const dictionaryTableNames = Object.keys(dataDictionary).sort((a, b) => a.localeCompare(b));
-# let draftTemplate = clone(initialTemplate);
-# let customDraft = blankCustomCohort();
-# let editingCustomIndex = null;
-#
-# function clone(value) {
-#   return JSON.parse(JSON.stringify(value || {}));
-# }
-#
-# document.querySelectorAll('.tab').forEach(button => {
-#   button.addEventListener('click', () => {
-#     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-#     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-#     button.classList.add('active');
-#     document.getElementById(button.dataset.tab).classList.add('active');
-#   });
-# });
-#
-# document.getElementById('themeToggle').addEventListener('click', () => {
-#   document.body.classList.toggle('light');
-# });
-#
-# document.getElementById('templatePathForm')?.addEventListener('submit', event => {
-#   if (window.location.protocol === 'file:') {
-#     event.preventDefault();
-#     window.location.reload();
-#   }
-# });
-#
-# document.querySelectorAll('[data-expand]').forEach(button => {
-#   button.addEventListener('click', () => {
-#     document.querySelectorAll(`#${button.dataset.expand} details`).forEach(d => d.open = true);
-#   });
-# });
-#
-# document.querySelectorAll('[data-collapse]').forEach(button => {
-#   button.addEventListener('click', () => {
-#     document.querySelectorAll(`#${button.dataset.collapse} details`).forEach(d => d.open = false);
-#   });
-# });
-#
-# const cohortSearch = document.getElementById('cohortSearch');
-# if (cohortSearch) {
-#   cohortSearch.addEventListener('input', () => {
-#     const q = cohortSearch.value.toLowerCase();
-#     document.querySelectorAll('.cohort-card').forEach(card => {
-#       card.classList.toggle('hidden', !card.innerText.toLowerCase().includes(q));
-#     });
-#   });
-# }
-#
-# document.querySelectorAll('[data-target]').forEach(button => {
-#   button.addEventListener('click', () => {
-#     const id = 'cohort-' + button.dataset.target.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
-#     const target = document.getElementById(id);
-#     if (!target) return;
-#     document.querySelector('[data-tab="cohorts"]').click();
-#     target.open = true;
-#     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-#   });
-# });
-#
-# document.addEventListener('click', event => {
-#   const target = event.target;
-#   if (target.dataset.showMoreList !== undefined) {
-#     const list = target.closest('ul');
-#     if (!list) return;
-#     list.querySelectorAll('.extra-item').forEach(item => item.classList.remove('hidden'));
-#     target.closest('li')?.remove();
-#   }
-# });
-#
-# document.querySelectorAll('.builder-link').forEach(button => {
-#   button.addEventListener('click', () => {
-#     document.querySelectorAll('.builder-link').forEach(b => b.classList.remove('active'));
-#     document.querySelectorAll('.builder-section').forEach(s => s.classList.remove('active'));
-#     button.classList.add('active');
-#     document.getElementById(button.dataset.builderSection).classList.add('active');
-#   });
-# });
-#
-# function ensureDraftShape() {
-#   draftTemplate.cosmos_vars = draftTemplate.cosmos_vars || {};
-#   draftTemplate.run_vars = draftTemplate.run_vars || {};
-#   draftTemplate.project_vars = draftTemplate.project_vars || {};
-#   draftTemplate.test_options = draftTemplate.test_options || {};
-#   draftTemplate.vars = draftTemplate.vars || {};
-#   draftTemplate.upload_cohorts = Array.isArray(draftTemplate.upload_cohorts) ? draftTemplate.upload_cohorts : [];
-#   draftTemplate.batching = Array.isArray(draftTemplate.batching) ? draftTemplate.batching : [];
-#   draftTemplate.cohorts = Array.isArray(draftTemplate.cohorts) ? draftTemplate.cohorts : [];
-# }
-#
-# function blankTemplate() {
-#   return {
-#     cosmos_vars: {
-#       project_db: 'PROJECTD93A57',
-#       cosmos_db: 'COSMOS'
-#     },
-#     run_vars: {
-#       min_date_key: '',
-#       max_date_key: ''
-#     },
-#     test_options: {
-#       smallset: false,
-#       stop_at_for_pk_table: 10,
-#       stop_at_for_non_pk_tables: 0,
-#       random_pk_sample: false,
-#       printout_md: true
-#     },
-#     project_vars: {
-#       project_folder: 'New Project'
-#     },
-#     vars: {},
-#     upload_cohorts: [],
-#     multipliers: [],
-#     batching: [],
-#     cohorts: []
-#   };
-# }
-#
-# function hydrateBuilder() {
-#   ensureDraftShape();
-#   setValue('builderProjectFolder', draftTemplate.project_vars.project_folder || draftTemplate.project_folder || '');
-#   setValue('builderProjectDb', draftTemplate.cosmos_vars.project_db || draftTemplate.project_db || '');
-#   setValue('builderCosmosDb', draftTemplate.cosmos_vars.cosmos_db || draftTemplate.cosmos_db || 'COSMOS');
-#   setValue('builderMinDate', draftTemplate.run_vars.min_date_key || draftTemplate.vars.min_date_key || '');
-#   setValue('builderMaxDate', draftTemplate.run_vars.max_date_key || draftTemplate.vars.max_date_key || '');
-#   setChecked('builderSmallset', Boolean(draftTemplate.test_options.smallset));
-#   setValue('builderStopAtPk', draftTemplate.test_options.stop_at_for_pk_table ?? '');
-#   setValue('builderStopAtNonPk', draftTemplate.test_options.stop_at_for_non_pk_tables ?? '');
-#   setChecked('builderRandomPkSample', Boolean(draftTemplate.test_options.random_pk_sample));
-#   setChecked('builderPrintoutMd', draftTemplate.test_options.printout_md !== false);
-#   renderRecipeOptions();
-#   renderBatchingOptions();
-#   renderDictionaryTableOptions();
-#   renderCustomBuilder();
-#   renderUploadRows();
-#   renderBatchingRows();
-#   renderCohortRows();
-#   updateDraftYaml();
-# }
-#
-# function setValue(id, value) {
-#   const el = document.getElementById(id);
-#   if (el) el.value = value;
-# }
-#
-# function setChecked(id, value) {
-#   const el = document.getElementById(id);
-#   if (el) el.checked = Boolean(value);
-# }
-#
-# function getValue(id) {
-#   const el = document.getElementById(id);
-#   return el ? el.value.trim() : '';
-# }
-#
-# function getChecked(id) {
-#   const el = document.getElementById(id);
-#   return Boolean(el?.checked);
-# }
-#
-# function numericOrZero(value) {
-#   const text = String(value ?? '').trim();
-#   if (text === '') return 0;
-#   const number = Number(text);
-#   return Number.isFinite(number) ? number : 0;
-# }
-#
-# function syncProjectFields() {
-#   ensureDraftShape();
-#   draftTemplate.project_vars.project_folder = getValue('builderProjectFolder');
-#   draftTemplate.cosmos_vars.project_db = getValue('builderProjectDb');
-#   draftTemplate.cosmos_vars.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
-#   draftTemplate.run_vars.min_date_key = getValue('builderMinDate');
-#   draftTemplate.run_vars.max_date_key = getValue('builderMaxDate');
-#   draftTemplate.test_options.smallset = getChecked('builderSmallset');
-#   draftTemplate.test_options.stop_at_for_pk_table = numericOrZero(getValue('builderStopAtPk'));
-#   draftTemplate.test_options.stop_at_for_non_pk_tables = numericOrZero(getValue('builderStopAtNonPk'));
-#   draftTemplate.test_options.random_pk_sample = getChecked('builderRandomPkSample');
-#   draftTemplate.test_options.printout_md = getChecked('builderPrintoutMd');
-#   updateDraftYaml();
-# }
-#
-# ['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderSmallset', 'builderStopAtPk', 'builderStopAtNonPk', 'builderRandomPkSample', 'builderPrintoutMd'].forEach(id => {
-#   const el = document.getElementById(id);
-#   if (el) el.addEventListener('input', syncProjectFields);
-#   if (el) el.addEventListener('change', syncProjectFields);
-# });
-#
-# ['customName', 'customDestTable', 'customType', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
-#   const el = document.getElementById(id);
-#   if (el) el.addEventListener('input', syncCustomFields);
-#   if (el) el.addEventListener('change', syncCustomFields);
-# });
-#
-# ['joinType', 'joinBaseColumn', 'joinOperator', 'joinTable', 'joinColumn'].forEach(id => {
-#   const el = document.getElementById(id);
-#   if (!el) return;
-#   el.addEventListener('input', () => {
-#     if (id === 'joinTable') {
-#       renderJoinBuilder();
-#     } else {
-#       updateJoinCheck();
-#     }
-#   });
-#   el.addEventListener('change', () => {
-#     if (id === 'joinTable') {
-#       renderJoinBuilder();
-#     } else {
-#       updateJoinCheck();
-#     }
-#   });
-# });
-#
-# document.getElementById('builderDraftFilename')?.addEventListener('input', updateDraftYaml);
-# document.getElementById('newBatchingRecipe')?.addEventListener('change', updateBatchingHelp);
-#
-# function renderRecipeOptions() {
-#   const select = document.getElementById('newCohortRecipe');
-#   if (!select) return;
-#   select.innerHTML = [
-#     ...recipeNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`),
-#     '<option value="__custom__">Custom</option>'
-#   ].join('');
-# }
-#
-# function renderBatchingOptions() {
-#   const select = document.getElementById('newBatchingRecipe');
-#   if (!select) return;
-#   select.innerHTML = batchingNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('');
-#   updateBatchingHelp();
-# }
-#
-# function renderDictionaryTableOptions() {
-#   const tableOptions = ['<option value="">Select table</option>']
-#     .concat(dictionaryTableNames.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`))
-#     .join('');
-#   ['customFromTable', 'joinTable'].forEach(id => {
-#     const select = document.getElementById(id);
-#     if (!select) return;
-#     const current = select.value;
-#     select.innerHTML = tableOptions;
-#     if (current) select.value = current;
-#   });
-# }
-#
-# function renderUploadRows() {
-#   const root = document.getElementById('uploadEditorRows');
-#   if (!root) return;
-#   root.innerHTML = draftTemplate.upload_cohorts.map((upload, index) => `
-#     <div class="editor-row">
-#       <label>Name<input data-upload-field="name" data-index="${index}" value="${escapeAttr(upload.name || '')}"></label>
-#       <label>Destination<input data-upload-field="dest_table" data-index="${index}" value="${escapeAttr(upload.dest_table || upload.name || '')}"></label>
-#       <label>Type
-#         <select data-upload-field="file_type" data-index="${index}">
-#           ${['dbtable', 'csv', 'parquet'].map(type => `<option value="${type}" ${type === upload.file_type ? 'selected' : ''}>${type}</option>`).join('')}
-#         </select>
-#       </label>
-#       <label>File/Table<input data-upload-field="file_loc" data-index="${index}" value="${escapeAttr(upload.file_loc || '')}"></label>
-#       <button class="danger" data-remove-upload="${index}">Remove</button>
-#     </div>
-#   `).join('') || '<div class="empty">No uploads in draft.</div>';
-# }
-#
-# function renderBatchingRows() {
-#   const root = document.getElementById('batchingEditorRows');
-#   if (!root) return;
-#   root.innerHTML = draftTemplate.batching.map((item, index) => {
-#     const parsed = describeBatching(item);
-#     const isChunk = parsed.name === 'chunk';
-#     const tags = parsed.values.map((value, valueIndex) => `
-#       <span class="tag">${escapeHtml(value)} <button title="Remove value" data-remove-batching-value="${index}" data-value-index="${valueIndex}">x</button></span>
-#     `).join('');
-#     return `
-#       <div class="editor-row batch">
-#         <label>Recipe
-#           <select data-batching-field="name" data-index="${index}">
-#             ${batchingNames.map(name => `<option value="${escapeAttr(name)}" ${name === parsed.name ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
-#           </select>
-#         </label>
-#         <label>${isChunk ? 'Rows Per Batch' : 'Values'}
-#           ${isChunk
-#             ? `<input data-batching-field="chunk" data-index="${index}" value="${escapeAttr(parsed.chunk || '')}" placeholder="2000">`
-#             : `<div class="tag-list">${tags || '<span class="tag-note">All values. Explicit picks will also create an all-other batch.</span>'}</div>
-#                <input data-batching-add-value="${index}" value="" placeholder="type value and press Enter">`}
-#         </label>
-#         <button class="danger" data-remove-batching="${index}">Remove</button>
-#       </div>
-#     `;
-#   }).join('') || '<div class="empty">No batching rules in draft.</div>';
-# }
-#
-# function renderCohortRows() {
-#   const root = document.getElementById('cohortEditorRows');
-#   if (!root) return;
-#   root.innerHTML = draftTemplate.cohorts.map((cohort, index) => `
-#     <div class="editor-row cohort">
-#       <label>${cohort.recipe ? 'Recipe' : 'Custom'}<input data-cohort-field="${cohort.recipe ? 'recipe' : 'type'}" data-index="${index}" value="${escapeAttr(cohort.recipe || cohort.type || '')}"></label>
-#       <label>Name<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
-#       ${cohort.recipe ? '' : `<button data-edit-custom-cohort="${index}">Load</button>`}
-#       <button class="danger" data-remove-cohort="${index}">Remove</button>
-#     </div>
-#   `).join('') || '<div class="empty">No cohorts in draft.</div>';
-#   updatePkWarning();
-#   renderJoinBuilder();
-# }
-#
-# function blankCustomCohort() {
-#   return {
-#     name: '',
-#     dest_table: '',
-#     type: 'fact',
-#     pull_this_cycle: true,
-#     columns: [],
-#     removed_columns: [],
-#     filter: {
-#       from_table: '',
-#       from_alias: '',
-#       join: [],
-#       where: []
-#     }
-#   };
-# }
-#
-# function normalizeDataDictionary(raw) {
-#   const source = raw?.DataDictionary || raw || {};
-#   const normalized = {};
-#   Object.entries(source).forEach(([tableName, table]) => {
-#     const columns = table?.columns || {};
-#     normalized[tableName] = {
-#       description: table?.description || '',
-#       granularity: table?.granularity || '',
-#       columns: Object.entries(columns).map(([name, meta]) => ({
-#         name,
-#         type: String(meta?.type || ''),
-#         normalizedType: normalizeColumnType(meta?.type || ''),
-#         nullable: meta?.nullable,
-#         description: meta?.description || ''
-#       }))
-#     };
-#   });
-#   return normalized;
-# }
-#
-# function normalizeColumnType(type) {
-#   const text = String(type || '').toLowerCase();
-#   if (/(char|text|string|varchar|nvarchar)/.test(text)) return 'string';
-#   if (/(date|time)/.test(text)) return 'datetime';
-#   if (/(bool|bit|flag)/.test(text)) return 'boolean';
-#   if (/(bigint|integer|int|numeric|decimal|float|double|real)/.test(text)) return 'number';
-#   return text.replace(/\s*\(.*/, '').trim() || 'unknown';
-# }
-#
-# function columnTypeForYaml(type) {
-#   const text = String(type || '').toLowerCase();
-#   if (/bigint/.test(text)) return 'BIGINT';
-#   if (/integer|int/.test(text)) return 'INT';
-#   if (/date\/datetime|datetime|date|time/.test(text)) return 'DATETIME2(7)';
-#   if (/bool|bit|flag/.test(text)) return 'BIT';
-#   if (/numeric|decimal|float|double|real/.test(text)) return 'FLOAT';
-#   if (/char|text|string|varchar|nvarchar/.test(text)) return 'VARCHAR(400)';
-#   return String(type || '');
-# }
-#
-# function typesCompatible(left, right) {
-#   const a = normalizeColumnType(left);
-#   const b = normalizeColumnType(right);
-#   return a !== 'unknown' && b !== 'unknown' && a === b;
-# }
-#
-# function aliasForTable(tableName) {
-#   const words = String(tableName || '').match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+/g) || [];
-#   const letters = words.map(word => word[0]).join('').toLowerCase();
-#   return letters || String(tableName || '').slice(0, 3).toLowerCase() || 't';
-# }
-#
-# function dictionaryColumns(tableName) {
-#   return dataDictionary[tableName]?.columns || [];
-# }
-#
-# function dictionaryColumn(tableName, columnName) {
-#   return dictionaryColumns(tableName).find(column => column.name === columnName) || null;
-# }
-#
-# function columnFromDictionary(tableName, columnName, alias) {
-#   const meta = dictionaryColumn(tableName, columnName) || {};
-#   return {
-#     source: `${alias || aliasForTable(tableName)}.${columnName}`,
-#     name: columnName,
-#     type: columnTypeForYaml(meta.type),
-#     nullable: meta.nullable === undefined ? '' : Boolean(meta.nullable),
-#     dict_table: tableName,
-#     dict_column: columnName
-#   };
-# }
-#
-# function parseFromClause(fromValue) {
-#   const first = Array.isArray(fromValue) ? fromValue[0] : fromValue;
-#   const text = String(first || '').trim();
-#   const match = text.match(/^(.+?)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)$/i);
-#   if (match && dataDictionary[match[1].trim()]) return { table: match[1].trim(), alias: match[2].trim() };
-#   return { table: dataDictionary[text] ? text : '', alias: '' };
-# }
-#
-# function customDraftFromCohort(cohort) {
-#   const from = parseFromClause(cohort?.filter?.from);
-#   const alias = from.alias || aliasForTable(from.table);
-#   const draft = blankCustomCohort();
-#   draft.name = cohort?.name || '';
-#   draft.dest_table = cohort?.dest_table || cohort?.name || '';
-#   draft.type = cohort?.type || 'fact';
-#   draft.pull_this_cycle = cohort?.pull_this_cycle !== false;
-#   draft.filter.from_table = from.table;
-#   draft.filter.from_alias = alias;
-#   draft.filter.join = Array.isArray(cohort?.filter?.join) ? clone(cohort.filter.join) : [];
-#   draft.filter.where = Array.isArray(cohort?.filter?.where) ? clone(cohort.filter.where) : [];
-#   const existing = Array.isArray(cohort?.columns) ? cohort.columns : [];
-#   if (from.table) {
-#     const selected = [];
-#     existing.forEach(column => {
-#       const source = String(column.source || '');
-#       const sourceCol = source.includes('.') ? source.split('.').pop() : column.name;
-#       selected.push({
-#         ...column,
-#         name: column.name || sourceCol,
-#         dict_table: from.table,
-#         dict_column: sourceCol
-#       });
-#     });
-#     const selectedNames = new Set(selected.map(column => column.dict_column || column.name));
-#     draft.columns = selected;
-#     draft.removed_columns = dictionaryColumns(from.table)
-#       .filter(column => !selectedNames.has(column.name))
-#       .map(column => column.name);
-#   } else {
-#     draft.columns = existing;
-#   }
-#   return draft;
-# }
-#
-# function resetColumnsForTable(tableName, preserveExisting = false) {
-#   const alias = customDraft.filter.from_alias || aliasForTable(tableName);
-#   const dictCols = dictionaryColumns(tableName);
-#   if (!tableName || !dictCols.length) return;
-#   if (preserveExisting && customDraft.columns.length) {
-#     const existingNames = new Set(customDraft.columns.map(column => column.dict_column || String(column.source || '').split('.').pop() || column.name));
-#     customDraft.columns = customDraft.columns.map(column => {
-#       const name = column.dict_column || String(column.source || '').split('.').pop() || column.name;
-#       return { ...columnFromDictionary(tableName, name, alias), ...column, dict_table: tableName, dict_column: name };
-#     });
-#     customDraft.removed_columns = dictCols.filter(column => !existingNames.has(column.name)).map(column => column.name);
-#     return;
-#   }
-#   customDraft.columns = dictCols.map(column => columnFromDictionary(tableName, column.name, alias));
-#   customDraft.removed_columns = [];
-# }
-#
-# function renderCustomBuilder() {
-#   renderDictionaryTableOptions();
-#   setValue('customName', customDraft.name || '');
-#   setValue('customDestTable', customDraft.dest_table || '');
-#   setValue('customType', customDraft.type || 'fact');
-#   const pull = document.getElementById('customPullThisCycle');
-#   if (pull) pull.checked = customDraft.pull_this_cycle !== false;
-#   setValue('customFromTable', customDraft.filter.from_table || '');
-#   setValue('customFromAlias', customDraft.filter.from_alias || '');
-#   if (customDraft.filter.from_table && !customDraft.columns.length && !(customDraft.removed_columns || []).length) {
-#     resetColumnsForTable(customDraft.filter.from_table);
-#   }
-#   renderCustomColumnRows();
-#   renderJoinBuilder();
-#   renderCustomJoinRows();
-#   renderCustomLineRows('customWhereRows', 'where', 'where condition');
-#   updatePkWarning();
-# }
-#
-# function renderCustomColumnRows() {
-#   const selected = document.getElementById('customSelectedColumns');
-#   const removed = document.getElementById('customRemovedColumns');
-#   if (!selected || !removed) return;
-#   selected.innerHTML = customDraft.columns.map((column, index) => {
-#     const meta = dictionaryColumn(column.dict_table || customDraft.filter.from_table, column.dict_column || column.name) || {};
-#     return `
-#       <div class="column-item">
-#         <span class="column-title">
-#           <strong>${escapeHtml(column.name || column.dict_column || '')}</strong>
-#           <span class="muted">${escapeHtml(meta.type || column.type || '')}${column.nullable === false ? ' · required' : ''}</span>
-#         </span>
-#         <input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}" title="Output name">
-#         <span class="column-actions">
-#           <button data-move-custom-column="${index}" data-direction="-1" title="Move up">Up</button>
-#           <button data-move-custom-column="${index}" data-direction="1" title="Move down">Down</button>
-#           <button class="danger" data-remove-custom-column="${index}" title="Remove">-</button>
-#         </span>
-#       </div>
-#     `;
-#   }).join('') || '<div class="empty">No columns selected.</div>';
-#   removed.innerHTML = (customDraft.removed_columns || []).map(columnName => {
-#     const meta = dictionaryColumn(customDraft.filter.from_table, columnName) || {};
-#     return `
-#       <div class="column-item removed">
-#         <span class="column-title">
-#           <strong>${escapeHtml(columnName)}</strong>
-#           <span class="muted">${escapeHtml(meta.type || '')}</span>
-#         </span>
-#         <span></span>
-#         <span class="column-actions"><button data-add-removed-column="${escapeAttr(columnName)}" title="Add">+</button></span>
-#       </div>
-#     `;
-#   }).join('') || '<div class="empty">No removed columns.</div>';
-# }
-#
-# function cohortOutputColumns(cohort) {
-#   if (!cohort) return [];
-#   const source = cohort.recipe ? recipeDefs.find(recipe => recipe.name === cohort.recipe) : cohort;
-#   return (source?.columns || []).map(column => {
-#     const name = column.name || String(column.source || '').split('.').pop();
-#     return {
-#       name,
-#       type: column.type || '',
-#       normalizedType: normalizeColumnType(column.type || ''),
-#       nullable: column.nullable
-#     };
-#   }).filter(column => column.name);
-# }
-#
-# function uploadOutputColumns(upload) {
-#   const schema = upload?.columns || upload?.schema || [];
-#   if (!Array.isArray(schema)) return [];
-#   return schema.map(column => {
-#     if (column && typeof column === 'object') {
-#       return {
-#         name: column.name,
-#         type: column.type || '',
-#         normalizedType: normalizeColumnType(column.type || ''),
-#         nullable: column.nullable
-#       };
-#     }
-#     return { name: String(column), type: '', normalizedType: 'unknown', nullable: '' };
-#   }).filter(column => column.name);
-# }
-#
-# function availableJoinTables() {
-#   const tables = [];
-#   draftTemplate.cohorts.forEach((cohort, index) => {
-#     if (editingCustomIndex !== null && index === editingCustomIndex) return;
-#     const name = cohort.dest_table || cohort.name || cohort.recipe;
-#     if (!name) return;
-#     tables.push({
-#       name,
-#       kind: cohort.recipe ? 'recipe' : 'custom',
-#       columns: cohortOutputColumns(cohort)
-#     });
-#   });
-#   draftTemplate.upload_cohorts.forEach(upload => {
-#     const name = upload.dest_table || upload.name;
-#     if (!name) return;
-#     tables.push({
-#       name,
-#       kind: 'upload',
-#       columns: uploadOutputColumns(upload)
-#     });
-#   });
-#   return tables;
-# }
-#
-# function currentColumnOptions(selected = '') {
-#   return customDraft.columns.map((column, index) => {
-#     const sourceColumn = column.dict_column || String(column.source || '').split('.').pop() || column.name;
-#     const label = column.name && column.name !== sourceColumn ? `${column.name} (${sourceColumn})` : sourceColumn;
-#     return `<option value="${index}" ${String(index) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-#   }).join('');
-# }
-#
-# function availableColumnOptions(tableName, selected = '') {
-#   const table = availableJoinTables().find(item => item.name === tableName);
-#   return (table?.columns || []).map(column => `<option value="${escapeAttr(column.name)}" ${column.name === selected ? 'selected' : ''}>${escapeHtml(column.name)}</option>`).join('');
-# }
-#
-# function renderJoinBuilder() {
-#   const baseColumn = document.getElementById('joinBaseColumn');
-#   const joinTable = document.getElementById('joinTable');
-#   const joinColumn = document.getElementById('joinColumn');
-#   if (!baseColumn || !joinTable || !joinColumn) return;
-#   const priorBaseColumn = baseColumn.value;
-#   const priorTable = joinTable.value;
-#   baseColumn.innerHTML = currentColumnOptions(priorBaseColumn);
-#   const tables = availableJoinTables();
-#   joinTable.innerHTML = tables.map(table => `<option value="${escapeAttr(table.name)}" ${table.name === priorTable ? 'selected' : ''}>${escapeHtml(table.name)} (${escapeHtml(table.kind)})</option>`).join('');
-#   if (!joinTable.value && tables.length) joinTable.value = tables[0].name;
-#   joinColumn.innerHTML = availableColumnOptions(joinTable.value, joinColumn.value);
-#   updateJoinCheck();
-# }
-#
-# function updateJoinCheck() {
-#   const check = document.getElementById('joinCheck');
-#   if (!check) return;
-#   const left = customDraft.columns[Number(getValue('joinBaseColumn'))];
-#   const table = availableJoinTables().find(item => item.name === getValue('joinTable'));
-#   const right = table?.columns.find(column => column.name === getValue('joinColumn'));
-#   check.classList.remove('ok', 'error');
-#   if (!left || !right) {
-#     check.textContent = table ? '' : 'No available tables';
-#     return;
-#   }
-#   if (typesCompatible(left.type, right.type)) {
-#     check.textContent = `${normalizeColumnType(left.type)} match`;
-#     check.classList.add('ok');
-#   } else {
-#     check.textContent = `${left.type} vs ${right.type}`;
-#     check.classList.add('error');
-#   }
-# }
-#
-# function joinDraftFromFields() {
-#   const left = customDraft.columns[Number(getValue('joinBaseColumn'))];
-#   const table = getValue('joinTable');
-#   const available = availableJoinTables().find(item => item.name === table);
-#   const right = available?.columns.find(column => column.name === getValue('joinColumn'));
-#   if (!left || !available || !right || !typesCompatible(left.type, right.type)) return null;
-#   const sourceColumn = left.dict_column || String(left.source || '').split('.').pop() || left.name;
-#   return {
-#     join_type: getValue('joinType') || 'INNER',
-#     base_alias: customDraft.filter.from_alias || aliasForTable(customDraft.filter.from_table),
-#     base_column: sourceColumn,
-#     operator: getValue('joinOperator') || '=',
-#     table,
-#     alias: aliasForTable(table),
-#     column: right.name
-#   };
-# }
-#
-# function renderJoinLine(join) {
-#   if (typeof join === 'string') return join;
-#   const operator = join.operator || '=';
-#   const joinType = join.join_type || 'INNER';
-#   return `${joinType} JOIN ##JVM_${join.table} AS ${join.alias} ON ${join.base_alias}.${join.base_column} ${operator} ${join.alias}.${join.column}`;
-# }
-#
-# function renderCustomJoinRows() {
-#   const root = document.getElementById('customJoinRows');
-#   if (!root) return;
-#   root.innerHTML = customDraft.filter.join.map((join, index) => `
-#     <div class="editor-row line-editor">
-#       <label>join<input data-custom-line-field="join" data-index="${index}" value="${escapeAttr(renderJoinLine(join))}" ${typeof join === 'string' ? '' : 'readonly'}></label>
-#       <button class="danger" data-remove-custom-line="join" data-index="${index}">Remove</button>
-#     </div>
-#   `).join('') || '<div class="empty">No join lines yet.</div>';
-# }
-#
-# function renderCustomLineRows(rootId, field, placeholder) {
-#   const root = document.getElementById(rootId);
-#   if (!root) return;
-#   root.innerHTML = customDraft.filter[field].map((line, index) => `
-#     <div class="editor-row line-editor">
-#       <label>${field}<input data-custom-line-field="${field}" data-index="${index}" value="${escapeAttr(line || '')}" placeholder="${escapeAttr(placeholder)}"></label>
-#       <button class="danger" data-remove-custom-line="${field}" data-index="${index}">Remove</button>
-#     </div>
-#   `).join('') || `<div class="empty">No ${escapeHtml(field)} lines yet.</div>`;
-# }
-#
-# function syncCustomFields() {
-#   const oldTable = customDraft.filter.from_table;
-#   const oldAlias = customDraft.filter.from_alias;
-#   customDraft.name = getValue('customName');
-#   customDraft.dest_table = getValue('customDestTable');
-#   customDraft.type = getValue('customType') || 'fact';
-#   customDraft.pull_this_cycle = !!document.getElementById('customPullThisCycle')?.checked;
-#   customDraft.filter.from_table = getValue('customFromTable');
-#   customDraft.filter.from_alias = getValue('customFromAlias');
-#   if (customDraft.filter.from_alias && customDraft.filter.from_alias !== oldAlias) {
-#     customDraft.columns = customDraft.columns.map(column => {
-#       const dictCol = column.dict_column || String(column.source || '').split('.').pop() || column.name;
-#       return { ...column, source: `${customDraft.filter.from_alias}.${dictCol}`, dict_column: dictCol };
-#     });
-#   }
-#   if (customDraft.filter.from_table && customDraft.filter.from_table !== oldTable) {
-#     if (!customDraft.filter.from_alias || customDraft.filter.from_alias === aliasForTable(oldTable)) {
-#       customDraft.filter.from_alias = aliasForTable(customDraft.filter.from_table);
-#       setValue('customFromAlias', customDraft.filter.from_alias);
-#     }
-#     resetColumnsForTable(customDraft.filter.from_table);
-#     customDraft.filter.join = [];
-#     renderCustomColumnRows();
-#     renderJoinBuilder();
-#     renderCustomJoinRows();
-#   }
-#   updatePkWarning();
-# }
-#
-# function makeCustomCohort() {
-#   syncCustomFields();
-#   const cohort = {
-#     name: customDraft.name || 'CustomCohort',
-#     dest_table: customDraft.dest_table || customDraft.name || 'CustomCohort',
-#     type: customDraft.type || 'fact',
-#     pull_this_cycle: customDraft.pull_this_cycle !== false,
-#     columns: customDraft.columns
-#       .filter(column => column.source || column.name || column.type || column.nullable !== undefined)
-#       .map(cleanColumn),
-#     filter: {}
-#   };
-#   const fromTable = customDraft.filter.from_table;
-#   const fromAlias = customDraft.filter.from_alias;
-#   if (fromTable) cohort.filter.from = [fromAlias ? `${fromTable} as ${fromAlias}` : fromTable];
-#   const joins = customDraft.filter.join.map(join => renderJoinLine(join).trim()).filter(Boolean);
-#   const wheres = customDraft.filter.where.map(line => line.trim()).filter(Boolean);
-#   if (joins.length) cohort.filter.join = joins;
-#   if (wheres.length) cohort.filter.where = wheres;
-#   return cohort;
-# }
-#
-# function cleanColumn(column) {
-#   const clean = {};
-#   if (column.source) clean.source = column.source;
-#   if (column.name) clean.name = column.name;
-#   if (column.type) clean.type = column.type;
-#   if (column.nullable !== undefined && column.nullable !== '') clean.nullable = column.nullable === true || column.nullable === 'true';
-#   return clean;
-# }
-#
-# function updatePkWarning() {
-#   const warning = document.getElementById('pkWarning');
-#   if (!warning) return;
-#   const existingPk = draftTemplate.cohorts.some(cohort => {
-#     if (String(cohort.type || '').toLowerCase() === 'pk') return true;
-#     const recipe = recipeDefs.find(item => item.name === cohort.recipe);
-#     return String(recipe?.type || '').toLowerCase() === 'pk';
-#   });
-#   const customPk = String(getValue('customType') || customDraft.type || '').toLowerCase() === 'pk';
-#   warning.classList.toggle('hidden', !(existingPk && customPk));
-# }
-#
-# function customRecipeText() {
-#   const cohort = makeCustomCohort();
-#   const recipeName = cohort.name || 'CustomRecipe';
-#   const recipe = clone(cohort);
-#   recipe.name = recipeName;
-#   delete recipe.recipe;
-#   return toYaml({ recipes: [recipe] });
-# }
-#
-# function describeBatching(item) {
-#   if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [] };
-#   if (typeof item === 'string') return { name: item, chunk: '', values: [] };
-#   if (item && typeof item === 'object') {
-#     if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [] };
-#     if (item.name) return { name: item.name, chunk: String(item.rows_per_batch || ''), values: Array.isArray(item.values) ? item.values : [] };
-#     const keys = Object.keys(item);
-#     if (keys.length === 1) {
-#       const name = keys[0];
-#       const value = item[name];
-#       if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [] };
-#       return { name, chunk: '', values: value == null ? [] : [String(value)] };
-#     }
-#   }
-#   return { name: '', chunk: '', values: [] };
-# }
-#
-# function batchingFromFields(name, value) {
-#   if (name === 'chunk') {
-#     const parsed = parseInt(value || '0', 10);
-#     return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
-#   }
-#   const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
-#   if (values.length) {
-#     return { [name]: { values, include_other: true } };
-#   }
-#   return name;
-# }
-#
-# function updateBatchingHelp() {
-#   const name = getValue('newBatchingRecipe');
-#   const help = document.getElementById('batchingHelp');
-#   const list = document.getElementById('batchingValueSuggestions');
-#   const recipe = batchingRecipes.find(item => item.name === name) || {};
-#   if (help) {
-#     help.textContent = name === 'chunk'
-#       ? 'Enter the number of PK rows per batch.'
-#       : `Leave blank to batch by all ${name || 'selected'} values. If selecting specific values, all other values will be batched together.`;
-#   }
-#   if (list) {
-#     const values = Array.isArray(recipe.values) ? recipe.values : [];
-#     list.innerHTML = values.map(value => `<option value="${escapeAttr(value)}"></option>`).join('');
-#   }
-# }
-#
-# document.getElementById('addUpload')?.addEventListener('click', () => {
-#   ensureDraftShape();
-#   const name = getValue('newUploadName') || `Upload${draftTemplate.upload_cohorts.length + 1}`;
-#   const fileType = getValue('newUploadType') || 'csv';
-#   const upload = {
-#     name,
-#     dest_table: name,
-#     file_type: fileType,
-#     push_this_cycle: true
-#   };
-#   const fileLoc = getValue('newUploadPath');
-#   if (fileLoc) upload.file_loc = fileLoc;
-#   draftTemplate.upload_cohorts.push(upload);
-#   setValue('newUploadName', '');
-#   setValue('newUploadPath', '');
-#   renderUploadRows();
-#   updateDraftYaml();
-# });
-#
-# document.getElementById('addBatching')?.addEventListener('click', () => {
-#   ensureDraftShape();
-#   const name = getValue('newBatchingRecipe');
-#   if (!name) return;
-#   draftTemplate.batching.push(batchingFromFields(name, getValue('newBatchingValue')));
-#   setValue('newBatchingValue', '');
-#   renderBatchingRows();
-#   updateDraftYaml();
-# });
-#
-# document.getElementById('addCohort')?.addEventListener('click', () => {
-#   ensureDraftShape();
-#   const recipe = getValue('newCohortRecipe');
-#   if (!recipe) return;
-#   if (recipe === '__custom__') {
-#     document.getElementById('customName')?.focus();
-#     return;
-#   }
-#   draftTemplate.cohorts.push({ recipe, name: getValue('newCohortName') || recipe });
-#   setValue('newCohortName', '');
-#   renderCohortRows();
-#   updateDraftYaml();
-# });
-#
-# document.getElementById('addCustomColumn')?.addEventListener('click', () => {
-#   customDraft.columns.push({ source: '', name: '', type: '', nullable: '' });
-#   renderCustomColumnRows();
-# });
-#
-# document.getElementById('addCustomJoin')?.addEventListener('click', () => {
-#   const join = joinDraftFromFields();
-#   if (!join) {
-#     updateJoinCheck();
-#     return;
-#   }
-#   customDraft.filter.join.push(join);
-#   renderJoinBuilder();
-#   renderCustomJoinRows();
-# });
-#
-# document.getElementById('addCustomWhere')?.addEventListener('click', () => {
-#   customDraft.filter.where.push('');
-#   renderCustomLineRows('customWhereRows', 'where', 'where condition');
-# });
-#
-# document.getElementById('addCustomCohort')?.addEventListener('click', () => {
-#   ensureDraftShape();
-#   const cohort = makeCustomCohort();
-#   if (editingCustomIndex === null) {
-#     draftTemplate.cohorts.push(cohort);
-#   } else {
-#     draftTemplate.cohorts[editingCustomIndex] = cohort;
-#   }
-#   customDraft = blankCustomCohort();
-#   editingCustomIndex = null;
-#   renderCustomBuilder();
-#   renderCohortRows();
-#   updateDraftYaml();
-# });
-#
-# document.getElementById('resetCustomCohort')?.addEventListener('click', () => {
-#   customDraft = blankCustomCohort();
-#   editingCustomIndex = null;
-#   renderCustomBuilder();
-# });
-#
-# document.getElementById('copyCustomRecipe')?.addEventListener('click', async () => {
-#   const text = customRecipeText();
-#   try {
-#     await navigator.clipboard.writeText(text);
-#   } catch (err) {
-#     window.prompt('Copy custom recipe YAML:', text);
-#   }
-# });
-#
-# document.getElementById('downloadCustomRecipe')?.addEventListener('click', () => {
-#   const text = customRecipeText();
-#   const blob = new Blob([text], { type: 'text/yaml' });
-#   const a = document.createElement('a');
-#   const name = cleanDownloadName(`recipe_${makeCustomCohort().name || 'custom'}.yaml`);
-#   a.href = URL.createObjectURL(blob);
-#   a.download = name;
-#   a.click();
-#   URL.revokeObjectURL(a.href);
-# });
-#
-# document.addEventListener('input', event => {
-#   const target = event.target;
-#   const index = Number(target.dataset.index);
-#   if (target.dataset.uploadField) {
-#     draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.batchingField) {
-#     const parsed = describeBatching(draftTemplate.batching[index]);
-#     if (target.dataset.batchingField === 'name') {
-#       draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
-#       renderBatchingRows();
-#     } else {
-#       draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
-#     }
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.cohortField) {
-#     draftTemplate.cohorts[index][target.dataset.cohortField] = target.value;
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.customColumnField) {
-#     const column = customDraft.columns[index];
-#     const field = target.dataset.customColumnField;
-#     column[field] = target.value;
-#   }
-#   if (target.dataset.customLineField) {
-#     customDraft.filter[target.dataset.customLineField][index] = target.value;
-#   }
-# });
-#
-# document.addEventListener('change', event => {
-#   const target = event.target;
-#   const index = Number(target.dataset.index);
-#   if (target.dataset.uploadField) {
-#     draftTemplate.upload_cohorts[index][target.dataset.uploadField] = target.value;
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.batchingField) {
-#     const parsed = describeBatching(draftTemplate.batching[index]);
-#     if (target.dataset.batchingField === 'name') {
-#       draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
-#       renderBatchingRows();
-#     } else {
-#       draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
-#     }
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.customColumnField) {
-#     const column = customDraft.columns[index];
-#     const field = target.dataset.customColumnField;
-#     column[field] = target.value;
-#   }
-# });
-#
-# document.addEventListener('click', event => {
-#   const target = event.target;
-#   if (target.dataset.copyArtifact) {
-#     const text = document.getElementById(target.dataset.copyArtifact)?.innerText || '';
-#     navigator.clipboard.writeText(text).catch(() => window.prompt('Copy artifact:', text));
-#   }
-#   if (target.dataset.downloadArtifact) {
-#     const text = document.getElementById(target.dataset.downloadArtifact)?.innerText || '';
-#     const blob = new Blob([text], { type: 'text/yaml' });
-#     const a = document.createElement('a');
-#     a.href = URL.createObjectURL(blob);
-#     a.download = cleanDownloadName(target.dataset.filename || 'artifact.yaml');
-#     a.click();
-#     URL.revokeObjectURL(a.href);
-#   }
-#   if (target.dataset.removeUpload) {
-#     draftTemplate.upload_cohorts.splice(Number(target.dataset.removeUpload), 1);
-#     renderUploadRows();
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.removeBatching) {
-#     draftTemplate.batching.splice(Number(target.dataset.removeBatching), 1);
-#     renderBatchingRows();
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.removeBatchingValue) {
-#     const index = Number(target.dataset.removeBatchingValue);
-#     const valueIndex = Number(target.dataset.valueIndex);
-#     const parsed = describeBatching(draftTemplate.batching[index]);
-#     parsed.values.splice(valueIndex, 1);
-#     draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
-#     renderBatchingRows();
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.removeCohort) {
-#     draftTemplate.cohorts.splice(Number(target.dataset.removeCohort), 1);
-#     if (editingCustomIndex === Number(target.dataset.removeCohort)) {
-#       customDraft = blankCustomCohort();
-#       editingCustomIndex = null;
-#       renderCustomBuilder();
-#     }
-#     renderCohortRows();
-#     updateDraftYaml();
-#   }
-#   if (target.dataset.editCustomCohort) {
-#     editingCustomIndex = Number(target.dataset.editCustomCohort);
-#     customDraft = customDraftFromCohort(draftTemplate.cohorts[editingCustomIndex]);
-#     renderCustomBuilder();
-#     document.getElementById('customName')?.focus();
-#   }
-#   if (target.dataset.moveCustomColumn) {
-#     const index = Number(target.dataset.moveCustomColumn);
-#     const direction = Number(target.dataset.direction);
-#     const next = index + direction;
-#     if (next >= 0 && next < customDraft.columns.length) {
-#       const [column] = customDraft.columns.splice(index, 1);
-#       customDraft.columns.splice(next, 0, column);
-#       renderCustomColumnRows();
-#       renderJoinBuilder();
-#     }
-#   }
-#   if (target.dataset.removeCustomColumn) {
-#     const index = Number(target.dataset.removeCustomColumn);
-#     const [column] = customDraft.columns.splice(index, 1);
-#     const name = column?.dict_column || column?.name;
-#     if (name && !(customDraft.removed_columns || []).includes(name)) {
-#       customDraft.removed_columns = customDraft.removed_columns || [];
-#       customDraft.removed_columns.push(name);
-#     }
-#     renderCustomColumnRows();
-#     renderJoinBuilder();
-#   }
-#   if (target.dataset.addRemovedColumn) {
-#     const name = target.dataset.addRemovedColumn;
-#     customDraft.removed_columns = (customDraft.removed_columns || []).filter(column => column !== name);
-#     customDraft.columns.push(columnFromDictionary(customDraft.filter.from_table, name, customDraft.filter.from_alias));
-#     renderCustomColumnRows();
-#     renderJoinBuilder();
-#   }
-#   if (target.dataset.removeCustomLine) {
-#     customDraft.filter[target.dataset.removeCustomLine].splice(Number(target.dataset.index), 1);
-#     if (target.dataset.removeCustomLine === 'join') {
-#       renderJoinBuilder();
-#       renderCustomJoinRows();
-#     } else {
-#       renderCustomLineRows('customWhereRows', 'where', 'where condition');
-#     }
-#   }
-# });
-#
-# document.addEventListener('keydown', event => {
-#   const target = event.target;
-#   if (target.dataset.batchingAddValue && event.key === 'Enter') {
-#     event.preventDefault();
-#     const value = target.value.trim();
-#     if (!value) return;
-#     const index = Number(target.dataset.batchingAddValue);
-#     const parsed = describeBatching(draftTemplate.batching[index]);
-#     if (!parsed.values.includes(value)) parsed.values.push(value);
-#     draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
-#     renderBatchingRows();
-#     updateDraftYaml();
-#   }
-# });
-#
-# document.getElementById('builderNewTemplate')?.addEventListener('click', () => {
-#   draftTemplate = blankTemplate();
-#   hydrateBuilder();
-# });
-#
-# document.getElementById('builderUseCurrent')?.addEventListener('click', () => {
-#   draftTemplate = clone(initialTemplate);
-#   hydrateBuilder();
-# });
-#
-# document.getElementById('copyDraftYaml')?.addEventListener('click', async () => {
-#   const text = document.getElementById('draftYaml')?.innerText || '';
-#   try {
-#     await navigator.clipboard.writeText(text);
-#   } catch (err) {
-#     window.prompt('Copy draft YAML:', text);
-#   }
-# });
-#
-# document.getElementById('downloadDraftYaml')?.addEventListener('click', () => {
-#   const text = document.getElementById('draftYaml')?.innerText || '';
-#   const blob = new Blob([text], { type: 'text/yaml' });
-#   const a = document.createElement('a');
-#   const projectName = draftTemplate.project_vars?.project_folder || draftTemplate.project_folder || 'draft';
-#   const project = projectName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
-#   const requested = getValue('builderDraftFilename');
-#   const filename = cleanDownloadName(requested || `${project}_Full.yaml`);
-#   a.href = URL.createObjectURL(blob);
-#   a.download = filename;
-#   a.click();
-#   URL.revokeObjectURL(a.href);
-# });
-#
-# function cleanDownloadName(value) {
-#   const cleaned = String(value || 'draft.yaml')
-#     .replace(/[\\/:*?"<>|]+/g, '_')
-#     .replace(/^_+|_+$/g, '');
-#   return /\.ya?ml$/i.test(cleaned) ? cleaned : `${cleaned || 'draft'}.yaml`;
-# }
-#
-# function updateDraftYaml() {
-#   ensureDraftShape();
-#   const clean = {
-#     cosmos_vars: draftTemplate.cosmos_vars || {},
-#     run_vars: draftTemplate.run_vars || {},
-#     test_options: draftTemplate.test_options || {},
-#     project_vars: draftTemplate.project_vars || {},
-#     vars: draftTemplate.vars || {},
-#     upload_cohorts: draftTemplate.upload_cohorts || [],
-#     multipliers: draftTemplate.multipliers || [],
-#     batching: draftTemplate.batching || [],
-#     cohorts: draftTemplate.cohorts || []
-#   };
-#   document.getElementById('draftYaml').textContent = toYaml(clean);
-# }
-#
-# function toYaml(value, indent = 0) {
-#   const pad = ' '.repeat(indent);
-#   if (Array.isArray(value)) {
-#     if (value.length === 0) return '[]';
-#     return value.map(item => {
-#       if (item && typeof item === 'object' && !Array.isArray(item)) {
-#         const entries = Object.entries(item);
-#         if (entries.length === 0) return `${pad}- {}`;
-#         return entries.map(([key, val], idx) => {
-#           const prefix = idx === 0 ? `${pad}- ${key}:` : `${pad}  ${key}:`;
-#           if (val && typeof val === 'object') return `${prefix}\n${toYaml(val, indent + 4)}`;
-#           return `${prefix} ${formatScalar(val)}`;
-#         }).join('\n');
-#       }
-#       if (Array.isArray(item)) return `${pad}-\n${toYaml(item, indent + 2)}`;
-#       return `${pad}- ${formatScalar(item)}`;
-#     }).join('\n');
-#   }
-#   if (value && typeof value === 'object') {
-#     const entries = Object.entries(value).filter(([, val]) => val !== undefined);
-#     if (entries.length === 0) return '{}';
-#     return entries.map(([key, val]) => {
-#       if (val && typeof val === 'object') return `${pad}${key}:\n${toYaml(val, indent + 2)}`;
-#       return `${pad}${key}: ${formatScalar(val)}`;
-#     }).join('\n');
-#   }
-#   return `${pad}${formatScalar(value)}`;
-# }
-#
-# function formatScalar(value) {
-#   if (value === null || value === undefined) return '';
-#   if (typeof value === 'boolean') return value ? 'true' : 'false';
-#   if (typeof value === 'number') return String(value);
-#   const text = String(value);
-#   if (text === '') return '""';
-#   if (/[:#{}\[\]%,]|^\s|\s$/.test(text)) return JSON.stringify(text);
-#   return text;
-# }
-#
-# function escapeHtml(value) {
-#   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-# }
-#
-# function escapeAttr(value) {
-#   return escapeHtml(value);
-# }
-#
-# hydrateBuilder();
-# """
-#
-#
-# def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
-#     result = backend.compile_dashboard(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         write=False,
-#         datadictionary_path=DATA_DICTIONARY_PATH,
-#     )
-#     return build_html(template_path, recipes_path, result, auto_refresh), result
-#
-#
-# def resolve_workspace_path(value: str | Path) -> Path:
-#     path = Path(value).expanduser()
-#     if path.is_absolute():
-#         return path
-#     return PROJECT_ROOT / path
-#
-#
-# def url_host(host: str) -> str:
-#     if host in ("", "0.0.0.0"):
-#         return "127.0.0.1"
-#     if host == "::":
-#         return "[::1]"
-#     if ":" in host and not host.startswith("["):
-#         return f"[{host}]"
-#     return host
-#
-#
-# def network_hosts() -> list[str]:
-#     ipv4_hosts: list[str] = []
-#     ipv6_hosts: list[str] = []
-#     try:
-#         infos = socket.getaddrinfo(socket.gethostname(), None, type=socket.SOCK_STREAM)
-#     except OSError:
-#         return []
-#     for info in infos:
-#         address = info[4][0]
-#         try:
-#             parsed = ipaddress.ip_address(address)
-#         except ValueError:
-#             continue
-#         if parsed.is_loopback or parsed.is_link_local or parsed.is_multicast or parsed.is_unspecified:
-#             continue
-#         hosts = ipv4_hosts if parsed.version == 4 else ipv6_hosts
-#         if address not in hosts:
-#             hosts.append(address)
-#     return (ipv4_hosts + ipv6_hosts)[:8]
-#
-#
-# def dashboard_url(host: str, port: int, template: str, recipes: str) -> str:
-#     query = urllib.parse.urlencode({"template": template, "recipes": recipes})
-#     return f"http://{url_host(host)}:{port}/?{query}"
-#
-#
-# def error_html(title: str, message: str) -> str:
-#     return f"""<!doctype html>
-# <html lang="en">
-# <head>
-#   <meta charset="utf-8">
-#   <meta name="viewport" content="width=device-width, initial-scale=1">
-#   <title>{e(title)}</title>
-#   <style>{CSS}</style>
-# </head>
-# <body class="dark">
-#   <main>
-#     <section class="block">
-#       <h1>{e(title)}</h1>
-#       <p>{e(message)}</p>
-#       <form class="path-form" method="get" action="/">
-#         <label>Template YAML<input name="template" type="text" value="YAMLs/template.yaml"></label>
-#         <button type="submit">Refresh</button>
-#       </form>
-#     </section>
-#   </main>
-# </body>
-# </html>
-# """
-#
-#
-# def serve_dashboard(
-#     host: str,
-#     port: int,
-#     template: str,
-#     recipes: str,
-#     auto_refresh: int,
-#     open_browser: bool,
-#     browser_host: str | None = None,
-# ) -> int:
-#     default_template = template
-#     default_recipes = recipes
-#
-#     class DashboardHandler(http.server.BaseHTTPRequestHandler):
-#         def do_GET(self) -> None:
-#             parsed = urllib.parse.urlparse(self.path)
-#             if parsed.path not in ("/", "/dashboard", "/dashboard.html"):
-#                 self.send_error(404)
-#                 return
-#             params = urllib.parse.parse_qs(parsed.query)
-#             template_arg = params.get("template", [default_template])[0] or default_template
-#             recipes_arg = params.get("recipes", [default_recipes])[0] or default_recipes
-#             template_path = resolve_workspace_path(template_arg)
-#             recipes_path = resolve_workspace_path(recipes_arg)
-#             try:
-#                 html_text, _ = render_dashboard(template_path, recipes_path, auto_refresh)
-#                 status = 200
-#             except Exception as exc:  # noqa: BLE001 - surfaced as a dashboard page for local UI use.
-#                 html_text = error_html("Dashboard Refresh Failed", str(exc))
-#                 status = 500
-#             data = html_text.encode("utf-8")
-#             self.send_response(status)
-#             self.send_header("Content-Type", "text/html; charset=utf-8")
-#             self.send_header("Content-Length", str(len(data)))
-#             self.end_headers()
-#             self.wfile.write(data)
-#
-#         def log_message(self, format: str, *args: Any) -> None:
-#             print(f"[yamlmanager] {self.address_string()} - {format % args}")
-#
-#     class DashboardServer(http.server.ThreadingHTTPServer):
-#         address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
-#
-#     try:
-#         server = DashboardServer((host, port), DashboardHandler)
-#     except OSError as exc:
-#         print(f"[yamlmanager] Could not bind to {host}:{port}: {exc}", file=sys.stderr)
-#         print("[yamlmanager] Try --host 127.0.0.1 for SSH tunnel use, --public for VM/LAN access, or --port 0 for a free port.", file=sys.stderr)
-#         return 1
-#
-#     actual_host, actual_port = server.server_address[:2]
-#     display_host = browser_host or actual_host
-#     url = dashboard_url(display_host, int(actual_port), default_template, default_recipes)
-#     print(f"Serving YAML Manager at {url}")
-#     if actual_host in ("", "0.0.0.0", "::"):
-#         extra_urls = [dashboard_url(host, int(actual_port), default_template, default_recipes) for host in network_hosts()]
-#         if extra_urls:
-#             print("Other reachable URLs may include:")
-#             for extra_url in extra_urls:
-#                 print(f"  {extra_url}")
-#     print("Stop the manager with Ctrl+C, or the stop button in your editor.")
-#     if open_browser:
-#         if not webbrowser.open(url):
-#             print("[yamlmanager] No browser was opened automatically; copy the URL above into a browser.")
-#     try:
-#         server.serve_forever()
-#     except KeyboardInterrupt:
-#         print("\nStopped YAML Manager.")
-#     finally:
-#         server.server_close()
-#     return 0
-#
-#
-# def main(argv: list[str] | None = None) -> int:
-#     parser = argparse.ArgumentParser(description="Generate a static YAML Manager UI.")
-#     parser.add_argument("--template", default="YAMLs/template.yaml")
-#     parser.add_argument("--recipes", default="YAMLs/recipes.yaml")
-#     parser.add_argument(
-#         "--datadictionary",
-#         default=None,
-#         help=f"Data dictionary to validate against. Defaults to {DEFAULT_DATA_DICTIONARY}, "
-#              "or YAMLMANAGER_DATA_DICTIONARY.",
-#     )
-#     parser.add_argument("--out", default=str(DEFAULT_OUT))
-#     parser.add_argument("--open", action="store_true", help="Open the generated dashboard in a browser.")
-#     parser.add_argument("--serve", action="store_true", help="Run a local dashboard server so template paths can be changed in the UI.")
-#     parser.add_argument("--static", action="store_true", help="Write a static dashboard file instead of starting the local server when no args are provided.")
-#     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), help="Write a pre-YAML artifact and exit.")
-#     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml, then exit.")
-#     parser.add_argument("--out-dir", help="Directory for split export artifacts.")
-#     parser.add_argument("--host", default=DEFAULT_HOST, help=f"Address to bind. Defaults to {DEFAULT_HOST!r}, or YAMLMANAGER_HOST/MANAGER_UI_HOST.")
-#     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Port to bind. Use 0 for a free port. Defaults to {DEFAULT_PORT}, or YAMLMANAGER_PORT/MANAGER_UI_PORT.")
-#     parser.add_argument("--public", action="store_true", help="Bind to all interfaces unless --host is also supplied.")
-#     parser.add_argument("--browser-host", help="Host name to use in printed/opened URLs when it differs from the bind address.")
-#     parser.add_argument("--no-open", action="store_true", help="Do not try to open a browser when serving with no arguments.")
-#     parser.add_argument("--auto-refresh", type=int, default=0, help="Add browser auto-refresh, in seconds. Use 5 for every five seconds.")
-#     raw_argv = sys.argv[1:] if argv is None else argv
-#     args = parser.parse_args(raw_argv)
-#
-#     # A path typed on the command line means "relative to where I am", as it
-#     # does for makeYaml and every other CLI tool. Only the built-in defaults are
-#     # relative to the install. Previously both resolved against the install, so
-#     # from an extracted bundle a template sitting in the working directory had
-#     # to be written as ..\template.yaml -- while --out-dir, which was never
-#     # routed through the resolver, meant the working directory after all.
-#     def typed(flag: str) -> bool:
-#         return any(arg == flag or arg.startswith(flag + "=") for arg in raw_argv)
-#
-#     def from_cwd(value: str) -> str:
-#         path = Path(value).expanduser()
-#         return str(path if path.is_absolute() else Path.cwd() / path)
-#
-#     if typed("--template"):
-#         args.template = from_cwd(args.template)
-#     if typed("--recipes"):
-#         args.recipes = from_cwd(args.recipes)
-#     if args.datadictionary:
-#         global DATA_DICTIONARY_PATH
-#         DATA_DICTIONARY_PATH = Path(from_cwd(args.datadictionary))
-#
-#     missing = backend.missing_template_message(resolve_workspace_path(args.template))
-#     if missing:
-#         print(f"[yamlmanager] {missing}", file=sys.stderr)
-#         return 1
-#     # These only mean anything to the server, so supplying one is a request to
-#     # serve. Without this, `--port 0` silently wrote a static file instead --
-#     # the opposite of what asking for a port means.
-#     serve_only = ("--host", "--port", "--public", "--browser-host", "--no-open")
-#     asked_to_serve = any(
-#         arg == flag or arg.startswith(flag + "=")
-#         for arg in raw_argv
-#         for flag in serve_only
-#     )
-#     open_by_default = not raw_argv
-#     explicit_host = any(arg == "--host" or arg.startswith("--host=") for arg in raw_argv)
-#     explicit_out = any(arg == "--out" or arg.startswith("--out=") for arg in raw_argv)
-#     if args.public and not explicit_host:
-#         args.host = "0.0.0.0"
-#
-#     if args.export_preyaml:
-#         result = backend.build_preyaml(
-#             template_path=resolve_workspace_path(args.template),
-#             recipes_path=resolve_workspace_path(args.recipes),
-#             output_path=args.out if explicit_out else None,
-#             mode=args.export_preyaml,
-#             write=True,
-#         )
-#         print_messages(result)
-#         if result.ok:
-#             print(f"Wrote {result.output_path}")
-#         else:
-#             print("FAILED: errors block pre-YAML export")
-#         return 0 if result.ok else 1
-#
-#     if args.export_split:
-#         result = backend.write_split_artifacts(
-#             template_path=resolve_workspace_path(args.template),
-#             recipes_path=resolve_workspace_path(args.recipes),
-#             output_dir=args.out_dir,
-#             datadictionary_path=DATA_DICTIONARY_PATH,
-#         )
-#         print_messages(result)
-#         if result.ok:
-#             print(f"Wrote split artifacts to {result.analysis.get('split_output_dir')}")
-#             print(f"Manifest: {result.output_path}")
-#         else:
-#             print("FAILED: errors block split export")
-#         return 0 if result.ok else 1
-#
-#     if not args.static and (args.serve or asked_to_serve or open_by_default):
-#         return serve_dashboard(
-#             args.host,
-#             args.port,
-#             args.template,
-#             args.recipes,
-#             args.auto_refresh,
-#             open_browser=not args.static and not args.no_open,
-#             browser_host=args.browser_host,
-#         )
-#
-#     template_path = resolve_workspace_path(args.template)
-#     recipes_path = resolve_workspace_path(args.recipes)
-#
-#     out_path = Path(args.out)
-#     html_text, result = render_dashboard(template_path, recipes_path, args.auto_refresh)
-#     out_path.parent.mkdir(parents=True, exist_ok=True)
-#     out_path.write_text(html_text, encoding="utf-8")
-#
-#     print(f"Wrote {out_path}")
-#     print(f"Status: {'Ready' if result.ok else 'Blocked'}")
-#     print(f"Errors: {len(result.errors)}")
-#     print(f"Warnings: {len(result.warnings)}")
-#     if args.open or open_by_default:
-#         webbrowser.open(out_path.resolve().as_uri())
-#     return 0
-#
-#
-# if __name__ == "__main__":
-#     raise SystemExit(main())
-#
-# === END FILE: scripts/yamlmanager.py ===
-# === BEGIN FILE: scripts/yamlmanager_backend.py SHA256: 7dbd3c2d0a9f11053fd8169e1c56738e0dbf6507f153bfd1d0ed7cfdd146b7d0 SIZE: 2926 ===
-# """
-# Stable Python API for YAML Manager frontends.
-#
-# Frontends should import this module instead of reaching into makeYaml directly.
-# That keeps CLI/UI/Desktop naming independent from the compiler implementation.
-# """
-#
-# from __future__ import annotations
-#
-# from pathlib import Path
-# from typing import Any
-#
-# import makeYaml
-#
-#
-# CompileResult = makeYaml.CompileResult
-#
-#
-# def load_document(path: str | Path) -> Any:
-#     return makeYaml.load_yaml(path)
-#
-#
-# def compile_dashboard(
-#     template_path: str | Path,
-#     recipes_path: str | Path,
-#     write: bool = False,
-#     datadictionary_path: str | Path | None = None,
-# ) -> CompileResult:
-#     return makeYaml.compile_yaml(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         write=write,
-#         datadictionary_path=datadictionary_path,
-#     )
-#
-#
-# def build_preyaml(
-#     template_path: str | Path,
-#     recipes_path: str | Path,
-#     output_path: str | Path | None = None,
-#     mode: str = "symbolic",
-#     write: bool = False,
-# ) -> CompileResult:
-#     return makeYaml.build_preyaml(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         output_path=output_path,
-#         mode=mode,
-#         write=write,
-#     )
-#
-#
-# def plan_split_runs(
-#     template_path: str | Path,
-#     recipes_path: str | Path,
-#     datadictionary_path: str | Path | None = None,
-# ) -> CompileResult:
-#     return makeYaml.plan_split_runs(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         datadictionary_path=datadictionary_path,
-#     )
-#
-#
-# def build_pullmanifest(
-#     template_path: str | Path,
-#     recipes_path: str | Path,
-#     output_path: str | Path | None = None,
-#     write: bool = False,
-#     datadictionary_path: str | Path | None = None,
-# ) -> CompileResult:
-#     return makeYaml.build_pullmanifest(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         output_path=output_path,
-#         write=write,
-#         datadictionary_path=datadictionary_path,
-#     )
-#
-#
-# def write_split_artifacts(
-#     template_path: str | Path,
-#     recipes_path: str | Path,
-#     output_dir: str | Path | None = None,
-#     datadictionary_path: str | Path | None = None,
-# ) -> CompileResult:
-#     return makeYaml.write_split_artifacts(
-#         template_path=template_path,
-#         recipes_path=recipes_path,
-#         output_dir=output_dir,
-#         datadictionary_path=datadictionary_path,
-#     )
-#
-#
-# def missing_template_message(template_path: str | Path) -> str | None:
-#     return makeYaml.missing_template_message(Path(template_path))
-#
-#
-# def dump_yaml_text(data: Any) -> str:
-#     return makeYaml.dump_yaml_text(data)
-#
-#
-# def recipe_output_columns(recipe: dict[str, Any]) -> list[str]:
-#     return makeYaml.output_columns(recipe)
-#
-#
-# def recipe_required_vars(recipe: dict[str, Any]) -> dict[str, Any]:
-#     return makeYaml.infer_required_vars(recipe)
-#
-#
-# def recipe_table_inputs(recipe: dict[str, Any]) -> dict[str, list[str]]:
-#     return makeYaml.infer_table_inputs(recipe)
-#
-# === END FILE: scripts/yamlmanager_backend.py ===

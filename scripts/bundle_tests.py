@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -160,13 +161,73 @@ class ExtractionPolicyTests(BundleTestCase):
         extract(self.bundle, target)
         return target
 
-    def test_the_template_ships_only_as_an_example(self):
-        # Nothing the user authors is bundled, so improvements to the template
-        # keep arriving with no chance of landing on a real one.
+    def test_recipes_and_authoring_stay_on_the_mac(self):
+        # D49: the VM works from transfer YAMLs, so neither recipes nor the
+        # browser UI nor a template to author from travel.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        self.assertTrue((target / "YAMLs/template.yaml.example").is_file())
-        self.assertFalse((target / "YAMLs/template.yaml").exists())
+        for rel in (
+            "YAMLs/recipes.yaml",
+            "YAMLs/template.yaml",
+            "YAMLs/template.yaml.example",
+            "scripts/yamlmanager.py",
+            "scripts/yamlmanager_backend.py",
+        ):
+            with self.subTest(path=rel):
+                self.assertFalse((target / rel).exists())
+
+    def pretend_previous_release_shipped(self, target: Path, rel: str, content: str) -> None:
+        """Make `target` look like an extraction of a bundle that shipped `rel`."""
+        (target / rel).parent.mkdir(parents=True, exist_ok=True)
+        (target / rel).write_text(content, encoding="utf-8")
+        record = json.loads((target / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        record["files"] = [e for e in record["files"] if e["path"] != rel] + [{
+            "path": rel,
+            "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "size": len(content.encode("utf-8")),
+        }]
+        (target / MANIFEST_FILENAME).write_text(json.dumps(record), encoding="utf-8")
+
+    def test_an_edited_file_the_bundle_stops_shipping_is_kept(self):
+        # The update that dropped recipes.yaml must not take a VM edit with it.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        self.pretend_previous_release_shipped(target, "YAMLs/recipes.yaml", "recipes: []\n")
+        (target / "YAMLs/recipes.yaml").write_text("# edited on the VM\n", encoding="utf-8")
+        extract(self.bundle, target)
+        self.assertFalse((target / "YAMLs/recipes.yaml").exists())
+        self.assertEqual(
+            (target / "YAMLs/recipes.yaml.local").read_text(encoding="utf-8"),
+            "# edited on the VM\n",
+        )
+
+    def test_an_untouched_file_the_bundle_stops_shipping_is_removed(self):
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        self.pretend_previous_release_shipped(target, "YAMLs/recipes.yaml", "recipes: []\n")
+        extract(self.bundle, target)
+        self.assertFalse((target / "YAMLs/recipes.yaml").exists())
+        self.assertFalse((target / "YAMLs/recipes.yaml.local").exists())
+
+    def test_a_file_that_only_changed_between_releases_leaves_no_local_copy(self):
+        # Changed upstream, never touched here: not an edit, nothing to keep.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        self.pretend_previous_release_shipped(target, "YAMLs/datadictionary.yaml", "# last release\n")
+        extract(self.bundle, target)
+        self.assertFalse((target / "YAMLs/datadictionary.yaml.local").exists())
+        self.assertEqual(
+            (target / "YAMLs/datadictionary.yaml").read_bytes(),
+            SOURCES["YAMLs/datadictionary.yaml"].read_bytes(),
+        )
+
+    def test_a_kept_copy_survives_the_next_update(self):
+        target = self.extract_twice("YAMLs/datadictionary.yaml", "# edited on the VM\n")
+        extract(self.bundle, target)
+        self.assertEqual(
+            (target / "YAMLs/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            "# edited on the VM\n",
+        )
 
     def test_unbundled_files_inside_the_tree_do_not_survive(self):
         # The extracted tree is wholly managed: it is swapped, not merged. A
@@ -388,36 +449,58 @@ class EndToEndTests(BundleTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Sessions:", proc.stdout)
 
-    def test_typed_paths_resolve_against_the_working_directory(self):
-        # yamlmanager once resolved --template against its install, so from an
-        # extracted bundle a template in the working directory had to be typed
-        # as ..\\template.yaml, while makeYaml took the same argument literally.
+    def test_the_vm_pathway_from_a_transfer_yaml(self):
+        # D49 end to end. On the Mac: export a transfer YAML. On the VM, with
+        # no recipes anywhere: split it from the working directory by a typed
+        # relative path, then dry-run the manifest.
+        work = self.tmp / "work"
+        shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
+        export = self.run_python(
+            str(REPO_ROOT / "scripts" / "makeYaml.py"),
+            "--template", str(work / "02_valid_multipliers_batching.yaml"),
+            "--recipes", str(REPO_ROOT / "YAMLs" / "recipes.yaml"),
+            "--export-transfer", "--out", str(work / "IBD_transfer.yaml"),
+        )
+        self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
+
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        self.assertFalse((target / "YAMLs" / "recipes.yaml").exists())
+        split = subprocess.run(
+            [sys.executable, str(target / "scripts" / "makeYaml.py"),
+             "--template", "IBD_transfer.yaml", "--export-split", "--out-dir", "split"],
+            capture_output=True, text=True, cwd=work,
+        )
+        self.assertEqual(split.returncode, 0, split.stdout + split.stderr)
+        dry = subprocess.run(
+            [sys.executable, str(target / "pullmanager.py"), "--dry-run",
+             "split/pullmanifest.yaml", "--out-dir", "sql"],
+            capture_output=True, text=True, cwd=work,
+        )
+        self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+        self.assertTrue(any((work / "sql").rglob("*.sql")))
+
+    def test_a_template_that_still_uses_recipes_is_refused_with_a_pointer(self):
         target = self.tmp / "runtime"
         extract(self.bundle, target)
         work = self.tmp / "work"
-        work.mkdir()
-        template = REPO_ROOT / "YAMLs" / "manager_test_cases" / "01_valid_basic.yaml"
-        (work / "IBDTest.yaml").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
-        shutil.copytree(
-            REPO_ROOT / "YAMLs" / "manager_test_cases" / "fixtures", work / "fixtures"
+        shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
+        proc = subprocess.run(
+            [sys.executable, str(target / "scripts" / "makeYaml.py"),
+             "--template", "01_valid_basic.yaml", "--validate"],
+            capture_output=True, text=True, cwd=work,
         )
-        for script in ("makeYaml.py", "yamlmanager.py"):
-            with self.subTest(script=script):
-                out = work / f"split_{script}"
-                proc = subprocess.run(
-                    [sys.executable, str(target / "scripts" / script),
-                     "--template", "IBDTest.yaml", "--export-split", "--out-dir", str(out)],
-                    capture_output=True, text=True, cwd=work,
-                )
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                self.assertTrue((out / "pullmanifest.yaml").is_file())
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("recipes_not_found", proc.stdout)
+        self.assertIn("--export-transfer", proc.stdout)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
 
-    def test_running_without_a_template_explains_the_example(self):
+    def test_running_without_a_template_says_what_to_pass(self):
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        proc = self.run_python(str(target / "scripts" / "yamlmanager.py"), "--static")
+        proc = self.run_python(str(target / "scripts" / "makeYaml.py"), "--validate")
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("template.yaml.example", proc.stdout + proc.stderr)
+        self.assertIn("--export-transfer", proc.stdout + proc.stderr)
         self.assertNotIn("Traceback", proc.stdout + proc.stderr)
 
     def test_runtime_reads_a_batch_product_manifest(self):

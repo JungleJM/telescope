@@ -30,8 +30,7 @@ STATUS_COLOURS = {
 
 FIELDS = (
     # attribute, label, kind, hint
-    ("template", "Template", "file", "required"),
-    ("recipes", "Recipes", "file", "blank = bundled copy"),
+    ("template", "Transfer YAML", "file", "from the Mac: makeYaml --export-transfer"),
     ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
     ("split_dir", "Split folder", "dir", "written by Export split"),
     ("sql_dir", "SQL folder", "dir", "written by Dry run"),

@@ -104,10 +104,12 @@ def json_payload(value: Any) -> str:
 
 
 def print_messages(result: Any) -> None:
-    for msg in getattr(result, "errors", []):
-        print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
-    for msg in getattr(result, "warnings", []):
-        print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
+    for label, messages in (("ERROR", getattr(result, "errors", [])), ("WARN ", getattr(result, "warnings", []))):
+        for msg in messages:
+            where = f" at {msg.context}" if msg.context else ""
+            print(f"{label} [{msg.code}]{where}: {msg.message}")
+            if getattr(msg, "fix", ""):
+                print(f"      fix: {msg.fix}")
 
 
 def message_rows(messages: list[Any]) -> str:
@@ -120,6 +122,7 @@ def message_rows(messages: list[Any]) -> str:
             <div class="message {e(msg.level.lower())}">
               <div class="message-code">{e(msg.code)}</div>
               <div class="message-body">{e(msg.message)}</div>
+              {f'<div class="message-fix">Fix: {e(msg.fix)}</div>' if getattr(msg, "fix", "") else ""}
               <div class="message-context">{e(msg.context)}</div>
             </div>
             """
@@ -600,20 +603,23 @@ def export_preview_block(title: str, artifact_id: str, filename: str, result: An
 
 def exports_panel(template_path: Path, recipes_path: Path) -> str:
     symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
-    expanded = backend.build_preyaml(template_path, recipes_path, mode="expanded-recipes")
+    transfer = backend.build_transfer(
+        template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
+    )
+    transfer_name = Path(transfer.output_path).name if transfer.output_path else "transfer.yaml"
     manifest = backend.build_pullmanifest(
         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
     )
     return f"""
       <div class="grid three">
         {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
-        {export_preview_block("Expanded Recipes pre-YAML", "exportPreyamlExpanded", "preyaml.expanded.yaml", expanded)}
+        {export_preview_block("Transfer YAML (for the VM)", "exportTransfer", transfer_name, transfer)}
         {export_preview_block("pullmanifest.yaml", "exportPullmanifest", "pullmanifest.yaml", manifest)}
       </div>
       <section class="block">
         <h2>Handoff</h2>
-        <p>Pullmanager handoff remains file-based. Once Pullmanager's CLI contract is available, YAML Manager can call it with the generated manifest path.</p>
-        <pre>pullmanager split/pullmanifest.yaml</pre>
+        <p>Download the transfer YAML and copy it to the VM, beside the extracted <code>telescope</code> folder, with any upload files it reads, in the same places relative to it. Recipes stay here; the transfer YAML carries them written out. On the VM, open the launcher and choose it as the Transfer YAML, then Validate, Export split and Dry run.</p>
+        <pre>python telescope/pullmanager.py --gui</pre>
       </section>
     """
 
@@ -996,6 +1002,7 @@ main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .message.warn { border-left-color: var(--warn); }
 .message-code { font-weight: 800; font-size: 13px; }
 .message-context, .muted { color: var(--muted); font-size: 12px; }
+.message-fix { font-size: 13px; margin-top: 4px; }
 dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; }
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }

@@ -8,8 +8,11 @@ The file is intentionally self-contained for the VM copy-update workflow.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import csv
+import hashlib
+import io
 import json
 import os
 import re
@@ -27,6 +30,7 @@ from typing import Any
 OUTPUT_SUFFIX = "_Full"
 PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
+TRANSFER_SUFFIX = "_transfer"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
 DEFAULT_SPLIT_DIR = Path("split")
@@ -43,6 +47,9 @@ class Message:
     code: str
     message: str
     context: str = ""
+    # What to change, and where. On the VM the YAML is edited by hand (D49), so
+    # an error that only says what is wrong leaves the reader guessing.
+    fix: str = ""
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -50,6 +57,7 @@ class Message:
             "code": self.code,
             "message": self.message,
             "context": self.context,
+            "fix": self.fix,
         }
 
 
@@ -63,12 +71,12 @@ class CompileResult:
     graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
     output_path: str | None = None
 
-    def error(self, code: str, message: str, context: str = "") -> None:
+    def error(self, code: str, message: str, context: str = "", fix: str = "") -> None:
         self.ok = False
-        self.errors.append(Message("ERROR", code, message, context))
+        self.errors.append(Message("ERROR", code, message, context, fix))
 
-    def warn(self, code: str, message: str, context: str = "") -> None:
-        self.warnings.append(Message("WARN", code, message, context))
+    def warn(self, code: str, message: str, context: str = "", fix: str = "") -> None:
+        self.warnings.append(Message("WARN", code, message, context, fix))
 
 
 @dataclass
@@ -319,23 +327,23 @@ def default_recipes_path() -> Path:
     return project_root() / "YAMLs" / "recipes.yaml"
 
 
+YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
+MISSING_TEMPLATE_FIX = (
+    "Pass `--template` with the file to use. On the VM that is a transfer YAML, "
+    "exported on the Mac with `makeYaml.py --export-transfer`."
+)
+
+
 def missing_template_message(template_path: Path) -> str | None:
     """A useful sentence for a template that does not exist, or None if it does.
 
-    The bundle ships the template as template.yaml.example so updates never land
-    on a real one -- which means running without --template from an extracted
-    bundle points at a file that is deliberately absent.
+    The bundle ships no template (D49): the VM works from transfer YAMLs, so
+    running without --template from an extracted bundle points at nothing.
     """
     path = Path(template_path)
     if path.is_file():
         return None
-    example = path.with_name(path.name + ".example")
-    if example.is_file():
-        return (
-            f"No template at {path}. Pass --template with your own file, or copy "
-            f"{example.name} to start one."
-        )
-    return f"No template at {path}. Pass --template with the file to use."
+    return f"No template at {path}."
 
 
 def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
@@ -372,32 +380,121 @@ def recipe_index(recipes_doc: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {recipe["name"]: recipe for recipe in recipes_doc.get("recipes", []) or []}
 
 
+def batching_reference(item: Any) -> str | None:
+    """The batching recipe a batching item names, or None if it stands alone.
+
+    `sex` and `{state: {values: [...]}}` lean on recipes.yaml; `2000`,
+    `{chunk: 2000}` and a full definition with a `name` do not.
+    """
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict) and len(item) == 1:
+        key = next(iter(item))
+        if key not in ("chunk", "name"):
+            return str(key)
+    return None
+
+
+def recipe_references(template: dict[str, Any]) -> list[str]:
+    """Every place a template leans on a recipes file, as field paths.
+
+    A transfer YAML (D49) has none, which is what lets it split with no
+    recipes file at all.
+    """
+    refs = []
+    for idx, cohort in enumerate(template.get("cohorts", []) or []):
+        if isinstance(cohort, dict) and "recipe" in cohort:
+            refs.append(f"cohorts[{idx}].recipe: {cohort['recipe']}")
+    for idx, item in enumerate(template.get("batching", []) or []):
+        name = batching_reference(item)
+        if name:
+            refs.append(f"batching[{idx}]: {name}")
+    return refs
+
+
+def load_recipes(recipes_path: Path, template: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+    """The recipes document, read only when the template refers to it.
+
+    None means an error was recorded. A template that refers to nothing gets an
+    empty document, so a missing or unreadable recipes file cannot stop it.
+    """
+    refs = recipe_references(template)
+    if not refs:
+        return {}
+    if not recipes_path.is_file():
+        result.error(
+            "recipes_not_found",
+            f"This YAML refers to recipes ({'; '.join(refs)}), but there is no "
+            f"recipes file at {recipes_path}.",
+            refs[0].split(":")[0],
+            fix="Recipes are kept on the Mac (D49). There, export this template with "
+            "`makeYaml.py --export-transfer`, which writes every recipe out in full, and "
+            "bring that file across. Or pass `--recipes` with the recipes file.",
+        )
+        return None
+    try:
+        return load_yaml(recipes_path) or {}
+    except Exception as exc:
+        result.error(
+            "yaml_load_error",
+            f"Could not read the recipes file: {exc}",
+            str(recipes_path),
+            fix="Correct the YAML syntax at the line named above.",
+        )
+        return None
+
+
+def cohort_label(cohort: dict[str, Any]) -> str:
+    """Where a cohort is in the file and what it is called: `cohorts[1] (Patients)`."""
+    name = cohort.get("name") or cohort.get("dest_table") or "cohort"
+    source = cohort.get("_source")
+    return f"{source} ({name})" if source else str(name)
+
+
 def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
     recipes = recipe_index(recipes_doc)
     imported: list[dict[str, Any]] = []
     for idx, cohort in enumerate(template.get("cohorts", []) or []):
         if not isinstance(cohort, dict):
-            result.error("invalid_cohort", "Each cohort must be a mapping.", f"cohorts[{idx}]")
+            result.error(
+                "invalid_cohort",
+                "Each cohort must be a mapping.",
+                f"cohorts[{idx}]",
+                fix="Write the cohort as keys under a `- `, e.g. `- name: Patients` "
+                "followed by `type:`, `from:` and `columns:`.",
+            )
             continue
         if "recipe" in cohort:
             recipe_name = cohort["recipe"]
             if recipe_name not in recipes:
-                result.error("missing_recipe", f"Recipe `{recipe_name}` was not found.", f"cohorts[{idx}]")
+                available = ", ".join(sorted(recipes)) or "none"
+                result.error(
+                    "missing_recipe",
+                    f"Recipe `{recipe_name}` was not found.",
+                    f"cohorts[{idx}].recipe",
+                    fix=f"Correct the name. Recipes available: {available}.",
+                )
                 continue
             merged = deep_merge(copy.deepcopy(recipes[recipe_name]), cohort)
             merged["_recipe"] = recipe_name
             merged.pop("recipe", None)
         else:
             merged = copy.deepcopy(cohort)
+        merged["_source"] = f"cohorts[{idx}]"
         if not merged.get("name"):
             merged["name"] = merged.get("dest_table") or merged.get("_recipe") or f"cohort_{idx + 1}"
-            result.warn("default_name", "Cohort had no name; a generated name was assigned.", f"cohorts[{idx}]")
+            result.warn(
+                "default_name",
+                f"Cohort had no name; `{merged['name']}` was assigned.",
+                f"cohorts[{idx}]",
+                fix="Add `name:` to the cohort.",
+            )
         if not merged.get("dest_table"):
             merged["dest_table"] = merged["name"]
             result.warn(
                 "default_dest_table",
                 f"`dest_table` defaulted to cohort name `{merged['name']}`.",
-                merged["name"],
+                cohort_label(merged),
             )
         imported.append(merged)
     return imported
@@ -565,7 +662,9 @@ def find_pk_table(cohorts: list[dict[str, Any]], result: CompileResult, group_ke
         result.error(
             "multiple_pk_cohorts",
             "Cannot infer PKTable because multiple type: PK cohorts exist.",
-            ", ".join(str(c.get("name")) for c in pk),
+            ", ".join(cohort_label(c) for c in pk),
+            fix="Keep `type: PK` on one cohort, or bind `vars: {PKTable: <table>}` "
+            "on each cohort that reads the PK.",
         )
     return None
 
@@ -580,6 +679,7 @@ def find_uploaded_pk_table(template: dict[str, Any], result: CompileResult) -> s
             "multiple_uploaded_pk",
             "Only one upload cohort may be marked `type: pk`.",
             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+            fix="Remove `type: pk` from all but one entry under `upload_cohorts`.",
         )
         return None
     if not pk_uploads:
@@ -589,7 +689,9 @@ def find_uploaded_pk_table(template: dict[str, Any], result: CompileResult) -> s
         result.error(
             "uploaded_pk_missing_keys",
             "Uploaded PK cohort must declare `key_columns`.",
-            str(upload.get("name")),
+            f"upload_cohorts ({upload.get('name')}).key_columns",
+            fix="Add `key_columns: [<column>, ...]` naming the columns in the file "
+            "that identify a row, e.g. `[PatientDurableKey]`.",
         )
     return str(upload.get("dest_table") or upload.get("name"))
 
@@ -603,8 +705,8 @@ def unbound_table_input_message(
     meta: dict[str, Any],
     table_schemas: dict[str, list[str] | None],
     upload_tables: set[str],
-) -> str:
-    """Explain an unbound table input and name what could fill it.
+) -> tuple[str, str]:
+    """Explain an unbound table input and name what could fill it, as (message, fix).
 
     It suggests; it never picks. Binding the wrong table would produce SQL that
     runs and returns the wrong rows, so the choice stays with the author. The
@@ -651,8 +753,7 @@ def unbound_table_input_message(
     example = (fits or unknown or ["<table>"])[0].split(" (")[0]
     recipe = cohort.get("_recipe")
     where = f"the cohort using recipe `{recipe}`" if recipe else "this cohort"
-    parts.append(f"Bind it on {where}: `vars: {{{table_var}: {example}}}`.")
-    return " ".join(parts)
+    return " ".join(parts), f"Bind it on {where}: `vars: {{{table_var}: {example}}}`."
 
 
 def validate_and_resolve(
@@ -672,7 +773,10 @@ def validate_and_resolve(
         result.error(
             "uploaded_pk_with_generated_pk",
             "A template may not define both an uploaded PK cohort and generated type: PK cohorts.",
-            uploaded_pk_table,
+            f"upload_cohorts ({uploaded_pk_table}); "
+            + ", ".join(cohort_label(c) for c in generated_pk),
+            fix="Use one PK: remove `type: pk` from the upload, or remove `type: PK` "
+            "from the cohorts named here.",
         )
     resolved_cohorts: list[dict[str, Any]] = []
     for cohort in cohorts:
@@ -690,18 +794,22 @@ def validate_and_resolve(
             if var in table_inputs:
                 # A table input is not a plain value: say what kind of table it
                 # needs and which ones in this template could supply it.
+                message, fix = unbound_table_input_message(
+                    cohort, var, table_inputs[var], table_schemas, set(uploads)
+                )
                 result.error(
                     "unbound_table_input",
-                    unbound_table_input_message(
-                        cohort, var, table_inputs[var], table_schemas, set(uploads)
-                    ),
-                    ", ".join(paths),
+                    message,
+                    f"{cohort_label(cohort)}: " + ", ".join(paths),
+                    fix=fix,
                 )
             else:
                 result.error(
                     "missing_variable",
                     f"Cohort `{name}` requires variable `{var}`, but no value was provided.",
-                    ", ".join(paths),
+                    f"{cohort_label(cohort)}: " + ", ".join(paths),
+                    fix=f"Add `{var}: <value>` under the top-level `vars`, or under this "
+                    "cohort's own `vars`.",
                 )
         for table_var, cols in analysis["required_table_columns"].get(name, {}).items():
             table_name = vars_for_cohort.get(table_var)
@@ -709,10 +817,13 @@ def validate_and_resolve(
                 continue
             table_name = str(table_name)
             if table_name not in table_schemas:
+                known = ", ".join(sorted(table_schemas)) or "none"
                 result.error(
                     "missing_input_table",
                     f"Cohort `{name}` uses `{table_var}={table_name}`, but no cohort/upload table provides it.",
-                    table_var,
+                    f"{cohort_label(cohort)}: vars.{table_var}",
+                    fix=f"Set `{table_var}` to the `dest_table` of a cohort or upload in this "
+                    f"file ({known}), or add an upload that provides `{table_name}`.",
                 )
                 continue
             if table_schemas[table_name] is None:
@@ -722,7 +833,9 @@ def validate_and_resolve(
                 result.error(
                     "missing_input_column",
                     f"Cohort `{name}` uses `{table_var}={table_name}`, but `{table_name}` is missing columns: {', '.join(missing)}.",
-                    table_var,
+                    f"{cohort_label(cohort)}: vars.{table_var}",
+                    fix=f"Add {', '.join(missing)} to `{table_name}` (its `columns`, or the "
+                    f"upload file's header), or bind `{table_var}` to a table that has them.",
                 )
         resolved = copy.deepcopy(cohort)
         resolved["_resolved_vars"] = vars_for_cohort
@@ -735,9 +848,10 @@ def validate_and_resolve(
 
 def upload_index(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
     uploads = {}
-    for upload in template.get("upload_cohorts", []) or []:
+    for idx, upload in enumerate(template.get("upload_cohorts", []) or []):
         if isinstance(upload, dict) and upload.get("name"):
             item = copy.deepcopy(upload)
+            item["_source"] = f"upload_cohorts[{idx}]"
             item.setdefault("dest_table", item["name"])
             item.setdefault("scope", "global")
             item.setdefault("push_this_cycle", True)
@@ -766,11 +880,18 @@ def upload_schemas(
             continue
         seen.add(ident)
         dest = str(upload.get("dest_table") or upload.get("name"))
+        where = f"{upload.get('_source', 'upload_cohorts')} ({upload.get('name')})"
         file_type = str(upload.get("file_type", "")).lower()
         if file_type == "csv" and upload.get("file_loc"):
             file_path = resolve_file(base_dir, upload["file_loc"])
             if not file_path.exists():
-                result.error("missing_upload_file", f"Upload file not found: {file_path}", dest)
+                result.error(
+                    "missing_upload_file",
+                    f"Upload file not found: {file_path}",
+                    f"{where}.file_loc",
+                    fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
+                    "copy the file to where it points.",
+                )
                 schemas[dest] = None
                 continue
             try:
@@ -778,7 +899,12 @@ def upload_schemas(
                     reader = csv.reader(handle)
                     schemas[dest] = next(reader, [])
             except Exception as exc:
-                result.error("upload_read_error", f"Could not read upload CSV `{file_path}`: {exc}", dest)
+                result.error(
+                    "upload_read_error",
+                    f"Could not read upload CSV `{file_path}`: {exc}",
+                    f"{where}.file_loc",
+                    fix="Save the file as a UTF-8 CSV with a header row.",
+                )
                 schemas[dest] = []
         elif file_type in ("dbtable", "parquet"):
             schema = upload.get("columns") or upload.get("schema") or []
@@ -792,7 +918,12 @@ def upload_schemas(
                 # reads as missing -- when the truth is only that nothing
                 # locally can check.
                 schemas[dest] = None
-                result.warn("upload_schema_unknown", f"Upload `{dest}` has no locally discoverable schema.", dest)
+                result.warn(
+                    "upload_schema_unknown",
+                    f"Upload `{dest}` has no locally discoverable schema.",
+                    where,
+                    fix="List its columns under `columns:` so the cohorts that read it can be checked.",
+                )
         else:
             schemas[dest] = []
     return schemas
@@ -828,7 +959,9 @@ def validate_upload_references(
             result.error(
                 "upload_not_pushed",
                 f"Upload `{name}` is referenced but has push_this_cycle: false.",
-                name,
+                f"{upload.get('_source', 'upload_cohorts')} ({name}).push_this_cycle",
+                fix="Set `push_this_cycle: true`, or add `assume_exists: true` if the table "
+                "is already in the Projects database.",
             )
 
 
@@ -876,12 +1009,24 @@ def render_string(text: str, vars_for_cohort: dict[str, Any], result: CompileRes
         if expr.startswith("sql_condition"):
             args = split_args(re.match(r"^sql_condition\((.*)\)$", expr).group(1)) if re.match(r"^sql_condition\((.*)\)$", expr) else []
             if len(args) < 2:
-                result.error("bad_sql_condition", f"Could not parse sql_condition expression `{expr}`.", context)
+                result.error(
+                    "bad_sql_condition",
+                    f"Could not parse sql_condition expression `{expr}`.",
+                    context,
+                    fix="Write it as `{{ sql_condition('Column', VarName) }}`: a quoted "
+                    "column, then the variable holding the values.",
+                )
                 return match.group(0)
             column = strip_quotes(args[0])
             var_name = args[1].strip()
             if var_name not in vars_for_cohort:
-                result.error("missing_variable", f"`sql_condition` references missing variable `{var_name}`.", context)
+                result.error(
+                    "missing_variable",
+                    f"`sql_condition` references missing variable `{var_name}`.",
+                    context,
+                    fix=f"Add `{var_name}: <value or list>` under the top-level `vars`, or "
+                    "under this cohort's own `vars`.",
+                )
                 return match.group(0)
             return render_sql_condition(column, vars_for_cohort[var_name], result, context)
         if "|" in expr and "sql_condition" in expr:
@@ -892,7 +1037,13 @@ def render_string(text: str, vars_for_cohort: dict[str, Any], result: CompileRes
                 return render_sql_condition(column, vars_for_cohort[var_name], result, context)
         if expr in vars_for_cohort:
             return str(vars_for_cohort[expr])
-        result.error("missing_variable", f"Missing variable `{expr}`.", context)
+        result.error(
+            "missing_variable",
+            f"Missing variable `{expr}`.",
+            context,
+            fix=f"Add `{expr}: <value>` under the top-level `vars`, or under this "
+            "cohort's own `vars`.",
+        )
         return match.group(0)
 
     return JINJA_EXPR_RE.sub(repl, text)
@@ -910,7 +1061,11 @@ def render_cohorts(cohorts: list[dict[str, Any]], result: CompileResult) -> list
     for cohort in cohorts:
         vars_for_cohort = cohort.get("_resolved_vars", {})
         clean = {k: v for k, v in cohort.items() if not k.startswith("_")}
-        rendered.append(render_value(clean, vars_for_cohort, result, str(cohort.get("name"))))
+        out = render_value(clean, vars_for_cohort, result, cohort_label(cohort))
+        # Kept so later checks can say where the cohort is; stripped before output.
+        if "_source" in cohort:
+            out["_source"] = cohort["_source"]
+        rendered.append(out)
     return rendered
 
 
@@ -982,51 +1137,87 @@ def split_after_build_filter(mult: dict[str, Any], level: dict[str, Any], result
 
 def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
-    for mult in template.get("multipliers", []) or []:
+    for idx, mult in enumerate(template.get("multipliers", []) or []):
         if not isinstance(mult, dict):
             continue
+        where = f"multipliers[{idx}] ({mult.get('name')})"
         stage = mult.get("stage")
         if stage not in ("during_build", "split_after_build"):
-            result.error("bad_multiplier_stage", f"Unsupported multiplier stage `{stage}`.", str(mult.get("name")))
+            result.error(
+                "bad_multiplier_stage",
+                f"Unsupported multiplier stage `{stage}`.",
+                f"{where}.stage",
+                fix="Use `stage: during_build` (each level builds its own cohorts) or "
+                "`stage: split_after_build` (one build, split by a PK column).",
+            )
         if stage == "split_after_build":
             targets = pk_candidates if mult.get("applies_to") == "PKTable" else [mult.get("applies_to")]
             target_cols = sorted({col for target in targets for col in (table_schemas.get(str(target)) or [])})
-            for level in mult.get("levels", []) or []:
+            for level_idx, level in enumerate(mult.get("levels", []) or []):
                 col = level.get("column") if isinstance(level, dict) else None
                 if col and col not in target_cols:
                     result.error(
                         "missing_split_column",
                         f"Multiplier `{mult.get('name')}` references missing column `{col}` on `{mult.get('applies_to')}`.",
-                        str(level.get("strat")),
+                        f"{where}.levels[{level_idx}] ({level.get('strat')}).column",
+                        fix=f"Add `{col}` to the columns of `{mult.get('applies_to')}`, or "
+                        "correct `column` to one it has: "
+                        f"{', '.join(target_cols) or 'none known'}.",
                     )
 
 
 def expand_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
-    normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
+    normalized = public_batching(normalize_batching(template.get("batching", []) or [], recipes_doc, CompileResult()))
     for cohort in cohorts:
         cohort["batching"] = normalized
     return cohorts
 
 
+BATCHING_FORMS = (
+    "Write each batching item as a batching recipe name (`sex`, Mac only), "
+    "`chunk: <rows>`, or a full definition: `{name: sex, kind: column_values, "
+    "applies_to: PKTable, column: Sex, values: [Female, Male]}`."
+)
+
+
 def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
+    """Every batching item as a full definition, with its template overrides applied.
+
+    Each carries `_source` (its place under `batching`) for error messages; it
+    is stripped wherever a definition is written out.
+    """
     presets = {item["name"]: item for item in recipes_doc.get("batching_recipes", []) or [] if isinstance(item, dict) and item.get("name")}
     normalized = []
-    for item in batch_items:
-        if isinstance(item, int):
-            normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item, "applies_to": "PKTable"})
+    for idx, item in enumerate(batch_items):
+        where = f"batching[{idx}]"
+        if isinstance(item, int) and not isinstance(item, bool):
+            entry = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": item, "applies_to": "PKTable"}
         elif isinstance(item, dict) and "chunk" in item:
-            normalized.append({"name": "chunk", "kind": "row_chunk", "rows_per_batch": item["chunk"], "applies_to": "PKTable"})
+            entry = {"name": "chunk", "kind": "row_chunk", "rows_per_batch": item["chunk"], "applies_to": "PKTable"}
         elif isinstance(item, str) and item in presets:
-            normalized.append(copy.deepcopy(presets[item]))
+            entry = copy.deepcopy(presets[item])
         elif isinstance(item, dict) and len(item) == 1 and next(iter(item)) in presets:
             name = next(iter(item))
-            merged = deep_merge(presets[name], item[name] or {})
-            normalized.append(merged)
+            entry = deep_merge(presets[name], item[name] or {})
         elif isinstance(item, dict) and item.get("name"):
-            normalized.append(item)
+            entry = copy.deepcopy(item)
         else:
-            result.error("bad_batching", f"Could not understand batching item `{item}`.", "batching")
+            available = ", ".join(sorted(presets))
+            known = f" Batching recipes available: {available}." if available else ""
+            result.error(
+                "bad_batching",
+                f"Could not understand batching item `{item}`.",
+                where,
+                fix=BATCHING_FORMS + known,
+            )
+            continue
+        entry["_source"] = where
+        normalized.append(entry)
     return normalized
+
+
+def public_batching(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in item.items() if not k.startswith("_")} for item in items]
 
 
 # =============================================================================
@@ -1119,7 +1310,7 @@ def validate_data_dictionary(
     for cohort in cohorts:
         if not isinstance(cohort, dict):
             continue
-        label = str(cohort.get("dest_table") or cohort.get("name") or "cohort")
+        label = cohort_label(cohort)
         aliases = cohort_aliases(cohort)
 
         for table in sorted(set(aliases.values())):
@@ -1128,9 +1319,10 @@ def validate_data_dictionary(
             if table not in dictionary:
                 result.error(
                     "unknown_table",
-                    f"Table `{table}` is not in the data dictionary. Add it to "
-                    f"YAMLs/datadictionary.yaml, or correct the name.",
-                    label,
+                    f"Table `{table}` is not in the data dictionary.",
+                    f"{label}: from/join",
+                    fix=f"Correct the table name in `from` or `join`, or add `{table}` to "
+                    "YAMLs/datadictionary.yaml on the Mac and rebuild the bundle.",
                 )
 
         for column in cohort.get("columns") or []:
@@ -1145,18 +1337,21 @@ def validate_data_dictionary(
                     "dd_source_not_checked",
                     f"Source `{source}` is not a plain `alias.Column`, so its type "
                     f"cannot be checked against the data dictionary.",
-                    label,
+                    f"{label}: columns ({column.get('name')})",
                 )
                 continue
 
             alias, column_name = match.group("alias"), match.group("column")
             table = aliases.get(alias)
             if table is None:
+                declared_aliases = ", ".join(sorted(aliases)) or "none"
                 result.error(
                     "unknown_alias",
                     f"Source `{source}` uses alias `{alias}`, which is not declared "
                     f"in this cohort's `from` or `join`.",
-                    label,
+                    f"{label}: columns ({column.get('name')}).source",
+                    fix=f"Use one of this cohort's aliases ({declared_aliases}), or add a "
+                    f"`join` that declares `{alias}`.",
                 )
                 continue
             if is_generated_reference(table) or table not in dictionary:
@@ -1167,8 +1362,10 @@ def validate_data_dictionary(
                 result.error(
                     "unknown_column",
                     f"Column `{column_name}` is not listed under `{table}` in the "
-                    f"data dictionary. Check the alias and the spelling.",
-                    label,
+                    f"data dictionary.",
+                    f"{label}: columns ({column.get('name')}).source",
+                    fix=f"Check the spelling of `{column_name}`, and that `{alias}` is the "
+                    "alias of the table that has it.",
                 )
                 continue
 
@@ -1182,16 +1379,17 @@ def validate_data_dictionary(
                     "dd_unknown_family",
                     f"Data dictionary type `{family}` for `{table}.{column_name}` is "
                     f"not a family this checker knows, so `{declared}` was not verified.",
-                    label,
+                    f"{label}: columns ({column.get('name')}).type",
                 )
                 continue
             if tsql_base_type(declared) not in accepted:
+                dd_type = (dd_columns[column_name] or {}).get("type")
                 result.error(
                     "dd_type_mismatch",
                     f"`{source}` is declared `{declared}`, but the data dictionary "
-                    f"says `{table}.{column_name}` is "
-                    f"`{(dd_columns[column_name] or {}).get('type')}`.",
-                    label,
+                    f"says `{table}.{column_name}` is `{dd_type}`.",
+                    f"{label}: columns ({column.get('name')}).type",
+                    fix=f"Change `type` to a type compatible with `{dd_type}`.",
                 )
 
 
@@ -1234,16 +1432,88 @@ def load_datadictionary(path: str | Path | None, result: CompileResult) -> dict[
 
 
 
+BATCHING_KINDS = ("column_values", "row_chunk")
+
+
 def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
+    """Check each batching definition field by field.
+
+    On the VM these are written out in full and edited by hand (D49), so a
+    missing `column` or a chunk with no size has to be caught here, with the
+    field named, rather than surface as a confusing split or a failed run.
+    """
     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
     pk_cols = sorted({col for pk_table in pk_candidates for col in (table_schemas.get(str(pk_table)) or [])})
     for item in normalized:
-        if item.get("kind") == "row_chunk":
+        where = f"{item.get('_source', 'batching')} ({item.get('name')})"
+        kind = str(item.get("kind") or "column_values")
+        if kind not in BATCHING_KINDS:
+            result.error(
+                "bad_batching_kind",
+                f"Batching `{item.get('name')}` has unknown kind `{kind}`.",
+                f"{where}.kind",
+                fix="Use `kind: column_values` (one run per value of a PK column) or "
+                "`kind: row_chunk` (fixed-size slices of the PK).",
+            )
+            continue
+        if kind == "row_chunk":
+            size = item.get("rows_per_batch")
+            if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+                result.error(
+                    "bad_chunk_size",
+                    f"Batching `{item.get('name')}` needs a whole number of rows per "
+                    f"batch, not `{size}`.",
+                    f"{where}.rows_per_batch",
+                    fix="Give it a size: `chunk: 2000`, or `rows_per_batch: 2000` in a "
+                    "full definition.",
+                )
+            else:
+                result.warn(
+                    "chunk_pulls_first_chunk_only",
+                    "`chunk` batching currently pulls only the first chunk of each run, "
+                    "with no error (roadmap, Known Bugs).",
+                    where,
+                    fix="Batch with explicit `values:` on a PK column instead until it is fixed.",
+                )
             continue
         col = item.get("column")
-        if col and col not in pk_cols:
-            result.error("missing_batch_column", f"Batching `{item.get('name')}` requires missing PK column `{col}`.", "PKTable")
+        if not col:
+            result.error(
+                "batching_missing_column",
+                f"Batching `{item.get('name')}` does not say which PK column to split on.",
+                f"{where}.column",
+                fix="Add `column: <PK column>`, e.g. `column: Sex`.",
+            )
+            continue
+        if col not in pk_cols:
+            result.error(
+                "missing_batch_column",
+                f"Batching `{item.get('name')}` requires missing PK column `{col}`.",
+                f"{where}.column",
+                fix=f"Output `{col}` from the PK cohort, or correct `column` to one it has: "
+                f"{', '.join(pk_cols) or 'none known'}.",
+            )
+        values = item.get("values")
+        if values == "all":
+            result.warn(
+                "batching_values_all",
+                f"Batching `{item.get('name')}` uses `values: all`, which is not supported "
+                "yet: the pull stops when it reaches this batch.",
+                f"{where}.values",
+                fix="List the values: `values: [LA, MS, ...]`, with `include_other: true` "
+                "to catch the rest.",
+            )
+        elif not isinstance(values, list) or not values:
+            result.error(
+                "batching_missing_values",
+                f"Batching `{item.get('name')}` has no `values` to split `{col}` by.",
+                f"{where}.values",
+                fix="Add `values: [<value>, ...]`, with `include_other: true` to catch the rest.",
+            )
+
+
+COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
 
 
 def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
@@ -1255,14 +1525,24 @@ def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], resul
         return [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
     if value in ("dual", "both"):
         return cohorts + [with_cosmos_suffix(c, "_sp", "COSMOS_SneakPeek") for c in cohorts]
-    result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{cosmos}`.", "cosmos_db")
+    result.error(
+        "bad_cosmos_db",
+        f"Unsupported cosmos_db value `{cosmos}`.",
+        "cosmos_db",
+        fix=COSMOS_DB_FIX,
+    )
     return cohorts
 
 
 def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
     value = str(template.get("cosmos_db", "COSMOS")).lower()
     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
-        result.error("bad_cosmos_db", f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.", "cosmos_db")
+        result.error(
+            "bad_cosmos_db",
+            f"Unsupported cosmos_db value `{template.get('cosmos_db')}`.",
+            "cosmos_db",
+            fix=COSMOS_DB_FIX,
+        )
 
 
 def with_cosmos_suffix(cohort: dict[str, Any], suffix: str, cosmos_db: str) -> dict[str, Any]:
@@ -1286,6 +1566,8 @@ def build_report(result: CompileResult) -> str:
     if result.errors:
         for msg in result.errors:
             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+            if msg.fix:
+                lines.append(f"  - Fix: {msg.fix}")
     else:
         lines.append("- None")
     lines.append("")
@@ -1293,6 +1575,8 @@ def build_report(result: CompileResult) -> str:
     if result.warnings:
         for msg in result.warnings:
             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+            if msg.fix:
+                lines.append(f"  - Fix: {msg.fix}")
     else:
         lines.append("- None")
     lines.append("")
@@ -1325,13 +1609,24 @@ def compile_yaml(
     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
     missing = missing_template_message(template_path)
     if missing:
-        result.error("template_not_found", missing, str(template_path))
+        result.error("template_not_found", missing, str(template_path), fix=MISSING_TEMPLATE_FIX)
         return result
     try:
-        template = normalize_template(load_yaml(template_path), result)
-        recipes_doc = load_yaml(recipes_path) or {}
+        raw = load_yaml(template_path)
     except Exception as exc:
-        result.error("yaml_load_error", str(exc), str(template_path))
+        result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
+        return result
+    if raw is not None and not isinstance(raw, dict):
+        result.error(
+            "invalid_template",
+            "Template YAML must be a mapping.",
+            str(template_path),
+            fix="Start the file with top-level keys such as `project_folder:` and `cohorts:`.",
+        )
+        return result
+    template = normalize_template(raw, result)
+    recipes_doc = load_recipes(recipes_path, template, result)
+    if recipes_doc is None:
         return result
 
     cohorts = import_recipes(template, recipes_doc, result)
@@ -1353,7 +1648,7 @@ def compile_yaml(
         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
     finished = copy.deepcopy(template)
-    finished["cohorts"] = rendered_cohorts
+    finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
     finished.pop("example_cohorts", None)
     result.finished_yaml = finished
     result.analysis = analysis
@@ -1387,7 +1682,7 @@ def inspect_recipes(recipes_path: str | Path | None = None) -> CompileResult:
     try:
         recipes_doc = load_yaml(recipes_path) or {}
     except Exception as exc:
-        result.error("yaml_load_error", str(exc), str(recipes_path))
+        result.error("yaml_load_error", str(exc), str(recipes_path), fix=YAML_SYNTAX_FIX)
         return result
     result.analysis = {
         "recipes": [r.get("name") for r in recipes_doc.get("recipes", []) or []],
@@ -1420,6 +1715,7 @@ def uploaded_pk_source(template: dict[str, Any], result: CompileResult) -> dict[
             "multiple_uploaded_pk",
             "Only one upload cohort may be marked `type: pk`.",
             ", ".join(str(upload.get("name")) for upload in pk_uploads),
+            fix="Remove `type: pk` from all but one entry under `upload_cohorts`.",
         )
         return None
     if not pk_uploads:
@@ -1430,7 +1726,9 @@ def uploaded_pk_source(template: dict[str, Any], result: CompileResult) -> dict[
         result.error(
             "uploaded_pk_missing_keys",
             "Uploaded PK cohort must declare `key_columns`.",
-            str(upload.get("name")),
+            f"upload_cohorts ({upload.get('name')}).key_columns",
+            fix="Add `key_columns: [<column>, ...]` naming the columns in the file "
+            "that identify a row, e.g. `[PatientDurableKey]`.",
         )
     return {
         "kind": "uploaded_cohort",
@@ -1537,8 +1835,10 @@ def session_runs(
                 result.error(
                     "duplicate_batch_name",
                     f"Batch combination `{name}` is not unique in session `{session_id}`. "
-                    "Two batching dimensions produce the same label; rename a value.",
-                    session_id,
+                    "Two batching dimensions produce the same label.",
+                    "batching",
+                    fix="Change one of the `values` so the labels differ; labels keep only "
+                    "letters, digits, `-` and `_`, so `A B` and `A-B` collide.",
                 )
             continue
         seen.add(name)
@@ -1607,12 +1907,15 @@ def build_split_plan_from_finished(
             )
         )
 
+    source: dict[str, Any] = {"template": str(template_path), "recipes": str(recipes_path)}
+    if isinstance(finished_yaml.get("transfer"), dict):
+        # A transfer YAML carries its recipes inline (D49); whatever --recipes
+        # defaulted to was never read, so naming it would mislead.
+        source["recipes"] = None
+        source["transfer"] = copy.deepcopy(finished_yaml["transfer"])
     return SplitPlan(
         project=project_metadata(finished_yaml),
-        source={
-            "template": str(template_path),
-            "recipes": str(recipes_path),
-        },
+        source=source,
         sessions=sessions,
     )
 
@@ -1666,6 +1969,7 @@ def split_base_document(finished_yaml: dict[str, Any]) -> dict[str, Any]:
     doc.pop("multipliers", None)
     doc.pop("batching", None)
     doc.pop("example_cohorts", None)
+    doc.pop("transfer", None)
     return doc
 
 
@@ -1828,23 +2132,31 @@ def build_preyaml(
     try:
         template = load_yaml(template_path) or {}
     except Exception as exc:
-        result.error("yaml_load_error", str(exc), str(template_path))
+        result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
         return result
     if not isinstance(template, dict):
-        result.error("invalid_template", "Template YAML must be a mapping.", str(template_path))
+        result.error(
+            "invalid_template",
+            "Template YAML must be a mapping.",
+            str(template_path),
+            fix="Start the file with top-level keys such as `project_folder:` and `cohorts:`.",
+        )
         return result
     if mode not in ("symbolic", "expanded-recipes"):
-        result.error("bad_preyaml_mode", f"Unsupported pre-YAML mode `{mode}`.", mode)
+        result.error(
+            "bad_preyaml_mode",
+            f"Unsupported pre-YAML mode `{mode}`.",
+            mode,
+            fix="Use `symbolic` or `expanded-recipes`.",
+        )
         return result
 
     if mode == "symbolic":
         preyaml = copy.deepcopy(template)
         suffix = PREYAML_SUFFIX
     else:
-        try:
-            recipes_doc = load_yaml(recipes_path) or {}
-        except Exception as exc:
-            result.error("yaml_load_error", str(exc), str(recipes_path))
+        recipes_doc = load_recipes(recipes_path, template, result)
+        if recipes_doc is None:
             return result
         normalized = normalize_template(template, result)
         cohorts = import_recipes(normalized, recipes_doc, result)
@@ -1863,6 +2175,122 @@ def build_preyaml(
         report_out = Path(report_path)
         report_out.parent.mkdir(parents=True, exist_ok=True)
         report_out.write_text(build_report(result), encoding="utf-8")
+    return result
+
+
+def transfer_output_path(template: dict[str, Any], template_path: Path) -> Path:
+    """`<project>_transfer.yaml`, beside the template it came from."""
+    name = str(template.get("project_folder") or template_path.stem).strip() or "project"
+    clean = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "project"
+    return template_path.parent / f"{clean}{TRANSFER_SUFFIX}.yaml"
+
+
+def place_uploads(
+    transfer: dict[str, Any],
+    template_dir: Path,
+    out_dir: Path,
+    result: CompileResult,
+    write: bool,
+) -> list[str]:
+    """Keep every upload at its `file_loc`, relative to the transfer YAML.
+
+    `file_loc` is never rewritten: it is what the VM resolves, relative to the
+    transfer YAML. Written beside the template, the files are already in place.
+    Written elsewhere, each is copied into the output folder at the same
+    relative path, so that folder is the unit to carry across. A `file_loc`
+    that leaves the template's folder (`..`) or is absolute cannot be copied
+    that way; it is left as written, with a warning.
+
+    Returns each upload as `file_loc`, the path the VM will look for.
+    """
+    listed: list[str] = []
+    same_place = out_dir.resolve() == template_dir.resolve()
+    for idx, upload in enumerate(transfer.get("upload_cohorts", []) or []):
+        if not isinstance(upload, dict) or not upload.get("file_loc"):
+            continue
+        file_loc = str(upload["file_loc"])
+        listed.append(file_loc)
+        if same_place:
+            continue
+        rel = Path(file_loc)
+        if rel.is_absolute() or ".." in rel.parts:
+            result.warn(
+                "upload_not_copied",
+                f"`{file_loc}` is outside the template's folder, so it was not copied "
+                "beside the transfer YAML.",
+                f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
+                fix="Put the file at that path relative to the transfer YAML on the VM, "
+                "or move it under the template's folder and point `file_loc` there.",
+            )
+            continue
+        if write:
+            target = out_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(resolve_file(template_dir, file_loc), target)
+    return listed
+
+
+def build_transfer(
+    template_path: str | Path | None = None,
+    recipes_path: str | Path | None = None,
+    output_path: str | Path | None = None,
+    write: bool = False,
+    datadictionary_path: str | Path | None = None,
+) -> CompileResult:
+    """The template with every recipe written out in full, for the VM (D49).
+
+    Cohort recipes are merged into their cohorts and batching recipes replaced
+    by their full definitions. Multipliers and batching are not applied: they
+    stay declared for the split on the VM. Written only if the template passes
+    full validation here, so a file that will not split never leaves the Mac.
+    Written to another folder, its upload files are copied alongside it.
+    """
+    template_path = Path(template_path) if template_path else default_template_path()
+    recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
+    result = compile_yaml(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        datadictionary_path=datadictionary_path,
+    )
+    if result.errors:
+        return result
+
+    # Validation passed, so these cannot fail; their messages were already
+    # reported by the compile above and would only repeat.
+    quiet = CompileResult()
+    template = normalize_template(load_yaml(template_path), quiet)
+    recipes_doc = load_recipes(recipes_path, template, quiet) or {}
+    used = [str(cohort["recipe"]) for cohort in template.get("cohorts", []) or [] if isinstance(cohort, dict) and "recipe" in cohort]
+
+    body = copy.deepcopy(template)
+    body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet)]
+    if body.get("batching"):
+        body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
+    body.pop("example_cohorts", None)
+    body.pop("transfer", None)
+
+    refs = recipe_references(template)
+    provenance: dict[str, Any] = {"from_template": template_path.name}
+    if refs:
+        provenance["recipes_sha256"] = hashlib.sha256(recipes_path.read_bytes()).hexdigest()[:12]
+        provenance["recipes_used"] = sorted(set(used)) + sorted(
+            {ref.split(": ", 1)[1] for ref in refs if ref.startswith("batching")}
+        )
+    elif isinstance(template.get("transfer"), dict):
+        # Re-exporting a transfer YAML keeps the record of where it came from.
+        provenance = copy.deepcopy(template["transfer"])
+    transfer = {"transfer": provenance, **body}
+
+    out_path = Path(output_path) if output_path else transfer_output_path(template, template_path)
+    if write:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    result.analysis["transfer_uploads"] = place_uploads(
+        transfer, template_path.parent, out_path.parent, result, write
+    )
+    result.finished_yaml = transfer
+    result.output_path = str(out_path)
+    if write:
+        dump_yaml(transfer, out_path)
     return result
 
 
@@ -2606,18 +3034,13 @@ DataDictionary:
             with self.subTest(route=name):
                 self.assertHasError(route(), "unknown_table")
 
-    def test_missing_template_explains_the_example(self):
-        # The bundle ships template.yaml.example, so the default is absent by
-        # design; the error has to say so rather than report a bare errno.
-        (self.tmp / "template.yaml.example").write_text("x: 1\n", encoding="utf-8")
-        res = compile_yaml(self.tmp / "template.yaml", tiny_recipes_path(self.tmp))
-        self.assertHasError(res, "template_not_found")
-        self.assertIn("template.yaml.example", res.errors[0].message)
-
-    def test_missing_template_without_an_example(self):
+    def test_missing_template_points_at_the_transfer_export(self):
+        # The bundle ships no template (D49), so the default is absent by
+        # design; the error has to say what to pass rather than a bare errno.
         res = compile_yaml(self.tmp / "nope.yaml", tiny_recipes_path(self.tmp))
         self.assertHasError(res, "template_not_found")
-        self.assertIn("--template", res.errors[0].message)
+        self.assertIn("--template", res.errors[0].fix)
+        self.assertIn("--export-transfer", res.errors[0].fix)
 
     def test_real_dictionary_accepts_the_bundled_recipes(self):
         # The shipped recipes and dictionary must agree, or every template
@@ -2716,8 +3139,8 @@ cohorts:
         self.assertIn("No table in this template provides those columns", message)
 
     def test_shows_how_to_bind_it(self):
-        message = self.binding_error(self.compile())
-        self.assertIn("vars: {CodesTable: Codes}", message)
+        errors = [m for m in self.compile().errors if m.code == "unbound_table_input"]
+        self.assertIn("vars: {CodesTable: Codes}", errors[0].fix)
 
     def test_binding_on_the_cohort_resolves_it(self):
         # The recommended place: next to the recipe that needs it, rather than
@@ -2747,6 +3170,253 @@ cohorts:
         self.assertNotIn("unbound_table_input", [m.code for m in res.errors])
 
 
+class TransferTests(MakeYamlTest):
+    """The transfer YAML (D49): recipes written out, nothing applied."""
+
+    EXTRA = """
+upload_cohorts:
+  - name: Codes
+    dest_table: Codes
+    file_type: csv
+    file_loc: data/codes.csv
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+      - strat: B
+        vars:
+          ICD_Value: B%
+batching:
+  - sex
+  - state:
+      values: [LA, MS]
+      include_other: true
+"""
+
+    def setUp(self):
+        super().setUp()
+        (self.tmp / "data").mkdir()
+        (self.tmp / "data" / "codes.csv").write_text("Code\nK50\n", encoding="utf-8")
+        self.template, self.recipes = self.write_pair(extra=self.EXTRA)
+        self.no_recipes = self.tmp / "no_such_recipes.yaml"
+
+    def export(self, out: Path | None = None) -> CompileResult:
+        res = build_transfer(self.template, self.recipes, output_path=out, write=True)
+        self.assertCompiles(res)
+        return res
+
+    def split_tree(self, template: Path, recipes: Path, out: Path) -> dict[str, str]:
+        res = write_split_artifacts(template, recipes, output_dir=out)
+        self.assertCompiles(res)
+        tree = {}
+        for path in sorted(out.rglob("*")):
+            if path.is_file():
+                tree[path.relative_to(out).as_posix()] = path.read_text(encoding="utf-8")
+        manifest = load_yaml(out / "pullmanifest.yaml")
+        manifest.pop("source")
+        tree["pullmanifest.yaml"] = json.dumps(manifest, sort_keys=True, default=str)
+        return tree
+
+    def test_splits_alone_exactly_as_the_template_does(self):
+        # The outcome that matters: with no recipes file at all, the VM gets
+        # the same sessions, runs and SQL inputs the Mac would have produced.
+        transfer = Path(self.export().output_path)
+        expected = self.split_tree(self.template, self.recipes, self.tmp / "from_template")
+        actual = self.split_tree(transfer, self.no_recipes, self.tmp / "from_transfer")
+        self.assertEqual(sorted(expected), sorted(actual))
+        for rel in expected:
+            with self.subTest(file=rel):
+                self.assertEqual(expected[rel], actual[rel])
+
+    def test_the_realistic_templates_split_alone_too(self):
+        cases = project_root() / "YAMLs" / "manager_test_cases"
+        recipes = default_recipes_path()
+        if not recipes.is_file() or not cases.is_dir():
+            self.skipTest("needs the repo's recipes and test cases")
+        for name in ("01_valid_basic.yaml", "02_valid_multipliers_batching.yaml"):
+            with self.subTest(template=name):
+                work = self.tmp / name
+                shutil.copytree(cases, work)
+                template = work / name
+                res = build_transfer(template, recipes, write=True)
+                self.assertCompiles(res)
+                expected = self.split_tree(template, recipes, work / "a")
+                actual = self.split_tree(Path(res.output_path), self.no_recipes, work / "b")
+                self.assertEqual(expected, actual)
+
+    def test_refers_to_no_recipes(self):
+        transfer = load_yaml(self.export().output_path)
+        self.assertEqual(recipe_references(transfer), [])
+        self.assertEqual(transfer["batching"][0]["column"], "Sex")
+        self.assertEqual(transfer["batching"][1]["values"], ["LA", "MS"])
+        self.assertTrue(transfer["batching"][1]["include_other"])
+
+    def test_applies_neither_multipliers_nor_batching(self):
+        transfer = load_yaml(self.export().output_path)
+        self.assertEqual([c["name"] for c in transfer["cohorts"]], ["Patients", "OtherDx"])
+        self.assertEqual(len(transfer["multipliers"]), 1)
+        self.assertNotIn("batching", transfer["cohorts"][0])
+
+    def test_named_for_the_project_beside_the_template(self):
+        self.assertEqual(Path(self.export().output_path), self.tmp / "Test_Run_transfer.yaml")
+
+    def test_records_where_it_came_from(self):
+        provenance = load_yaml(self.export().output_path)["transfer"]
+        self.assertEqual(provenance["from_template"], "template.yaml")
+        self.assertEqual(
+            provenance["recipes_sha256"],
+            hashlib.sha256(self.recipes.read_bytes()).hexdigest()[:12],
+        )
+        self.assertIn("PatientWithDx", provenance["recipes_used"])
+        self.assertIn("sex", provenance["recipes_used"])
+
+    def test_same_inputs_give_the_same_file(self):
+        first = Path(self.export().output_path).read_bytes()
+        second = Path(self.export().output_path).read_bytes()
+        self.assertEqual(first, second)
+
+    def test_written_elsewhere_its_folder_is_self_contained(self):
+        # file_loc is what the VM resolves, so it must not become a path that
+        # only exists on this machine; the file moves instead.
+        out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+        res = self.export(out)
+        self.assertEqual(load_yaml(out)["upload_cohorts"][0]["file_loc"], "data/codes.csv")
+        self.assertEqual(res.analysis["transfer_uploads"], ["data/codes.csv"])
+        self.assertEqual((out.parent / "data" / "codes.csv").read_text(encoding="utf-8"), "Code\nK50\n")
+        (self.tmp / "data" / "codes.csv").unlink()
+        self.assertCompiles(compile_yaml(out, self.no_recipes))
+
+    def test_an_upload_outside_the_template_folder_is_left_with_a_warning(self):
+        shared = self.tmp.parent / f"{self.tmp.name}_shared"
+        shared.mkdir()
+        self.addCleanup(shutil.rmtree, shared, True)
+        (shared / "codes.csv").write_text("Code\nK50\n", encoding="utf-8")
+        template = write_temp_yaml(
+            self.tmp, "outside.yaml",
+            tiny_template(self.EXTRA.replace("data/codes.csv", f"../{shared.name}/codes.csv")),
+        )
+        out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+        res = build_transfer(template, self.recipes, output_path=out, write=True)
+        self.assertCompiles(res)
+        self.assertHasWarning(res, "upload_not_copied")
+        self.assertEqual(
+            load_yaml(out)["upload_cohorts"][0]["file_loc"], f"../{shared.name}/codes.csv"
+        )
+
+    def test_an_invalid_template_writes_nothing(self):
+        broken = write_temp_yaml(
+            self.tmp, "broken.yaml", tiny_template().replace("cosmos_db: COSMOS", "cosmos_db: Nowhere")
+        )
+        res = build_transfer(broken, self.recipes, write=True)
+        self.assertHasError(res, "bad_cosmos_db")
+        self.assertFalse((self.tmp / "Test_Run_transfer.yaml").exists())
+
+    def test_a_template_without_its_recipes_points_at_the_export(self):
+        res = compile_yaml(self.template, self.no_recipes)
+        self.assertHasError(res, "recipes_not_found")
+        self.assertIn("--export-transfer", res.errors[0].fix)
+        self.assertIn("cohorts[0].recipe: PatientWithDx", res.errors[0].message)
+        self.assertEqual(len(res.errors), 1)
+
+    def test_an_unreadable_recipes_file_is_ignored_when_nothing_refers_to_it(self):
+        transfer = Path(self.export().output_path)
+        garbage = write_temp_yaml(self.tmp, "garbage.yaml", "recipes: [unclosed")
+        self.assertCompiles(compile_yaml(transfer, garbage))
+
+
+class BatchingDefinitionTests(MakeYamlTest):
+    """Batching written out in full is checked field by field (D49)."""
+
+    def check(self, batching: str) -> CompileResult:
+        return self.compile_template(extra="batching:\n" + batching)
+
+    def assertFlags(self, res: CompileResult, code: str, field: str) -> None:
+        found = [m for m in res.errors + res.warnings if m.code == code]
+        self.assertTrue(found, summarize_result(res))
+        self.assertTrue(found[0].context.endswith(field), found[0].context)
+        self.assertTrue(found[0].fix, "no fix")
+
+    def test_a_full_definition_compiles(self):
+        self.assertCompiles(self.check(
+            "  - {name: sex, kind: column_values, applies_to: PKTable, column: Sex, values: [Female]}\n"
+        ))
+
+    def test_missing_column_is_named(self):
+        res = self.check("  - {name: sex, kind: column_values, values: [Female]}\n")
+        self.assertFlags(res, "batching_missing_column", "batching[0] (sex).column")
+
+    def test_missing_values_is_named(self):
+        res = self.check("  - {name: sex, kind: column_values, column: Sex}\n")
+        self.assertFlags(res, "batching_missing_values", ".values")
+
+    def test_unknown_kind_is_named(self):
+        res = self.check("  - {name: sex, kind: by_value, column: Sex, values: [F]}\n")
+        self.assertFlags(res, "bad_batching_kind", ".kind")
+
+    def test_a_chunk_without_a_size_is_refused(self):
+        # The `chunk` batching recipe ships with `rows_per_batch: required`.
+        self.assertFlags(self.check("  - chunk\n"), "bad_chunk_size", ".rows_per_batch")
+
+    def test_chunking_warns_of_the_known_bug(self):
+        res = self.check("  - chunk: 2000\n")
+        self.assertCompiles(res)
+        self.assertFlags(res, "chunk_pulls_first_chunk_only", "batching[0] (chunk)")
+
+    def test_values_all_warns_before_the_pull_does(self):
+        res = self.check("  - state\n")
+        self.assertCompiles(res)
+        self.assertFlags(res, "batching_values_all", ".values")
+
+    def test_an_unknown_item_lists_the_forms(self):
+        res = self.check("  - nosuch\n")
+        self.assertFlags(res, "bad_batching", "batching[0]")
+        self.assertIn("chunk: <rows>", res.errors[0].fix)
+
+
+class FixTests(unittest.TestCase):
+    """Every error says what to change (D49): on the VM the YAML is edited by hand."""
+
+    def test_every_error_carries_a_fix(self):
+        import ast
+
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        missing = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "error"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "result"
+                and not any(kw.arg == "fix" for kw in node.keywords)
+            ):
+                missing.append(node.lineno)
+        self.assertEqual(missing, [], "result.error(...) without fix= at these lines")
+
+    def test_the_fix_is_printed_under_its_error(self):
+        result = CompileResult()
+        result.error("x", "Broken.", "cohorts[0]", fix="Mend it.")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            print_messages(result)
+        self.assertEqual(
+            out.getvalue().splitlines(),
+            ["ERROR [x] at cohorts[0]: Broken.", "      fix: Mend it."],
+        )
+
+    def test_errors_point_at_the_cohort_by_position_and_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            template = write_temp_yaml(tmp, "t.yaml", tiny_template().replace("ICD_Value:", "Unused:"))
+            res = compile_yaml(template, tiny_recipes_path(tmp))
+        contexts = [m.context for m in res.errors if m.code == "missing_variable"]
+        self.assertTrue(contexts, summarize_result(res))
+        self.assertTrue(contexts[0].startswith("cohorts[0] (Patients)"), contexts[0])
+
+
 TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "loading": LoadingTests,
     "recipes": RecipeTests,
@@ -2765,6 +3435,9 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "uploaded_pk": UploadedPkTests,
     "datadictionary": DataDictionaryTests,
     "table_binding": TableBindingTests,
+    "transfer": TransferTests,
+    "batching_definitions": BatchingDefinitionTests,
+    "fixes": FixTests,
 }
 
 
@@ -2790,10 +3463,12 @@ def run_tdd(group: str | None = None, verbosity: int = 2) -> int:
 
 
 def print_messages(result: CompileResult) -> None:
-    for msg in result.errors:
-        print(f"ERROR [{msg.code}] {msg.message} {msg.context}".rstrip())
-    for msg in result.warnings:
-        print(f"WARN  [{msg.code}] {msg.message} {msg.context}".rstrip())
+    for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings)):
+        for msg in messages:
+            where = f" at {msg.context}" if msg.context else ""
+            print(f"{label} [{msg.code}]{where}: {msg.message}")
+            if msg.fix:
+                print(f"      fix: {msg.fix}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2811,6 +3486,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate", action="store_true", help="Validate without writing output.")
     parser.add_argument("--inspect-recipes", action="store_true")
     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
+    parser.add_argument(
+        "--export-transfer",
+        action="store_true",
+        help="Write <project>_transfer.yaml for the VM: recipes written out in full, "
+        "multipliers and batching left for the split (D49). --out chooses the file.",
+    )
     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")
     parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
     parser.add_argument("--report", action="store_true")
@@ -2845,6 +3526,27 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("FAILED: errors block pre-YAML export")
         return 0 if result.ok else 1
+
+    if args.export_transfer:
+        result = build_transfer(
+            template_path=args.template,
+            recipes_path=args.recipes,
+            output_path=args.out,
+            write=not args.validate,
+            datadictionary_path=args.datadictionary,
+        )
+        print_messages(result)
+        if not result.ok:
+            print("FAILED: errors block the transfer YAML")
+            return 1
+        print(f"{'OK: transfer YAML ready at' if args.validate else 'Wrote'} {result.output_path}")
+        uploads = result.analysis.get("transfer_uploads") or []
+        if uploads:
+            folder = Path(result.output_path).parent
+            print(f"Carry these with it, at these paths relative to {folder}:")
+            for upload in uploads:
+                print(f"  {upload}")
+        return 0
 
     if args.export_split:
         result = write_split_artifacts(

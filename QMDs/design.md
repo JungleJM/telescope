@@ -18,15 +18,23 @@ at the root.
 ## The Pipeline
 
 ```text
-template.yaml ─┐
-recipes.yaml ──┼─► makeYaml ──► split/               ──► Pullmanager ──► <project_db>.dbo.<dest>
-datadictionary ┘   validate      pullmanifest.yaml       execute          (artifacts: not built)
-                   split         sessions/...            update manifest
+Mac   template.yaml + recipes.yaml + datadictionary
+        └─► makeYaml --export-transfer  (validate)
+              └─► <project>_transfer.yaml        recipes written out, nothing applied
+VM    <project>_transfer.yaml + datadictionary   no recipes file
+        └─► makeYaml --export-split     (validate again, apply cosmos_db,
+              │                          multipliers, batching)
+              └─► split/pullmanifest.yaml, sessions/...
+                    └─► Pullmanager --execute ──► <project_db>.dbo.<dest>
+                                                  status back into the manifest
+                                                  (artifacts: not built)
 ```
 
 **YAML Manager** (`scripts/makeYaml.py`, UI `scripts/yamlmanager.py`) owns
 authoring: templates, recipes, validation, and planning the pull into a split
-folder plus `pullmanifest.yaml`. It never connects to a database.
+folder plus `pullmanifest.yaml`. It never connects to a database. Recipes live
+only on the Mac (D49): what crosses to the VM is a transfer YAML with every
+recipe written out, which the VM validates and splits.
 
 **Pullmanager** (`scripts/pullmanager_src/pullmanager/`) owns execution: it
 renders its own SQL, holds connections, materializes batches, moves data from
@@ -61,10 +69,18 @@ Two machines, one codebase, updated one way.
 | tkinter | yes, likely Tk 8.6 | Tk 8.6, bundled with the python.org install | via `brew install python-tk@3.14`, Tk 9 |
 | numpy | 2.1.3 | 2.1.3, installed for all users | not installed |
 | Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver | none reachable, no driver |
-| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | whatever is installed | whatever is installed; Ruby fallback |
+| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | brew's `python3` has both; `python3.13` needs them installed (below) | whatever is installed; Ruby fallback |
 
 On the Mac, use `python3.13` for anything run on the VM (the launcher, the
-runtime tests) so it meets the VM's Python and Tk, not brew's.
+runtime tests) so it meets the VM's Python and Tk, not brew's. It needs the
+VM's YAML packages, for all users:
+
+```bash
+sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3
+```
+
+Without them the runtime cannot read YAML at all (`No YAML backend available`);
+`makeYaml` alone falls back to Ruby.
 
 **`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.**
 Check it before depending on anything outside the standard library; if it is
@@ -92,18 +108,15 @@ It carries the whole unit, not just the runtime:
 telescope/                          # the extracted tree
   pullmanager.py                    Pullmanager entry point
   pullmanager/                      runtime package and its tests
-  scripts/makeYaml.py               compiler, validator, splitter
-  scripts/yamlmanager.py            the browser UI
-  scripts/yamlmanager_backend.py
-  YAMLs/recipes.yaml
+  scripts/makeYaml.py               validator and splitter
   YAMLs/datadictionary.yaml
-  YAMLs/template.yaml.example       copy and rename to start a pull
   .bundle-manifest.json
 ```
 
-Published paths reproduce the repo's `scripts/` beside `YAMLs/` shape, so
-`makeYaml` and `yamlmanager` find their own recipes and dictionary with no
-flags and no knowledge that they were bundled.
+Recipes, the browser UI and a template to start from are not shipped (D49):
+the VM works from transfer YAMLs, and cannot open the UI. Published paths
+reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its
+dictionary with no flags and no knowledge that it was bundled.
 
 Guarantees:
 
@@ -129,16 +142,24 @@ The extracted tree is **wholly managed**: it is swapped, not merged, so a file
 of yours placed inside it is gone after the next update. Templates, uploads and
 split folders belong beside the tree.
 
-Every bundled file is replaced on re-extraction. One that was modified locally
-is first set aside as `<name>.local` and reported:
+Every bundled file is replaced on re-extraction. One that was edited on the VM
+is first set aside as `<name>.local` and reported. "Edited" is judged against
+the hash the previous extraction recorded in `.bundle-manifest.json`, so a file
+that only changed between releases is replaced quietly. With no record (a first
+or `--force` extraction), any difference counts.
+
+A file the previous bundle shipped and this one does not is removed, unless it
+was edited, in which case it too is kept as `.local`. `.local` copies are
+carried through later updates until you delete them.
 
 ```text
 replaced   YAMLs/datadictionary.yaml  (your previous copy saved as YAMLs/datadictionary.yaml.local)
+no longer shipped   YAMLs/recipes.yaml  (your edited copy kept as YAMLs/recipes.yaml.local)
+no longer shipped   scripts/yamlmanager.py  (removed; it had not been edited)
+kept       YAMLs/datadictionary.yaml.local  (set aside by an earlier update; delete it when done)
 ```
 
-Nothing a user authors is bundled. `template.yaml` ships as
-`template.yaml.example` so improvements keep arriving without any chance of
-overwriting a real template.
+Nothing a user authors is bundled.
 
 ### No Configuration
 
@@ -167,20 +188,24 @@ beside it:
 
 ```text
 <project share>\
-  data\                       big reference files; recipes/dictionary if kept outside the bundle
+  data\                       big reference files; a dictionary if kept outside the bundle
   QueryGenerator\             where you work: the working directory for every command
     pullmanager_bundle.py     the copied file
     telescope\                extracted; managed; never put your own files in here
-    mypull.yaml               your template (start from telescope\YAMLs\template.yaml.example)
+    IBD_transfer.yaml         a transfer YAML, exported on the Mac
     split\                    written by --export-split
     sql\                      written by a dry run
     .pullmanager-gui.json     the launcher's remembered paths
 ```
 
 Typed paths resolve from the working directory, so the parent folder is plain
-`..\data\recipes.yaml`. Upload `file_loc` values resolve relative to the
-template. `YAMLMANAGER_DATA_DICTIONARY` sets the dictionary once; recipes have
-no environment variable, so pass `--recipes` when they live outside the bundle.
+`..\data\datadictionary.yaml`. Upload `file_loc` values resolve relative to
+the transfer YAML, so its upload files keep the same places relative to it as
+on the Mac (the export lists them). `YAMLMANAGER_DATA_DICTIONARY` sets the
+dictionary once.
+
+A change made on the VM is an edit to the transfer YAML by hand. A recipe
+change is made on the Mac and re-exported.
 
 ### The Whole Pathway On The VM
 
@@ -192,7 +217,7 @@ python telescope/pullmanager.py --tdd                        # prove the deliver
 python telescope/pullmanager.py --gui                        # desktop launcher
 
 # or the same steps by hand
-python telescope/scripts/makeYaml.py --template mypull.yaml --export-split --out-dir ./split
+python telescope/scripts/makeYaml.py --template IBD_transfer.yaml --export-split --out-dir ./split
 python telescope/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
 python telescope/pullmanager.py --execute split/pullmanifest.yaml
 ```
@@ -209,14 +234,21 @@ extracted tree, bring the text back to the Mac, fix the source, rebuild.
 | File | Role |
 | --- | --- |
 | template | The pull: project metadata, `cosmos_vars`, `run_vars`, `project_vars`, `multipliers`, `batching`, `upload_cohorts`, `cohorts` |
-| `YAMLs/recipes.yaml` | Reusable cohort definitions, referenced by name |
+| `YAMLs/recipes.yaml` | Reusable cohort and batching definitions, referenced by name. Mac only (D49) |
 | `YAMLs/datadictionary.yaml` | Source of truth for Cosmos tables, columns and types |
 
 Paths typed on the command line (`--template`, `--recipes`,
 `--datadictionary`) resolve from the working directory, like any command-line
 tool. Defaults resolve from the install. `--datadictionary` is honoured by every
-route: validation, the UI, pre-YAML and split export. A template that does not
-exist is a one-line error, not a traceback.
+route: validation, the UI, pre-YAML, transfer and split export. A template that
+does not exist is a one-line error, not a traceback.
+
+The recipes file is read only when the template refers to it: a cohort with
+`recipe:`, or a batching item that names a batching recipe (`sex`,
+`{state: {...}}`). A transfer YAML refers to none, so it needs no recipes file,
+and a missing or broken one cannot stop it. A template that does refer to
+recipes, with no recipes file, is refused with `recipes_not_found`, listing
+every reference and pointing at `--export-transfer`.
 
 ### Recipes And Table Inputs
 
@@ -262,14 +294,29 @@ database. Rendering is skipped once blocking errors exist, so each problem is
 reported once rather than again as a rendering failure. Every error is
 collected, not just the first.
 
+Every error carries a **fix**: what to change, and where. On the VM the YAML is
+edited by hand (D49), so an error that only says what is wrong leaves the
+reader guessing. A test fails if any `result.error(...)` in `makeYaml.py` has no
+`fix=`. The context is a field path, the cohort by position and name:
+
+```text
+ERROR [missing_variable] at cohorts[0] (Patients): filter.where[1]: Cohort `Patients` requires variable `ICD_Value`, but no value was provided.
+      fix: Add `ICD_Value: <value>` under the top-level `vars`, or under this cohort's own `vars`.
+```
+
 Checks:
 
 - Required variables and table inputs are bound (above).
 - Recipe references resolve.
 - Upload files exist; CSV headers carry the required columns.
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
-- Multiplier and batching definitions are well formed; dimension labels do not
-  collide.
+- Multiplier definitions are well formed; dimension labels do not collide.
+- Batching definitions, field by field, since a transfer YAML writes them out
+  in full: a known `kind`; `column_values` has a `column` on the PK and a
+  non-empty `values` list; `row_chunk` has a positive `rows_per_batch` (the
+  shipped `chunk` recipe's `required` placeholder is refused). `values: all`
+  warns that the pull will stop at it, and any `row_chunk` warns that it pulls
+  only the first chunk (roadmap, Known Bugs).
 - Every cohort column against the data dictionary (below).
 
 Authoring rules applied on the way:
@@ -334,10 +381,25 @@ follow the connected database.
 
 ### Outputs
 
+- **Transfer YAML** (`--export-transfer`, `--out` to choose the file): what the
+  VM receives (D49). The template with cohort recipes merged into their cohorts
+  and batching items replaced by their full definitions; multipliers and
+  batching are declared, not applied. Written only if the template passes full
+  validation. Named `<project_folder>_transfer.yaml`, beside the template by
+  default. `file_loc` is never rewritten, since it is what the VM resolves.
+  Written to another folder (`--out`), each upload is copied there at its
+  `file_loc`, so that folder is the unit to carry across; one outside the
+  template's folder (`..` or absolute) is left as written, with the warning
+  `upload_not_copied`. The export lists every upload path to carry.
+  It opens with a `transfer:` block: `from_template` (file name), and, when
+  recipes were used, `recipes_sha256` (first 12 hex digits) and
+  `recipes_used`. No timestamp, so the same inputs give the same file. The
+  split drops the block from its YAMLs and records it as the manifest's
+  `source.transfer`, with `source.recipes` null.
 - **pre-YAML** (`--export-preyaml symbolic`): the template, portable, close to
   what was authored, recipe references left symbolic. `expanded-recipes` inlines
-  the recipes, for inspection only. Upload paths stay relative to where it was
-  written, so moving one means moving its uploads too.
+  cohort recipes only, for inspection. Upload paths stay relative to where it
+  was written, so moving one means moving its uploads too.
 - **Split folder** (`--export-split --out-dir`): below. Self-contained: upload
   files are copied into `split/uploads/` and `file_loc` repointed, so the folder
   is the unit to copy or archive.
@@ -352,7 +414,10 @@ compiler only through `scripts/yamlmanager_backend.py`
 `--public`, `--browser-host`, `--no-open`) implies serving; `--static` writes a
 file instead. `--port 0` picks a free port.
 
-It is the Mac's authoring tool. The VM cannot load it; the VM uses the launcher.
+It is the Mac's authoring tool, and is not bundled. The VM cannot load it; the
+VM uses the launcher. Its Exports tab shows the pre-YAML, the transfer YAML
+(named for the project, with a Download button) and the pull manifest. Every
+message shows its fix beneath it.
 
 ---
 
@@ -663,9 +728,10 @@ listing why each unit is included and what was excluded.
 
 ### The Launcher
 
-`--gui` opens a tkinter window for **running** pulls: choose template, recipes,
+`--gui` opens a tkinter window for **running** pulls: choose the transfer YAML,
 data dictionary, split folder and SQL folder; then Validate, Export split, Dry
-run, Execute, Stop. Output streams into a log tab; a status tab reads the
+run, Execute, Stop. There is no recipes field and no `--recipes` is ever passed
+(D49); settings saved by an older launcher that named one still load. Output streams into a log tab; a status tab reads the
 manifest every three seconds.
 
 It is a front end, not a second implementation. Each button runs the same
@@ -682,9 +748,9 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (63)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (291)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (41)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (85)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (293)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 ```
 
 - **makeYaml** keeps its tests inline, one `TestCase` per `--tdd` group
@@ -693,8 +759,13 @@ python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (41)
   and ship in the bundle. After extraction, `--tdd` proves the delivery with no
   network and no repo. Tests needing repo fixtures skip cleanly there.
 - **Bundle** tests cover tampering, determinism, extraction safety, `.local`
-  preservation, and the whole pathway from one copied file: extract, export a
-  split, dry run.
+  preservation (including files a bundle stops shipping), and the VM pathway
+  from one copied file: export a transfer YAML on the Mac, extract, split it
+  with no recipes present, dry run.
+- **Transfer** tests check the outcome: a transfer YAML split alone, with no
+  recipes file, gives byte-identical session YAMLs and the same manifest (bar
+  `source`) as the template split with recipes, for the tiny template and for
+  test cases `01` and `02`.
 
 Fixtures:
 
@@ -712,9 +783,9 @@ python3 scripts/makeYaml.py --template YAMLs/manager_test_cases/01_valid_basic.y
 ```
 
 The database layer is tested against a fake cursor, and the GUI against a fake
-tkinter. Neither proves the real thing: nothing here has run against Cosmos,
-and Tk itself is exercised by hand (Tk 9 under Xvfb on the dev box; the VM
-likely has Tk 8.6).
+tkinter. Neither proves the real thing: nothing here has run against Cosmos.
+Real Tk is exercised by hand: Tk 9 under Xvfb on the dev box, and Tk 8.6 with
+the Mac's `python3.13`, which the VM likely matches.
 
 When adding a feature, add a passing case, a failing case, and a warning case
 if it can warn. A bug fix gets a test that fails with the bug reintroduced.

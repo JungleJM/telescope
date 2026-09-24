@@ -70,20 +70,24 @@ class LocateToolsTests(TempDirTestCase):
 
 class CommandTests(unittest.TestCase):
     def test_validate_passes_every_input(self):
-        paths = Paths(template="T.yaml", recipes="../data/r.yaml", datadictionary="../data/d.yaml")
+        paths = Paths(template="T_transfer.yaml", datadictionary="../data/d.yaml")
         command = command_validate(TOOLS, paths)
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(command[1], str(TOOLS.make_yaml))
         self.assertEqual(
             command[2:],
-            ["--template", "T.yaml", "--recipes", "../data/r.yaml",
-             "--datadictionary", "../data/d.yaml", "--validate"],
+            ["--template", "T_transfer.yaml", "--datadictionary", "../data/d.yaml", "--validate"],
         )
 
     def test_blank_optional_inputs_fall_back_to_the_bundled_copies(self):
         command = command_validate(TOOLS, Paths(template="T.yaml"))
-        self.assertNotIn("--recipes", command)
         self.assertNotIn("--datadictionary", command)
+
+    def test_never_passes_recipes(self):
+        # D49: a transfer YAML carries its recipes; none ship to the VM.
+        for build in (command_validate, command_export_split):
+            with self.subTest(command=build.__name__):
+                self.assertNotIn("--recipes", build(TOOLS, Paths(template="T.yaml")))
 
     def test_a_template_is_required(self):
         for build in (command_validate, command_export_split):
@@ -237,7 +241,7 @@ class StatusRowTests(TempDirTestCase):
 
 class SettingsTests(TempDirTestCase):
     def test_round_trips(self):
-        paths = Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml", split_dir="out")
+        paths = Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml", split_dir="out")
         save_settings(paths, self.tmp)
         self.assertEqual(load_settings(self.tmp), paths)
 
@@ -251,6 +255,13 @@ class SettingsTests(TempDirTestCase):
         self.assertEqual(load_settings(self.tmp), Paths())
         (self.tmp / launcher.SETTINGS_FILENAME).write_text("{not json", encoding="utf-8")
         self.assertEqual(load_settings(self.tmp), Paths())
+
+    def test_settings_from_before_d49_still_load(self):
+        # Older launchers remembered a recipes file; that choice no longer exists.
+        (self.tmp / launcher.SETTINGS_FILENAME).write_text(
+            '{"template": "IBDTest.yaml", "recipes": "../data/recipes.yaml"}', encoding="utf-8"
+        )
+        self.assertEqual(load_settings(self.tmp), Paths(template="IBDTest.yaml"))
 
     def test_unknown_keys_are_ignored(self):
         (self.tmp / launcher.SETTINGS_FILENAME).write_text(

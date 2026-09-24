@@ -74,7 +74,7 @@ upload_cohorts:
   - name: HospitalICDCodes
     dest_table: HospitalICDCodes
     file_type: csv
-    file_loc: "yamls/IBD/ED and Surgery/ICD-hosp.csv"
+    file_loc: "csv/HospitalICDCodes.csv"   # relative to this template; travels with the transfer YAML
     scope: global #global or per_group
     push_this_cycle: true
 
@@ -82,6 +82,8 @@ cohorts: #Use recipes premade or make your own tables. Multiplied and batched by
   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
     name: Patients
   - recipe: OtherHospitalizations
+    vars:
+      HospitalICDTable: HospitalICDCodes  # the upload above: which ICD codes count
 
   # Make as many cohorts as you need, each is its own table. 
   # You will always need the type and nullable, from the Data Dictionary. Source tells you the table and the column you're deriving from

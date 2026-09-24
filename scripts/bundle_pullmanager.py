@@ -40,27 +40,24 @@ SOURCE_ROOT = SCRIPTS_DIR / "pullmanager_src"
 EXTRACTOR_PATH = SCRIPTS_DIR / "bundle_extractor.py"
 DEFAULT_OUTPUT = REPO_ROOT / "dist" / "pullmanager_bundle.py"
 
-# The VM needs more than the runtime. The split step runs there, so YAML
-# Manager and the data it reads travel too. Published paths are chosen so
-# makeYaml's own default paths resolve inside the extracted tree without it
-# knowing it was bundled: it expects <root>/scripts/makeYaml.py alongside
-# <root>/YAMLs/.
+# The VM needs more than the runtime. The split step runs there, so makeYaml
+# and the data dictionary it validates against travel too. Published paths are
+# chosen so makeYaml's own default paths resolve inside the extracted tree
+# without it knowing it was bundled: it expects <root>/scripts/makeYaml.py
+# alongside <root>/YAMLs/.
 # Everything bundled is managed, and a re-extraction updates it. A locally
 # modified copy is kept aside as <name>.local first, so an edit made on the VM
 # is never simply destroyed -- which also suits hand-patching a file there and
 # copying it back.
 #
-# Nothing the user authors is bundled. template.yaml ships as
-# template.yaml.example precisely so improvements to it keep arriving without
-# any chance of landing on a real template.
+# Recipes, the browser UI and the template example stay on the Mac (D49). The
+# VM works from transfer YAMLs, which carry their recipes written out in full,
+# and it cannot open the browser UI anyway. Nothing the user authors is
+# bundled.
 COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
-    (REPO_ROOT / "scripts" / "yamlmanager.py", "scripts/yamlmanager.py", "replace"),
-    (REPO_ROOT / "scripts" / "yamlmanager_backend.py", "scripts/yamlmanager_backend.py", "replace"),
     # Authored on the Mac and flowing one way, so the shipped copy wins.
-    (REPO_ROOT / "YAMLs" / "recipes.yaml", "YAMLs/recipes.yaml", "replace"),
     (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml", "replace"),
-    (REPO_ROOT / "YAMLs" / "template.yaml", "YAMLs/template.yaml.example", "replace"),
 )
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to

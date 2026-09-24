@@ -111,7 +111,7 @@ class ConstructionTests(GuiTestCase):
     def test_builds_a_field_for_every_input(self):
         self.assertEqual(
             set(self.app.vars),
-            {"template", "recipes", "datadictionary", "split_dir", "sql_dir"},
+            {"template", "datadictionary", "split_dir", "sql_dir"},
         )
 
     def test_starts_from_the_defaults(self):
@@ -121,11 +121,11 @@ class ConstructionTests(GuiTestCase):
     def test_restores_remembered_choices(self):
         from ..launcher import Paths, save_settings
 
-        save_settings(Paths(template="IBDTest.yaml", recipes="../data/recipes.yaml"), self.work)
+        save_settings(Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml"), self.work)
         from ..launcher import locate_tools
         app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
-        self.assertEqual(app.vars["template"].get(), "IBDTest.yaml")
-        self.assertEqual(app.vars["recipes"].get(), "../data/recipes.yaml")
+        self.assertEqual(app.vars["template"].get(), "IBD_transfer.yaml")
+        self.assertEqual(app.vars["datadictionary"].get(), "../data/d.yaml")
 
 
 class ActionTests(GuiTestCase):

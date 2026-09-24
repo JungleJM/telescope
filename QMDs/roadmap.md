@@ -14,10 +14,11 @@ When an item here is built, delete it from this file and describe the result in
 | --- | --- |
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
 | YAML Manager browser UI | Built; Mac only |
-| Bundle: build, verify, extract, `.local` preservation | Built, tested, delivered to the VM |
+| Bundle: build, verify, extract, `.local` preservation | Built and tested. The D49 bundle (no recipes or UI) is not yet on the VM |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; dry run proven end to end from one copied bundle |
 | Pullmanager: connections, session execution, uploads, transfer | Written and tested against a fake cursor. **Never run against a database** |
-| Launcher (`--gui`) | Built; tested with a fake tkinter and by hand on Tk 9. Not yet opened on the VM |
+| Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested on the Mac. Not yet used on the VM |
+| Launcher (`--gui`) | Built; tested with a fake tkinter, built for real on Tk 9 and on Tk 8.6 (Mac `python3.13`). Not yet opened on the VM |
 | Artifact handoff (parquets) | Not built |
 
 ## Known Bugs
@@ -39,6 +40,25 @@ design always intended that for resume and retry) or executed inside the one
 run node. The test must check the **outcome**: every PK row's data lands
 exactly once across the chunks. Until fixed, do not use `chunk:`.
 
+### Every session runs every multiplied fact cohort, some against another session's PK
+
+Found splitting `YAMLs/template.yaml` (IBDType x Race multipliers, `Dual`), and
+the same before D49. There are 8 sessions (`UCblackPatients`,
+`CrohnswhitePatients_sp`, ...), and each session's runs carry all 8
+`OtherHospitalizations` variants rather than the one for its own group. In
+session `UCblackPatients_sp`, the run for `CrohnsblackOtherHospitalizations_sp`
+joins `##JVM_CrohnsblackPatients`, a different session's PK, and not the
+SneakPeek one. So each fact cohort is pulled 8 times, the copies overwrite one
+another's `##JVM_` temp, and whichever finishes last decides which population
+lands in Projects.
+
+Two faults, probably: the split does not filter a session's fact cohorts to
+its multiplier group and Cosmos variant, and `PKTable` is bound before
+`expand_cosmos` adds `_sp`, so an `_sp` cohort points at the non-`_sp` PK. The
+test must check the **outcome**: each session's runs hold exactly its own
+group's cohorts, each joining its own session's PK. Until fixed, do not run a
+template that combines multipliers with fact cohorts.
+
 ### A second `--execute` re-pulls finished sessions
 
 Every session opens a new connection, which makes every `done` node stale, so
@@ -49,67 +69,19 @@ outright, with a flag to force it.
 
 ---
 
-## Next: The Transfer YAML (D49)
-
-Recipes stay on the Mac; the VM gets `<project>_transfer.yaml` with them
-written out in full. Already there: `--export-preyaml expanded-recipes` inlines
-**cohort** recipes without applying multipliers or batching. Tested on
-`02_valid_multipliers_batching.yaml`: split with an empty recipes file, the
-cohorts resolve, but the batching fails
-(`bad_batching: Could not understand batching item`), because `sex`, `state`
-and `chunk` are still bare names pointing into `recipes.yaml`.
-
-To build, in order:
-
-1. **`--export-transfer`** in `makeYaml.py`. Runs full validation, then writes
-   the template with cohort recipes inlined and each batching item replaced by
-   its full definition (`name`, `kind`, `applies_to`, `column`, `values` or
-   `rows_per_batch`, with the template's overrides applied). Adds the
-   `transfer:` block (source template file name, recipes SHA-256). Written
-   beside the template by default, `--out` to choose; written elsewhere,
-   relative `file_loc` values are rebased so they still point at the same
-   files, and the upload files that must travel with it are listed.
-2. **Recipes only when referenced.** Compile, split and validation load the
-   recipes file only if something says `recipe:` or names a batching recipe.
-   No recipes file plus a reference is an error naming the cohort and pointing
-   at `--export-transfer`.
-3. **Hand-written batching is checked.** A full batching definition is
-   validated field by field (known `kind`; `column_values` needs `column` and
-   `values`; `row_chunk` needs a positive `rows_per_batch`), since on the VM it
-   is edited by hand. A preset `chunk` left at `rows_per_batch: required` is an
-   error. Any `row_chunk` warns that `chunk:` pulls only the first chunk (Known
-   Bugs).
-4. **Every error carries a fix.** `Message` gains a `fix` field, printed on its
-   own line. Contexts become field paths (`cohorts[1] (Patients)`,
-   `upload_cohorts[0].file_loc`, `batching[2]`). A test reads `makeYaml.py`
-   and fails if any `result.error(...)` call has no `fix=`.
-5. **Extraction keeps edited files the bundle drops**, as `<name>.local`,
-   using the previous extraction's `.bundle-manifest.json` hashes to tell an
-   edit from an untouched copy. Must land in the same bundle that drops files.
-6. **Bundle contents.** Drop `recipes.yaml`, `yamlmanager.py`,
-   `yamlmanager_backend.py` and `template.yaml.example`. The missing-template
-   message points at `--export-transfer` instead of the example.
-7. **Launcher.** "Template" becomes "Transfer YAML"; the recipes field goes.
-   Old settings files still load (unknown keys are ignored).
-8. **Browser UI.** The Exports tab shows the transfer YAML with a Download
-   button.
-
-Tests of the **outcome**: a transfer YAML split on its own, with no recipes
-file, gives the same split folder (manifest and every session YAML) as the
-original template split with recipes; and an edited `recipes.yaml` on the VM
-survives an update that stops shipping it.
-
----
-
 ## Next: The First Live Run
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:
 
-1. Extract, then `pullmanager.py --tdd`.
-2. `pullmanager.py --gui`. The VM likely has Tk 8.6, not the 9 it was checked
-   against, so watch for option or layout errors.
-3. Execute a small template with an upload and a batched run (explicit
-   `values:` dimensions, no `chunk:`). Check:
+1. Copy the new bundle, `--verify-bundle`, extract, then `pullmanager.py --tdd`.
+   The extraction should report `recipes.yaml`, the UI and the template
+   example as no longer shipped, with a `.local` for any that were edited
+   there.
+2. `pullmanager.py --gui`. Checked on Tk 8.6 on the Mac, but the VM's exact
+   Tk is unconfirmed, so watch for option or layout errors.
+3. On the Mac, export a small template with `--export-transfer`: an upload and
+   a batched run (explicit `values:` dimensions, no `chunk:`). Copy it and its
+   listed uploads over, then Validate, Export split, Dry run and Execute. Check:
    - `@@SERVERNAME` is captured and `OPENQUERY` reaches that instance.
    - Cosmos and Projects row counts agree.
    - An upload over 1000 rows succeeds.

@@ -50,6 +50,22 @@ def build_preyaml(
     )
 
 
+def build_transfer(
+    template_path: str | Path,
+    recipes_path: str | Path,
+    output_path: str | Path | None = None,
+    write: bool = False,
+    datadictionary_path: str | Path | None = None,
+) -> CompileResult:
+    return makeYaml.build_transfer(
+        template_path=template_path,
+        recipes_path=recipes_path,
+        output_path=output_path,
+        write=write,
+        datadictionary_path=datadictionary_path,
+    )
+
+
 def plan_split_runs(
     template_path: str | Path,
     recipes_path: str | Path,

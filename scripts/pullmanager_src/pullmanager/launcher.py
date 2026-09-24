@@ -61,10 +61,14 @@ def locate_tools(package_dir: Path | None = None) -> Tools:
 
 @dataclass
 class Paths:
-    """What the user has chosen. Blank optional fields fall back to defaults."""
+    """What the user has chosen. Blank optional fields fall back to defaults.
+
+    `template` is a transfer YAML (D49): recipes already written out, so there
+    is no recipes file to choose. Settings saved by an older launcher may still
+    name one; unknown keys are ignored on load.
+    """
 
     template: str = ""
-    recipes: str = ""
     datadictionary: str = ""
     split_dir: str = "split"
     sql_dir: str = "sql"
@@ -85,10 +89,8 @@ def _require(value: str, what: str) -> str:
 
 
 def _yaml_inputs(paths: Paths) -> list[str]:
-    args = ["--template", _require(paths.template, "template")]
+    args = ["--template", _require(paths.template, "transfer YAML")]
     # Optional: blank means the tool's own default, which is the bundled copy.
-    if paths.recipes.strip():
-        args += ["--recipes", paths.recipes.strip()]
     if paths.datadictionary.strip():
         args += ["--datadictionary", paths.datadictionary.strip()]
     return args
