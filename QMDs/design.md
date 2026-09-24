@@ -255,11 +255,13 @@ every reference and pointing at `--export-transfer`.
 A recipe that reads another generated table names it through a variable:
 
 ```sql
-INNER JOIN ##JVM_{{HospitalICDTable}} AS hic ON ...
+INNER JOIN {{prefix}}_{{HospitalICDTable}} AS hic ON ...
 ```
 
 YAML Manager infers from this that the recipe has a **table input**
 `HospitalICDTable`, and which columns it reads through the alias (`hic.X`).
+`{{prefix}}` is the project's temp prefix (Naming, below), filled in by YAML
+Manager; `{{prefix}}_Patients` names a generated table directly.
 
 **`PKTable` is the one input bound automatically**, to the session's root PK.
 Every other table input must be bound on the cohort that uses the recipe:
@@ -310,13 +312,16 @@ Checks:
 - Recipe references resolve.
 - Upload files exist; CSV headers carry the required columns.
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
-- Multiplier definitions are well formed; dimension labels do not collide.
+- Multiplier definitions are well formed.
 - Batching definitions, field by field, since a transfer YAML writes them out
   in full: a known `kind`; `column_values` has a `column` on the PK and a
   non-empty `values` list; `row_chunk` has a positive `rows_per_batch` (the
   shipped `chunk` recipe's `required` placeholder is refused). `values: all`
-  warns that the pull will stop at it, and any `row_chunk` warns that it pulls
-  only the first chunk (roadmap, Known Bugs).
+  warns that the pull will stop at it.
+- Temps are named with `{{prefix}}_`: `##JVM_` anywhere in a cohort is
+  `old_temp_marker`, whose fix is the line rewritten. `prefix` is a reserved
+  variable, and `temp_prefix` must be letters, digits and underscores, at most
+  30 (`bad_temp_prefix`).
 - Every cohort column against the data dictionary (below).
 
 Authoring rules applied on the way:
@@ -379,6 +384,11 @@ A cohort tagged with its own database qualifies its tables three-part
 whichever database is connected. Global temps stay unqualified: tempdb does not
 follow the connected database.
 
+An `_sp` copy reads the `_sp` copies of the generated tables it joins:
+`##tesrun_Patients` becomes `##tesrun_Patients_sp` in its SQL, so it pulls for
+the SneakPeek population. Uploads are shared by both copies and keep their
+names.
+
 ### Outputs
 
 - **Transfer YAML** (`--export-transfer`, `--out` to choose the file): what the
@@ -434,20 +444,29 @@ split/
       pk.yaml
       runs/
         run.yaml               unbatched
-        LA-Female.yaml         or one per batch combination
+        b1of4-LA-Female.yaml   or one per batch combination
 ```
 
 A **session** is the scope in which one Cosmos connection stays open, because
-global temps die with it. A multiplier produces one session per multiplied
-cohort; otherwise there is one.
+global temps die with it: one PK, and everything pulled for it. A multiplier
+produces one session per multiplied PK, and under `Dual` each has an `_sp`
+twin; otherwise there is one.
+
+Each cohort records the session that builds it as `session_pk`: its multiplier
+group's PK (or the uploaded PK). A session's runs hold only its own cohorts, so
+every cohort is built once, joined to its own session's PK. With IBDType x Race
+x `Dual`, that is 8 sessions of one `OtherHospitalizations` each.
+
+Every phase document carries `temp_prefix` (Naming), and the manifest's
+`project` records it too.
 
 Every session has the same routine, batched or not:
 
 | Phase | Does |
 | --- | --- |
-| `setup` | Creates the Projects destination tables (drop and create) |
-| `upload_cohorts` | Uploads every upload cohort into `##JVM_<dest>`, once per session |
-| `pk` | Builds the PK table, or registers an uploaded one, and copies it to Projects |
+| `setup` | Creates the Projects destination tables (drop and create; kept on a resume) |
+| `upload_cohorts` | Uploads every upload cohort into `##<prefix>_<dest>`, once per session |
+| `pk` | Builds the PK table and copies it to Projects, or registers an uploaded one |
 | runs | Pull the remaining cohorts, one run per batch combination |
 
 Each YAML is standalone-valid: it repeats the project metadata, drops the
@@ -467,7 +486,8 @@ pull_context:
 An upload cohort marked `type: pk` (at most one) becomes the session's PK
 source: `upload_cohorts` uploads it, and `pk` registers it
 (`pk_source: {kind: uploaded_cohort, upload_name, table, key_columns}`) instead
-of building one.
+of building one. As built, no Projects copy of an uploaded CSV PK is made, so
+the checks and batching that read that copy fail (roadmap, Known Bugs).
 
 ### Batching
 
@@ -481,7 +501,10 @@ batching:
   - chunk: 2000
 ```
 
-`state × sex` is four runs: `LA-Female`, `LA-Male`, `MS-Female`, `MS-Male`.
+`state × sex` is four runs: `b1of4-LA-Female`, `b2of4-LA-Male`,
+`b3of4-MS-Female`, `b4of4-MS-Male` (D53). The number makes every label unique,
+so two combinations can never share one; `A B` and `A-B` both clean to `A-B`
+and are told apart by it. A run with only `chunk:` is `b1of1`.
 
 The unit of multiplication is the **bucket**. `include_other: true` adds a
 catch-all bucket (`<dimension>-other`), so `values: [Female]` plus
@@ -495,10 +518,9 @@ predicate includes `IS NULL`, because `NOT IN` never matches NULL.
 | `row_chunk` | at run time | Pullmanager | `batch.runtime` |
 
 So `chunk: 2000` subdivides each combination rather than joining the product.
-**Known bug:** Pullmanager currently pulls only the first chunk of each run and
-drops the rest silently. Do not use `chunk:` until it is fixed (roadmap).
-Two dimensions that would produce the same run name are an error, since a lost
-combination means patients silently not pulled.
+The chunks run inside their run, not as manifest nodes (D53): Pullmanager
+counts the batch's PK rows and pulls `ceil(rows / 2000)` chunks in turn,
+showing progress as `c2of3` on the run.
 
 Batch membership is deterministic. A values bucket is a predicate, and a run's
 buckets combine with `AND`, so the order of the dimensions changes only the
@@ -519,10 +541,11 @@ project:
   name: <str>
   project_folder: <str>
   project_db: <str>              # e.g. PROJECTD33A929
+  temp_prefix: <str>             # e.g. tesrun (D50)
   created_by: yamlmanager
 source:
   template: <path>
-  recipes: <path>
+  recipes: <path|null>           # null for a transfer YAML, which adds transfer: {...}
 sessions:
   - session_id: <stable id>
     cohort: <str>
@@ -553,7 +576,7 @@ A batched run adds:
 
 ```yaml
 batch:
-  name: LA-Female
+  name: b1of4-LA-Female
   dimensions:
     - {name: state, kind: column_values, column: StateOrProvinceAbbreviation, value: LA}
     - {name: sex,   kind: column_values, column: Sex, value: Female}
@@ -572,11 +595,19 @@ duration: {seconds: 312, display: "5m 12s"}   # on finish or fail; cleared on re
 note: <str>                                   # why skipped or blocked; never in `error`
 epoch: <str>                                  # the connection it completed under
 
+# on a run
+outputs: {chunk: c3of3, batch_pk_rows_total: 4500, batch_pk_rows: 500, batch: ...}
+
 # on a session
 runtime:
   epoch: "20260922T140000-3f2a9c11"
   opened_at: "2026-09-22T14:00:00-05:00"
   linked_server: et4003vpdsql032
+  temp_prefix: tesrun                          # tesrun2 if another pull held tesrun (D50)
+  cosmos_created: {Cosmos: "2026-09-17T19:34:56.450"}
+
+# on the manifest (D51)
+cosmos_refresh: {Cosmos: "2026-09-17T19:34:56.450", Cosmos_SneakPeek: "..."}
 ```
 
 ### Rules
@@ -612,22 +643,34 @@ settled → `running`; otherwise `pending`.
 
 ### Naming
 
-Invariants, not preferences (`naming.py`):
+`naming.py`:
 
 | Thing | Rule | Example |
 | --- | --- | --- |
-| Cosmos global temp | `##JVM_<dest>`; a `JVM_` prefix is stripped first, never doubled | `##JVM_PKTable` |
+| Cosmos global temp | `##<prefix>_<dest>`; a `JVM_` prefix on the dest is stripped first, never doubled | `##tesrun_PKTable` |
 | Projects staging | `#Local_<dest>` | `#Local_PKTable` |
 | Projects destination | `<project_db>.dbo.<dest>`, always fully qualified | `PROJECTD33A929.dbo.PKTable` |
 
-Global temps are instance-wide. Two pulls running at once with the same
-`dest_table` collide. D50 replaces `##JVM_` with a per-project prefix (roadmap,
-fix 4).
+The prefix is per project (D50): `temp_prefix` from the template, else the
+first (up to) three letters of each word of `project_folder`, lower-cased
+(`IBD Ancestry` is `ibdanc`, `Test Run` is `tesrun`, blank is `pull`). A phase
+document with no `temp_prefix`, written before D50, keeps `JVM`.
+
+Global temps are instance-wide, so two pulls that both make `Patients` would
+collide. When a session opens it asks, for each temp it will create, whether
+it already exists (`OBJECT_ID('tempdb..##tesrun_Patients')`). One that does
+belongs to a pull running now, since a global temp lives only as long as its
+connection. The session then **does not drop it**: it numbers its prefix
+(`tesrun2`, `tesrun3`, ... up to 99) until none of its names are taken, and
+rewrites every statement it sends to use that. The chosen prefix is recorded
+in `session.runtime.temp_prefix`, with a warning when it changed. A dry run
+shows the planned names. If the check itself cannot run, the session warns and
+uses the planned prefix.
 
 ### Sessions, Epochs And Staleness
 
 One Cosmos connection is held open from `setup` through the last run of a
-session, because every `##JVM_` table dies with it. Opening it mints an
+session, because every global temp dies with it. Opening it mints an
 **epoch** and captures `SELECT @@SERVERNAME` into `session.runtime`. That
 instance name (`et4003vpdsql032`, not the `COSMOS` alias) is what Projects-side
 `OPENQUERY` must target, and it **changes on every connection**, so it is always
@@ -635,33 +678,53 @@ overwritten, never cached or reused.
 
 | Output | Lives in | Survives the connection |
 | --- | --- | --- |
-| `##JVM_<dest>`, uploaded temps | Cosmos | No |
+| `##<prefix>_<dest>`, uploaded temps | Cosmos | No |
 | `#Local_<dest>` | Projects connection | No |
 | `<project_db>.dbo.<dest>` | Projects database | Yes |
 
 So `done` means "completed once", not "still exists". `is_stale()` is true for a
 node completed under an earlier epoch: its **server-side** output is gone. A
-manifest with no epochs is never stale.
+manifest with no epochs is never stale. What runs next is decided per session
+(Running Again), not from staleness.
 
 ### What A Session Does
 
-1. **Setup.** Drop and create every Projects destination, once. Runs append.
+When the session opens, before anything runs: capture `@@SERVERNAME`, check
+the Cosmos refresh date (D51, Running Again), and choose the temp prefix
+(Naming).
+
+1. **Setup.** Drop and create every Projects destination, once; runs append.
+   Resuming, keep them and create only missing ones (D52). Every destination a
+   run fills has a `_batch NVARCHAR(200) NOT NULL` column holding the run's
+   batch label (`all` for an unbatched run). The PK's own copy has none, since
+   batches are selected from it.
 2. **Uploads.** CSV and `dbtable` cohorts go up through the client (there is no
    linked server from Cosmos back to Projects). `parquet` is refused: Cosmos
    cannot read it. Column widths are measured from the data, plus 50.
-3. **PK.** Build `##JVM_<pk>` (or register the uploaded one), verify uniqueness
-   (`COUNT(*)` against `COUNT(DISTINCT keys)`; a PK with no key column warns
-   instead), and copy it to Projects.
-4. **Runs.** For a batched run, `##JVM_<pk>` is emptied and refilled with that
+3. **PK.** Build `##<prefix>_<pk>` and copy it to Projects (or register an
+   uploaded one, which makes no copy: roadmap), then verify uniqueness against
+   the Projects copy (`COUNT(*)` against `COUNT(DISTINCT keys)`; a PK with no
+   key column warns instead). Not rerun on a resume.
+4. **Runs.** For a batched run, the PK temp is emptied and refilled with that
    batch's whole PK rows, selected from the **Projects copy** with a
-   parameterized predicate and `ORDER BY <keys> OFFSET/FETCH`, then uploaded.
-   The cohort SQL runs unchanged: it only ever joins `##JVM_<pk>`. Each run
-   then transfers: `OPENQUERY` into `#Local_<dest>`, then `INSERT` into the
-   destination inside a transaction.
+   parameterized predicate, then uploaded. The cohort SQL runs unchanged: it
+   only ever joins the PK temp. On a resume an unbatched run refills it with
+   the whole Projects copy the same way. Each run then:
+   - deletes its own label's rows from each destination
+     (`DELETE ... WHERE _batch = 'b2of4-LA-Male'`), a separate block, so a run
+     that failed after landing some rows lands them exactly once when retried;
+   - transfers: `OPENQUERY` into `#Local_<dest>`, then `INSERT` into the
+     destination, adding the `_batch` label.
 
-After each transfer the Cosmos and Projects row counts are compared, and a
-mismatch warns. Counts past 80,000,000 warn. The widest value of each staged
-column is measured and reported, not applied (D34).
+   A chunked run clears once, then for each chunk refills the PK temp with
+   `ORDER BY <keys> OFFSET/FETCH` over the Projects copy, rebuilds the cohort
+   temps and lands them. A failed chunk fails the run; a retry redoes all of it.
+
+After each run the Cosmos and Projects row counts are compared, counting only
+this run's `_batch` rows on the Projects side (a chunked run compares totals),
+and a mismatch warns. Counts past 80,000,000 warn. The widest value of each
+staged column is measured and reported, not applied (D34). A unit that fails
+rolls both connections back.
 
 ### Uploads
 
@@ -669,7 +732,7 @@ Parameter binding with `fast_executemany`, chunked:
 
 ```python
 cursor.fast_executemany = True
-cursor.executemany("INSERT INTO ##JVM_ClientPK (PatientDurableKey) VALUES (?)", rows)
+cursor.executemany("INSERT INTO ##tesrun_ClientPK (PatientDurableKey) VALUES (?)", rows)
 ```
 
 Not a literal `INSERT ... VALUES` list, which T-SQL caps at 1000 rows. Binding
@@ -689,19 +752,32 @@ to `failed`, so a partial table cannot read as complete.
 
 ### Running Again
 
-Running `--execute` again on a manifest replays **every session in full,
-finished ones included**: each session opens a new connection, which makes
-every `done` node stale, so setup drops the destinations and every run pulls
-again. Always correct; costs time. To re-pull only some sessions today, run a
-manifest containing only those. Skipping finished sessions is on the roadmap.
+`--execute` first connects to Cosmos and reads
+`SELECT name, create_date FROM sys.databases WHERE name LIKE 'Cosmos%'` (D51).
+The manifest records the value for each database its cohorts read, to the
+millisecond. If one has changed since the last run, Cosmos was refreshed: it
+says so, and **every session starts over**, finished ones included. If the
+value cannot be read, it warns that a refresh cannot be detected and carries
+on. A session that finds a different value when it opens, because Cosmos was
+refreshed during the run, stops with a message to run again.
+
+Then, per session (D52):
+
+| Session | Next `--execute` |
+| --- | --- |
+| PK phase not done | Starts over: setup drops the destinations, everything runs |
+| PK done, some runs not done | Resumes: destinations kept, uploads replayed, PK query not rerun, only unfinished runs pulled |
+| PK done, every run done | Skipped without connecting: its tables are complete |
 
 - `--retry-failed` reopens `failed` work. Without it, failed work is excluded
-  and the output says so, because rebuilding a session around a failed unit
-  would transfer nothing.
-- A node left `running` by a crash or Stop is treated as interrupted and
-  replayed. SQL Server rolls back the open transaction when the connection
-  drops.
-- `--resume-partial` is **refused**. As built it would have lost data (D46).
+  and the output says so; a session with only failures left is skipped.
+- A run left `running` by a crash or Stop is interrupted: it is pulled again,
+  its rows cleared first.
+- `--repull` starts every session over, finished work included.
+- The summary (`pullmanager.py <manifest>`) and the dry run say, per session,
+  what the next `--execute` will do.
+
+`--resume-partial` is gone (D52, replacing D46).
 
 ### Connections
 
@@ -716,7 +792,10 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
   with `nextset()`.
 - `cursor.messages` is read on success and failure alike. That is what surfaces
   the inner error of a failed `OPENQUERY`.
-- `autocommit=False`, so each block is one transaction.
+- `autocommit=False`: a unit's work is committed when it finishes, and rolled
+  back when it fails. The `BEGIN/COMMIT TRANSACTION` inside a transfer block
+  therefore nests inside the driver's own transaction rather than committing
+  on its own.
 - Telemetry is read from result sets with declared columns, tied to manifest
   ids. No SQL is ever selected by searching its text.
 
@@ -724,22 +803,25 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 
 ```bash
 pullmanager.py split/pullmanifest.yaml                      # summarize
-pullmanager.py --dry-run split/pullmanifest.yaml [--out-dir sql] [-v] [--all]
-pullmanager.py --execute split/pullmanifest.yaml [--retry-failed] [--env FILE]
+pullmanager.py --dry-run split/pullmanifest.yaml [--out-dir sql] [-v] [--all] [--retry-failed] [--repull]
+pullmanager.py --execute split/pullmanifest.yaml [--retry-failed] [--repull] [--env FILE]
 pullmanager.py --gui
 pullmanager.py --tdd [module]
 ```
 
 A dry run renders every SQL block without touching a database or the manifest,
-listing why each unit is included and what was excluded.
+listing why each unit is included and what was excluded, and what each session
+will do next.
 
 ### The Launcher
 
 `--gui` opens a tkinter window for **running** pulls: choose the transfer YAML,
 data dictionary, split folder and SQL folder; then Validate, Export split, Dry
-run, Execute, Stop. There is no recipes field and no `--recipes` is ever passed
-(D49); settings saved by an older launcher that named one still load. Output streams into a log tab; a status tab reads the
-manifest every three seconds.
+run, Execute, Stop, with "Retry failed" and "Re-pull everything" options
+(`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is
+ever passed (D49); settings saved by an older launcher that named one still
+load. Output streams into a log tab; a status tab reads the manifest every
+three seconds.
 
 It is a front end, not a second implementation. Each button runs the same
 command a person would type, as a subprocess, so a long pull cannot freeze the
@@ -755,8 +837,8 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (85)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (293)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (97)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (316)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 ```
 
@@ -790,7 +872,11 @@ python3 scripts/makeYaml.py --template YAMLs/manager_test_cases/01_valid_basic.y
 ```
 
 The database layer is tested against a fake cursor, and the GUI against a fake
-tkinter. Neither proves the real thing: nothing here has run against Cosmos.
+tkinter. The fake Projects connection keeps each destination's rows per
+`_batch` label, carried across executions like the real database, so retry,
+chunk and refresh tests check what landed where. Statements apply in order and
+a failure stops at the one it matches, so a run can fail after landing rows;
+a rollback undoes nothing, the worst case. Neither proves the real thing: nothing here has run against Cosmos.
 Real Tk is exercised by hand: Tk 9 under Xvfb on the dev box, and Tk 8.6 with
 the Mac's `python3.13`, which the VM likely matches.
 
