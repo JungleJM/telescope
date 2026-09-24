@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "2d1f8549d926182c0c8394158323e887ec895a74ff3506cb5ce910e17d292aa2",
+  "content_id": "79b756e6bb97f978d5ef3647422fad5bad42d1ef57774ed5023c36c5b9c92dc7",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "0a8972c00e28bc49f9159f0bb79cd9bfbfa9adb1df328dc0f160712da8746904",
-      "size": 153299
+      "sha256": "933d05b3232af28d0d9d4dba7bd5fdcd458fa8c8e725ea71b7004dd22d789098",
+      "size": 168093
     }
   ]
 }'''
@@ -10975,7 +10975,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 0a8972c00e28bc49f9159f0bb79cd9bfbfa9adb1df328dc0f160712da8746904 SIZE: 153299 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 933d05b3232af28d0d9d4dba7bd5fdcd458fa8c8e725ea71b7004dd22d789098 SIZE: 168093 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11859,6 +11859,125 @@ if __name__ == "__main__":
 #     return {}
 #
 #
+# # Upload files (D54): parquet carries types; a CSV is converted to parquet at
+# # split, with the types declared under the upload's `columns:`.
+#
+# UPLOAD_SQL_TYPES = {
+#     "BIGINT": "int64", "INT": "int32", "INTEGER": "int32", "SMALLINT": "int16",
+#     "TINYINT": "uint8", "BIT": "bool", "FLOAT": "float64", "REAL": "float32",
+#     "DECIMAL": "decimal", "NUMERIC": "decimal", "DATE": "date32",
+#     "DATETIME": "timestamp", "DATETIME2": "timestamp", "SMALLDATETIME": "timestamp",
+#     "VARCHAR": "string", "NVARCHAR": "string", "CHAR": "string", "NCHAR": "string",
+# }
+# SQL_TYPE_RE = re.compile(r"^\s*([A-Za-z0-9]+)\s*(?:\(\s*(MAX|\d+)\s*(?:,\s*(\d+)\s*)?\))?\s*$", re.I)
+# PYARROW_FIX = (
+#     "Install pyarrow for this Python, to match the VM's 22.0.0: "
+#     "`python -m pip install pyarrow==22.0.0`."
+# )
+# UPLOAD_TYPES_FIX = "Use one of: " + ", ".join(sorted(UPLOAD_SQL_TYPES)) + ", e.g. `BIGINT` or `VARCHAR(50)`."
+#
+#
+# class UploadConversionError(ValueError):
+#     """A CSV or parquet column that cannot take its declared type."""
+#
+#
+# def parse_upload_type(text: Any) -> tuple[str, str | None, str | None] | None:
+#     """`DECIMAL(10,2)` -> ("DECIMAL", "10", "2"); None if not a type we upload."""
+#     match = SQL_TYPE_RE.match(str(text or ""))
+#     if not match or match.group(1).upper() not in UPLOAD_SQL_TYPES:
+#         return None
+#     return match.group(1).upper(), match.group(2), match.group(3)
+#
+#
+# def declared_upload_columns(upload: dict[str, Any]) -> list[dict[str, Any]]:
+#     """The `columns:` entries that name a column and its type."""
+#     return [
+#         c for c in upload.get("columns") or []
+#         if isinstance(c, dict) and c.get("name") and c.get("type")
+#     ]
+#
+#
+# def pyarrow_modules():
+#     """(pyarrow, pyarrow.csv, pyarrow.parquet), or None where it is not installed."""
+#     try:
+#         import pyarrow
+#         import pyarrow.csv
+#         import pyarrow.parquet
+#     except ImportError:
+#         return None
+#     return pyarrow, pyarrow.csv, pyarrow.parquet
+#
+#
+# def arrow_type(sql_type: Any):
+#     """The Arrow type a declared SQL type converts a column to."""
+#     pa = pyarrow_modules()[0]
+#     base, first, second = parse_upload_type(sql_type)
+#     kind = UPLOAD_SQL_TYPES[base]
+#     if kind == "decimal":
+#         return pa.decimal128(int(first or 18), int(second or 0))
+#     if kind == "timestamp":
+#         return pa.timestamp("us")
+#     if kind == "bool":
+#         return pa.bool_()
+#     return getattr(pa, kind)()
+#
+#
+# def convert_csv_to_parquet(csv_path: Path, parquet_path: Path, declared: list[dict[str, Any]]) -> int:
+#     """Write a CSV as parquet: declared columns typed, the rest text. Returns rows.
+#
+#     Raises UploadConversionError naming the column when a value does not fit.
+#     """
+#     modules = pyarrow_modules()
+#     if modules is None:
+#         raise UploadConversionError(f"Converting a CSV needs pyarrow. {PYARROW_FIX}")
+#     pa, pcsv, pq = modules
+#     with Path(csv_path).open("r", encoding="utf-8-sig", newline="") as handle:
+#         header = next(csv.reader(handle), [])
+#     types = {name: pa.string() for name in header}
+#     missing = [str(c["name"]) for c in declared if str(c["name"]) not in types]
+#     if missing:
+#         raise UploadConversionError(
+#             f"Declared column(s) {', '.join(missing)} are not in the file's header "
+#             f"({', '.join(header)})."
+#         )
+#     for column in declared:
+#         types[str(column["name"])] = arrow_type(column["type"])
+#     try:
+#         table = pcsv.read_csv(
+#             str(csv_path),
+#             convert_options=pcsv.ConvertOptions(column_types=types, strings_can_be_null=False),
+#         )
+#     except pa.ArrowInvalid as exc:
+#         text = str(exc)
+#         position = re.search(r"column #(\d+)", text)
+#         column = header[int(position.group(1))] if position and int(position.group(1)) < len(header) else "?"
+#         raise UploadConversionError(f"Column `{column}`: {text.splitlines()[0]}") from exc
+#     Path(parquet_path).parent.mkdir(parents=True, exist_ok=True)
+#     pq.write_table(table, str(parquet_path))
+#     return table.num_rows
+#
+#
+# def check_declared_columns(
+#     upload: dict[str, Any], names: list[str] | None, where: str, result: CompileResult
+# ) -> None:
+#     """Each declared column must be a type we upload, and exist in the file."""
+#     for column in declared_upload_columns(upload):
+#         if parse_upload_type(column["type"]) is None:
+#             result.error(
+#                 "bad_upload_type",
+#                 f"`{column['type']}` is not a type an upload column can take.",
+#                 f"{where}.columns ({column['name']}).type",
+#                 fix=UPLOAD_TYPES_FIX,
+#             )
+#         if names is not None and str(column["name"]) not in names:
+#             result.error(
+#                 "unknown_upload_column",
+#                 f"Declared column `{column['name']}` is not in the file.",
+#                 f"{where}.columns ({column['name']}).name",
+#                 fix=f"Use one of the file's columns: {', '.join(names) or 'none'}.",
+#             )
+#
+#
 # def upload_schemas(
 #     template: dict[str, Any],
 #     uploads: dict[str, dict[str, Any]],
@@ -11899,7 +12018,32 @@ if __name__ == "__main__":
 #                     fix="Save the file as a UTF-8 CSV with a header row.",
 #                 )
 #                 schemas[dest] = []
+#             check_declared_columns(upload, schemas[dest], where, result)
+#         elif file_type == "parquet" and upload.get("file_loc") and pyarrow_modules():
+#             file_path = resolve_file(base_dir, upload["file_loc"])
+#             if not file_path.exists():
+#                 result.error(
+#                     "missing_upload_file",
+#                     f"Upload file not found: {file_path}",
+#                     f"{where}.file_loc",
+#                     fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
+#                     "copy the file to where it points.",
+#                 )
+#                 schemas[dest] = None
+#                 continue
+#             try:
+#                 schemas[dest] = list(pyarrow_modules()[2].read_schema(str(file_path)).names)
+#             except Exception as exc:
+#                 result.error(
+#                     "upload_read_error",
+#                     f"Could not read upload parquet `{file_path}`: {exc}",
+#                     f"{where}.file_loc",
+#                     fix="Check the file is parquet, e.g. written by arrow::write_parquet in R.",
+#                 )
+#                 schemas[dest] = []
+#             check_declared_columns(upload, schemas[dest], where, result)
 #         elif file_type in ("dbtable", "parquet"):
+#             check_declared_columns(upload, None, where, result)
 #             schema = upload.get("columns") or upload.get("schema") or []
 #             if schema and isinstance(schema[0], dict):
 #                 schemas[dest] = [str(c.get("name")) for c in schema if c.get("name")]
@@ -11915,7 +12059,8 @@ if __name__ == "__main__":
 #                     "upload_schema_unknown",
 #                     f"Upload `{dest}` has no locally discoverable schema.",
 #                     where,
-#                     fix="List its columns under `columns:` so the cohorts that read it can be checked.",
+#                     fix="List its columns under `columns:` so the cohorts that read it can be checked."
+#                     + (f" Or read the parquet's own: {PYARROW_FIX}" if file_type == "parquet" else ""),
 #                 )
 #         else:
 #             schemas[dest] = []
@@ -12130,10 +12275,21 @@ if __name__ == "__main__":
 #
 # def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
 #     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+#     uploaded_pk = find_uploaded_pk_table(template, CompileResult())
 #     for idx, mult in enumerate(template.get("multipliers", []) or []):
 #         if not isinstance(mult, dict):
 #             continue
 #         where = f"multipliers[{idx}] ({mult.get('name')})"
+#         if uploaded_pk and mult.get("stage") == "split_after_build" and mult.get("applies_to") == "PKTable":
+#             result.error(
+#                 "split_after_build_on_uploaded_pk",
+#                 f"`split_after_build` splits a PK the pull builds, but this template's PK is "
+#                 f"the uploaded `{uploaded_pk}` (D54).",
+#                 f"{where}.stage",
+#                 fix="Split the list before uploading it, one upload per group; or use "
+#                 "`stage: during_build`, or batching, which do work on an uploaded PK.",
+#             )
+#             continue
 #         stage = mult.get("stage")
 #         if stage not in ("during_build", "split_after_build"):
 #             result.error(
@@ -12437,6 +12593,10 @@ if __name__ == "__main__":
 #     """
 #     normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, result)
 #     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
+#     uploaded_pk = find_uploaded_pk_table(template, CompileResult())
+#     if uploaded_pk:
+#         # An uploaded PK's columns are its file's (D54).
+#         pk_candidates.append(uploaded_pk)
 #     pk_cols = sorted({col for pk_table in pk_candidates for col in (table_schemas.get(str(pk_table)) or [])})
 #     for item in normalized:
 #         where = f"{item.get('_source', 'batching')} ({item.get('name')})"
@@ -12970,10 +13130,17 @@ if __name__ == "__main__":
 #     pk_cohorts = [cohort for cohort in cohorts if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() == "pk"]
 #     if not pk_cohorts:
 #         if pk_source:
+#             # The batching every cohort carries is the uploaded PK's too;
+#             # without it its session had no batches and chunk: was dropped.
+#             batching = next(
+#                 (c.get("batching") for c in cohorts if isinstance(c, dict) and c.get("batching")),
+#                 None,
+#             )
 #             pk_cohorts = [{
 #                 "name": pk_source.get("upload_name") or pk_source.get("table"),
 #                 "dest_table": pk_source.get("table"),
 #                 "type": "PK",
+#                 "batching": batching,
 #             }]
 #         else:
 #             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
@@ -13160,6 +13327,24 @@ if __name__ == "__main__":
 #             )
 #             continue
 #         staging.mkdir(parents=True, exist_ok=True)
+#         if str(upload.get("file_type", "")).lower() == "csv":
+#             # D54: parquet is what travels on; the CSV's declared types go in.
+#             target = staging / f"{source.stem}.parquet"
+#             try:
+#                 convert_csv_to_parquet(source, target, declared_upload_columns(upload))
+#             except UploadConversionError as exc:
+#                 result.error(
+#                     "csv_conversion_failed",
+#                     f"{source.name} could not be converted to parquet. {exc}",
+#                     f"upload_cohorts ({upload.get('name')})",
+#                     fix=PYARROW_FIX if "pyarrow" in str(exc) else
+#                     "Correct the value in the file, or declare a type that fits under "
+#                     "`columns:` (undeclared columns stay text).",
+#                 )
+#                 continue
+#             upload["file_type"] = "parquet"
+#             upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{target.name}"
+#             continue
 #         target = staging / source.name
 #         shutil.copyfile(source, target)
 #         upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{source.name}"
@@ -13187,6 +13372,8 @@ if __name__ == "__main__":
 #         out_dir,
 #         result,
 #     )
+#     if result.errors:
+#         return result
 #     manifest = result.analysis.get("split_plan", {})
 #     manifest_path = out_dir / "pullmanifest.yaml"
 #     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -14356,6 +14543,7 @@ if __name__ == "__main__":
 #                 temps = set(re.findall(r"##tesrun_[A-Za-z0-9_]+", json.dumps(cohort)))
 #                 self.assertEqual(temps, {f"##tesrun_{pk_table}"})
 #
+#     @unittest.skipUnless(pyarrow_modules(), "splitting a CSV upload needs pyarrow")
 #     def test_an_uploaded_pk_keeps_one_session_for_both_databases(self):
 #         text = uploaded_pk_template().replace("cosmos_db: COSMOS", "cosmos_db: Dual")
 #         (self.tmp / "pks.csv").write_text(
@@ -14420,6 +14608,110 @@ if __name__ == "__main__":
 #         self.assertHasError(res, "reserved_variable")
 #
 #
+# @unittest.skipUnless(pyarrow_modules(), "needs pyarrow")
+# class UploadFileTests(MakeYamlTest):
+#     """D54: parquet is the upload format; a CSV becomes one at split."""
+#
+#     UPLOAD = """
+# upload_cohorts:
+#   - name: Codes
+#     dest_table: Codes
+#     file_type: {file_type}
+#     file_loc: {file_loc}
+#     columns:
+#       - name: Code
+#         type: {code_type}
+# """
+#
+#     def write_codes(self, text="Code,Label\n50,Crohns\n51,UC\n"):
+#         (self.tmp / "codes.csv").write_text(text, encoding="utf-8")
+#
+#     def extra(self, file_type="csv", file_loc="codes.csv", code_type="BIGINT"):
+#         return self.UPLOAD.format(file_type=file_type, file_loc=file_loc, code_type=code_type)
+#
+#     def test_a_csv_converts_with_its_declared_types(self):
+#         self.write_codes()
+#         rows = convert_csv_to_parquet(
+#             self.tmp / "codes.csv", self.tmp / "codes.parquet", [{"name": "Code", "type": "BIGINT"}]
+#         )
+#         table = pyarrow_modules()[2].read_table(str(self.tmp / "codes.parquet"))
+#         self.assertEqual(rows, 2)
+#         self.assertEqual(str(table.schema.field("Code").type), "int64")
+#         self.assertEqual(str(table.schema.field("Label").type), "string")
+#
+#     def test_a_value_that_does_not_fit_names_its_column(self):
+#         self.write_codes("Code,Label\nK50,Crohns\n")
+#         with self.assertRaises(UploadConversionError) as caught:
+#             convert_csv_to_parquet(
+#                 self.tmp / "codes.csv", self.tmp / "codes.parquet", [{"name": "Code", "type": "BIGINT"}]
+#             )
+#         self.assertIn("`Code`", str(caught.exception))
+#
+#     def test_the_split_carries_parquet_not_the_csv(self):
+#         self.write_codes()
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(extra=self.extra()), output_dir=out)
+#         self.assertCompiles(res)
+#         self.assertTrue((out / "uploads" / "codes.parquet").is_file())
+#         self.assertFalse((out / "uploads" / "codes.csv").exists())
+#         session = load_yaml(out / "pullmanifest.yaml")["sessions"][0]
+#         upload = load_yaml(out / session["phases"]["upload_cohorts"]["yaml"])["upload_cohorts"][0]
+#         self.assertEqual((upload["file_type"], upload["file_loc"]), ("parquet", "uploads/codes.parquet"))
+#
+#     def test_a_bad_value_stops_the_split(self):
+#         self.write_codes("Code,Label\nK50,Crohns\n")
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(extra=self.extra()), output_dir=out)
+#         self.assertHasError(res, "csv_conversion_failed")
+#         self.assertIn("`Code`", res.errors[0].message)
+#         self.assertFalse((out / "pullmanifest.yaml").exists())
+#
+#     def test_a_parquets_columns_are_read_for_validation(self):
+#         self.write_codes()
+#         convert_csv_to_parquet(self.tmp / "codes.csv", self.tmp / "codes.parquet", [])
+#         res = self.compile_template(extra=self.extra("parquet", "codes.parquet", "BIGINT").replace(
+#             "      - name: Code", "      - name: Nope"))
+#         self.assertHasError(res, "unknown_upload_column")
+#         self.assertIn("Code, Label", res.errors[0].fix)
+#
+#     def test_an_unknown_type_is_refused(self):
+#         self.write_codes()
+#         res = self.compile_template(extra=self.extra(code_type="INTEGERISH"))
+#         self.assertHasError(res, "bad_upload_type")
+#
+#
+# @unittest.skipUnless(pyarrow_modules(), "needs pyarrow")
+# class UploadedPkBatchingTests(MakeYamlTest):
+#     """D54: an uploaded PK is batched and chunked like a generated one."""
+#
+#     def split(self, extra: str) -> tuple[CompileResult, Path]:
+#         (self.tmp / "pks.csv").write_text(
+#             "PatientDurableKey,DiagnosisEventKey,Sex\n1,10,Female\n2,20,Male\n", encoding="utf-8"
+#         )
+#         out = self.tmp / "split"
+#         text = "project_db: PROJECTD1\n" + uploaded_pk_template() + extra
+#         return write_split_artifacts(*self.write_pair(text), output_dir=out), out
+#
+#     def test_batching_is_checked_against_the_file_and_reaches_the_session(self):
+#         # Before: `Sex` was reported missing, and chunk: was silently dropped.
+#         res, out = self.split("batching:\n  - sex\n  - chunk: 1000\n")
+#         self.assertCompiles(res)
+#         runs = load_yaml(out / "pullmanifest.yaml")["sessions"][0]["runs"]
+#         self.assertEqual([r["batch"]["name"] for r in runs], ["b1of2-Female", "b2of2-Male"])
+#         self.assertEqual([d["name"] for d in runs[0]["batch"]["runtime"]], ["chunk"])
+#
+#     def test_split_after_build_on_an_uploaded_pk_is_refused(self):
+#         res, _ = self.split("""
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - {strat: F, column: Sex, values: [Female]}
+# """)
+#         self.assertHasError(res, "split_after_build_on_uploaded_pk")
+#
+#
 # class TransferTests(MakeYamlTest):
 #     """The transfer YAML (D49): recipes written out, nothing applied."""
 #
@@ -14458,18 +14750,19 @@ if __name__ == "__main__":
 #         self.assertCompiles(res)
 #         return res
 #
-#     def split_tree(self, template: Path, recipes: Path, out: Path) -> dict[str, str]:
+#     def split_tree(self, template: Path, recipes: Path, out: Path) -> dict[str, Any]:
 #         res = write_split_artifacts(template, recipes, output_dir=out)
 #         self.assertCompiles(res)
-#         tree = {}
+#         tree: dict[str, Any] = {}
 #         for path in sorted(out.rglob("*")):
 #             if path.is_file():
-#                 tree[path.relative_to(out).as_posix()] = path.read_text(encoding="utf-8")
+#                 tree[path.relative_to(out).as_posix()] = path.read_bytes()
 #         manifest = load_yaml(out / "pullmanifest.yaml")
 #         manifest.pop("source")
 #         tree["pullmanifest.yaml"] = json.dumps(manifest, sort_keys=True, default=str)
 #         return tree
 #
+#     @unittest.skipUnless(pyarrow_modules(), "splitting a CSV upload needs pyarrow")
 #     def test_splits_alone_exactly_as_the_template_does(self):
 #         # The outcome that matters: with no recipes file at all, the VM gets
 #         # the same sessions, runs and SQL inputs the Mac would have produced.
@@ -14481,6 +14774,7 @@ if __name__ == "__main__":
 #             with self.subTest(file=rel):
 #                 self.assertEqual(expected[rel], actual[rel])
 #
+#     @unittest.skipUnless(pyarrow_modules(), "splitting a CSV upload needs pyarrow")
 #     def test_the_realistic_templates_split_alone_too(self):
 #         cases = project_root() / "YAMLs" / "manager_test_cases"
 #         recipes = default_recipes_path()
@@ -14687,6 +14981,8 @@ if __name__ == "__main__":
 #     "table_binding": TableBindingTests,
 #     "sessions": SessionMembershipTests,
 #     "temp_prefix": TempPrefixTests,
+#     "upload_files": UploadFileTests,
+#     "uploaded_pk_batching": UploadedPkBatchingTests,
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
 #     "fixes": FixTests,
@@ -14745,6 +15041,20 @@ if __name__ == "__main__":
 #         "multipliers and batching left for the split (D49). --out chooses the file.",
 #     )
 #     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")
+#     parser.add_argument(
+#         "--csv-to-parquet",
+#         metavar="CSV",
+#         default=None,
+#         help="Convert one CSV to parquet (D54): --out for the file, --column NAME=TYPE "
+#         "for each typed column; the rest stay text.",
+#     )
+#     parser.add_argument(
+#         "--column",
+#         action="append",
+#         default=[],
+#         metavar="NAME=TYPE",
+#         help="With --csv-to-parquet: a column's type, e.g. PatientDurableKey=BIGINT.",
+#     )
 #     parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
 #     parser.add_argument("--report", action="store_true")
 #     parser.add_argument("--report-out", default=None)
@@ -14778,6 +15088,24 @@ if __name__ == "__main__":
 #         else:
 #             print("FAILED: errors block pre-YAML export")
 #         return 0 if result.ok else 1
+#
+#     if args.csv_to_parquet:
+#         source = Path(args.csv_to_parquet)
+#         target = Path(args.out) if args.out else source.with_suffix(".parquet")
+#         declared = []
+#         for item in args.column:
+#             name, _, sql_type = item.partition("=")
+#             if not sql_type or parse_upload_type(sql_type) is None:
+#                 print(f"ERROR --column {item}: expected NAME=TYPE. {UPLOAD_TYPES_FIX}")
+#                 return 1
+#             declared.append({"name": name.strip(), "type": sql_type.strip()})
+#         try:
+#             rows = convert_csv_to_parquet(source, target, declared)
+#         except (UploadConversionError, OSError) as exc:
+#             print(f"ERROR {exc}")
+#             return 1
+#         print(f"Wrote {target} ({rows:,} rows)")
+#         return 0
 #
 #     if args.export_transfer:
 #         result = build_transfer(
