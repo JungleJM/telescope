@@ -68,19 +68,22 @@ Two machines, one codebase, updated one way.
 | Python | 3.13.9 | `python3.13` (python.org 3.13.9, `/usr/local/bin`); brew's 3.14 `python3` has no tkinter | brew 3.14 (`/var/home/linuxbrew/.linuxbrew/bin/python3`); system `/usr/bin/python3` has no tkinter |
 | tkinter | yes, likely Tk 8.6 | Tk 8.6, bundled with the python.org install | via `brew install python-tk@3.14`, Tk 9 |
 | numpy | 2.1.3 | 2.1.3, installed for all users | not installed |
+| pyarrow | 22.0.0 | 22.0.0 in `python3.13`; brew's `python3` has 25 | whatever is installed |
 | Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver | none reachable, no driver |
-| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | brew's `python3` has both; `python3.13` needs them installed (below) | whatever is installed; Ruby fallback |
+| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | the same in `python3.13`; brew's `python3` has both | whatever is installed; Ruby fallback |
 
 On the Mac, use `python3.13` for anything run on the VM (the launcher, the
-runtime tests) so it meets the VM's Python and Tk, not brew's. It needs the
-VM's YAML packages, for all users:
+runtime tests) so it meets the VM's Python, Tk and packages, not brew's. It
+has the VM's versions, installed for all users:
 
 ```bash
-sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3
+sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3 pyarrow==22.0.0
 ```
 
-Without them the runtime cannot read YAML at all (`No YAML backend available`);
-`makeYaml` alone falls back to Ruby.
+Without a YAML package the runtime cannot read YAML at all (`No YAML backend
+available`); `makeYaml` alone falls back to Ruby. Without `pyarrow`, nothing
+can read or write a parquet upload, and the tests that need it skip. All four
+suites pass under `python3.13` with nothing skipped.
 
 **`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.**
 Check it before depending on anything outside the standard library; if it is
@@ -285,9 +288,45 @@ template that fit: HospitalICDCodes (upload). Bind it on the cohort using
 recipe `DiagnosesByHospitalICD`: `vars: {HospitalICDTable: HospitalICDCodes}`.
 ```
 
-An upload whose schema cannot be known (`dbtable`, or `parquet` with no declared
-columns) is listed separately as a table that *may* fit. An ordinary missing
-scalar variable is `missing_variable`.
+An upload whose schema cannot be known (a `dbtable` with no declared columns,
+or a parquet where `pyarrow` is missing) is listed separately as a table that
+*may* fit. An ordinary missing scalar variable is `missing_variable`.
+
+### Upload Files
+
+Parquet is the upload format, because it carries types (D54). An upload
+declares the file and, optionally, types for some of its columns:
+
+```yaml
+upload_cohorts:
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv              # parquet, csv (converted at split) or dbtable
+    file_loc: "csv/HospitalICDCodes.csv"
+    columns:                    # optional; the rest keep the file's types
+      - name: PatientDurableKey
+        type: BIGINT
+```
+
+- A **parquet** keeps its own types; a declared type converts that column (R
+  often writes large IDs as doubles, which would otherwise land as `FLOAT`).
+- A **CSV** is converted to parquet when the split is exported: declared
+  columns get their type, the rest stay text. A value that does not fit stops
+  the split, naming the column. `makeYaml.py --csv-to-parquet FILE.csv
+  [--out FILE.parquet] [--column NAME=TYPE ...]` converts one file by hand.
+- A **dbtable** is a table already in the project database (`source_table`,
+  else `dest_table`).
+- Declarable types: `BIGINT`, `INT`, `SMALLINT`, `TINYINT`, `BIT`, `FLOAT`,
+  `REAL`, `DECIMAL(p,s)`, `DATE`, `DATETIME`, `DATETIME2`, `VARCHAR(n)`,
+  `NVARCHAR(n)`, `CHAR(n)`. Anything else is `bad_upload_type`; a declared
+  column the file lacks is `unknown_upload_column`.
+
+With `pyarrow`, validation reads a parquet's own columns, so recipes bound to
+it are checked like any other table. An upload marked `type: pk` is the
+template's PK (only one PK per template); batching is checked against its
+file's columns. `split_after_build` multipliers on an uploaded PK are refused
+(`split_after_build_on_uploaded_pk`): split the list before uploading it, or
+use `during_build` or batching, which both work on one.
 
 ### Validation
 
@@ -310,7 +349,9 @@ Checks:
 
 - Required variables and table inputs are bound (above).
 - Recipe references resolve.
-- Upload files exist; CSV headers carry the required columns.
+- Upload files exist; their columns (CSV header, parquet schema) carry what
+  bound recipes read; declared upload columns exist and have a type an upload
+  can take (Upload Files, above).
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
 - Multiplier definitions are well formed.
 - Batching definitions, field by field, since a transfer YAML writes them out
@@ -412,7 +453,9 @@ names.
   was written, so moving one means moving its uploads too.
 - **Split folder** (`--export-split --out-dir`): below. Self-contained: upload
   files are copied into `split/uploads/` and `file_loc` repointed, so the folder
-  is the unit to copy or archive.
+  is the unit to copy or archive. A CSV upload is written there as parquet
+  (`file_type: parquet`), with its declared types. Parquet output is
+  deterministic: the same inputs give the same bytes.
 - **Report** (`--report`): markdown summary of the template.
 
 ### The Browser UI
@@ -428,6 +471,32 @@ It is the Mac's authoring tool, and is not bundled. The VM cannot load it; the
 VM uses the launcher. Its Exports tab shows the pre-YAML, the transfer YAML
 (named for the project, with a Download button) and the pull manifest. Every
 message shows its fix beneath it.
+
+The **Builder** tab assembles a template section by section: Project,
+Uploads, Multipliers, Batching, Cohorts and the draft YAML. Each section's
+title carries a one-line explanation taken from the comments in
+`YAMLs/template.yaml` (the comment on the key's line, else the lines just above
+it), with built-in text where a key has none; editing those comments changes
+the page.
+
+- **PK table.** One per template, marked with a checkbox on an upload or a
+  custom table, or coming from a PK recipe (shown as a badge). Marking a
+  second is refused, naming the one that exists. Uploads and Cohorts show the
+  current PK table. An uploaded PK asks for its key columns.
+- **Multipliers.** `during_build` levels take variables
+  (`ICD_Value: K51.%, K52.%`, `;` between variables); `split_after_build`
+  levels take a PK column, values, and an optional role and row mult.
+- **Custom tables** are built from the data dictionary: name, destination and
+  PK checkbox, with "Add Custom Table" (or "Save Changes" when editing a loaded
+  one) ending that row; "Reset Form" sits by the heading. Under Joins, a note
+  on what each join type does with rows that do not match.
+- **Save as Recipe**, on an added custom table, writes it into `recipes.yaml`
+  (D56). A name already there is refused. A page opened as a file, not served,
+  cannot write, and downloads the recipe instead.
+
+The **Cohorts** tab opens with a read-only line each for the multipliers
+(`IBDType: UC/Crohns, Race: black/white`) and the batching
+(`state: LA/MS/GA/NC, sex: Female/Male, chunk: 2000`).
 
 ---
 
@@ -486,8 +555,9 @@ pull_context:
 An upload cohort marked `type: pk` (at most one) becomes the session's PK
 source: `upload_cohorts` uploads it, and `pk` registers it
 (`pk_source: {kind: uploaded_cohort, upload_name, table, key_columns}`) instead
-of building one. As built, no Projects copy of an uploaded CSV PK is made, so
-the checks and batching that read that copy fail (roadmap, Known Bugs).
+of building one. Its Projects copy is the upload's own (`upload_<dest>`,
+What A Session Does), which its uniqueness check, batches and chunks read, as a
+generated PK's do. Its session carries the template's batching.
 
 ### Batching
 
@@ -649,6 +719,7 @@ settled → `running`; otherwise `pending`.
 | --- | --- | --- |
 | Cosmos global temp | `##<prefix>_<dest>`; a `JVM_` prefix on the dest is stripped first, never doubled | `##tesrun_PKTable` |
 | Projects staging | `#Local_<dest>` | `#Local_PKTable` |
+| Projects copy of an upload | `<project_db>.dbo.upload_<dest>` (D54) | `PROJECTD33A929.dbo.upload_HospitalICDCodes` |
 | Projects destination | `<project_db>.dbo.<dest>`, always fully qualified | `PROJECTD33A929.dbo.PKTable` |
 
 The prefix is per project (D50): `temp_prefix` from the template, else the
@@ -680,7 +751,7 @@ overwritten, never cached or reused.
 | --- | --- | --- |
 | `##<prefix>_<dest>`, uploaded temps | Cosmos | No |
 | `#Local_<dest>` | Projects connection | No |
-| `<project_db>.dbo.<dest>` | Projects database | Yes |
+| `<project_db>.dbo.<dest>`, `upload_<dest>` | Projects database | Yes |
 
 So `done` means "completed once", not "still exists". `is_stale()` is true for a
 node completed under an earlier epoch: its **server-side** output is gone. A
@@ -698,13 +769,16 @@ the Cosmos refresh date (D51, Running Again), and choose the temp prefix
    run fills has a `_batch NVARCHAR(200) NOT NULL` column holding the run's
    batch label (`all` for an unbatched run). The PK's own copy has none, since
    batches are selected from it.
-2. **Uploads.** CSV and `dbtable` cohorts go up through the client (there is no
-   linked server from Cosmos back to Projects). `parquet` is refused: Cosmos
-   cannot read it. Column widths are measured from the data, plus 50.
-3. **PK.** Build `##<prefix>_<pk>` and copy it to Projects (or register an
-   uploaded one, which makes no copy: roadmap), then verify uniqueness against
-   the Projects copy (`COUNT(*)` against `COUNT(DISTINCT keys)`; a PK with no
-   key column warns instead). Not rerun on a resume.
+2. **Uploads** (D54). Each lands in Projects first, as `upload_<dest>` with
+   its types (Uploads, below), and is committed. Then its Cosmos temp is
+   created with the copy's types, read back from `INFORMATION_SCHEMA`, and
+   filled from the copy through the client (there is no linked server from
+   Cosmos back to Projects). Resuming, the copies are kept and the files are
+   not read; a copy that is missing stops the phase, pointing at `--repull`.
+3. **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK
+   already has its `upload_` copy), then verify uniqueness against the copy
+   (`COUNT(*)` against a count of `SELECT DISTINCT keys`; a PK with no key
+   column warns instead). Not rerun on a resume.
 4. **Runs.** For a batched run, the PK temp is emptied and refilled with that
    batch's whole PK rows, selected from the **Projects copy** with a
    parameterized predicate, then uploaded. The cohort SQL runs unchanged: it
@@ -713,8 +787,10 @@ the Cosmos refresh date (D51, Running Again), and choose the temp prefix
    - deletes its own label's rows from each destination
      (`DELETE ... WHERE _batch = 'b2of4-LA-Male'`), a separate block, so a run
      that failed after landing some rows lands them exactly once when retried;
-   - transfers: `OPENQUERY` into `#Local_<dest>`, then `INSERT` into the
-     destination, adding the `_batch` label.
+   - for each cohort in turn (D55): builds its Cosmos temp and commits, then
+     transfers it (`OPENQUERY` into `#Local_<dest>`, then `INSERT` into the
+     destination, adding the `_batch` label) and commits, before the next
+     cohort is built. A failure loses at most the cohort in flight.
 
    A chunked run clears once, then for each chunk refills the PK temp with
    `ORDER BY <keys> OFFSET/FETCH` over the Projects copy, rebuilds the cohort
@@ -724,11 +800,34 @@ After each run the Cosmos and Projects row counts are compared, counting only
 this run's `_batch` rows on the Projects side (a chunked run compares totals),
 and a mismatch warns. Counts past 80,000,000 warn. The widest value of each
 staged column is measured and reported, not applied (D34). A unit that fails
-rolls both connections back.
+rolls both connections back. Nothing runs in parallel: sessions, runs, chunks
+and cohorts go one after another.
 
 ### Uploads
 
-Parameter binding with `fast_executemany`, chunked:
+Every upload lands in Projects as `upload_<dest>` before it goes near Cosmos
+(D54):
+
+| Upload | Lands in Projects by |
+| --- | --- |
+| parquet | Read with `pyarrow`, declared columns converted, then bound in with `fast_executemany` into a table created with its types |
+| dbtable | `SELECT * INTO upload_<dest> FROM <source_table>`, server-side, types and all |
+| csv | Refused: the split converts CSVs; one reaching Pullmanager came from an older split. Export it again |
+
+Parquet types land as: 64-bit integers `BIGINT`, 32-bit `INT`, 8/16-bit
+`SMALLINT`, doubles `FLOAT`, decimals `DECIMAL(p,s)`, booleans `BIT`, dates
+`DATE`, timestamps `DATETIME2(7)` (a time zone is converted to UTC, with a
+note), text `NVARCHAR(longest + 50)`, or `NVARCHAR(MAX)` past 4000. A binary
+column is refused. A declared type overrides, and a value that does not fit
+it fails, naming the column.
+
+**The copy is the source.** Once landed, the Cosmos temp, an uploaded PK's
+batches and every resume or retry read the copy, never the file. So a file
+changed after a pull started is not seen until `--repull`, which lands every
+upload from its file again; that is the step to take after someone sends a
+corrected file.
+
+Rows travel by parameter binding with `fast_executemany`, chunked:
 
 ```python
 cursor.fast_executemany = True
@@ -773,7 +872,9 @@ Then, per session (D52):
   and the output says so; a session with only failures left is skipped.
 - A run left `running` by a crash or Stop is interrupted: it is pulled again,
   its rows cleared first.
-- `--repull` starts every session over, finished work included.
+- `--repull` starts every session over, finished work included, and lands
+  every upload from its file again. A retry never re-reads an upload file
+  (Uploads: the copy is the source), so after a changed file, `--repull`.
 - The summary (`pullmanager.py <manifest>`) and the dry run say, per session,
   what the next `--execute` will do.
 
@@ -792,10 +893,12 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
   with `nextset()`.
 - `cursor.messages` is read on success and failure alike. That is what surfaces
   the inner error of a failed `OPENQUERY`.
-- `autocommit=False`: a unit's work is committed when it finishes, and rolled
-  back when it fails. The `BEGIN/COMMIT TRANSACTION` inside a transfer block
-  therefore nests inside the driver's own transaction rather than committing
-  on its own.
+- `autocommit=False`, so the `BEGIN/COMMIT TRANSACTION` inside a transfer
+  block nests inside the driver's own transaction rather than committing on
+  its own. Pullmanager commits after every block (D55): each cohort's rows,
+  each chunk's, and each upload's copy are saved before the next is pulled,
+  and a transaction and its locks last one cohort. A unit that fails is rolled
+  back.
 - Telemetry is read from result sets with declared columns, tied to manifest
   ids. No SQL is ever selected by searching its text.
 
@@ -837,10 +940,15 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (97)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (316)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (105)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (315)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
+python3 scripts/yamlmanager.py --tdd                        # browser UI (6), Mac only
 ```
+
+Tests that read or write parquet need `pyarrow` and skip without it: they
+cover CSV conversion, uploads, and every session test (the runtime fixture's
+upload is parquet).
 
 - **makeYaml** keeps its tests inline, one `TestCase` per `--tdd` group
   (`TEST_GROUPS`), so the file stays self-contained.
@@ -852,16 +960,19 @@ python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
   from one copied file: export a transfer YAML on the Mac, extract, split it
   with no recipes present, dry run.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no
-  recipes file, gives byte-identical session YAMLs and the same manifest (bar
-  `source`) as the template split with recipes, for the tiny template and for
-  test cases `01` and `02`.
+  recipes file, gives byte-identical session YAMLs and uploads, and the same
+  manifest (bar `source`), as the template split with recipes, for the tiny
+  template and for test cases `01` and `02`.
+- **UI** tests cover saving a recipe (comments and layout kept, a duplicate
+  refused with the file unchanged, the entry placed inside `recipes:`) and the
+  section notes.
 
 Fixtures:
 
 | Location | What |
 | --- | --- |
 | `YAMLs/manager_test_cases/*.yaml` | Realistic templates: `01` and `02` pass, `03` warns, `00`, `04`, `05` fail on purpose |
-| `scripts/pullmanager_src/fixtures/split/` | Real `--export-split` output of `01_valid_basic.yaml`, the runtime's specification |
+| `scripts/pullmanager_src/fixtures/split/` | Real `--export-split` output of `01_valid_basic.yaml`, the runtime's specification; its upload is parquet |
 | `scripts/pullmanager_src/fixtures/pullmanifest.in-flight.yaml` | That manifest mid-run, produced by driving the real transition API |
 
 Regenerate the split fixture after a change to split output:
@@ -875,8 +986,11 @@ The database layer is tested against a fake cursor, and the GUI against a fake
 tkinter. The fake Projects connection keeps each destination's rows per
 `_batch` label, carried across executions like the real database, so retry,
 chunk and refresh tests check what landed where. Statements apply in order and
-a failure stops at the one it matches, so a run can fail after landing rows;
-a rollback undoes nothing, the worst case. Neither proves the real thing: nothing here has run against Cosmos.
+a failure stops at the one it matches, so a run can fail after landing rows.
+By default a rollback undoes nothing, the worst case; a transactional mode,
+where only committed work survives, checks D55's commit per cohort. It also
+answers `INFORMATION_SCHEMA`, `OBJECT_ID` and `SELECT INTO` for uploads.
+Neither fake proves the real thing: nothing here has run against Cosmos.
 Real Tk is exercised by hand: Tk 9 under Xvfb on the dev box, and Tk 8.6 with
 the Mac's `python3.13`, which the VM likely matches.
 

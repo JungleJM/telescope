@@ -907,3 +907,26 @@ and cohorts run one after another.
 fails part-way leaves its earlier cohorts committed, which D52's clear-before-
 run already handles on retry. Transactions, and the locks they hold, are as
 short as one cohort's transfer.
+
+### D56. The Builder's one write is saving a custom table into `recipes.yaml`
+
+**Context.** A custom table built in the browser UI could only be copied to
+the clipboard or downloaded as a recipe file, then pasted into `recipes.yaml`
+by hand. Recipes live in one place, on the Mac (D49), so a table worth keeping
+belongs there, and a paste can break the file's indentation.
+
+**Decision.** "Save as Recipe" on an added custom table asks the served page to
+add it to `recipes.yaml`. It is the page's only write, and it is careful:
+
+- A name already in the file is refused, and the file is untouched.
+- The entry is inserted inside the `recipes:` list at that list's own
+  indentation, so comments and layout elsewhere are kept.
+- The result is parsed before it replaces the file; if it does not read back
+  with the new recipe, nothing changes.
+
+A page opened as a file, not served, cannot write, and downloads the recipe
+instead. The copy and download buttons are gone.
+
+**Consequences.** The UI now has a `POST /save-recipe` route, on the local
+server only. Recipes saved this way reach the VM only through a transfer YAML,
+like any other (D49).

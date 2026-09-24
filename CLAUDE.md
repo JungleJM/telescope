@@ -65,10 +65,10 @@ The user works in this cycle; follow it for any change bigger than a small fix.
   to fail with the bug reintroduced. D46 is what happens otherwise.
 - Prefer a loud error that suggests a fix over inferring what the user meant.
   The user wants to make the choice (D28, D45).
-- Branches: `main`, and the long-lived `pullmanager`, kept separate from main.
-  The user asks for commits and pushes; end commit messages with the
-  `Co-Authored-By` line.
+- Work on `main`. The long-lived `pullmanager` branch was merged into it
+  (September 2026) and work continues on `main`. The user asks for commits and
+  pushes; end commit messages with the `Co-Authored-By` line.
 - Never run destructive git commands on uncommitted work.
-- Mac: use `python3.13` (python.org 3.13.9, Tk 8.6, numpy 2.1.3) to match the
-  VM. Dev box: use brew's Python for anything needing tkinter
+- Mac: use `python3.13` (python.org 3.13.9, Tk 8.6, and the VM's numpy 2.1.3,
+  pyarrow 22.0.0, ruamel.yaml 0.17.17, pyyaml 6.0.3) to match the VM. Dev box: use brew's Python for anything needing tkinter
   (`/var/home/linuxbrew/.linuxbrew/bin/python3`).

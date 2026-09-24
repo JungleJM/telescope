@@ -13,83 +13,20 @@ When an item here is built, delete it from this file and describe the result in
 | Part | State |
 | --- | --- |
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
-| YAML Manager browser UI | Built; Mac only |
+| YAML Manager browser UI | Built; Mac only. The Builder changes from testing (PK marking, Multipliers, section notes, Save as Recipe) are tested in code but not yet clicked through |
 | Bundle: build, verify, extract, `.local` preservation | Built and tested. The D49 bundle (no recipes or UI) is not yet on the VM |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; dry run proven end to end from one copied bundle |
 | Pullmanager: connections, session execution, uploads, transfer | Written and tested against a fake cursor. **Never run against a database** |
 | Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Not yet on the VM |
+| Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Not yet on the VM |
 | Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested on the Mac. Not yet used on the VM |
 | Launcher (`--gui`) | Built; tested with a fake tkinter, built for real on Tk 9 and on Tk 8.6 (Mac `python3.13`). Not yet opened on the VM |
 | Artifact handoff (parquets) | Not built |
 
 ## Known Bugs
 
-Found by reading the code or in a dry run; none has been hit against a
-database, because nothing has run against one yet.
-
-### An uploaded CSV PK cannot run
-
-An upload marked `type: pk` with `file_type: csv` is uploaded to Cosmos only.
-No Projects copy is made, yet everything after it assumes one:
-
-- The PK phase checks uniqueness against `<project_db>.dbo.<dest>`, which does
-  not exist, so the phase fails and every run is blocked, batched or not.
-- Batches and chunks are selected from that same missing table.
-- In the split, `chunk:` is silently dropped: the uploaded PK's session gets no
-  batching at all, so one run pulls everything.
-- In validation, a values dimension (`sex`) is refused as `missing_batch_column`
-  even when the CSV has the column: the PK's columns are taken only from
-  generated PK cohorts. `split_after_build` multipliers are refused the same
-  way.
-- A resume re-reads the CSV rather than a durable copy, so a file edited
-  between runs would mix populations.
-
-A `dbtable` PK works only while `source_table` is unset: with it set, the
-checks read `<dest>`, not the source. Fixed by D54 (fixes 2 and 3 below);
-until then use a generated PK.
-
-### Uniqueness check is invalid for a multi-column key
-
-`COUNT_BIG(DISTINCT [a], [b])` is not T-SQL: SQL Server allows one expression
-in `COUNT(DISTINCT ...)`. Any PK with more than one key column fails its PK
-phase. Count `SELECT DISTINCT a, b` in a derived table instead.
-
----
-
-## Next: Fixes, In Order
-
-Agreed order (D54, D55, and UI notes from testing on the Mac). Each is its own
-commit.
-
-1. **Small runtime fixes.** The multi-column uniqueness query (Known Bugs), and
-   a commit after every SQL block (D55).
-2. **Uploads land in Projects (D54), runtime.** Parquet read with `pyarrow`
-   into typed `upload_<dest>`, `dbtable` copied server-side, Cosmos temps
-   loaded from the copy with the same types. Resume keeps the copies and
-   refuses a missing one. An uploaded PK's uniqueness, batches and chunks read
-   its copy. A CSV reaching the runtime is refused with a pointer to the split.
-3. **Uploads, YAML Manager (D54).** CSV converted to parquet at split with the
-   declared `columns:` types, plus a command to convert by hand. Validation
-   reads a parquet's columns and checks declared ones exist and parse. Batching
-   on an uploaded PK validated against its file and carried into its session;
-   `split_after_build` on one refused.
-4. **Builder UI.**
-   - Uploads: a "PK" checkbox per upload, refusing a second PK and naming the
-     existing one; the current PK shown.
-   - A Multipliers section, like Batching.
-   - Each section's title followed by a one-line explanation, taken from the
-     comments in `YAMLs/template.yaml`.
-   - Joins: a short note on what each join type does with rows that do not
-     match.
-   - Custom table form: "Add Custom Table" (renamed) at the end of the form's
-     first row; "Reset" outside the form, by its heading; the Type dropdown
-     becomes the "PK table" toggle.
-   - Added custom rows: the type box goes, replaced by the PK toggle; "Save as
-     Recipe" between Load and Remove writes the table into `recipes.yaml`
-     (refusing a name already there), replacing "Copy/Download Custom Recipe".
-   - Cohorts tab: a read-only line summarising multipliers and batching, e.g.
-     `[multipliers] Race: black/white, IBDType: UC/Crohns` and
-     `[batching] sex: Female/Male, state: LA/MS/GA/NC/other, chunk: 2000`.
+None known. Everything found so far was found by reading the code or in a dry
+run; nothing has run against a database yet.
 
 ---
 
@@ -104,9 +41,11 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
 2. `pullmanager.py --gui`. Checked on Tk 8.6 on the Mac, but the VM's exact
    Tk is unconfirmed, so watch for option or layout errors.
 3. On the Mac, export a small template with `--export-transfer`: a generated
-   PK, an upload and a batched run (explicit `values:`, and a `chunk:`). Copy
-   it and its listed uploads over, then Validate, Export split, Dry run and
-   Execute. Check:
+   PK, a parquet upload with a declared `BIGINT` column, and a batched run
+   (explicit `values:`, and a `chunk:`). Copy it and its listed uploads over,
+   then Validate, Export split, Dry run and Execute. Check:
+   - `upload_<dest>` exists in the project database with the file's types,
+     and the Cosmos temp has the same types (`BIGINT`, not `NVARCHAR`).
    - `@@SERVERNAME` is captured and `OPENQUERY` reaches that instance.
    - Cosmos and Projects row counts agree, per batch, with no false warnings.
    - `SELECT _batch, COUNT(*) FROM <destination> GROUP BY _batch` shows each
@@ -122,12 +61,15 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
    exists>')` returns a number from our login, and `manifest.cosmos_refresh`
    is filled in. Note `create_date` either side of the next refresh to confirm
    a refresh changes it.
-6. An upload of around 250,000 rows, timed.
+6. An upload of around 250,000 rows, timed: it now travels twice, file to
+   Projects, then Projects to Cosmos.
 7. During a large transfer, check whether other work on the Projects database
-   waits on it. The driver runs with autocommit off, so the `OPENQUERY` into
-   staging sits inside an open transaction until the run commits, although
-   `local_sql.render_transfer` was written to keep it outside one. If it
-   blocks others, open the Projects connection with autocommit on.
+   waits on it. Pullmanager commits after every cohort (D55), but the driver
+   runs with autocommit off, so one cohort's `OPENQUERY` into staging still
+   sits inside an open transaction until that cohort commits. If it blocks
+   others, open the Projects connection with autocommit on.
+8. An uploaded PK: a parquet list marked `type: pk`, batched by a column it
+   carries. Its uniqueness check and batches should read `upload_<dest>`.
 
 ---
 
@@ -197,6 +139,13 @@ no button to hand a split folder to Pullmanager.
 - **Generated-table dependencies.** Cohorts reference other generated temps by
   handwritten name (`{{prefix}}_Patients`). It should be structural, so the
   renderer owns temp names.
+- **Declaring upload column types in the Builder.** `columns:` with types
+  (D54) has no field in the Uploads section yet; add it in the YAML.
+- **An uploaded PK is sent to Cosmos whole** in the upload phase, even when
+  every run is batched and refills it from the copy. Correct; one upload more
+  than needed.
+- **`split_after_build` on an uploaded PK** is refused (D54). It could be
+  supported by splitting the rows as the copy lands, if a list ever needs it.
 - **One PK per multiplier group.** Two `type: PK` cohorts in one group are an
   error (`multiple_pk_cohorts`), so each session has exactly one PK.
 - **Multi-step PK.** A PK built from a prior PK (a patient list, then diagnosis
@@ -235,7 +184,9 @@ Before it is worth building:
   Deliberate non-key joins exist.
 - Does Cosmos enforce these relationships, or only document them?
 
-What to find out on the VM is in `QMDs/keys_research_for_vm.md`, a temporary
+What to find out on the VM is in `QMDs/keys_research/keys_research_for_vm.md`, a temporary
 brief to put to the VM's AI: where keys are declared, whether they hold in the
-data, and what the interactive data dictionary shows. Delete it once its
-answers are folded in here and into `decisions.md`.
+data, and what the interactive data dictionary shows. The AI's answer is in
+screenshots beside it, not yet discussed or folded in; none of the queries has
+been run yet. Delete the folder once its answers are folded in here and into
+`decisions.md`.
