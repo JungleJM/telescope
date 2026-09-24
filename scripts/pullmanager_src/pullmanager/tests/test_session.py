@@ -95,7 +95,7 @@ class FakeConnection:
 
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-                 pk_rows=3, existing_temps=()):
+                 pk_rows=3, existing_temps=(), transactional=False):
         self.side = side
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
@@ -105,6 +105,10 @@ class FakeConnection:
         self.tables = tables if tables is not None else {}
         self.created = created
         self.pk_rows = pk_rows
+        # Transactional: changes apply to a working copy that a commit makes
+        # durable and a rollback discards. Off by default: the worst case.
+        self.transactional = transactional
+        self._pending = None
         # Global temps another pull holds on this instance, for D50's check.
         self.existing_temps = {name.lower() for name in existing_temps}
         # pattern -> [matches left before failing, message]
@@ -120,9 +124,21 @@ class FakeConnection:
 
     def commit(self):
         self.commits += 1
+        if self._pending is not None:
+            self.tables.clear()
+            self.tables.update(self._pending)
+            self._pending = None
 
     def rollback(self):
         self.rollbacks += 1
+        self._pending = None
+
+    def _working(self):
+        if not self.transactional:
+            return self.tables
+        if self._pending is None:
+            self._pending = {name: Counter(rows) for name, rows in self.tables.items()}
+        return self._pending
 
     def close(self):
         self.closed = True
@@ -145,16 +161,17 @@ class FakeConnection:
                 self._model(statement)
 
     def _model(self, statement):
+        tables = self._working()
         if match := re.search(r"DROP TABLE IF EXISTS (PROJECTD\S+)", statement):
-            self.tables.pop(match.group(1), None)
+            tables.pop(match.group(1), None)
         if match := re.search(r"CREATE TABLE (PROJECTD\S+)", statement):
-            if "IF OBJECT_ID" not in statement or match.group(1) not in self.tables:
-                self.tables[match.group(1)] = Counter()
+            if "IF OBJECT_ID" not in statement or match.group(1) not in tables:
+                tables[match.group(1)] = Counter()
         if match := re.search(r"INSERT INTO (PROJECTD\S+) \(", statement):
             label = re.search(r", '([^']*)' FROM #", statement)
-            self.tables[match.group(1)][label.group(1) if label else "-"] += self.rows
+            tables[match.group(1)][label.group(1) if label else "-"] += self.rows
         if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
-            self.tables[match.group(1)].pop(match.group(2), None)
+            tables[match.group(1)].pop(match.group(2), None)
 
     def results_for(self, sql):
         if "@@SERVERNAME" in sql:
@@ -167,7 +184,7 @@ class FakeConnection:
         if "sys.databases" in sql:
             return [(["name", "create_date"],
                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
-        if "COUNT_BIG(DISTINCT" in sql:
+        if "SELECT DISTINCT" in sql:
             return [(["total", "distinct"], [(self.rows, self.distinct)])]
         if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
             return [(["count"], [(self.pk_rows,)])]
@@ -194,7 +211,7 @@ class FakeConnection:
         )
         if not match:
             return self.rows
-        rows = self.tables.get(match.group(1), Counter())
+        rows = self._working().get(match.group(1), Counter())
         return rows.get(match.group(2), 0) if match.group(2) else sum(rows.values())
 
 
@@ -578,3 +595,43 @@ class TempClashTests(SessionTestCase):
         with self.runner(cosmos={"existing_temps": held}) as runner:
             runner.execute()
         self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas3")
+
+
+class CommitTests(SessionTestCase):
+    """D55: each cohort is saved in Projects before the next is pulled."""
+
+    def add_second_cohort(self):
+        path = self.root / "sessions" / "Patients" / "runs" / "run.yaml"
+        doc = load_yaml(path)
+        second = dict(doc["cohorts"][0])
+        second["name"] = second["dest_table"] = "SecondHosp"
+        doc["cohorts"].append(second)
+        dump_yaml(doc, path)
+
+    def test_a_cohort_is_saved_before_the_next_is_built(self):
+        # The second cohort's build fails. The first must already be in
+        # Projects, committed: before, every cohort was built before any landed.
+        self.add_second_cohort()
+        tables: dict[str, Counter] = {}
+        with self.runner(
+            cosmos={"failures": {r"CREATE TABLE ##manvalbas_SecondHosp": "tempdb full"}},
+            projects={"tables": tables, "transactional": True},
+        ) as runner:
+            report = runner.execute()
+        self.assertEqual([label for label, _ in report.failed], ["Patients__run"])
+        self.assertEqual(tables[DEST], Counter({"all": 10}))
+        self.assertEqual(tables["PROJECTD33A929.dbo.SecondHosp"], Counter())
+
+    def test_a_multi_column_key_is_counted_with_valid_sql(self):
+        # SQL Server has no COUNT(DISTINCT a, b).
+        from ..yaml_io import dump_yaml as dump, load_yaml as load
+
+        path = self.root / "sessions" / "Patients" / "pk.yaml"
+        doc = load(path)
+        doc["cohorts"][0]["key_columns"] = ["PatientDurableKey", "DiagnosisEventKey"]
+        dump(doc, path)
+        with self.runner() as runner:
+            runner.execute()
+        sent = "\n".join(self.projects.executed)
+        self.assertNotIn("COUNT_BIG(DISTINCT", sent)
+        self.assertIn("SELECT DISTINCT [PatientDurableKey], [DiagnosisEventKey]", sent)

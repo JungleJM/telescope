@@ -360,7 +360,12 @@ class SessionRunner:
         table = destination(self.project_db, self.session.pk_table or "")
         columns = ", ".join(f"[{k}]" for k in keys)
         cursor = self.projects.cursor()
-        cursor.execute(f"SELECT COUNT_BIG(1), COUNT_BIG(DISTINCT {columns}) FROM {table};")
+        # COUNT(DISTINCT a, b) is not T-SQL; count the distinct rows instead.
+        cursor.execute(
+            f"SELECT COUNT_BIG(1), "
+            f"(SELECT COUNT_BIG(1) FROM (SELECT DISTINCT {columns} FROM {table}) AS d) "
+            f"FROM {table};"
+        )
         row = cursor.fetchone()
         if not row:
             return
@@ -515,33 +520,48 @@ class SessionRunner:
         connection.commit()
 
     def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
-        """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
+        """Run a unit's SQL; return Cosmos and Projects row counts per destination.
+
+        One cohort at a time (D55): build its temp, land it in Projects and
+        commit, before the next is pulled, so a failure loses at most the
+        cohort in flight. Clears run first, together, since they only empty.
+        """
         server_rows: dict[str, int] = {}
+        local_rows: dict[str, int] = {}
+        clears = [b for b in unit.local_blocks if b.meta.get("clears")]
+        transfers = [b for b in unit.local_blocks if not b.meta.get("clears")]
+        if clear:
+            for block in clears:
+                self._execute(self.projects, block.sql, label=block.block_id)
+                self.projects.commit()
         for block in unit.server_blocks:
             outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "RowCount"):
                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
-        self.cosmos.commit()
-
-        local_rows: dict[str, int] = {}
-        for block in unit.local_blocks:
-            if block.meta.get("clears") and not clear:
-                continue
-            outcome = self._execute(self.projects, block.sql, label=block.block_id)
-            for row in outcome.rows_of("DestTable", "Side", "RowCount"):
-                if row["Side"] == "projects":
-                    local_rows[str(row["DestTable"])] = int(row["RowCount"])
-            for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
-                if row["MaxLength"] is None:
-                    continue
-                self.report.warnings.append(
-                    f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
-                    f"widest value {row['MaxLength']}"
-                    if row.get("DeclaredType") else
-                    f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
-                )
-        self.projects.commit()
+            self.cosmos.commit()
+            for local in [b for b in transfers if b.dest_table == block.dest_table]:
+                self._land(local, local_rows)
+        landed = {b.dest_table for b in unit.server_blocks}
+        for local in [b for b in transfers if b.dest_table not in landed]:
+            self._land(local, local_rows)
         return server_rows, local_rows
+
+    def _land(self, block: Any, local_rows: dict[str, int]) -> None:
+        """Transfer one cohort into Projects and commit it."""
+        outcome = self._execute(self.projects, block.sql, label=block.block_id)
+        for row in outcome.rows_of("DestTable", "Side", "RowCount"):
+            if row["Side"] == "projects":
+                local_rows[str(row["DestTable"])] = int(row["RowCount"])
+        for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
+            if row["MaxLength"] is None:
+                continue
+            self.report.warnings.append(
+                f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
+                f"widest value {row['MaxLength']}"
+                if row.get("DeclaredType") else
+                f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
+            )
+        self.projects.commit()
 
     def _check_counts(self, server_rows: dict[str, int], local_rows: dict[str, int]) -> None:
         for dest, count in server_rows.items():

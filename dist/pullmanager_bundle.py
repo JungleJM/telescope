@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "778ea1c40673c06f7c359a31b02bc9d531dc1cd7fb3a20e5ff90307e1ab2c039",
+  "content_id": "2d1f8549d926182c0c8394158323e887ec895a74ff3506cb5ce910e17d292aa2",
   "file_count": 37,
   "files": [
     {
@@ -471,8 +471,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "59343dc1a5c6b5440a1e4e1524ddf2e0a050932ad9a1d6727229ac4dd02ea1f9",
-      "size": 23690
+      "sha256": "35304f6a95d97a0cb7de5c5bcc15227bdcf8fa80ca21955d6d3e1ab06245c34d",
+      "size": 24693
     },
     {
       "path": "pullmanager/sql.py",
@@ -555,8 +555,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "de0f08cab2533e83e59531320497e859b8483eabe979b6925a15745772ca41c5",
-      "size": 24810
+      "sha256": "ac4583c3b78709d2885359a9b70a21f3ab4eb7fc157b5738ab777f56076e66be",
+      "size": 27292
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -6592,7 +6592,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 59343dc1a5c6b5440a1e4e1524ddf2e0a050932ad9a1d6727229ac4dd02ea1f9 SIZE: 23690 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 35304f6a95d97a0cb7de5c5bcc15227bdcf8fa80ca21955d6d3e1ab06245c34d SIZE: 24693 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6955,7 +6955,12 @@ if __name__ == "__main__":
 #         table = destination(self.project_db, self.session.pk_table or "")
 #         columns = ", ".join(f"[{k}]" for k in keys)
 #         cursor = self.projects.cursor()
-#         cursor.execute(f"SELECT COUNT_BIG(1), COUNT_BIG(DISTINCT {columns}) FROM {table};")
+#         # COUNT(DISTINCT a, b) is not T-SQL; count the distinct rows instead.
+#         cursor.execute(
+#             f"SELECT COUNT_BIG(1), "
+#             f"(SELECT COUNT_BIG(1) FROM (SELECT DISTINCT {columns} FROM {table}) AS d) "
+#             f"FROM {table};"
+#         )
 #         row = cursor.fetchone()
 #         if not row:
 #             return
@@ -7110,33 +7115,48 @@ if __name__ == "__main__":
 #         connection.commit()
 #
 #     def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
-#         """Run a unit's SQL; return Cosmos and Projects row counts per destination."""
+#         """Run a unit's SQL; return Cosmos and Projects row counts per destination.
+#
+#         One cohort at a time (D55): build its temp, land it in Projects and
+#         commit, before the next is pulled, so a failure loses at most the
+#         cohort in flight. Clears run first, together, since they only empty.
+#         """
 #         server_rows: dict[str, int] = {}
+#         local_rows: dict[str, int] = {}
+#         clears = [b for b in unit.local_blocks if b.meta.get("clears")]
+#         transfers = [b for b in unit.local_blocks if not b.meta.get("clears")]
+#         if clear:
+#             for block in clears:
+#                 self._execute(self.projects, block.sql, label=block.block_id)
+#                 self.projects.commit()
 #         for block in unit.server_blocks:
 #             outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
 #             for row in outcome.rows_of("DestTable", "RowCount"):
 #                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
-#         self.cosmos.commit()
-#
-#         local_rows: dict[str, int] = {}
-#         for block in unit.local_blocks:
-#             if block.meta.get("clears") and not clear:
-#                 continue
-#             outcome = self._execute(self.projects, block.sql, label=block.block_id)
-#             for row in outcome.rows_of("DestTable", "Side", "RowCount"):
-#                 if row["Side"] == "projects":
-#                     local_rows[str(row["DestTable"])] = int(row["RowCount"])
-#             for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
-#                 if row["MaxLength"] is None:
-#                     continue
-#                 self.report.warnings.append(
-#                     f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
-#                     f"widest value {row['MaxLength']}"
-#                     if row.get("DeclaredType") else
-#                     f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
-#                 )
-#         self.projects.commit()
+#             self.cosmos.commit()
+#             for local in [b for b in transfers if b.dest_table == block.dest_table]:
+#                 self._land(local, local_rows)
+#         landed = {b.dest_table for b in unit.server_blocks}
+#         for local in [b for b in transfers if b.dest_table not in landed]:
+#             self._land(local, local_rows)
 #         return server_rows, local_rows
+#
+#     def _land(self, block: Any, local_rows: dict[str, int]) -> None:
+#         """Transfer one cohort into Projects and commit it."""
+#         outcome = self._execute(self.projects, block.sql, label=block.block_id)
+#         for row in outcome.rows_of("DestTable", "Side", "RowCount"):
+#             if row["Side"] == "projects":
+#                 local_rows[str(row["DestTable"])] = int(row["RowCount"])
+#         for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
+#             if row["MaxLength"] is None:
+#                 continue
+#             self.report.warnings.append(
+#                 f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
+#                 f"widest value {row['MaxLength']}"
+#                 if row.get("DeclaredType") else
+#                 f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
+#             )
+#         self.projects.commit()
 #
 #     def _check_counts(self, server_rows: dict[str, int], local_rows: dict[str, int]) -> None:
 #         for dest, count in server_rows.items():
@@ -9735,7 +9755,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: de0f08cab2533e83e59531320497e859b8483eabe979b6925a15745772ca41c5 SIZE: 24810 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ac4583c3b78709d2885359a9b70a21f3ab4eb7fc157b5738ab777f56076e66be SIZE: 27292 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -9833,7 +9853,7 @@ if __name__ == "__main__":
 #
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
 #                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-#                  pk_rows=3, existing_temps=()):
+#                  pk_rows=3, existing_temps=(), transactional=False):
 #         self.side = side
 #         self.rows = rows
 #         self.distinct = rows if distinct is None else distinct
@@ -9843,6 +9863,10 @@ if __name__ == "__main__":
 #         self.tables = tables if tables is not None else {}
 #         self.created = created
 #         self.pk_rows = pk_rows
+#         # Transactional: changes apply to a working copy that a commit makes
+#         # durable and a rollback discards. Off by default: the worst case.
+#         self.transactional = transactional
+#         self._pending = None
 #         # Global temps another pull holds on this instance, for D50's check.
 #         self.existing_temps = {name.lower() for name in existing_temps}
 #         # pattern -> [matches left before failing, message]
@@ -9858,9 +9882,21 @@ if __name__ == "__main__":
 #
 #     def commit(self):
 #         self.commits += 1
+#         if self._pending is not None:
+#             self.tables.clear()
+#             self.tables.update(self._pending)
+#             self._pending = None
 #
 #     def rollback(self):
 #         self.rollbacks += 1
+#         self._pending = None
+#
+#     def _working(self):
+#         if not self.transactional:
+#             return self.tables
+#         if self._pending is None:
+#             self._pending = {name: Counter(rows) for name, rows in self.tables.items()}
+#         return self._pending
 #
 #     def close(self):
 #         self.closed = True
@@ -9883,16 +9919,17 @@ if __name__ == "__main__":
 #                 self._model(statement)
 #
 #     def _model(self, statement):
+#         tables = self._working()
 #         if match := re.search(r"DROP TABLE IF EXISTS (PROJECTD\S+)", statement):
-#             self.tables.pop(match.group(1), None)
+#             tables.pop(match.group(1), None)
 #         if match := re.search(r"CREATE TABLE (PROJECTD\S+)", statement):
-#             if "IF OBJECT_ID" not in statement or match.group(1) not in self.tables:
-#                 self.tables[match.group(1)] = Counter()
+#             if "IF OBJECT_ID" not in statement or match.group(1) not in tables:
+#                 tables[match.group(1)] = Counter()
 #         if match := re.search(r"INSERT INTO (PROJECTD\S+) \(", statement):
 #             label = re.search(r", '([^']*)' FROM #", statement)
-#             self.tables[match.group(1)][label.group(1) if label else "-"] += self.rows
+#             tables[match.group(1)][label.group(1) if label else "-"] += self.rows
 #         if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
-#             self.tables[match.group(1)].pop(match.group(2), None)
+#             tables[match.group(1)].pop(match.group(2), None)
 #
 #     def results_for(self, sql):
 #         if "@@SERVERNAME" in sql:
@@ -9905,7 +9942,7 @@ if __name__ == "__main__":
 #         if "sys.databases" in sql:
 #             return [(["name", "create_date"],
 #                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
-#         if "COUNT_BIG(DISTINCT" in sql:
+#         if "SELECT DISTINCT" in sql:
 #             return [(["total", "distinct"], [(self.rows, self.distinct)])]
 #         if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
 #             return [(["count"], [(self.pk_rows,)])]
@@ -9932,7 +9969,7 @@ if __name__ == "__main__":
 #         )
 #         if not match:
 #             return self.rows
-#         rows = self.tables.get(match.group(1), Counter())
+#         rows = self._working().get(match.group(1), Counter())
 #         return rows.get(match.group(2), 0) if match.group(2) else sum(rows.values())
 #
 #
@@ -10316,6 +10353,46 @@ if __name__ == "__main__":
 #         with self.runner(cosmos={"existing_temps": held}) as runner:
 #             runner.execute()
 #         self.assertEqual(runner.session.runtime["temp_prefix"], "manvalbas3")
+#
+#
+# class CommitTests(SessionTestCase):
+#     """D55: each cohort is saved in Projects before the next is pulled."""
+#
+#     def add_second_cohort(self):
+#         path = self.root / "sessions" / "Patients" / "runs" / "run.yaml"
+#         doc = load_yaml(path)
+#         second = dict(doc["cohorts"][0])
+#         second["name"] = second["dest_table"] = "SecondHosp"
+#         doc["cohorts"].append(second)
+#         dump_yaml(doc, path)
+#
+#     def test_a_cohort_is_saved_before_the_next_is_built(self):
+#         # The second cohort's build fails. The first must already be in
+#         # Projects, committed: before, every cohort was built before any landed.
+#         self.add_second_cohort()
+#         tables: dict[str, Counter] = {}
+#         with self.runner(
+#             cosmos={"failures": {r"CREATE TABLE ##manvalbas_SecondHosp": "tempdb full"}},
+#             projects={"tables": tables, "transactional": True},
+#         ) as runner:
+#             report = runner.execute()
+#         self.assertEqual([label for label, _ in report.failed], ["Patients__run"])
+#         self.assertEqual(tables[DEST], Counter({"all": 10}))
+#         self.assertEqual(tables["PROJECTD33A929.dbo.SecondHosp"], Counter())
+#
+#     def test_a_multi_column_key_is_counted_with_valid_sql(self):
+#         # SQL Server has no COUNT(DISTINCT a, b).
+#         from ..yaml_io import dump_yaml as dump, load_yaml as load
+#
+#         path = self.root / "sessions" / "Patients" / "pk.yaml"
+#         doc = load(path)
+#         doc["cohorts"][0]["key_columns"] = ["PatientDurableKey", "DiagnosisEventKey"]
+#         dump(doc, path)
+#         with self.runner() as runner:
+#             runner.execute()
+#         sent = "\n".join(self.projects.executed)
+#         self.assertNotIn("COUNT_BIG(DISTINCT", sent)
+#         self.assertIn("SELECT DISTINCT [PatientDurableKey], [DiagnosisEventKey]", sent)
 #
 # === END FILE: pullmanager/tests/test_session.py ===
 # === BEGIN FILE: pullmanager/tests/test_sql.py SHA256: 70f3bfde2d04c0ab5dc3df2d063182f2684f908b04446d708049f1ee40c1cc35 SIZE: 5285 ===
