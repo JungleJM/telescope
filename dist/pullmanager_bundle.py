@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "6ff4a45c5dad39cba61d3ab6406e0c5c7fc8561b2f8cbab01dc3b2db819c4e8b",
+  "content_id": "149af0c93845241f0c25e79c032ccfe79da09ad1aef260c6dea53de37dff3d61",
   "file_count": 37,
   "files": [
     {
@@ -381,7 +381,7 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/__init__.py",
       "policy": "replace",
-      "sha256": "2b6c4b6cedb40b106d374887a4180e7a03259c5fa7d8a66a6932b65ce73123c0",
+      "sha256": "9b4f8e116b3f934f0e4b75e341c2b39841650770373cd57b5aea470c07af1cdf",
       "size": 126
     },
     {
@@ -3454,10 +3454,10 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager.py ===
-# === BEGIN FILE: pullmanager/__init__.py SHA256: 2b6c4b6cedb40b106d374887a4180e7a03259c5fa7d8a66a6932b65ce73123c0 SIZE: 126 ===
+# === BEGIN FILE: pullmanager/__init__.py SHA256: 9b4f8e116b3f934f0e4b75e341c2b39841650770373cd57b5aea470c07af1cdf SIZE: 126 ===
 # """Pullmanager: manifest-driven executor for YAML Manager split pull folders."""
 #
-# __version__ = "0.2.0"
+# __version__ = "0.3.0"
 #
 # MANIFEST_VERSION = 1
 #
