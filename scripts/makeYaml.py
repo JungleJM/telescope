@@ -1308,8 +1308,9 @@ def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]]
                 f"`split_after_build` splits a PK the pull builds, but this template's PK is "
                 f"the uploaded `{uploaded_pk}` (D54).",
                 f"{where}.stage",
-                fix="Split the list before uploading it, one upload per group; or use "
-                "`stage: during_build`, or batching, which do work on an uploaded PK.",
+                fix="Batch by that column instead: each group becomes a batch, all in one "
+                "table per cohort (a role or row_mult has no batching equivalent). Or split "
+                "the list before uploading it and run one pull per group.",
             )
             continue
         stage = mult.get("stage")

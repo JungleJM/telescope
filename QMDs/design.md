@@ -325,8 +325,9 @@ With `pyarrow`, validation reads a parquet's own columns, so recipes bound to
 it are checked like any other table. An upload marked `type: pk` is the
 template's PK (only one PK per template); batching is checked against its
 file's columns. `split_after_build` multipliers on an uploaded PK are refused
-(`split_after_build_on_uploaded_pk`): split the list before uploading it, or
-use `during_build` or batching, which both work on one.
+(`split_after_build_on_uploaded_pk`): batch by that column instead, which
+puts each group in a batch of one table rather than a table of its own, or
+split the list before uploading it and run one pull per group.
 
 ### Validation
 

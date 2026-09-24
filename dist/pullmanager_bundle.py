@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "bc2eb7d57a792a93a60feb18540c7e81e155df956f1fb36a19972821e74192e7",
+  "content_id": "6ff4a45c5dad39cba61d3ab6406e0c5c7fc8561b2f8cbab01dc3b2db819c4e8b",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "933d05b3232af28d0d9d4dba7bd5fdcd458fa8c8e725ea71b7004dd22d789098",
-      "size": 168093
+      "sha256": "e7f53ae4178a7082b5c52e85d1440013229fde59d877fad167e7e88c86e6c085",
+      "size": 168179
     }
   ]
 }'''
@@ -11207,7 +11207,7 @@ if __name__ == "__main__":
 #     raise RuntimeError("No YAML backend available. Install ruamel.yaml or pyyaml.")
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 933d05b3232af28d0d9d4dba7bd5fdcd458fa8c8e725ea71b7004dd22d789098 SIZE: 168093 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: e7f53ae4178a7082b5c52e85d1440013229fde59d877fad167e7e88c86e6c085 SIZE: 168179 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -12518,8 +12518,9 @@ if __name__ == "__main__":
 #                 f"`split_after_build` splits a PK the pull builds, but this template's PK is "
 #                 f"the uploaded `{uploaded_pk}` (D54).",
 #                 f"{where}.stage",
-#                 fix="Split the list before uploading it, one upload per group; or use "
-#                 "`stage: during_build`, or batching, which do work on an uploaded PK.",
+#                 fix="Batch by that column instead: each group becomes a batch, all in one "
+#                 "table per cohort (a role or row_mult has no batching equivalent). Or split "
+#                 "the list before uploading it and run one pull per group.",
 #             )
 #             continue
 #         stage = mult.get("stage")
