@@ -692,3 +692,42 @@ workaround: `..\IBDTest.yaml` now means the parent of the working directory.
 Found alongside two related bugs: `--export-split` ignored `--datadictionary`,
 validating against the bundled copy, and a missing default template crashed
 with a traceback instead of pointing at `template.yaml.example`.
+
+### D49. Recipes stay on the Mac; the VM receives a transfer YAML with them inlined
+
+**Context.** The VM cannot serve or open a web page, so YAML editing there was
+never going to happen in the browser UI, and the launcher (tkinter) only runs
+pulls. Shipping `recipes.yaml` to the VM meant two copies to keep in step, and a
+recipe edited on one side silently disagreed with the other.
+
+**Decision.** Recipes are maintained in one place, on the Mac. What travels to
+the VM is a **transfer YAML**, `<project>_transfer.yaml`, written by
+`makeYaml.py --export-transfer`: the template with every recipe reference
+resolved and written out in full, cohort recipes and batching recipes alike.
+
+- Multipliers and batching are **not** applied. They stay declared, and the
+  split on the VM applies them, by `cosmos_db`, cohort, multiplier and batch,
+  into per-session YAMLs and then SQL.
+- It is only written if the template passes full validation on the Mac
+  (dictionary, table binding, uploads), and it re-validates on the VM, so a
+  broken file is caught on both sides.
+- It carries a `transfer:` block naming the template it came from and a hash of
+  the recipes file, so "which recipes made this" has an answer. No timestamp,
+  so the same inputs give the same file.
+- The VM side is a straight Pullmanager. A recipes file is needed only if the
+  YAML still says `recipe:`, and a YAML that does, with no recipes file, is
+  refused with a message pointing at `--export-transfer`.
+- Changes on the VM are made by editing the YAML by hand, so **every error
+  carries a fix**: which field, and what to change it to. A test enforces that
+  no error is raised without one (extends D28, D45).
+- `recipes.yaml`, the browser UI and `template.yaml.example` leave the bundle.
+  The launcher takes a transfer YAML and has no recipes field.
+
+**Consequences.** The VM needs no `recipes.yaml`, and a transfer YAML is
+self-describing: what will run is what is in the file. A recipe fix reaches the
+VM only by re-exporting on the Mac. The flag is `--export-transfer`, not
+`--transferyaml`, to sit beside `--export-split` and `--export-preyaml`.
+Dropping files from the bundle exposed a gap in "updating never destroys work":
+re-extraction deleted a dropped file even if it had been edited on the VM. A
+previously bundled file that was edited and is no longer shipped is now kept
+as `<name>.local`, like a replaced one.

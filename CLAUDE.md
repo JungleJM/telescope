@@ -45,5 +45,6 @@ Read before working:
   The user asks for commits and pushes; end commit messages with the
   `Co-Authored-By` line.
 - Never run destructive git commands on uncommitted work.
-- Dev box: use brew's Python for anything needing tkinter
+- Mac: use `python3.13` (python.org 3.13.9, Tk 8.6, numpy 2.1.3) to match the
+  VM. Dev box: use brew's Python for anything needing tkinter
   (`/var/home/linuxbrew/.linuxbrew/bin/python3`).

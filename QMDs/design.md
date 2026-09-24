@@ -54,13 +54,17 @@ Two machines, one codebase, updated one way.
 
 ### Environments
 
-| | VM | Linux dev box |
-| --- | --- | --- |
-| OS | Windows | Bluefin (immutable Fedora Silverblue) |
-| Python | 3.13.9 | brew 3.14 (`/var/home/linuxbrew/.linuxbrew/bin/python3`); system `/usr/bin/python3` has no tkinter |
-| tkinter | yes, likely Tk 8.6 | via `brew install python-tk@3.14`, Tk 9 |
-| Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver |
-| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | whatever is installed; Ruby fallback |
+| | VM | Mac | Linux dev box |
+| --- | --- | --- | --- |
+| OS | Windows | macOS | Bluefin (immutable Fedora Silverblue) |
+| Python | 3.13.9 | `python3.13` (python.org 3.13.9, `/usr/local/bin`); brew's 3.14 `python3` has no tkinter | brew 3.14 (`/var/home/linuxbrew/.linuxbrew/bin/python3`); system `/usr/bin/python3` has no tkinter |
+| tkinter | yes, likely Tk 8.6 | Tk 8.6, bundled with the python.org install | via `brew install python-tk@3.14`, Tk 9 |
+| numpy | 2.1.3 | 2.1.3, installed for all users | not installed |
+| Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver | none reachable, no driver |
+| YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | whatever is installed | whatever is installed; Ruby fallback |
+
+On the Mac, use `python3.13` for anything run on the VM (the launcher, the
+runtime tests) so it meets the VM's Python and Tk, not brew's.
 
 **`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.**
 Check it before depending on anything outside the standard library; if it is

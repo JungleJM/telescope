@@ -49,6 +49,58 @@ outright, with a flag to force it.
 
 ---
 
+## Next: The Transfer YAML (D49)
+
+Recipes stay on the Mac; the VM gets `<project>_transfer.yaml` with them
+written out in full. Already there: `--export-preyaml expanded-recipes` inlines
+**cohort** recipes without applying multipliers or batching. Tested on
+`02_valid_multipliers_batching.yaml`: split with an empty recipes file, the
+cohorts resolve, but the batching fails
+(`bad_batching: Could not understand batching item`), because `sex`, `state`
+and `chunk` are still bare names pointing into `recipes.yaml`.
+
+To build, in order:
+
+1. **`--export-transfer`** in `makeYaml.py`. Runs full validation, then writes
+   the template with cohort recipes inlined and each batching item replaced by
+   its full definition (`name`, `kind`, `applies_to`, `column`, `values` or
+   `rows_per_batch`, with the template's overrides applied). Adds the
+   `transfer:` block (source template file name, recipes SHA-256). Written
+   beside the template by default, `--out` to choose; written elsewhere,
+   relative `file_loc` values are rebased so they still point at the same
+   files, and the upload files that must travel with it are listed.
+2. **Recipes only when referenced.** Compile, split and validation load the
+   recipes file only if something says `recipe:` or names a batching recipe.
+   No recipes file plus a reference is an error naming the cohort and pointing
+   at `--export-transfer`.
+3. **Hand-written batching is checked.** A full batching definition is
+   validated field by field (known `kind`; `column_values` needs `column` and
+   `values`; `row_chunk` needs a positive `rows_per_batch`), since on the VM it
+   is edited by hand. A preset `chunk` left at `rows_per_batch: required` is an
+   error. Any `row_chunk` warns that `chunk:` pulls only the first chunk (Known
+   Bugs).
+4. **Every error carries a fix.** `Message` gains a `fix` field, printed on its
+   own line. Contexts become field paths (`cohorts[1] (Patients)`,
+   `upload_cohorts[0].file_loc`, `batching[2]`). A test reads `makeYaml.py`
+   and fails if any `result.error(...)` call has no `fix=`.
+5. **Extraction keeps edited files the bundle drops**, as `<name>.local`,
+   using the previous extraction's `.bundle-manifest.json` hashes to tell an
+   edit from an untouched copy. Must land in the same bundle that drops files.
+6. **Bundle contents.** Drop `recipes.yaml`, `yamlmanager.py`,
+   `yamlmanager_backend.py` and `template.yaml.example`. The missing-template
+   message points at `--export-transfer` instead of the example.
+7. **Launcher.** "Template" becomes "Transfer YAML"; the recipes field goes.
+   Old settings files still load (unknown keys are ignored).
+8. **Browser UI.** The Exports tab shows the transfer YAML with a Download
+   button.
+
+Tests of the **outcome**: a transfer YAML split on its own, with no recipes
+file, gives the same split folder (manifest and every session YAML) as the
+original template split with recipes; and an edited `recipes.yaml` on the VM
+survives an update that stops shipping it.
+
+---
+
 ## Next: The First Live Run
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:
@@ -170,9 +222,6 @@ no button to hand a split folder to Pullmanager.
   time would change the manifest's run set after planning.
 - **Tests still owed**: duplicate output column names and blank `source`
   expressions in a cohort.
-- **A recipes environment variable.** The dictionary can be set once with
-  `YAMLMANAGER_DATA_DICTIONARY`; recipes kept outside the bundle (e.g. in
-  `..\data\`) must be passed as `--recipes` every time.
 
 ---
 
