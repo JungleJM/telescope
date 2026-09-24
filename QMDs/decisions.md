@@ -851,3 +851,59 @@ failed chunk fails its run, and a retry (D52) redoes the whole run.
 Retry granularity is the batch, not the chunk, so a failure late in a heavily
 chunked run redoes the earlier chunks. Correct and simple; revisit if chunked
 runs get long enough for that to hurt.
+
+### D54. Every upload lands in Projects, typed, and that copy is the source
+
+**Context.** A CSV upload went to Cosmos only, as text. An uploaded PK
+therefore had no Projects copy, although the uniqueness check, batching,
+chunking and retries (D52) all read one, so it could not run. Every column was
+NVARCHAR, so a list's `PatientDurableKey` joined Cosmos's BIGINT as text,
+converting every row. Parquet, which carries types, was refused outright.
+
+**Decision.**
+
+- Parquet is the upload format. Every file upload is read on the VM with
+  `pyarrow` (on the VM's package list) and lands in Projects first, as
+  `<project_db>.dbo.upload_<dest_table>`, with the file's types. A `dbtable`
+  upload is copied server-side into `upload_<dest_table>` the same way. Only
+  then does it go up to Cosmos, from that copy, with the same types.
+- A CSV is converted to parquet when the split is exported, on whichever
+  machine exports it. Columns listed under the upload's `columns:` get the
+  declared type; the rest stay text. The same declarations also convert a
+  parquet file's columns (R often writes large IDs as doubles). A value that
+  does not fit is an error naming the column. A standalone command converts a
+  file by hand.
+- **The copy is the source.** Once landed, a resume or retry sends the copy to
+  Cosmos and never re-reads the file, so a file edited between runs cannot mix
+  populations. To pick up a changed file, `--repull`. A copy missing on resume
+  is an error pointing at `--repull`.
+- An uploaded PK's copy is what its uniqueness check, batches and chunks read,
+  exactly as for a generated PK. Batching on an uploaded PK is validated
+  against its file's columns and reaches its session. `split_after_build`
+  multipliers on an uploaded PK are refused with a clear error for now: a
+  given list is usually split before it is uploaded.
+
+**Consequences.** Uploads cost a second trip through the client (file to
+Projects, then Projects to Cosmos, since there is no linked server from Cosmos
+back to Projects). The `upload_` prefix says where a table came from and keeps
+it apart from tables made by hand in the project database. The parquet export
+(Artifact Handoff) can copy an upload's parquet rather than download it again.
+Splitting or running with a file upload needs `pyarrow`; the Mac's
+`python3.13` needs it installed to match the VM (22.0.0).
+
+### D55. Each cohort's rows are committed before the next is pulled
+
+**Context.** The driver runs with autocommit off, so a transfer's own
+`COMMIT TRANSACTION` nests inside the driver's transaction, which was
+committed once per run: a run pulling three cohorts saved nothing until all
+three had landed, and held Projects locks throughout.
+
+**Decision.** Commit after every SQL block, so each cohort's rows (and each
+chunk's) are saved before the next is pulled: the bird in hand before the one
+in the bush. Nothing runs in parallel within a pull; sessions, batches, chunks
+and cohorts run one after another.
+
+**Consequences.** A failure loses at most the cohort in flight. A batch that
+fails part-way leaves its earlier cohorts committed, which D52's clear-before-
+run already handles on retry. Transactions, and the locks they hold, are as
+short as one cohort's transfer.

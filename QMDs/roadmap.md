@@ -45,14 +45,51 @@ No Projects copy is made, yet everything after it assumes one:
   between runs would mix populations.
 
 A `dbtable` PK works only while `source_table` is unset: with it set, the
-checks read `<dest>`, not the source. What modernizing it needs is under
-discussion; until then use a generated PK.
+checks read `<dest>`, not the source. Fixed by D54 (fixes 2 and 3 below);
+until then use a generated PK.
 
 ### Uniqueness check is invalid for a multi-column key
 
 `COUNT_BIG(DISTINCT [a], [b])` is not T-SQL: SQL Server allows one expression
 in `COUNT(DISTINCT ...)`. Any PK with more than one key column fails its PK
 phase. Count `SELECT DISTINCT a, b` in a derived table instead.
+
+---
+
+## Next: Fixes, In Order
+
+Agreed order (D54, D55, and UI notes from testing on the Mac). Each is its own
+commit.
+
+1. **Small runtime fixes.** The multi-column uniqueness query (Known Bugs), and
+   a commit after every SQL block (D55).
+2. **Uploads land in Projects (D54), runtime.** Parquet read with `pyarrow`
+   into typed `upload_<dest>`, `dbtable` copied server-side, Cosmos temps
+   loaded from the copy with the same types. Resume keeps the copies and
+   refuses a missing one. An uploaded PK's uniqueness, batches and chunks read
+   its copy. A CSV reaching the runtime is refused with a pointer to the split.
+3. **Uploads, YAML Manager (D54).** CSV converted to parquet at split with the
+   declared `columns:` types, plus a command to convert by hand. Validation
+   reads a parquet's columns and checks declared ones exist and parse. Batching
+   on an uploaded PK validated against its file and carried into its session;
+   `split_after_build` on one refused.
+4. **Builder UI.**
+   - Uploads: a "PK" checkbox per upload, refusing a second PK and naming the
+     existing one; the current PK shown.
+   - A Multipliers section, like Batching.
+   - Each section's title followed by a one-line explanation, taken from the
+     comments in `YAMLs/template.yaml`.
+   - Joins: a short note on what each join type does with rows that do not
+     match.
+   - Custom table form: "Add Custom Table" (renamed) at the end of the form's
+     first row; "Reset" outside the form, by its heading; the Type dropdown
+     becomes the "PK table" toggle.
+   - Added custom rows: the type box goes, replaced by the PK toggle; "Save as
+     Recipe" between Load and Remove writes the table into `recipes.yaml`
+     (refusing a name already there), replacing "Copy/Download Custom Recipe".
+   - Cohorts tab: a read-only line summarising multipliers and batching, e.g.
+     `[multipliers] Race: black/white, IBDType: UC/Crohns` and
+     `[batching] sex: Female/Male, state: LA/MS/GA/NC/other, chunk: 2000`.
 
 ---
 
@@ -134,6 +171,7 @@ The old plan's Phase 10.
 
 - Manifest fields describing the local tables that actually completed, so
   export never trusts planned-but-failed work.
+- An upload needs no export: its parquet already exists (D54), so copy it.
 - Parquet export per cohort, honouring the `separate_parquets` batching flag.
   Each destination row carries its batch label in `_batch` (D52), which is
   what a per-batch export splits on.
