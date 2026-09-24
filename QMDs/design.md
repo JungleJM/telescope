@@ -115,7 +115,7 @@ Everything reaches the VM as one self-extracting file,
 It carries the whole unit, not just the runtime:
 
 ```text
-telescope/                          # the extracted tree
+pullmanager_runtime/                # the extracted tree (any name; this one is the default)
   pullmanager.py                    Pullmanager entry point
   pullmanager/                      runtime package and its tests
   scripts/makeYaml.py               validator and splitter
@@ -201,8 +201,9 @@ beside it:
   data\                       big reference files; a dictionary if kept outside the bundle
   QueryGenerator\             where you work: the working directory for every command
     pullmanager_bundle.py     the copied file
-    telescope\                extracted; managed; never put your own files in here
+    pullmanager_runtime\      extracted; managed; never put your own files in here
     IBD_transfer.yaml         a transfer YAML, exported on the Mac
+    data\                     its upload files, at the paths the export listed
     split\                    written by --export-split
     sql\                      written by a dry run
     .pullmanager-gui.json     the launcher's remembered paths
@@ -221,15 +222,15 @@ change is made on the Mac and re-exported.
 
 ```bash
 python pullmanager_bundle.py --verify-bundle
-python pullmanager_bundle.py --extract ./telescope
-python telescope/pullmanager.py --tdd                        # prove the delivery
+python pullmanager_bundle.py --extract ./pullmanager_runtime
+python pullmanager_runtime/pullmanager.py --tdd              # prove the delivery
 
-python telescope/pullmanager.py --gui                        # desktop launcher
+python pullmanager_runtime/pullmanager.py --gui              # desktop launcher
 
 # or the same steps by hand
-python telescope/scripts/makeYaml.py --template IBD_transfer.yaml --export-split --out-dir ./split
-python telescope/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
-python telescope/pullmanager.py --execute split/pullmanifest.yaml
+python pullmanager_runtime/scripts/makeYaml.py --template IBD_transfer.yaml --export-split --out-dir ./split
+python pullmanager_runtime/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
+python pullmanager_runtime/pullmanager.py --execute split/pullmanifest.yaml
 ```
 
 The repair loop for a VM-side bug: read the file out of the bundle or the
