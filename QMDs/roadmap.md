@@ -186,7 +186,9 @@ Before it is worth building:
 
 What to find out on the VM is in `QMDs/keys_research/keys_research_for_vm.md`, a temporary
 brief to put to the VM's AI: where keys are declared, whether they hold in the
-data, and what the interactive data dictionary shows. The AI's answer is in
-screenshots beside it, not yet discussed or folded in; none of the queries has
-been run yet. Delete the folder once its answers are folded in here and into
+data, and what the interactive data dictionary shows. The AI's answer is transcribed
+beside it (`vm_ai_answer.md`, from the screenshots there), not yet discussed or
+folded in; none of the queries has been run. Also there: the interactive
+dictionary's page for `DiagnosisEventFact`, the first example of what it
+shows. Delete the folder once its answers are folded in here and into
 `decisions.md`.
