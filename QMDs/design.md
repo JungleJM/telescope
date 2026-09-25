@@ -24,7 +24,7 @@ Mac   template.yaml + recipes.yaml + datadictionary
 VM    <project>_transfer.yaml + datadictionary   no recipes file
         └─► makeYaml --export-split     (validate again, apply cosmos_db,
               │                          multipliers, batching)
-              └─► split/pullmanifest.yaml, sessions/...
+              └─► runs/<project>/split/pullmanifest.yaml, sessions/...
                     └─► Pullmanager --execute ──► <project_db>.dbo.<dest>
                                                   status back into the manifest
                                                   (artifacts: not built)
@@ -204,8 +204,10 @@ beside it:
     pullmanager_runtime\      extracted; managed; never put your own files in here
     IBD_transfer.yaml         a transfer YAML, exported on the Mac
     data\                     its upload files, at the paths the export listed
-    split\                    written by --export-split
-    sql\                      written by a dry run
+    runs\                     one folder per project (D57), so projects run side by side
+      IBD_Ancestry\           from IBD_Ancestry_transfer.yaml
+        split\                written by Export split
+        sql\                  written by a dry run
     .pullmanager-gui.json     the launcher's remembered paths
 ```
 
@@ -228,9 +230,9 @@ python pullmanager_runtime/pullmanager.py --tdd              # prove the deliver
 python pullmanager_runtime/pullmanager.py --gui              # desktop launcher
 
 # or the same steps by hand
-python pullmanager_runtime/scripts/makeYaml.py --template IBD_transfer.yaml --export-split --out-dir ./split
-python pullmanager_runtime/pullmanager.py --dry-run split/pullmanifest.yaml --out-dir ./sql
-python pullmanager_runtime/pullmanager.py --execute split/pullmanifest.yaml
+python pullmanager_runtime/scripts/makeYaml.py --template IBD_Ancestry_transfer.yaml --export-split --out-dir runs/IBD_Ancestry/split
+python pullmanager_runtime/pullmanager.py --dry-run runs/IBD_Ancestry/split/pullmanifest.yaml --out-dir runs/IBD_Ancestry/sql
+python pullmanager_runtime/pullmanager.py --execute runs/IBD_Ancestry/split/pullmanifest.yaml
 ```
 
 The repair loop for a VM-side bug: read the file out of the bundle or the
@@ -525,7 +527,8 @@ names.
   what was authored, recipe references left symbolic. `expanded-recipes` inlines
   cohort recipes only, for inspection. Upload paths stay relative to where it
   was written, so moving one means moving its uploads too.
-- **Split folder** (`--export-split --out-dir`): below. Self-contained: upload
+- **Split folder** (`--export-split --out-dir`; without it
+  `runs/<project>/split`, D57): below. Self-contained: upload
   files are copied into `split/uploads/` and `file_loc` repointed, so the folder
   is the unit to copy or archive. A CSV upload is written there as parquet
   (`file_type: parquet`), with its declared types. Parquet output is
@@ -1011,7 +1014,9 @@ will do next.
 ### The Launcher
 
 `--gui` opens a tkinter window for **running** pulls: choose the transfer YAML,
-data dictionary, split folder and SQL folder; then Validate, Export split, Dry
+data dictionary, split folder and SQL folder (blank means
+`runs/<project>/split` and `runs/<project>/sql`, named from the transfer YAML's
+file name, D57); then Validate, Export split, Dry
 run, Execute, Stop, with "Retry failed" and "Re-pull everything" options
 (`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is
 ever passed (D49); settings saved by an older launcher that named one still

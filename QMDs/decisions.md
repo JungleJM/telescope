@@ -930,3 +930,37 @@ instead. The copy and download buttons are gone.
 **Consequences.** The UI now has a `POST /save-recipe` route, on the local
 server only. Recipes saved this way reach the VM only through a transfer YAML,
 like any other (D49).
+
+### D57. Each project's split and SQL live in `runs/<project>/`
+
+**Context.** The launcher and the command line wrote every split to `split/`
+and every dry run to `sql/` in the working directory. Two projects run from
+one folder at once share those: exporting B's split replaces A's
+`pullmanifest.yaml` while A runs, and A's status is then written into B's plan.
+Temp tables were made safe for this in D50; the folders were not.
+
+**Decision.** A split goes to `runs/<project>/split` and a dry run's SQL to
+`runs/<project>/sql`, under the working directory:
+
+- `<project>` is the transfer YAML's file name without `.yaml` and without
+  `_transfer` (or `_temp`): `IBD_Ancestry_transfer.yaml` runs in
+  `runs/IBD_Ancestry/`. The transfer is named from `project_folder`, so that is
+  normally the project's name. The file name, not `project_folder` read from
+  inside the file, so that two transfer files never share a folder (a copy
+  keeping the same `project_folder` included), and a hand edit of
+  `project_folder` on the VM does not move a run halfway through.
+- Nothing is taken from the working folder's own name (`Project D139081`), and
+  `project_db` still comes only from the YAML.
+- The launcher's split and SQL fields are blank by default, which means this;
+  a typed folder still wins. Settings saved by an older launcher holding
+  exactly its old defaults (`split`, `sql`) load as blank, since those were
+  never chosen. An existing `split\` and `sql\` are left as they are.
+- `makeYaml --export-split` without `--out-dir` uses the same rule, under the
+  repository root.
+
+**Consequences.** Two launchers can run two projects from one working folder.
+They share `.pullmanager-gui.json`: each window keeps its own choices while
+open, and the last one to save is what the next launch restores. Re-exporting
+the same project still replaces its manifest, as before. In Projects, two
+projects with different `project_db` are separate; two landing the same
+`dest_table` in the same database still collide.

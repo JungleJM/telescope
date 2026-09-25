@@ -95,6 +95,11 @@ Pulls will run several at a time, so each should get its own folder, named by
     Cosmos/
 ```
 
+First step taken (D57): each project's split and SQL now go to
+`runs/<project>/split` and `runs/<project>/sql`, `<project>` from the transfer
+YAML's file name (itself from `project_folder`), so projects already run side by
+side. The rest of the sketch below would grow inside that folder.
+
 Observations for when it is built:
 
 - One root derived from `project_folder`, fixed shape, no routing table. Too
