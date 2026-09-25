@@ -43,6 +43,7 @@ class ScriptedCursor:
 
     def execute(self, sql, params=None):
         self.owner.executed.append(sql)
+        self.owner.executed_params.append((sql, list(params or [])))
         self.owner.apply(sql)
         self._sets = list(self.owner.results_for(sql))
         self._advance()
@@ -119,6 +120,7 @@ class FakeConnection:
         # pattern -> [matches left before failing, message]
         self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
         self.executed: list[str] = []
+        self.executed_params: list[tuple[str, list]] = []
         self.inserted: list = []
         self.commits = 0
         self.rollbacks = 0
@@ -697,6 +699,78 @@ class UploadCopyTests(SessionTestCase):
         del self.tables[self.COPY]
         report = self.execute(retry_failed=True)
         self.assertTrue(any("--repull" in message for _, message in report.failed), report.failed)
+
+
+class ControlSampleTests(SessionTestCase):
+    """D59: a control's PK keeps row_mult times its case, batch by batch."""
+
+    CASE = "PROJECTD33A929.dbo.CasePatients"
+
+    def make_control(self, matched_to="CasePatients"):
+        path = self.root / "sessions" / "Patients" / "pk.yaml"
+        doc = load_yaml(path)
+        doc["cohorts"][0]["key_column"] = "PatientDurableKey"
+        doc["cohorts"][0]["split_after_build"] = [{
+            "multiplier": "Race", "strat": "white", "applies_to": "PKTable",
+            "role": "control", "row_mult": 4, "matched_to": matched_to,
+        }]
+        dump_yaml(doc, path)
+
+    def execute(self, tables, **projects):
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        with self.runner(projects={"tables": tables, "pk_rows": 3, **projects}) as runner:
+            return runner.execute()
+
+    def deletes(self):
+        return [(sql, params) for sql, params in self.projects.executed_params
+                if sql.startswith("WITH [_ranked]")]
+
+    def test_each_batch_keeps_row_mult_times_its_case(self):
+        self.make_batched()
+        self.make_control()
+        report = self.execute({self.CASE: Counter()})
+        self.assertTrue(report.ok, report.failed)
+        deletes = self.deletes()
+        # The case has 3 rows in each batch, so each batch keeps 12 controls.
+        self.assertEqual([params for _, params in deletes], [["Female", 12], ["Male", 12]])
+        self.assertTrue(all("FROM PROJECTD33A929.dbo.Patients WHERE [Sex] = ?" in sql
+                            for sql, _ in deletes))
+        self.assertTrue(all("HASHBYTES('SHA2_256', CAST([PatientDurableKey]" in sql
+                            for sql, _ in deletes))
+        counted = [sql for sql in self.projects.executed if "COUNT_BIG(1) FROM " + self.CASE in sql]
+        self.assertEqual(len(counted), 2)
+        pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+        self.assertEqual(pk.outputs["control_sample"]["per_batch"],
+                         {"Female": {"cases": 3, "controls": 3}, "Male": {"cases": 3, "controls": 3}})
+        self.assertTrue(any("so all are kept" in w for w in report.warnings), report.warnings)
+
+    def test_the_sample_is_taken_before_any_run_reads_the_copy(self):
+        self.make_batched()
+        self.make_control()
+        self.execute({self.CASE: Counter()})
+        sent = self.projects.executed
+        first_delete = next(i for i, sql in enumerate(sent) if sql.startswith("WITH [_ranked]"))
+        first_batch_read = next(i for i, sql in enumerate(sent)
+                                if sql.startswith("SELECT * FROM PROJECTD33A929.dbo.Patients"))
+        self.assertLess(first_delete, first_batch_read)
+
+    def test_an_unbatched_control_rebuilds_its_temp_from_the_sample(self):
+        # Its Cosmos temp still holds every row the PK query built.
+        self.make_control()
+        report = self.execute({self.CASE: Counter()})
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual([params for _, params in self.deletes()], [[12]])
+        self.assertIn("SELECT * FROM PROJECTD33A929.dbo.Patients;", self.projects.executed)
+        self.assertTrue(any("##manvalbas_Patients" in sql for sql, _ in self.cosmos.inserted))
+
+    def test_a_missing_case_stops_the_pk_saying_why(self):
+        self.make_control()
+        report = self.execute({})
+        self.assertFalse(report.ok)
+        message = dict(report.failed)["Patients/pk"]
+        self.assertIn("CasePatients", message)
+        self.assertIn("run it first", message)
+        self.assertEqual(self.deletes(), [])
 
 
 class UploadedPkTests(SessionTestCase):

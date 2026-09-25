@@ -119,6 +119,38 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("Sex=Female", selection.description)
 
 
+class SampleDownTests(unittest.TestCase):
+    """D59: a control batch keeps its first rows in hash order of the key."""
+
+    def test_deletes_the_batchs_rows_beyond_those_kept(self):
+        from ..batches import sample_down
+
+        selection = sample_down(PROJECT_DB, "White", batch([value_dim("Sex", "Female")]), KEYS, 12)
+        self.assertEqual(
+            selection.sql,
+            "WITH [_ranked] AS (\n"
+            "    SELECT ROW_NUMBER() OVER (ORDER BY HASHBYTES('SHA2_256', "
+            "CAST([PatientDurableKey] AS NVARCHAR(4000)))) AS [_sample_rn]\n"
+            "    FROM PROJECTD93A5E7.dbo.White WHERE [Sex] = ?\n"
+            ")\n"
+            "DELETE FROM [_ranked] WHERE [_sample_rn] > ?;",
+        )
+        self.assertEqual(selection.params, ["Female", 12])
+
+    def test_no_batch_samples_the_whole_table(self):
+        from ..batches import sample_down
+
+        selection = sample_down(PROJECT_DB, "White", None, KEYS, 5)
+        self.assertIn("FROM PROJECTD93A5E7.dbo.White\n)", selection.sql)
+        self.assertEqual(selection.params, [5])
+
+    def test_sampling_needs_a_key(self):
+        from ..batches import sample_down
+
+        with self.assertRaises(BatchError):
+            sample_down(PROJECT_DB, "White", None, [], 5)
+
+
 class CountTests(unittest.TestCase):
     def test_counts_before_chunking(self):
         selection = count_batch_rows(PROJECT_DB, "Patients", batch([value_dim("Sex", "Male")]))

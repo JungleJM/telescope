@@ -63,6 +63,11 @@ def top_clause(
         limit = int(limit)
     except (TypeError, ValueError):
         return ""
+    # A sampled control keeps row_mult times its case (D59): give it that many
+    # to draw from.
+    for item in cohort.get("split_after_build") or []:
+        if isinstance(item, dict) and item.get("role") == "control" and item.get("row_mult"):
+            limit = int(limit * float(item["row_mult"]))
     return f"TOP ({limit}) " if limit > 0 else ""
 
 

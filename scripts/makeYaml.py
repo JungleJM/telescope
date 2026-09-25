@@ -1347,11 +1347,50 @@ def expand_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], 
             ]
             split_filters = [item for item in split_filters if item]
             if split_filters:
+                for item in split_filters:
+                    case = case_dest(combo, item, base_dest)
+                    if case:
+                        item["matched_to"] = case
                 new["split_after_build"] = split_filters
                 # D59: the level is what makes this PK its own population.
                 add_where(new, [f.get("condition") or f.get("where") for f in split_filters])
             expanded.append(new)
     return expanded
+
+
+def is_sampled_control(level: Any) -> bool:
+    return isinstance(level, dict) and level.get("role") == "control" and level.get("row_mult") is not None
+
+
+def case_levels(mult: dict[str, Any]) -> list[dict[str, Any]]:
+    """A split_after_build multiplier's levels that are not controls."""
+    return [
+        level for level in mult.get("levels", []) or []
+        if isinstance(level, dict) and level.get("role") != "control"
+    ]
+
+
+def case_dest(combo: tuple, item: dict[str, Any], base_dest: str) -> str | None:
+    """The PK a sampled control is drawn against (D59).
+
+    The same combination of levels with the control's level swapped for its
+    multiplier's one case level: `whitePatients` is matched to `blackPatients`.
+    None unless the level is a sampled control with exactly one case, which
+    validation insists on.
+    """
+    if not is_sampled_control(item):
+        return None
+    for mult, level in combo:
+        if mult.get("name") != item.get("multiplier") or level.get("strat") != item.get("strat"):
+            continue
+        cases = case_levels(mult)
+        if len(cases) != 1:
+            return None
+        prefix = "".join(
+            str((cases[0] if m is mult else lv).get("strat", "")) for m, lv in combo
+        )
+        return f"{prefix}{base_dest}"
+    return None
 
 
 def add_where(cohort: dict[str, Any], conditions: list[Any]) -> None:
@@ -1400,6 +1439,85 @@ def split_after_build_filter(
     return item
 
 
+def check_level_roles(
+    mult: dict[str, Any],
+    where: str,
+    pk_candidates: list[Any],
+    cohorts: list[dict[str, Any]],
+    result: CompileResult,
+) -> None:
+    """`role` and `row_mult` on a multiplier's levels (D59).
+
+    `role: control` with `row_mult: n` samples that level's PK at n times its
+    case, per batch; its case is the multiplier's one level that is not a
+    control. Anything else is refused rather than carried along unapplied.
+    """
+    levels = [lv for lv in mult.get("levels", []) or [] if isinstance(lv, dict)]
+    split = mult.get("stage") == "split_after_build"
+    for idx, level in enumerate(mult.get("levels", []) or []):
+        if not isinstance(level, dict):
+            continue
+        at = f"{where}.levels[{idx}] ({level.get('strat')})"
+        role, row_mult = level.get("role"), level.get("row_mult")
+        if (role is not None or row_mult is not None) and not split:
+            result.error(
+                "role_outside_split",
+                "`role` and `row_mult` apply to `split_after_build` levels only.",
+                at,
+                fix="Remove them, or make this multiplier `stage: split_after_build`.",
+            )
+            continue
+        if role is not None and role != "control":
+            result.error(
+                "bad_multiplier_role",
+                f"Unknown role `{role}`.",
+                f"{at}.role",
+                fix="Use `role: control`, or remove `role`.",
+            )
+        if row_mult is None:
+            continue
+        if role != "control":
+            result.error(
+                "row_mult_without_control",
+                "`row_mult` sizes a control against its case, but this level is not a control.",
+                f"{at}.row_mult",
+                fix="Add `role: control` to this level, or remove `row_mult`.",
+            )
+            continue
+        if isinstance(row_mult, bool) or not isinstance(row_mult, (int, float)) or row_mult <= 0:
+            result.error(
+                "bad_row_mult",
+                f"`row_mult: {row_mult}` is not a positive number.",
+                f"{at}.row_mult",
+                fix="Give how many controls per case, e.g. `row_mult: 4`.",
+            )
+        cases = [lv.get("strat") for lv in levels if lv.get("role") != "control"]
+        if len(cases) != 1:
+            result.error(
+                "control_without_one_case",
+                f"A control is sampled against one case level; `{mult.get('name')}` has "
+                f"{len(cases)} ({', '.join(map(str, cases)) or 'none'}).",
+                at,
+                fix="Leave exactly one level without `role: control`, or run each case "
+                "against its controls as a separate pull.",
+            )
+        # One report per PK in the file, not per copy the multipliers made.
+        unkeyed: dict[str, str] = {}
+        for c in cohorts:
+            if c.get("dest_table") in pk_candidates and not (
+                c.get("dedup_keys") or c.get("dedup_key") or c.get("key_column") or c.get("key_columns")
+            ):
+                unkeyed.setdefault(str(c.get("_source") or c.get("name")), cohort_label(c))
+        for label in unkeyed.values():
+            result.error(
+                "control_sample_without_key",
+                "Controls are sampled by a hash of the PK's key, but the PK declares none.",
+                label,
+                fix="Add `dedup_keys: [[<key column>]]` or `key_column: <column>` to the PK "
+                "cohort, e.g. `key_column: PatientDurableKey`.",
+            )
+
+
 def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
     uploaded_pk = find_uploaded_pk_table(template, CompileResult())
@@ -1435,6 +1553,7 @@ def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]]
                 fix="Set `applies_to: PKTable`.",
             )
             continue
+        check_level_roles(mult, where, pk_candidates, cohorts, result)
         if stage == "split_after_build":
             for level_idx, level in enumerate(mult.get("levels", []) or []):
                 if isinstance(level, dict) and not (
@@ -2076,6 +2195,9 @@ def with_cosmos_suffix(
                 new[key] = rename(value)
         if new.get("session_pk") in generated:
             new["session_pk"] = f"{new['session_pk']}{suffix}"
+        for item in new.get("split_after_build") or []:
+            if isinstance(item, dict) and item.get("matched_to") in generated:
+                item["matched_to"] = f"{item['matched_to']}{suffix}"
     return new
 
 
@@ -2425,6 +2547,12 @@ def build_split_plan_from_finished(
         else:
             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
             pk_cohorts = [{"name": session_id, "dest_table": None}]
+
+    # A sampled control is drawn against its case's PK in Projects (D59), so
+    # every case session comes first.
+    pk_cohorts = sorted(pk_cohorts, key=lambda c: any(
+        is_sampled_control(item) for item in c.get("split_after_build") or []
+    ))
 
     sessions: list[SplitSession] = []
     for pk_cohort in pk_cohorts:
@@ -3219,6 +3347,56 @@ multipliers:
         self.assertEqual(black[:-1], white[:-1])
         # Only the PK is filtered; each session's facts follow their own PK.
         self.assertNotIn("FirstRace", json.dumps(cohorts["blackOtherDx"]["filter"]))
+
+    RACE = """
+multipliers:
+  - name: Race
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+{levels}
+"""
+    WHITE_CONTROL = "      - {strat: white, column: FirstRace, values: [White%], role: control, row_mult: 4}\n"
+    BLACK = "      - {strat: black, column: FirstRace, values: [Black%]}\n"
+
+    def race(self, levels: str, cosmos_db: str = "COSMOS", key: bool = True) -> str:
+        text = tiny_template(self.RACE.format(levels=levels.rstrip("\n")))
+        if key:
+            text = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
+        return text.replace("cosmos_db: COSMOS", f"cosmos_db: {cosmos_db}")
+
+    def test_a_control_is_matched_to_its_case_in_each_database(self):
+        res = self.compile_template(self.race(self.BLACK + self.WHITE_CONTROL, "Dual"))
+        self.assertCompiles(res)
+        cohorts = self.cohorts_by_name(res)
+        self.assertEqual(cohorts["whitePatients"]["split_after_build"][0]["matched_to"], "blackPatients")
+        self.assertEqual(cohorts["whitePatients_sp"]["split_after_build"][0]["matched_to"], "blackPatients_sp")
+        self.assertNotIn("matched_to", cohorts["blackPatients"]["split_after_build"][0])
+
+    def test_cases_come_before_their_controls_in_the_manifest(self):
+        # The control is sampled against its case's PK in Projects, so the
+        # case must have run; listed first, the control used to run first.
+        res = self.plan_split(self.race(self.WHITE_CONTROL + self.BLACK))
+        self.assertCompiles(res)
+        order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
+        self.assertEqual(order, ["blackPatients", "whitePatients"])
+
+    def test_roles_and_row_mult_are_checked(self):
+        cases = {
+            "bad_multiplier_role": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], role: case}\n",
+            "row_mult_without_control": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], row_mult: 4}\n",
+            "bad_row_mult": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], role: control, row_mult: lots}\n",
+            "control_without_one_case": self.BLACK
+            + "      - {strat: asian, column: FirstRace, values: [A]}\n" + self.WHITE_CONTROL,
+        }
+        for code, levels in cases.items():
+            with self.subTest(code=code):
+                self.assertHasError(self.compile_template(self.race(levels)), code)
+
+    def test_a_sampled_control_needs_the_pks_key(self):
+        res = self.compile_template(self.race(self.BLACK + self.WHITE_CONTROL, key=False))
+        self.assertHasError(res, "control_sample_without_key")
+        self.assertEqual(len([m for m in res.errors if m.code == "control_sample_without_key"]), 1)
 
     def test_a_level_without_a_condition_is_an_error(self):
         res = self.compile_template(extra="""

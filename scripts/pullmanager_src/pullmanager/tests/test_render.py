@@ -103,6 +103,13 @@ class ServerRenderTests(unittest.TestCase):
         with self.assertRaises(RenderError):
             server_sql.render_cohort(cohort, doc, [cohort])
 
+    def test_a_sampled_controls_limit_is_row_mult_times(self):
+        # D59: it keeps row_mult times its case, so it needs that many to draw from.
+        cohort = pk_cohort(split_after_build=[{"role": "control", "row_mult": 4}])
+        doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=3000)
+        sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+        self.assertIn("SELECT TOP (12000)", sql)
+
     def test_no_top_without_smallset(self):
         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
         blocks, _ = self.render(doc)

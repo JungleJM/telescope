@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .naming import destination
+from .sql import hash_order
 
 
 class BatchError(ValueError):
@@ -129,16 +130,48 @@ def select_batch_rows(
     )
 
 
-def count_batch_rows(project_db: str, pk_table: str, batch: dict[str, Any] | None) -> BatchSelection:
-    """How many PK rows a batch's predicate matches, before chunking."""
-    table = destination(project_db, pk_table)
+def batch_where(batch: dict[str, Any] | None) -> tuple[str, list[Any]]:
+    """` WHERE ...` selecting a batch's rows (empty for no batch), with its params."""
     predicates: list[str] = []
     params: list[Any] = []
     for dimension in (batch or {}).get("dimensions") or []:
         clause, values = dimension_predicate(dimension)
         predicates.append(clause)
         params.extend(values)
-    sql = f"SELECT COUNT_BIG(1) FROM {table}"
-    if predicates:
-        sql += " WHERE " + " AND ".join(predicates)
-    return BatchSelection(sql=sql + ";", params=params)
+    return (" WHERE " + " AND ".join(predicates) if predicates else ""), params
+
+
+def count_batch_rows(project_db: str, pk_table: str, batch: dict[str, Any] | None) -> BatchSelection:
+    """How many PK rows a batch's predicate matches, before chunking."""
+    where, params = batch_where(batch)
+    return BatchSelection(
+        sql=f"SELECT COUNT_BIG(1) FROM {destination(project_db, pk_table)}{where};", params=params
+    )
+
+
+def sample_down(
+    project_db: str,
+    pk_table: str,
+    batch: dict[str, Any] | None,
+    key_columns: list[str],
+    keep: int,
+) -> BatchSelection:
+    """Delete a batch's PK rows beyond the first `keep` in hash order (D59).
+
+    The rows kept are a pseudo-random sample, the same on every run (D60).
+    """
+    if not key_columns:
+        raise BatchError("Sampling needs the PK's key columns to order by.")
+    where, params = batch_where(batch)
+    order = hash_order([f"[{c}]" for c in key_columns])
+    return BatchSelection(
+        sql=(
+            "WITH [_ranked] AS (\n"
+            f"    SELECT ROW_NUMBER() OVER (ORDER BY {order}) AS [_sample_rn]\n"
+            f"    FROM {destination(project_db, pk_table)}{where}\n"
+            ")\n"
+            "DELETE FROM [_ranked] WHERE [_sample_rn] > ?;"
+        ),
+        params=[*params, int(keep)],
+        description=f"keep {int(keep)}",
+    )

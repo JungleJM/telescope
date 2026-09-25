@@ -7,6 +7,7 @@ epoch, what a resume must replay, and why uploads travel through the client.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass, field
@@ -14,9 +15,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import local_sql, refresh, server_sql, uploads
-from .batches import BatchError, chunk_clause, count_batch_rows, select_batch_rows
+from .batches import BatchError, chunk_clause, count_batch_rows, sample_down, select_batch_rows
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 from .executor import (
+    control_samples,
     Unit,
     iter_units,
     plan_unit,
@@ -28,7 +30,7 @@ from .executor import (
 )
 from .manifest import Manifest, Phase, Session
 from .naming import destination, global_temp, temp_prefix
-from .normalize import cosmos_database
+from .normalize import cosmos_database, normalize_dedup_keys
 from .uploads import UploadError
 from .yaml_io import load_yaml
 
@@ -406,8 +408,88 @@ class SessionRunner:
         rows = self._run_pair(unit)
         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
+        sampled = self._sample_control(node, doc)
         total = self._verify_pk_uniqueness(doc)
+        if sampled is not None:
+            return sampled
         return rows if rows is not None else total
+
+    def _pk_cohort(self, doc: dict[str, Any]) -> dict[str, Any] | None:
+        return next(
+            (c for c in doc.get("cohorts") or []
+             if isinstance(c, dict) and c.get("dest_table") == self.session.pk_table),
+            None,
+        )
+
+    def _pk_sampled(self) -> bool:
+        return bool(control_samples(self._pk_cohort(self._phase_doc("pk"))))
+
+    def _sample_control(self, node: Any, doc: dict[str, Any]) -> int | None:
+        """Keep `row_mult` times the case's rows, batch by batch (D59).
+
+        Done to the PK's Projects copy once it has landed, so that copy is the
+        sample, and every run is drawn from it. The rows kept are the first in
+        hash order of the key: pseudo-random, the same on every run. Returns
+        how many were kept, or None when this PK is not a sampled control.
+        """
+        cohort = self._pk_cohort(doc)
+        samples = control_samples(cohort)
+        if not samples:
+            return None
+        pk_table = str(self.session.pk_table)
+        if len(samples) > 1:
+            raise SessionError(f"{node.label}: {pk_table} is a control in more than one multiplier.")
+        item = samples[0]
+        case = str(item.get("matched_to") or "")
+        if not case:
+            raise SessionError(
+                f"{node.label}: {pk_table} is a control but names no case. Export the split again."
+            )
+        if not self._projects_table_exists(destination(self.project_db, case)):
+            raise SessionError(
+                f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
+                f"{self.project_db}. Its session comes earlier in the manifest: run it first."
+            )
+        key_sets, _ = normalize_dedup_keys(cohort)
+        keys = server_sql.sample_keys(cohort, key_sets)
+        row_mult = float(item["row_mult"])
+        kept_total = 0
+        per_batch: dict[str, dict[str, int]] = {}
+        seen: set[str] = set()
+        cursor = self.projects.cursor()
+        for batch in [run.batch for run in self.session.runs] or [None]:
+            stratum = json.dumps((batch or {}).get("dimensions") or [], sort_keys=True, default=str)
+            if stratum in seen:
+                continue
+            seen.add(stratum)
+            label = str((batch or {}).get("name") or local_sql.UNBATCHED_LABEL)
+            cases = self._count(count_batch_rows(self.project_db, case, batch))
+            controls = self._count(count_batch_rows(self.project_db, self._pk_copy(), batch))
+            keep = int(cases * row_mult)
+            if controls < keep:
+                self.report.warnings.append(
+                    f"{node.label}: {label} has {controls:,} controls for {cases:,} cases; "
+                    f"{row_mult:g}x would be {keep:,}, so all are kept."
+                )
+            try:
+                selection = sample_down(self.project_db, self._pk_copy(), batch, keys, keep)
+            except BatchError as exc:
+                raise SessionError(f"{node.label}: {exc}") from exc
+            cursor.execute(selection.sql, selection.params)
+            kept = min(controls, keep)
+            kept_total += kept
+            per_batch[label] = {"cases": cases, "controls": kept}
+        self.projects.commit()
+        node.outputs["control_sample"] = {
+            "matched_to": case, "row_mult": row_mult, "per_batch": per_batch,
+        }
+        return kept_total
+
+    def _count(self, selection: Any) -> int:
+        cursor = self.projects.cursor()
+        cursor.execute(selection.sql, selection.params)
+        row = cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
 
     def _pk_copy(self) -> str:
         """The PK's Projects copy, which uniqueness, batches and chunks read.
@@ -530,9 +612,11 @@ class SessionRunner:
         batch = node.batch
         if not batch:
             # Resuming, the PK query did not run, so its temp does not exist:
-            # rebuild it whole from the Projects copy. An uploaded PK was
+            # rebuild it whole from the Projects copy. A sampled control's
+            # temp still holds every row it was built with, so it too is
+            # rebuilt from its copy, the sample (D59). An uploaded PK was
             # rebuilt by the upload phase.
-            if not (self.resuming and self._pk_is_generated()):
+            if not ((self.resuming or self._pk_sampled()) and self._pk_is_generated()):
                 return
             batch = {"name": local_sql.UNBATCHED_LABEL, "dimensions": [], "runtime": []}
         pk_table = self.session.pk_table

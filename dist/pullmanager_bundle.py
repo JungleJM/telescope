@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "b92165a60dbda51411727342e5456c95079cb5450e1c594bd4c2b7998d248c6e",
+  "content_id": "2a4b42197dee85a69348e1a2bd54e8502a106fc70ee1fc8c16e9b1b189fdee8a",
   "file_count": 37,
   "files": [
     {
@@ -393,8 +393,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/batches.py",
       "policy": "replace",
-      "sha256": "dc90271523a5145924ab101adf6119f716d790d33395b68a3baef905a8f04e17",
-      "size": 5412
+      "sha256": "3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2",
+      "size": 6547
     },
     {
       "path": "pullmanager/cli.py",
@@ -411,8 +411,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/executor.py",
       "policy": "replace",
-      "sha256": "7e41afe3e3acefe7f712c72fc1e8b96a5ea87aed96566231523258ccc80e79c3",
-      "size": 11126
+      "sha256": "d1df8b22ea0d3815d6b38b188e9c58c2ad2c720fc7c3d9b580f77cb5704f9871",
+      "size": 11839
     },
     {
       "path": "pullmanager/gui.py",
@@ -465,14 +465,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "06bb16008e58bf6d40cfa384cf5760264c6bee36a49d3f855c042326c6f9b02f",
-      "size": 13141
+      "sha256": "5039f7ed99f5cc95227c7c91b17b6ff0a1cc0c6d5d4f07077a7e0982390d963b",
+      "size": 13446
     },
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "7b632160653c02416d01041896b6cbbff507d11e630e4e5d5790cefc83680986",
-      "size": 28174
+      "sha256": "eeb7da9f102ba38d72a1f65698a6caf37ae1a6800c73346de0cc74afae2024bf",
+      "size": 32175
     },
     {
       "path": "pullmanager/sql.py",
@@ -495,8 +495,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_batches.py",
       "policy": "replace",
-      "sha256": "e9162918f0020a69ea8b94bb61a1d761863d05e752306e28aa0bdbfe914b3719",
-      "size": 5122
+      "sha256": "310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c",
+      "size": 6380
     },
     {
       "path": "pullmanager/tests/test_db.py",
@@ -549,14 +549,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "439efb87e686c76efdb714c73edca4de0da01bc04dbce39b63c469a2869da7d3",
-      "size": 16006
+      "sha256": "a95b11698908d7df4848ddb92842f2d97dc536773d7ae4b8f556bc0dd01ad8f4",
+      "size": 16425
     },
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "1a696580e99166d13f616b190f7b948c457cd96c48a8ff8ed36d0637cd3dde45",
-      "size": 32994
+      "sha256": "bf8ac07368c55852d7cde638a9ff7613c7d5cdec1fe92072708a81907a62540c",
+      "size": 36740
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "c7d94aa11ecb6d886b36f78e3bc0ce85d9a7c75f5d3d3e936af6ae589b9c7a36",
-      "size": 192811
+      "sha256": "f116bdb81a674da2ea7c5db1abb0f9e79988060c816f8dfef14425cb728aa0eb",
+      "size": 201180
     }
   ]
 }'''
@@ -3469,7 +3469,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
-# === BEGIN FILE: pullmanager/batches.py SHA256: dc90271523a5145924ab101adf6119f716d790d33395b68a3baef905a8f04e17 SIZE: 5412 ===
+# === BEGIN FILE: pullmanager/batches.py SHA256: 3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2 SIZE: 6547 ===
 # """Turning a logical batch into the rows it selects.
 #
 # Batch membership is decided against the durable Projects copy of the PK table,
@@ -3484,6 +3484,7 @@ if __name__ == "__main__":
 # from typing import Any
 #
 # from .naming import destination
+# from .sql import hash_order
 #
 #
 # class BatchError(ValueError):
@@ -3601,19 +3602,51 @@ if __name__ == "__main__":
 #     )
 #
 #
-# def count_batch_rows(project_db: str, pk_table: str, batch: dict[str, Any] | None) -> BatchSelection:
-#     """How many PK rows a batch's predicate matches, before chunking."""
-#     table = destination(project_db, pk_table)
+# def batch_where(batch: dict[str, Any] | None) -> tuple[str, list[Any]]:
+#     """` WHERE ...` selecting a batch's rows (empty for no batch), with its params."""
 #     predicates: list[str] = []
 #     params: list[Any] = []
 #     for dimension in (batch or {}).get("dimensions") or []:
 #         clause, values = dimension_predicate(dimension)
 #         predicates.append(clause)
 #         params.extend(values)
-#     sql = f"SELECT COUNT_BIG(1) FROM {table}"
-#     if predicates:
-#         sql += " WHERE " + " AND ".join(predicates)
-#     return BatchSelection(sql=sql + ";", params=params)
+#     return (" WHERE " + " AND ".join(predicates) if predicates else ""), params
+#
+#
+# def count_batch_rows(project_db: str, pk_table: str, batch: dict[str, Any] | None) -> BatchSelection:
+#     """How many PK rows a batch's predicate matches, before chunking."""
+#     where, params = batch_where(batch)
+#     return BatchSelection(
+#         sql=f"SELECT COUNT_BIG(1) FROM {destination(project_db, pk_table)}{where};", params=params
+#     )
+#
+#
+# def sample_down(
+#     project_db: str,
+#     pk_table: str,
+#     batch: dict[str, Any] | None,
+#     key_columns: list[str],
+#     keep: int,
+# ) -> BatchSelection:
+#     """Delete a batch's PK rows beyond the first `keep` in hash order (D59).
+#
+#     The rows kept are a pseudo-random sample, the same on every run (D60).
+#     """
+#     if not key_columns:
+#         raise BatchError("Sampling needs the PK's key columns to order by.")
+#     where, params = batch_where(batch)
+#     order = hash_order([f"[{c}]" for c in key_columns])
+#     return BatchSelection(
+#         sql=(
+#             "WITH [_ranked] AS (\n"
+#             f"    SELECT ROW_NUMBER() OVER (ORDER BY {order}) AS [_sample_rn]\n"
+#             f"    FROM {destination(project_db, pk_table)}{where}\n"
+#             ")\n"
+#             "DELETE FROM [_ranked] WHERE [_sample_rn] > ?;"
+#         ),
+#         params=[*params, int(keep)],
+#         description=f"keep {int(keep)}",
+#     )
 #
 # === END FILE: pullmanager/batches.py ===
 # === BEGIN FILE: pullmanager/cli.py SHA256: b3da93062a97deb0d6c4e139fb173aa84f61be0ceb83e32477a86860ee9b3ccd SIZE: 11586 ===
@@ -4304,7 +4337,7 @@ if __name__ == "__main__":
 #     return f"Could not connect to {server}, database {database}: {detail} {hint}"
 #
 # === END FILE: pullmanager/db.py ===
-# === BEGIN FILE: pullmanager/executor.py SHA256: 7e41afe3e3acefe7f712c72fc1e8b96a5ea87aed96566231523258ccc80e79c3 SIZE: 11126 ===
+# === BEGIN FILE: pullmanager/executor.py SHA256: d1df8b22ea0d3815d6b38b188e9c58c2ad2c720fc7c3d9b580f77cb5704f9871 SIZE: 11839 ===
 # """Traversal and planning.
 #
 # Walks a manifest in order and produces the work a session implies. Nothing
@@ -4468,6 +4501,16 @@ if __name__ == "__main__":
 #     return list(seen.values())
 #
 #
+# def control_samples(cohort: Any) -> list[dict[str, Any]]:
+#     """The PK's `split_after_build` levels that sample it as a control (D59)."""
+#     if not isinstance(cohort, dict):
+#         return []
+#     return [
+#         item for item in cohort.get("split_after_build") or []
+#         if isinstance(item, dict) and item.get("role") == "control" and item.get("row_mult")
+#     ]
+#
+#
 # def plan_unit(
 #     manifest: Manifest,
 #     session: Session,
@@ -4522,6 +4565,13 @@ if __name__ == "__main__":
 #         return unit
 #
 #     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
+#     if kind == "pk":
+#         for cohort in doc.get("cohorts") or []:
+#             for item in control_samples(cohort):
+#                 notes.append(
+#                     f"{cohort.get('dest_table')} is then sampled to {item['row_mult']}x "
+#                     f"{item.get('matched_to')} per batch, by a hash of its key (D59)"
+#                 )
 #     unit.server_blocks = server_blocks
 #     unit.notes.extend(notes)
 #     unit.local_blocks = local_sql.render_phase(doc, unit.unit_id, linked_server)
@@ -6419,7 +6469,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: 06bb16008e58bf6d40cfa384cf5760264c6bee36a49d3f855c042326c6f9b02f SIZE: 13141 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 5039f7ed99f5cc95227c7c91b17b6ff0a1cc0c6d5d4f07077a7e0982390d963b SIZE: 13446 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6485,6 +6535,11 @@ if __name__ == "__main__":
 #         limit = int(limit)
 #     except (TypeError, ValueError):
 #         return ""
+#     # A sampled control keeps row_mult times its case (D59): give it that many
+#     # to draw from.
+#     for item in cohort.get("split_after_build") or []:
+#         if isinstance(item, dict) and item.get("role") == "control" and item.get("row_mult"):
+#             limit = int(limit * float(item["row_mult"]))
 #     return f"TOP ({limit}) " if limit > 0 else ""
 #
 #
@@ -6780,7 +6835,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 7b632160653c02416d01041896b6cbbff507d11e630e4e5d5790cefc83680986 SIZE: 28174 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: eeb7da9f102ba38d72a1f65698a6caf37ae1a6800c73346de0cc74afae2024bf SIZE: 32175 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6790,6 +6845,7 @@ if __name__ == "__main__":
 #
 # from __future__ import annotations
 #
+# import json
 # import math
 # import re
 # from dataclasses import dataclass, field
@@ -6797,9 +6853,10 @@ if __name__ == "__main__":
 # from typing import Any, Callable
 #
 # from . import local_sql, refresh, server_sql, uploads
-# from .batches import BatchError, chunk_clause, count_batch_rows, select_batch_rows
+# from .batches import BatchError, chunk_clause, count_batch_rows, sample_down, select_batch_rows
 # from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 # from .executor import (
+#     control_samples,
 #     Unit,
 #     iter_units,
 #     plan_unit,
@@ -6811,7 +6868,7 @@ if __name__ == "__main__":
 # )
 # from .manifest import Manifest, Phase, Session
 # from .naming import destination, global_temp, temp_prefix
-# from .normalize import cosmos_database
+# from .normalize import cosmos_database, normalize_dedup_keys
 # from .uploads import UploadError
 # from .yaml_io import load_yaml
 #
@@ -7189,8 +7246,88 @@ if __name__ == "__main__":
 #         rows = self._run_pair(unit)
 #         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
 #         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
+#         sampled = self._sample_control(node, doc)
 #         total = self._verify_pk_uniqueness(doc)
+#         if sampled is not None:
+#             return sampled
 #         return rows if rows is not None else total
+#
+#     def _pk_cohort(self, doc: dict[str, Any]) -> dict[str, Any] | None:
+#         return next(
+#             (c for c in doc.get("cohorts") or []
+#              if isinstance(c, dict) and c.get("dest_table") == self.session.pk_table),
+#             None,
+#         )
+#
+#     def _pk_sampled(self) -> bool:
+#         return bool(control_samples(self._pk_cohort(self._phase_doc("pk"))))
+#
+#     def _sample_control(self, node: Any, doc: dict[str, Any]) -> int | None:
+#         """Keep `row_mult` times the case's rows, batch by batch (D59).
+#
+#         Done to the PK's Projects copy once it has landed, so that copy is the
+#         sample, and every run is drawn from it. The rows kept are the first in
+#         hash order of the key: pseudo-random, the same on every run. Returns
+#         how many were kept, or None when this PK is not a sampled control.
+#         """
+#         cohort = self._pk_cohort(doc)
+#         samples = control_samples(cohort)
+#         if not samples:
+#             return None
+#         pk_table = str(self.session.pk_table)
+#         if len(samples) > 1:
+#             raise SessionError(f"{node.label}: {pk_table} is a control in more than one multiplier.")
+#         item = samples[0]
+#         case = str(item.get("matched_to") or "")
+#         if not case:
+#             raise SessionError(
+#                 f"{node.label}: {pk_table} is a control but names no case. Export the split again."
+#             )
+#         if not self._projects_table_exists(destination(self.project_db, case)):
+#             raise SessionError(
+#                 f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
+#                 f"{self.project_db}. Its session comes earlier in the manifest: run it first."
+#             )
+#         key_sets, _ = normalize_dedup_keys(cohort)
+#         keys = server_sql.sample_keys(cohort, key_sets)
+#         row_mult = float(item["row_mult"])
+#         kept_total = 0
+#         per_batch: dict[str, dict[str, int]] = {}
+#         seen: set[str] = set()
+#         cursor = self.projects.cursor()
+#         for batch in [run.batch for run in self.session.runs] or [None]:
+#             stratum = json.dumps((batch or {}).get("dimensions") or [], sort_keys=True, default=str)
+#             if stratum in seen:
+#                 continue
+#             seen.add(stratum)
+#             label = str((batch or {}).get("name") or local_sql.UNBATCHED_LABEL)
+#             cases = self._count(count_batch_rows(self.project_db, case, batch))
+#             controls = self._count(count_batch_rows(self.project_db, self._pk_copy(), batch))
+#             keep = int(cases * row_mult)
+#             if controls < keep:
+#                 self.report.warnings.append(
+#                     f"{node.label}: {label} has {controls:,} controls for {cases:,} cases; "
+#                     f"{row_mult:g}x would be {keep:,}, so all are kept."
+#                 )
+#             try:
+#                 selection = sample_down(self.project_db, self._pk_copy(), batch, keys, keep)
+#             except BatchError as exc:
+#                 raise SessionError(f"{node.label}: {exc}") from exc
+#             cursor.execute(selection.sql, selection.params)
+#             kept = min(controls, keep)
+#             kept_total += kept
+#             per_batch[label] = {"cases": cases, "controls": kept}
+#         self.projects.commit()
+#         node.outputs["control_sample"] = {
+#             "matched_to": case, "row_mult": row_mult, "per_batch": per_batch,
+#         }
+#         return kept_total
+#
+#     def _count(self, selection: Any) -> int:
+#         cursor = self.projects.cursor()
+#         cursor.execute(selection.sql, selection.params)
+#         row = cursor.fetchone()
+#         return int(row[0]) if row and row[0] is not None else 0
 #
 #     def _pk_copy(self) -> str:
 #         """The PK's Projects copy, which uniqueness, batches and chunks read.
@@ -7313,9 +7450,11 @@ if __name__ == "__main__":
 #         batch = node.batch
 #         if not batch:
 #             # Resuming, the PK query did not run, so its temp does not exist:
-#             # rebuild it whole from the Projects copy. An uploaded PK was
+#             # rebuild it whole from the Projects copy. A sampled control's
+#             # temp still holds every row it was built with, so it too is
+#             # rebuilt from its copy, the sample (D59). An uploaded PK was
 #             # rebuilt by the upload phase.
-#             if not (self.resuming and self._pk_is_generated()):
+#             if not ((self.resuming or self._pk_sampled()) and self._pk_is_generated()):
 #                 return
 #             batch = {"name": local_sql.UNBATCHED_LABEL, "dimensions": [], "runtime": []}
 #         pk_table = self.session.pk_table
@@ -7796,7 +7935,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: e9162918f0020a69ea8b94bb61a1d761863d05e752306e28aa0bdbfe914b3719 SIZE: 5122 ===
+# === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: 310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c SIZE: 6380 ===
 # """Turning a logical batch into a selection over the local PK table."""
 #
 # from __future__ import annotations
@@ -7916,6 +8055,38 @@ if __name__ == "__main__":
 #             PROJECT_DB, "Patients", batch([value_dim("Sex", "Female")]), KEYS
 #         )
 #         self.assertIn("Sex=Female", selection.description)
+#
+#
+# class SampleDownTests(unittest.TestCase):
+#     """D59: a control batch keeps its first rows in hash order of the key."""
+#
+#     def test_deletes_the_batchs_rows_beyond_those_kept(self):
+#         from ..batches import sample_down
+#
+#         selection = sample_down(PROJECT_DB, "White", batch([value_dim("Sex", "Female")]), KEYS, 12)
+#         self.assertEqual(
+#             selection.sql,
+#             "WITH [_ranked] AS (\n"
+#             "    SELECT ROW_NUMBER() OVER (ORDER BY HASHBYTES('SHA2_256', "
+#             "CAST([PatientDurableKey] AS NVARCHAR(4000)))) AS [_sample_rn]\n"
+#             "    FROM PROJECTD93A5E7.dbo.White WHERE [Sex] = ?\n"
+#             ")\n"
+#             "DELETE FROM [_ranked] WHERE [_sample_rn] > ?;",
+#         )
+#         self.assertEqual(selection.params, ["Female", 12])
+#
+#     def test_no_batch_samples_the_whole_table(self):
+#         from ..batches import sample_down
+#
+#         selection = sample_down(PROJECT_DB, "White", None, KEYS, 5)
+#         self.assertIn("FROM PROJECTD93A5E7.dbo.White\n)", selection.sql)
+#         self.assertEqual(selection.params, [5])
+#
+#     def test_sampling_needs_a_key(self):
+#         from ..batches import sample_down
+#
+#         with self.assertRaises(BatchError):
+#             sample_down(PROJECT_DB, "White", None, [], 5)
 #
 #
 # class CountTests(unittest.TestCase):
@@ -9899,7 +10070,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 439efb87e686c76efdb714c73edca4de0da01bc04dbce39b63c469a2869da7d3 SIZE: 16006 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: a95b11698908d7df4848ddb92842f2d97dc536773d7ae4b8f556bc0dd01ad8f4 SIZE: 16425 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -10004,6 +10175,13 @@ if __name__ == "__main__":
 #         doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=10, random_pk_sample=True)
 #         with self.assertRaises(RenderError):
 #             server_sql.render_cohort(cohort, doc, [cohort])
+#
+#     def test_a_sampled_controls_limit_is_row_mult_times(self):
+#         # D59: it keeps row_mult times its case, so it needs that many to draw from.
+#         cohort = pk_cohort(split_after_build=[{"role": "control", "row_mult": 4}])
+#         doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=3000)
+#         sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+#         self.assertIn("SELECT TOP (12000)", sql)
 #
 #     def test_no_top_without_smallset(self):
 #         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
@@ -10237,7 +10415,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 1a696580e99166d13f616b190f7b948c457cd96c48a8ff8ed36d0637cd3dde45 SIZE: 32994 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: bf8ac07368c55852d7cde638a9ff7613c7d5cdec1fe92072708a81907a62540c SIZE: 36740 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -10283,6 +10461,7 @@ if __name__ == "__main__":
 #
 #     def execute(self, sql, params=None):
 #         self.owner.executed.append(sql)
+#         self.owner.executed_params.append((sql, list(params or [])))
 #         self.owner.apply(sql)
 #         self._sets = list(self.owner.results_for(sql))
 #         self._advance()
@@ -10359,6 +10538,7 @@ if __name__ == "__main__":
 #         # pattern -> [matches left before failing, message]
 #         self.fail_nth = {k: list(v) for k, v in (fail_nth or {}).items()}
 #         self.executed: list[str] = []
+#         self.executed_params: list[tuple[str, list]] = []
 #         self.inserted: list = []
 #         self.commits = 0
 #         self.rollbacks = 0
@@ -10937,6 +11117,78 @@ if __name__ == "__main__":
 #         del self.tables[self.COPY]
 #         report = self.execute(retry_failed=True)
 #         self.assertTrue(any("--repull" in message for _, message in report.failed), report.failed)
+#
+#
+# class ControlSampleTests(SessionTestCase):
+#     """D59: a control's PK keeps row_mult times its case, batch by batch."""
+#
+#     CASE = "PROJECTD33A929.dbo.CasePatients"
+#
+#     def make_control(self, matched_to="CasePatients"):
+#         path = self.root / "sessions" / "Patients" / "pk.yaml"
+#         doc = load_yaml(path)
+#         doc["cohorts"][0]["key_column"] = "PatientDurableKey"
+#         doc["cohorts"][0]["split_after_build"] = [{
+#             "multiplier": "Race", "strat": "white", "applies_to": "PKTable",
+#             "role": "control", "row_mult": 4, "matched_to": matched_to,
+#         }]
+#         dump_yaml(doc, path)
+#
+#     def execute(self, tables, **projects):
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         with self.runner(projects={"tables": tables, "pk_rows": 3, **projects}) as runner:
+#             return runner.execute()
+#
+#     def deletes(self):
+#         return [(sql, params) for sql, params in self.projects.executed_params
+#                 if sql.startswith("WITH [_ranked]")]
+#
+#     def test_each_batch_keeps_row_mult_times_its_case(self):
+#         self.make_batched()
+#         self.make_control()
+#         report = self.execute({self.CASE: Counter()})
+#         self.assertTrue(report.ok, report.failed)
+#         deletes = self.deletes()
+#         # The case has 3 rows in each batch, so each batch keeps 12 controls.
+#         self.assertEqual([params for _, params in deletes], [["Female", 12], ["Male", 12]])
+#         self.assertTrue(all("FROM PROJECTD33A929.dbo.Patients WHERE [Sex] = ?" in sql
+#                             for sql, _ in deletes))
+#         self.assertTrue(all("HASHBYTES('SHA2_256', CAST([PatientDurableKey]" in sql
+#                             for sql, _ in deletes))
+#         counted = [sql for sql in self.projects.executed if "COUNT_BIG(1) FROM " + self.CASE in sql]
+#         self.assertEqual(len(counted), 2)
+#         pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+#         self.assertEqual(pk.outputs["control_sample"]["per_batch"],
+#                          {"Female": {"cases": 3, "controls": 3}, "Male": {"cases": 3, "controls": 3}})
+#         self.assertTrue(any("so all are kept" in w for w in report.warnings), report.warnings)
+#
+#     def test_the_sample_is_taken_before_any_run_reads_the_copy(self):
+#         self.make_batched()
+#         self.make_control()
+#         self.execute({self.CASE: Counter()})
+#         sent = self.projects.executed
+#         first_delete = next(i for i, sql in enumerate(sent) if sql.startswith("WITH [_ranked]"))
+#         first_batch_read = next(i for i, sql in enumerate(sent)
+#                                 if sql.startswith("SELECT * FROM PROJECTD33A929.dbo.Patients"))
+#         self.assertLess(first_delete, first_batch_read)
+#
+#     def test_an_unbatched_control_rebuilds_its_temp_from_the_sample(self):
+#         # Its Cosmos temp still holds every row the PK query built.
+#         self.make_control()
+#         report = self.execute({self.CASE: Counter()})
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual([params for _, params in self.deletes()], [[12]])
+#         self.assertIn("SELECT * FROM PROJECTD33A929.dbo.Patients;", self.projects.executed)
+#         self.assertTrue(any("##manvalbas_Patients" in sql for sql, _ in self.cosmos.inserted))
+#
+#     def test_a_missing_case_stops_the_pk_saying_why(self):
+#         self.make_control()
+#         report = self.execute({})
+#         self.assertFalse(report.ok)
+#         message = dict(report.failed)["Patients/pk"]
+#         self.assertIn("CasePatients", message)
+#         self.assertIn("run it first", message)
+#         self.assertEqual(self.deletes(), [])
 #
 #
 # class UploadedPkTests(SessionTestCase):
@@ -11614,7 +11866,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: c7d94aa11ecb6d886b36f78e3bc0ce85d9a7c75f5d3d3e936af6ae589b9c7a36 SIZE: 192811 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: f116bdb81a674da2ea7c5db1abb0f9e79988060c816f8dfef14425cb728aa0eb SIZE: 201180 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -12964,11 +13216,50 @@ if __name__ == "__main__":
 #             ]
 #             split_filters = [item for item in split_filters if item]
 #             if split_filters:
+#                 for item in split_filters:
+#                     case = case_dest(combo, item, base_dest)
+#                     if case:
+#                         item["matched_to"] = case
 #                 new["split_after_build"] = split_filters
 #                 # D59: the level is what makes this PK its own population.
 #                 add_where(new, [f.get("condition") or f.get("where") for f in split_filters])
 #             expanded.append(new)
 #     return expanded
+#
+#
+# def is_sampled_control(level: Any) -> bool:
+#     return isinstance(level, dict) and level.get("role") == "control" and level.get("row_mult") is not None
+#
+#
+# def case_levels(mult: dict[str, Any]) -> list[dict[str, Any]]:
+#     """A split_after_build multiplier's levels that are not controls."""
+#     return [
+#         level for level in mult.get("levels", []) or []
+#         if isinstance(level, dict) and level.get("role") != "control"
+#     ]
+#
+#
+# def case_dest(combo: tuple, item: dict[str, Any], base_dest: str) -> str | None:
+#     """The PK a sampled control is drawn against (D59).
+#
+#     The same combination of levels with the control's level swapped for its
+#     multiplier's one case level: `whitePatients` is matched to `blackPatients`.
+#     None unless the level is a sampled control with exactly one case, which
+#     validation insists on.
+#     """
+#     if not is_sampled_control(item):
+#         return None
+#     for mult, level in combo:
+#         if mult.get("name") != item.get("multiplier") or level.get("strat") != item.get("strat"):
+#             continue
+#         cases = case_levels(mult)
+#         if len(cases) != 1:
+#             return None
+#         prefix = "".join(
+#             str((cases[0] if m is mult else lv).get("strat", "")) for m, lv in combo
+#         )
+#         return f"{prefix}{base_dest}"
+#     return None
 #
 #
 # def add_where(cohort: dict[str, Any], conditions: list[Any]) -> None:
@@ -13017,6 +13308,85 @@ if __name__ == "__main__":
 #     return item
 #
 #
+# def check_level_roles(
+#     mult: dict[str, Any],
+#     where: str,
+#     pk_candidates: list[Any],
+#     cohorts: list[dict[str, Any]],
+#     result: CompileResult,
+# ) -> None:
+#     """`role` and `row_mult` on a multiplier's levels (D59).
+#
+#     `role: control` with `row_mult: n` samples that level's PK at n times its
+#     case, per batch; its case is the multiplier's one level that is not a
+#     control. Anything else is refused rather than carried along unapplied.
+#     """
+#     levels = [lv for lv in mult.get("levels", []) or [] if isinstance(lv, dict)]
+#     split = mult.get("stage") == "split_after_build"
+#     for idx, level in enumerate(mult.get("levels", []) or []):
+#         if not isinstance(level, dict):
+#             continue
+#         at = f"{where}.levels[{idx}] ({level.get('strat')})"
+#         role, row_mult = level.get("role"), level.get("row_mult")
+#         if (role is not None or row_mult is not None) and not split:
+#             result.error(
+#                 "role_outside_split",
+#                 "`role` and `row_mult` apply to `split_after_build` levels only.",
+#                 at,
+#                 fix="Remove them, or make this multiplier `stage: split_after_build`.",
+#             )
+#             continue
+#         if role is not None and role != "control":
+#             result.error(
+#                 "bad_multiplier_role",
+#                 f"Unknown role `{role}`.",
+#                 f"{at}.role",
+#                 fix="Use `role: control`, or remove `role`.",
+#             )
+#         if row_mult is None:
+#             continue
+#         if role != "control":
+#             result.error(
+#                 "row_mult_without_control",
+#                 "`row_mult` sizes a control against its case, but this level is not a control.",
+#                 f"{at}.row_mult",
+#                 fix="Add `role: control` to this level, or remove `row_mult`.",
+#             )
+#             continue
+#         if isinstance(row_mult, bool) or not isinstance(row_mult, (int, float)) or row_mult <= 0:
+#             result.error(
+#                 "bad_row_mult",
+#                 f"`row_mult: {row_mult}` is not a positive number.",
+#                 f"{at}.row_mult",
+#                 fix="Give how many controls per case, e.g. `row_mult: 4`.",
+#             )
+#         cases = [lv.get("strat") for lv in levels if lv.get("role") != "control"]
+#         if len(cases) != 1:
+#             result.error(
+#                 "control_without_one_case",
+#                 f"A control is sampled against one case level; `{mult.get('name')}` has "
+#                 f"{len(cases)} ({', '.join(map(str, cases)) or 'none'}).",
+#                 at,
+#                 fix="Leave exactly one level without `role: control`, or run each case "
+#                 "against its controls as a separate pull.",
+#             )
+#         # One report per PK in the file, not per copy the multipliers made.
+#         unkeyed: dict[str, str] = {}
+#         for c in cohorts:
+#             if c.get("dest_table") in pk_candidates and not (
+#                 c.get("dedup_keys") or c.get("dedup_key") or c.get("key_column") or c.get("key_columns")
+#             ):
+#                 unkeyed.setdefault(str(c.get("_source") or c.get("name")), cohort_label(c))
+#         for label in unkeyed.values():
+#             result.error(
+#                 "control_sample_without_key",
+#                 "Controls are sampled by a hash of the PK's key, but the PK declares none.",
+#                 label,
+#                 fix="Add `dedup_keys: [[<key column>]]` or `key_column: <column>` to the PK "
+#                 "cohort, e.g. `key_column: PatientDurableKey`.",
+#             )
+#
+#
 # def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
 #     pk_candidates = [c.get("dest_table") for c in cohorts if str(c.get("type", "")).lower() == "pk"]
 #     uploaded_pk = find_uploaded_pk_table(template, CompileResult())
@@ -13052,6 +13422,7 @@ if __name__ == "__main__":
 #                 fix="Set `applies_to: PKTable`.",
 #             )
 #             continue
+#         check_level_roles(mult, where, pk_candidates, cohorts, result)
 #         if stage == "split_after_build":
 #             for level_idx, level in enumerate(mult.get("levels", []) or []):
 #                 if isinstance(level, dict) and not (
@@ -13693,6 +14064,9 @@ if __name__ == "__main__":
 #                 new[key] = rename(value)
 #         if new.get("session_pk") in generated:
 #             new["session_pk"] = f"{new['session_pk']}{suffix}"
+#         for item in new.get("split_after_build") or []:
+#             if isinstance(item, dict) and item.get("matched_to") in generated:
+#                 item["matched_to"] = f"{item['matched_to']}{suffix}"
 #     return new
 #
 #
@@ -14042,6 +14416,12 @@ if __name__ == "__main__":
 #         else:
 #             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
 #             pk_cohorts = [{"name": session_id, "dest_table": None}]
+#
+#     # A sampled control is drawn against its case's PK in Projects (D59), so
+#     # every case session comes first.
+#     pk_cohorts = sorted(pk_cohorts, key=lambda c: any(
+#         is_sampled_control(item) for item in c.get("split_after_build") or []
+#     ))
 #
 #     sessions: list[SplitSession] = []
 #     for pk_cohort in pk_cohorts:
@@ -14836,6 +15216,56 @@ if __name__ == "__main__":
 #         self.assertEqual(black[:-1], white[:-1])
 #         # Only the PK is filtered; each session's facts follow their own PK.
 #         self.assertNotIn("FirstRace", json.dumps(cohorts["blackOtherDx"]["filter"]))
+#
+#     RACE = """
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+# {levels}
+# """
+#     WHITE_CONTROL = "      - {strat: white, column: FirstRace, values: [White%], role: control, row_mult: 4}\n"
+#     BLACK = "      - {strat: black, column: FirstRace, values: [Black%]}\n"
+#
+#     def race(self, levels: str, cosmos_db: str = "COSMOS", key: bool = True) -> str:
+#         text = tiny_template(self.RACE.format(levels=levels.rstrip("\n")))
+#         if key:
+#             text = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
+#         return text.replace("cosmos_db: COSMOS", f"cosmos_db: {cosmos_db}")
+#
+#     def test_a_control_is_matched_to_its_case_in_each_database(self):
+#         res = self.compile_template(self.race(self.BLACK + self.WHITE_CONTROL, "Dual"))
+#         self.assertCompiles(res)
+#         cohorts = self.cohorts_by_name(res)
+#         self.assertEqual(cohorts["whitePatients"]["split_after_build"][0]["matched_to"], "blackPatients")
+#         self.assertEqual(cohorts["whitePatients_sp"]["split_after_build"][0]["matched_to"], "blackPatients_sp")
+#         self.assertNotIn("matched_to", cohorts["blackPatients"]["split_after_build"][0])
+#
+#     def test_cases_come_before_their_controls_in_the_manifest(self):
+#         # The control is sampled against its case's PK in Projects, so the
+#         # case must have run; listed first, the control used to run first.
+#         res = self.plan_split(self.race(self.WHITE_CONTROL + self.BLACK))
+#         self.assertCompiles(res)
+#         order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
+#         self.assertEqual(order, ["blackPatients", "whitePatients"])
+#
+#     def test_roles_and_row_mult_are_checked(self):
+#         cases = {
+#             "bad_multiplier_role": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], role: case}\n",
+#             "row_mult_without_control": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], row_mult: 4}\n",
+#             "bad_row_mult": self.BLACK + "      - {strat: white, column: FirstRace, values: [W], role: control, row_mult: lots}\n",
+#             "control_without_one_case": self.BLACK
+#             + "      - {strat: asian, column: FirstRace, values: [A]}\n" + self.WHITE_CONTROL,
+#         }
+#         for code, levels in cases.items():
+#             with self.subTest(code=code):
+#                 self.assertHasError(self.compile_template(self.race(levels)), code)
+#
+#     def test_a_sampled_control_needs_the_pks_key(self):
+#         res = self.compile_template(self.race(self.BLACK + self.WHITE_CONTROL, key=False))
+#         self.assertHasError(res, "control_sample_without_key")
+#         self.assertEqual(len([m for m in res.errors if m.code == "control_sample_without_key"]), 1)
 #
 #     def test_a_level_without_a_condition_is_an_error(self):
 #         res = self.compile_template(extra="""

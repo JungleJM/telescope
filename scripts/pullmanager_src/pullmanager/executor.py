@@ -161,6 +161,16 @@ def session_cohorts(manifest: Manifest, session: Session) -> list[dict[str, Any]
     return list(seen.values())
 
 
+def control_samples(cohort: Any) -> list[dict[str, Any]]:
+    """The PK's `split_after_build` levels that sample it as a control (D59)."""
+    if not isinstance(cohort, dict):
+        return []
+    return [
+        item for item in cohort.get("split_after_build") or []
+        if isinstance(item, dict) and item.get("role") == "control" and item.get("row_mult")
+    ]
+
+
 def plan_unit(
     manifest: Manifest,
     session: Session,
@@ -215,6 +225,13 @@ def plan_unit(
         return unit
 
     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
+    if kind == "pk":
+        for cohort in doc.get("cohorts") or []:
+            for item in control_samples(cohort):
+                notes.append(
+                    f"{cohort.get('dest_table')} is then sampled to {item['row_mult']}x "
+                    f"{item.get('matched_to')} per batch, by a hash of its key (D59)"
+                )
     unit.server_blocks = server_blocks
     unit.notes.extend(notes)
     unit.local_blocks = local_sql.render_phase(doc, unit.unit_id, linked_server)
