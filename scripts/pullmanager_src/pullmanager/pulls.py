@@ -13,8 +13,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .lock import LockInfo, age_words, clock_time, live_lock
 from .manifest import Manifest, ManifestError
-from .models import DONE, FAILED, PENDING, SKIPPED
+from .models import DONE, FAILED, PENDING, RUNNING, SKIPPED
 from .yaml_io import load_yaml
 
 RUNS_DIR = "runs"
@@ -137,29 +138,50 @@ class Pull:
     name: str
     manifest: Path
     home: Path
-    state: str
+    progress: str
+    interrupted: bool = False  # the manifest says running, but no Execute is
+    lock: LockInfo | None = None  # the live lock of the Execute pulling it
+
+    @property
+    def state(self) -> str:
+        if self.lock:
+            return (
+                f"executing since {clock_time(self.lock.started)}, heartbeat "
+                f"{age_words(self.lock.age())} ago ({self.progress})"
+            )
+        if self.interrupted:
+            return f"stopped mid-run ({self.progress})"
+        return self.progress
 
 
-def manifest_state(path: Path) -> str:
-    """What the manifest says of its sessions, in a few words."""
+def manifest_state(path: Path) -> tuple[str, bool]:
+    """What the manifest says of its sessions, in a few words, and whether it
+    says one is running."""
     try:
         manifest = Manifest.load(path)
     except (ManifestError, OSError, ValueError) as exc:
-        return f"unreadable ({exc})"
+        return f"unreadable ({exc})", False
     for session in manifest.sessions:
         session.recompute_status()  # in memory only, from its phases and runs
     statuses = [session.status for session in manifest.sessions]
+    running = RUNNING in statuses
     total = len(statuses)
     if not total:
-        return "no sessions"
+        return "no sessions", False
     settled = sum(1 for status in statuses if status in (DONE, SKIPPED))
     failed = sum(1 for status in statuses if status == FAILED)
     if all(status == PENDING for status in statuses):
-        return "not started"
+        return "not started", running
     if settled == total:
-        return "finished"
+        return "finished", running
     words = f"{settled} of {total} sessions done"
-    return f"{words}, {failed} failed" if failed else words
+    return (f"{words}, {failed} failed" if failed else words), running
+
+
+def pull_at(name: str, manifest: Path, home: Path) -> Pull:
+    progress, running = manifest_state(manifest)
+    held = live_lock(manifest)
+    return Pull(name, manifest, home, progress, interrupted=running and not held, lock=held)
 
 
 def find_pulls(cwd: Path | None = None) -> list[Pull]:
@@ -175,7 +197,7 @@ def find_pulls(cwd: Path | None = None) -> list[Pull]:
             if not manifest.is_file() or manifest.resolve() in seen:
                 continue
             seen.add(manifest.resolve())
-            pulls.append(Pull(folder.name, manifest, home, manifest_state(manifest)))
+            pulls.append(pull_at(folder.name, manifest, home))
     return pulls
 
 
@@ -207,8 +229,9 @@ def shown(path: Path, cwd: Path | None = None) -> str:
         return str(path)
 
 
-def listing(cwd: Path | None = None) -> list[str]:
-    """What `--execute` alone prints: every pull, its state and its command."""
+def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:") -> list[str]:
+    """Every pull, its state and its command: what `--execute` alone prints,
+    and `--running` with its own heading."""
     here = Path(cwd or Path.cwd()).resolve()
     pulls = find_pulls(here)
     if not pulls:
@@ -218,7 +241,7 @@ def listing(cwd: Path | None = None) -> list[str]:
         ]
     width = max(len(p.name) for p in pulls)
     state_width = max(len(p.state) for p in pulls)
-    lines = ["Which pull? Name one:", ""]
+    lines = [heading, ""]
     for pull in pulls:
         command, folder = execute_command(pull.manifest, here)
         where = "" if folder.resolve() == here else f"   (in {folder})"

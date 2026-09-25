@@ -9,15 +9,24 @@ Run with:  python pullmanager.py --gui
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import launcher
 from .launcher import LauncherError, Options, Paths
+from .lock import LockInfo, live_lock
 
 POLL_MS = 100
 STATUS_REFRESH_MS = 3000
+# How often the loaded pull's lock is read (D67), whoever started the pull.
+LOCK_CHECK_MS = 3000
+# After Execute is pressed its buttons stay grey this long waiting for its
+# lock, so they cannot be pressed twice before it appears.
+EXECUTE_GRACE_SECONDS = 60
+# Buttons that would overwrite a pull that is executing (D67).
+PULL_WRITERS = ("Export split", "Execute")
 
 STATUS_COLOURS = {
     "done": "#1a7f37",
@@ -47,7 +56,10 @@ class LauncherApp:
         self.retry_failed = tk.BooleanVar(value=False)
         self.repull = tk.BooleanVar(value=False)
         self.action_buttons: list[ttk.Button] = []
+        self.buttons: dict[str, ttk.Button] = {}
         self._next_status_refresh = 0
+        self.pull_lock: LockInfo | None = None  # the loaded pull's live lock
+        self._execute_pressed: float | None = None
 
         root.title(f"Pullmanager - {workdir}")
         root.geometry("1100x760")
@@ -59,6 +71,7 @@ class LauncherApp:
         self._build_status_bar()
         self._load_settings()
         self.refresh_status()
+        self.root.after(LOCK_CHECK_MS, self.watch_pull)
 
     # ------------------------------------------------------------- layout
 
@@ -95,6 +108,7 @@ class LauncherApp:
             button = ttk.Button(actions, text=text, command=handler)
             button.pack(side="left", padx=(0, 6))
             self.action_buttons.append(button)
+            self.buttons[text] = button
         self.stop_button = ttk.Button(actions, text="Stop", command=self.on_stop, state="disabled")
         self.stop_button.pack(side="right")
 
@@ -190,6 +204,9 @@ class LauncherApp:
             "This runs against Cosmos and Projects and updates the manifest.\n\nContinue?",
         ):
             return
+        # Grey its buttons at once, before its lock appears (D67).
+        self._execute_pressed = time.monotonic()
+        self.update_buttons()
         self.run(
             "Execute",
             lambda: launcher.command_execute(self.tools, self.paths(), self.options()),
@@ -234,14 +251,45 @@ class LauncherApp:
             return
         code = self.runner.returncode
         self.write(f"--- finished, exit code {code} ---\n")
+        self._execute_pressed = None
         self.set_busy(False, "Finished." if code == 0 else f"Finished with exit code {code}.")
         self.refresh_status()
 
     def set_busy(self, busy: bool, message: str) -> None:
-        for button in self.action_buttons:
-            button.configure(state="disabled" if busy else "normal")
+        self.update_buttons()
         self.stop_button.configure(state="normal" if busy else "disabled")
         self.bar.configure(text=message)
+
+    def update_buttons(self) -> None:
+        """Everything waits for the window's own command. While the loaded
+        pull is executing, only what would overwrite it is greyed (D67):
+        Validate and Preview SQL write nothing a pull reads."""
+        busy = self.runner.running
+        executing = self.pull_lock is not None or self._execute_pressed is not None
+        for text, button in self.buttons.items():
+            off = busy or (executing and text in PULL_WRITERS)
+            button.configure(state="disabled" if off else "normal")
+
+    def watch_pull(self) -> None:
+        """Read the loaded pull's lock, however it was started, and follow it."""
+        was_live = self.pull_lock is not None
+        self.check_pull()
+        if self.pull_lock is not None or was_live:
+            self.refresh_status()
+        self.root.after(LOCK_CHECK_MS, self.watch_pull)
+
+    def check_pull(self) -> None:
+        try:
+            manifest = self.workdir / self.paths().manifest()
+        except LauncherError:
+            manifest = None
+        self.pull_lock = live_lock(manifest) if manifest else None
+        pressed = self._execute_pressed
+        if self.pull_lock is not None or (
+            pressed is not None and time.monotonic() - pressed > EXECUTE_GRACE_SECONDS
+        ):
+            self._execute_pressed = None
+        self.update_buttons()
 
     def write(self, text: str) -> None:
         self.output.configure(state="normal")
@@ -269,6 +317,8 @@ class LauncherApp:
                     parents.get(row.session, ""), "end", text="",
                     values=values, tags=(row.status,),
                 )
+        if not message and self.pull_lock is not None:
+            message = f"{self.pull_lock.summary()}.  {manifest}"
         self.status_message.configure(text=message or f"{manifest}")
 
     def on_close(self) -> None:

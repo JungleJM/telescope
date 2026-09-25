@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 from dataclasses import dataclass, field
@@ -2781,6 +2782,35 @@ def stage_upload_files(
         upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{source.name}"
 
 
+# Pullmanager's lock on a manifest it is executing (D67): stale once its
+# heartbeat is this old. The same rule as pullmanager/lock.py, which this file
+# cannot import; a runtime test holds the two together.
+PULL_LOCK_FILENAME = "pullmanifest.lock"
+PULL_LOCK_STALE_SECONDS = 120
+
+
+def executing_pull(split_dir: str | Path) -> dict[str, Any] | None:
+    """The lock of an Execute pulling this split folder now, or None."""
+    path = Path(split_dir) / PULL_LOCK_FILENAME
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    try:
+        heartbeat = float(data["heartbeat"])
+    except (KeyError, TypeError, ValueError):
+        heartbeat = stat.st_mtime  # a lock caught mid-write is dated by its file
+    if time.time() - heartbeat >= PULL_LOCK_STALE_SECONDS:
+        return None
+    return {**data, "heartbeat": heartbeat}
+
+
 def write_split_artifacts(
     template_path: str | Path | None = None,
     recipes_path: str | Path | None = None,
@@ -2809,6 +2839,26 @@ def write_split_artifacts(
         if output_dir
         else default_split_dir(template_path or default_template_path())
     )
+    held = executing_pull(out_dir)
+    if held:
+        who = f"process {held['pid']}" if held.get("pid") else "a process"
+        if held.get("machine"):
+            who += f" on {held['machine']}"
+        try:
+            since = time.strftime(" since %H:%M", time.localtime(float(held["started"])))
+        except (KeyError, TypeError, ValueError):
+            since = ""
+        result.error(
+            "pull_executing",
+            f"{out_dir} holds a pull that is executing now ({who}{since}). Exporting "
+            "its split would replace the manifest it is writing to.",
+            "--export-split",
+            fix="Wait for it to finish, or stop it (Ctrl+C in its window, or Stop in the "
+            "launcher); it counts as stopped 2 minutes after its last heartbeat. To pull "
+            "a changed version beside it, copy the transfer YAML under a new name: it "
+            "gets its own run folder.",
+        )
+        return result
     finished_yaml = copy.deepcopy(result.finished_yaml)
     out_dir.mkdir(parents=True, exist_ok=True)
     stage_upload_files(
@@ -4591,6 +4641,35 @@ class RunFolderTests(MakeYamlTest):
         ):
             with self.subTest(name=name):
                 self.assertEqual(run_folder_name(Path("/Z/Project D139081") / name), expected)
+
+    def test_a_split_being_executed_is_not_replaced(self):
+        # D67: exporting again replaced the manifest a running Execute writes to.
+        template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+        split = self.tmp / "runs" / "IBD_Ancestry" / "split"
+        split.mkdir(parents=True)
+        (split / "pullmanifest.yaml").write_text("sessions: [running]\n", encoding="utf-8")
+        lock = split / PULL_LOCK_FILENAME
+        lock.write_text(json.dumps({"pid": 4242, "machine": "VM", "started": time.time() - 600,
+                                    "heartbeat": time.time() - 20}), encoding="utf-8")
+        result = write_split_artifacts(template, recipes, split)
+        self.assertHasError(result, "pull_executing")
+        self.assertIn("process 4242 on VM", result.errors[0].message)
+        self.assertEqual((split / "pullmanifest.yaml").read_text(encoding="utf-8"), "sessions: [running]\n")
+        self.assertFalse((split / "sessions").exists())
+
+    def test_a_stale_lock_does_not_stop_the_export(self):
+        # Its Execute stopped without cleaning up: 2 minutes without a heartbeat.
+        template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+        split = self.tmp / "runs" / "IBD_Ancestry" / "split"
+        split.mkdir(parents=True)
+        (split / PULL_LOCK_FILENAME).write_text(
+            json.dumps({"pid": 4242, "heartbeat": time.time() - PULL_LOCK_STALE_SECONDS - 1}),
+            encoding="utf-8",
+        )
+        self.assertCompiles(write_split_artifacts(template, recipes, split))
+        self.assertIn("sessions", load_yaml(split / "pullmanifest.yaml"))
 
     def test_two_projects_split_without_out_dir_do_not_overwrite_each_other(self):
         first = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -141,6 +142,28 @@ def _report_exclusions(left_out, failures) -> None:
 
 
 def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+    """Pull the manifest, holding its lock throughout (D67)."""
+    from .lock import LockHeld, PullLock, clock_time
+
+    pull_lock = PullLock(manifest.path)
+    try:
+        pull_lock.acquire()
+    except LockHeld as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    try:
+        if pull_lock.replaced:
+            stale = pull_lock.replaced
+            print(
+                f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
+                f"(last heartbeat {clock_time(stale.heartbeat)})."
+            )
+        return _execute(manifest, args, connect_fn)
+    finally:
+        pull_lock.release()
+
+
+def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
     from . import refresh
     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
     from .normalize import cosmos_database
@@ -252,6 +275,11 @@ def build_parser() -> argparse.ArgumentParser:
              "Takes a project's name or a manifest; with neither, lists the pulls.",
     )
     parser.add_argument(
+        "--running",
+        action="store_true",
+        help="List every pull under runs/, whether it is executing, and its command.",
+    )
+    parser.add_argument(
         "--gui",
         action="store_true",
         help="Open the desktop launcher (also what no arguments does). Uses tkinter, "
@@ -313,6 +341,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         return gui_main()
+
+    if args.running:
+        for line in listing(heading=f"Pulls under {Path('runs')}{os.sep}:"):
+            print(line)
+        return 0
 
     if args.execute and not args.dry_run:
         # D66: a project's name finds its manifest; no name lists the pulls.

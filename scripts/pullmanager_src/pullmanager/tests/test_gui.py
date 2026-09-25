@@ -192,6 +192,64 @@ class NameTests(GuiTestCase):
         self.assertIn("=== Preview SQL ===", self.written())
 
 
+class RunningPullTests(GuiTestCase):
+    """D67: while the loaded pull executes, what would overwrite it is grey."""
+
+    def setUp(self):
+        super().setUp()
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
+
+    def lock(self, manifest=None, heartbeat_age=20):
+        import json
+
+        from ..lock import lock_path
+
+        now = time.time()
+        lock_path(manifest or self.manifest).write_text(json.dumps(
+            {"pid": 4242, "machine": "VM", "started": now - 600, "heartbeat": now - heartbeat_age}
+        ), encoding="utf-8")
+
+    def states(self):
+        return {text: button.configure.call_args.kwargs["state"]
+                for text, button in self.app.buttons.items()}
+
+    def test_a_live_pull_greys_export_split_and_execute_only(self):
+        self.lock()
+        self.app.watch_pull()
+        self.assertEqual(self.states(), {
+            "Validate": "normal", "Export split": "disabled",
+            "Preview SQL": "normal", "Execute": "disabled",
+        })
+        message = self.app.status_message.configure.call_args.kwargs["text"]
+        self.assertIn("Executing since", message)
+        self.assertIn("last heartbeat", message)
+
+    def test_they_come_back_when_it_ends(self):
+        self.lock()
+        self.app.watch_pull()
+        self.lock(heartbeat_age=10_000)  # stopped without cleaning up
+        self.app.watch_pull()
+        self.assertEqual(set(self.states().values()), {"normal"})
+
+    def test_another_projects_pull_greys_nothing_here(self):
+        other = self.work / "runs" / "Celiac" / "split" / "pullmanifest.yaml"
+        dump_yaml(SAMPLE_MANIFEST, other)
+        self.lock(other)
+        self.app.watch_pull()
+        self.assertEqual(set(self.states().values()), {"normal"})
+
+    def test_execute_greys_them_before_its_lock_appears(self):
+        self.messagebox.askokcancel.return_value = True
+        with mock.patch.object(self.app, "run"):
+            self.app.on_execute()
+        self.app.check_pull()  # no lock yet
+        self.assertEqual(self.states()["Execute"], "disabled")
+        self.assertEqual(self.states()["Export split"], "disabled")
+        self.assertEqual(self.states()["Validate"], "normal")
+
+
 class DefaultTests(GuiTestCase):
     """D63: `python pullmanager.py` with nothing after it opens the launcher."""
 

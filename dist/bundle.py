@@ -459,8 +459,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "42ef359e93c4208997a8462eb0f96e4dd7594f1cba0be228c8369fde119c120b",
-  "file_count": 39,
+  "content_id": "23d2f534f58e266d79ef6c39c150b2639b2612238fbf7abfc7a0f3e0d1b999bc",
+  "file_count": 41,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -495,8 +495,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "e742b8e6f446fa7ec9b05d29a0dd8186aa9ea0e84fbb758fe89c6b4b5f267476",
-      "size": 13218
+      "sha256": "f3667599f950be2fa3fb78d7d537391df3159a674756ad3670a6390a9e8ef8f8",
+      "size": 14270
     },
     {
       "path": "pullmanager/db.py",
@@ -513,8 +513,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "a028395cd8eb62a9cfb42105423f20cb0aa653c4248863ab5a4f53650daa4f11",
-      "size": 11596
+      "sha256": "efd630beaa96f8902feb4b7adc5e22a1339c527163afef9579fa008f00c19d1c",
+      "size": 13873
     },
     {
       "path": "pullmanager/launcher.py",
@@ -527,6 +527,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "edb9b23bd936f0c2f965b23f1572f7179e84a3a4b2546a42e6b25e078e03d2ee",
       "size": 10552
+    },
+    {
+      "path": "pullmanager/lock.py",
+      "policy": "replace",
+      "sha256": "0a38c5f43d328b2fcfa8bdc7e14a892f73b369bea1f6b79c814a84bdbd528f4f",
+      "size": 7454
     },
     {
       "path": "pullmanager/manifest.py",
@@ -555,8 +561,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/pulls.py",
       "policy": "replace",
-      "sha256": "3a3c2495b5911cbea5503fe8f5c475232ac90b0191102a6c9ed9f59488a640f8",
-      "size": 8639
+      "sha256": "6a646275b4a4072dc53f032adc0711a8151e1b5194b31bf6f6e9bb3f18e0994b",
+      "size": 9637
     },
     {
       "path": "pullmanager/refresh.py",
@@ -615,14 +621,20 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "91b1d1f4abd2a0a28af3b291d49514a53dff0ad4ef501c37b3aa963146b0705c",
-      "size": 9307
+      "sha256": "ffde5c3b4ebdf7bdde9f9b0787b29ad0af3f8822fcced6a8da7564497153159b",
+      "size": 11647
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
       "sha256": "b3db54e5931bc2600768abdbfcf06869eb1ad75ee65923d10671c27d695e1143",
       "size": 14598
+    },
+    {
+      "path": "pullmanager/tests/test_lock.py",
+      "policy": "replace",
+      "sha256": "a4930ab0b021080a945987209f34db16399411bffa95ab970c2024634f2a0d29",
+      "size": 7742
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -693,8 +705,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "bd04c108a73dd84972c7dec76b0aa5cd38183a3417b6431b65fb2fd5cefd50f8",
-      "size": 207153
+      "sha256": "9408fab9505ae72489cec1809f975e7eff3a21060a1a173864b9e61d07086015",
+      "size": 210963
     }
   ],
   "prelude_sha256": "d4fd95cd569e014d924c6817fc03bc99aa6a4f333c25241923cd8e35fe7c8dd2"
@@ -3760,12 +3772,13 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: e742b8e6f446fa7ec9b05d29a0dd8186aa9ea0e84fbb758fe89c6b4b5f267476 SIZE: 13218 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: f3667599f950be2fa3fb78d7d537391df3159a674756ad3670a6390a9e8ef8f8 SIZE: 14270 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
 #
 # import argparse
+# import os
 # import sys
 # from pathlib import Path
 #
@@ -3904,6 +3917,28 @@ if __name__ == "__main__":
 #
 #
 # def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+#     """Pull the manifest, holding its lock throughout (D67)."""
+#     from .lock import LockHeld, PullLock, clock_time
+#
+#     pull_lock = PullLock(manifest.path)
+#     try:
+#         pull_lock.acquire()
+#     except LockHeld as exc:
+#         print(f"ERROR {exc}", file=sys.stderr)
+#         return 1
+#     try:
+#         if pull_lock.replaced:
+#             stale = pull_lock.replaced
+#             print(
+#                 f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
+#                 f"(last heartbeat {clock_time(stale.heartbeat)})."
+#             )
+#         return _execute(manifest, args, connect_fn)
+#     finally:
+#         pull_lock.release()
+#
+#
+# def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
 #     from . import refresh
 #     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
 #     from .normalize import cosmos_database
@@ -4015,6 +4050,11 @@ if __name__ == "__main__":
 #              "Takes a project's name or a manifest; with neither, lists the pulls.",
 #     )
 #     parser.add_argument(
+#         "--running",
+#         action="store_true",
+#         help="List every pull under runs/, whether it is executing, and its command.",
+#     )
+#     parser.add_argument(
 #         "--gui",
 #         action="store_true",
 #         help="Open the desktop launcher (also what no arguments does). Uses tkinter, "
@@ -4076,6 +4116,11 @@ if __name__ == "__main__":
 #             )
 #             return 1
 #         return gui_main()
+#
+#     if args.running:
+#         for line in listing(heading=f"Pulls under {Path('runs')}{os.sep}:"):
+#             print(line)
+#         return 0
 #
 #     if args.execute and not args.dry_run:
 #         # D66: a project's name finds its manifest; no name lists the pulls.
@@ -4843,7 +4888,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: a028395cd8eb62a9cfb42105423f20cb0aa653c4248863ab5a4f53650daa4f11 SIZE: 11596 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: efd630beaa96f8902feb4b7adc5e22a1339c527163afef9579fa008f00c19d1c SIZE: 13873 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -4855,15 +4900,24 @@ if __name__ == "__main__":
 #
 # from __future__ import annotations
 #
+# import time
 # import tkinter as tk
 # from pathlib import Path
 # from tkinter import filedialog, messagebox, scrolledtext, ttk
 #
 # from . import launcher
 # from .launcher import LauncherError, Options, Paths
+# from .lock import LockInfo, live_lock
 #
 # POLL_MS = 100
 # STATUS_REFRESH_MS = 3000
+# # How often the loaded pull's lock is read (D67), whoever started the pull.
+# LOCK_CHECK_MS = 3000
+# # After Execute is pressed its buttons stay grey this long waiting for its
+# # lock, so they cannot be pressed twice before it appears.
+# EXECUTE_GRACE_SECONDS = 60
+# # Buttons that would overwrite a pull that is executing (D67).
+# PULL_WRITERS = ("Export split", "Execute")
 #
 # STATUS_COLOURS = {
 #     "done": "#1a7f37",
@@ -4893,7 +4947,10 @@ if __name__ == "__main__":
 #         self.retry_failed = tk.BooleanVar(value=False)
 #         self.repull = tk.BooleanVar(value=False)
 #         self.action_buttons: list[ttk.Button] = []
+#         self.buttons: dict[str, ttk.Button] = {}
 #         self._next_status_refresh = 0
+#         self.pull_lock: LockInfo | None = None  # the loaded pull's live lock
+#         self._execute_pressed: float | None = None
 #
 #         root.title(f"Pullmanager - {workdir}")
 #         root.geometry("1100x760")
@@ -4905,6 +4962,7 @@ if __name__ == "__main__":
 #         self._build_status_bar()
 #         self._load_settings()
 #         self.refresh_status()
+#         self.root.after(LOCK_CHECK_MS, self.watch_pull)
 #
 #     # ------------------------------------------------------------- layout
 #
@@ -4941,6 +4999,7 @@ if __name__ == "__main__":
 #             button = ttk.Button(actions, text=text, command=handler)
 #             button.pack(side="left", padx=(0, 6))
 #             self.action_buttons.append(button)
+#             self.buttons[text] = button
 #         self.stop_button = ttk.Button(actions, text="Stop", command=self.on_stop, state="disabled")
 #         self.stop_button.pack(side="right")
 #
@@ -5036,6 +5095,9 @@ if __name__ == "__main__":
 #             "This runs against Cosmos and Projects and updates the manifest.\n\nContinue?",
 #         ):
 #             return
+#         # Grey its buttons at once, before its lock appears (D67).
+#         self._execute_pressed = time.monotonic()
+#         self.update_buttons()
 #         self.run(
 #             "Execute",
 #             lambda: launcher.command_execute(self.tools, self.paths(), self.options()),
@@ -5080,14 +5142,45 @@ if __name__ == "__main__":
 #             return
 #         code = self.runner.returncode
 #         self.write(f"--- finished, exit code {code} ---\n")
+#         self._execute_pressed = None
 #         self.set_busy(False, "Finished." if code == 0 else f"Finished with exit code {code}.")
 #         self.refresh_status()
 #
 #     def set_busy(self, busy: bool, message: str) -> None:
-#         for button in self.action_buttons:
-#             button.configure(state="disabled" if busy else "normal")
+#         self.update_buttons()
 #         self.stop_button.configure(state="normal" if busy else "disabled")
 #         self.bar.configure(text=message)
+#
+#     def update_buttons(self) -> None:
+#         """Everything waits for the window's own command. While the loaded
+#         pull is executing, only what would overwrite it is greyed (D67):
+#         Validate and Preview SQL write nothing a pull reads."""
+#         busy = self.runner.running
+#         executing = self.pull_lock is not None or self._execute_pressed is not None
+#         for text, button in self.buttons.items():
+#             off = busy or (executing and text in PULL_WRITERS)
+#             button.configure(state="disabled" if off else "normal")
+#
+#     def watch_pull(self) -> None:
+#         """Read the loaded pull's lock, however it was started, and follow it."""
+#         was_live = self.pull_lock is not None
+#         self.check_pull()
+#         if self.pull_lock is not None or was_live:
+#             self.refresh_status()
+#         self.root.after(LOCK_CHECK_MS, self.watch_pull)
+#
+#     def check_pull(self) -> None:
+#         try:
+#             manifest = self.workdir / self.paths().manifest()
+#         except LauncherError:
+#             manifest = None
+#         self.pull_lock = live_lock(manifest) if manifest else None
+#         pressed = self._execute_pressed
+#         if self.pull_lock is not None or (
+#             pressed is not None and time.monotonic() - pressed > EXECUTE_GRACE_SECONDS
+#         ):
+#             self._execute_pressed = None
+#         self.update_buttons()
 #
 #     def write(self, text: str) -> None:
 #         self.output.configure(state="normal")
@@ -5115,6 +5208,8 @@ if __name__ == "__main__":
 #                     parents.get(row.session, ""), "end", text="",
 #                     values=values, tags=(row.status,),
 #                 )
+#         if not message and self.pull_lock is not None:
+#             message = f"{self.pull_lock.summary()}.  {manifest}"
 #         self.status_message.configure(text=message or f"{manifest}")
 #
 #     def on_close(self) -> None:
@@ -5751,6 +5846,232 @@ if __name__ == "__main__":
 #     return blocks
 #
 # === END FILE: pullmanager/local_sql.py ===
+# === BEGIN FILE: pullmanager/lock.py SHA256: 0a38c5f43d328b2fcfa8bdc7e14a892f73b369bea1f6b79c814a84bdbd528f4f SIZE: 7454 ===
+# """The lock a running Execute holds on its manifest (D67).
+#
+# `running` in the manifest cannot say whether a pull is running now: a pull
+# that crashed or was stopped leaves it too. So `--execute` writes
+# `pullmanifest.lock` beside the manifest, and a background thread rewrites its
+# heartbeat every 30 seconds, so a long query does not stop it. A lock whose
+# heartbeat is more than 2 minutes old is stale: its process stopped without
+# cleaning up. The process id is recorded to show, never checked: on Windows the
+# standard library cannot safely ask whether a process is alive
+# (`os.kill(pid, 0)` ends it).
+#
+# makeYaml reads the same file before `--export-split` replaces a manifest; it
+# keeps its own copy of the reading rule, since it runs without this package.
+# """
+#
+# from __future__ import annotations
+#
+# import json
+# import os
+# import socket
+# import threading
+# import time
+# import uuid
+# from dataclasses import dataclass
+# from datetime import datetime
+# from pathlib import Path
+#
+# HEARTBEAT_SECONDS = 30
+# STALE_SECONDS = 120
+#
+#
+# class LockHeld(RuntimeError):
+#     """Raised when another Execute holds the manifest's lock."""
+#
+#
+# def lock_path(manifest: str | Path) -> Path:
+#     """`pullmanifest.lock` beside `pullmanifest.yaml`."""
+#     return Path(manifest).with_suffix(".lock")
+#
+#
+# def clock_time(seconds: float) -> str:
+#     return datetime.fromtimestamp(seconds).strftime("%H:%M")
+#
+#
+# def age_words(seconds: float) -> str:
+#     seconds = max(0, int(seconds))
+#     if seconds < 90:
+#         return f"{seconds}s"
+#     return f"{seconds // 60}m {seconds % 60:02d}s"
+#
+#
+# @dataclass
+# class LockInfo:
+#     """What a lock file says. Times are seconds since the epoch."""
+#
+#     path: Path
+#     pid: int | None
+#     machine: str
+#     started: float
+#     heartbeat: float
+#     token: str = ""
+#
+#     def age(self, now: float | None = None) -> float:
+#         return (time.time() if now is None else now) - self.heartbeat
+#
+#     def live(self, now: float | None = None) -> bool:
+#         return self.age(now) < STALE_SECONDS
+#
+#     def summary(self, now: float | None = None) -> str:
+#         """`Executing since 14:03, last heartbeat 20s ago`."""
+#         return (
+#             f"Executing since {clock_time(self.started)}, "
+#             f"last heartbeat {age_words(self.age(now))} ago"
+#         )
+#
+#     def holder(self) -> str:
+#         who = f"process {self.pid}" if self.pid else "a process"
+#         return f"{who} on {self.machine}" if self.machine else who
+#
+#     def free_at(self) -> str:
+#         """When it would count as stopped, if its heartbeat stopped now."""
+#         return clock_time(self.heartbeat + STALE_SECONDS)
+#
+#
+# def read_lock(manifest: str | Path) -> LockInfo | None:
+#     """The manifest's lock, or None. Never raises.
+#
+#     A lock that cannot be parsed is dated by the file's own time, so a write
+#     caught halfway still counts as live for as long as its file is fresh.
+#     """
+#     path = lock_path(manifest)
+#     try:
+#         stat = path.stat()
+#     except OSError:
+#         return None
+#     try:
+#         data = json.loads(path.read_text(encoding="utf-8"))
+#     except (OSError, ValueError):
+#         data = {}
+#     if not isinstance(data, dict):
+#         data = {}
+#
+#     def number(key: str) -> float:
+#         try:
+#             return float(data[key])
+#         except (KeyError, TypeError, ValueError):
+#             return stat.st_mtime
+#
+#     try:
+#         pid = int(data["pid"])
+#     except (KeyError, TypeError, ValueError):
+#         pid = None
+#     return LockInfo(
+#         path=path,
+#         pid=pid,
+#         machine=str(data.get("machine") or ""),
+#         started=number("started"),
+#         heartbeat=number("heartbeat"),
+#         token=str(data.get("token") or ""),
+#     )
+#
+#
+# def live_lock(manifest: str | Path, now: float | None = None) -> LockInfo | None:
+#     held = read_lock(manifest)
+#     return held if held and held.live(now) else None
+#
+#
+# def pull_name(manifest: str | Path) -> str:
+#     """`IBD_Ancestry` for `runs/IBD_Ancestry/split/pullmanifest.yaml`."""
+#     manifest = Path(manifest)
+#     return manifest.parent.parent.name if manifest.parent.name == "split" else str(manifest)
+#
+#
+# def held_message(held: LockInfo, manifest: str | Path, now: float | None = None) -> str:
+#     return (
+#         f"{pull_name(manifest)} is already executing: {held.holder()}, since "
+#         f"{clock_time(held.started)}, last heartbeat {age_words(held.age(now))} ago. "
+#         f"If it has stopped, it counts as stopped 2 minutes after its last heartbeat, "
+#         f"at {held.free_at()}; run it again then. Its lock is {held.path}."
+#     )
+#
+#
+# class PullLock:
+#     """Held by `--execute` for as long as it runs: `with PullLock(path): ...`."""
+#
+#     def __init__(self, manifest: str | Path, *, interval: float = HEARTBEAT_SECONDS,
+#                  clock=time.time) -> None:
+#         self.manifest = Path(manifest)
+#         self.path = lock_path(manifest)
+#         self.interval = interval
+#         self.clock = clock
+#         self.token = uuid.uuid4().hex
+#         self.started = 0.0
+#         self.replaced: LockInfo | None = None  # a stale lock taken over
+#         self._stop = threading.Event()
+#         self._thread: threading.Thread | None = None
+#
+#     def __enter__(self) -> "PullLock":
+#         self.acquire()
+#         return self
+#
+#     def __exit__(self, *exc) -> None:
+#         self.release()
+#
+#     def _payload(self) -> str:
+#         return json.dumps({
+#             "pid": os.getpid(),
+#             "machine": socket.gethostname(),
+#             "started": self.started,
+#             "heartbeat": self.clock(),
+#             "token": self.token,
+#             "manifest": str(self.manifest),
+#         }, indent=2) + "\n"
+#
+#     def acquire(self) -> None:
+#         """Take the lock, or raise LockHeld naming who has it."""
+#         self.started = self.clock()
+#         for _ in range(2):
+#             try:
+#                 # Exclusive create: two Executes starting together cannot both win.
+#                 with open(self.path, "x", encoding="utf-8") as handle:
+#                     handle.write(self._payload())
+#                 break
+#             except FileExistsError:
+#                 held = read_lock(self.manifest)
+#                 if held and held.live(self.clock()):
+#                     raise LockHeld(held_message(held, self.manifest, self.clock()))
+#                 self.replaced = held
+#                 try:
+#                     self.path.unlink()
+#                 except FileNotFoundError:
+#                     pass
+#         else:
+#             raise LockHeld(f"Could not take the lock {self.path}; another Execute took it first.")
+#         self._stop.clear()
+#         self._thread = threading.Thread(target=self._beat, name="pull-heartbeat", daemon=True)
+#         self._thread.start()
+#
+#     def _beat(self) -> None:
+#         while not self._stop.wait(self.interval):
+#             self.heartbeat()
+#
+#     def heartbeat(self) -> None:
+#         """Rewrite the lock with the time now; a failed write waits for the next."""
+#         tmp = self.path.with_name(self.path.name + ".tmp")
+#         try:
+#             tmp.write_text(self._payload(), encoding="utf-8")
+#             os.replace(tmp, self.path)
+#         except OSError:
+#             pass
+#
+#     def release(self) -> None:
+#         """Stop the heartbeat and remove the lock, if it is still this one."""
+#         self._stop.set()
+#         if self._thread is not None:
+#             self._thread.join(timeout=5)
+#             self._thread = None
+#         held = read_lock(self.manifest)
+#         if held and held.token == self.token:
+#             try:
+#                 self.path.unlink()
+#             except OSError:
+#                 pass
+#
+# === END FILE: pullmanager/lock.py ===
 # === BEGIN FILE: pullmanager/manifest.py SHA256: 95157b77cdb330a2f047b82c50cd932e625967c7f847e1e004135c60f5812716 SIZE: 12466 ===
 # """Load, mutate, and write back `pullmanifest.yaml`.
 #
@@ -6531,7 +6852,7 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
-# === BEGIN FILE: pullmanager/pulls.py SHA256: 3a3c2495b5911cbea5503fe8f5c475232ac90b0191102a6c9ed9f59488a640f8 SIZE: 8639 ===
+# === BEGIN FILE: pullmanager/pulls.py SHA256: 6a646275b4a4072dc53f032adc0711a8151e1b5194b31bf6f6e9bb3f18e0994b SIZE: 9637 ===
 # """Finding a pull by its project's name, and listing the pulls there are (D66).
 #
 # A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
@@ -6547,8 +6868,9 @@ if __name__ == "__main__":
 # from dataclasses import dataclass
 # from pathlib import Path
 #
+# from .lock import LockInfo, age_words, clock_time, live_lock
 # from .manifest import Manifest, ManifestError
-# from .models import DONE, FAILED, PENDING, SKIPPED
+# from .models import DONE, FAILED, PENDING, RUNNING, SKIPPED
 # from .yaml_io import load_yaml
 #
 # RUNS_DIR = "runs"
@@ -6671,29 +6993,50 @@ if __name__ == "__main__":
 #     name: str
 #     manifest: Path
 #     home: Path
-#     state: str
+#     progress: str
+#     interrupted: bool = False  # the manifest says running, but no Execute is
+#     lock: LockInfo | None = None  # the live lock of the Execute pulling it
+#
+#     @property
+#     def state(self) -> str:
+#         if self.lock:
+#             return (
+#                 f"executing since {clock_time(self.lock.started)}, heartbeat "
+#                 f"{age_words(self.lock.age())} ago ({self.progress})"
+#             )
+#         if self.interrupted:
+#             return f"stopped mid-run ({self.progress})"
+#         return self.progress
 #
 #
-# def manifest_state(path: Path) -> str:
-#     """What the manifest says of its sessions, in a few words."""
+# def manifest_state(path: Path) -> tuple[str, bool]:
+#     """What the manifest says of its sessions, in a few words, and whether it
+#     says one is running."""
 #     try:
 #         manifest = Manifest.load(path)
 #     except (ManifestError, OSError, ValueError) as exc:
-#         return f"unreadable ({exc})"
+#         return f"unreadable ({exc})", False
 #     for session in manifest.sessions:
 #         session.recompute_status()  # in memory only, from its phases and runs
 #     statuses = [session.status for session in manifest.sessions]
+#     running = RUNNING in statuses
 #     total = len(statuses)
 #     if not total:
-#         return "no sessions"
+#         return "no sessions", False
 #     settled = sum(1 for status in statuses if status in (DONE, SKIPPED))
 #     failed = sum(1 for status in statuses if status == FAILED)
 #     if all(status == PENDING for status in statuses):
-#         return "not started"
+#         return "not started", running
 #     if settled == total:
-#         return "finished"
+#         return "finished", running
 #     words = f"{settled} of {total} sessions done"
-#     return f"{words}, {failed} failed" if failed else words
+#     return (f"{words}, {failed} failed" if failed else words), running
+#
+#
+# def pull_at(name: str, manifest: Path, home: Path) -> Pull:
+#     progress, running = manifest_state(manifest)
+#     held = live_lock(manifest)
+#     return Pull(name, manifest, home, progress, interrupted=running and not held, lock=held)
 #
 #
 # def find_pulls(cwd: Path | None = None) -> list[Pull]:
@@ -6709,7 +7052,7 @@ if __name__ == "__main__":
 #             if not manifest.is_file() or manifest.resolve() in seen:
 #                 continue
 #             seen.add(manifest.resolve())
-#             pulls.append(Pull(folder.name, manifest, home, manifest_state(manifest)))
+#             pulls.append(pull_at(folder.name, manifest, home))
 #     return pulls
 #
 #
@@ -6741,8 +7084,9 @@ if __name__ == "__main__":
 #         return str(path)
 #
 #
-# def listing(cwd: Path | None = None) -> list[str]:
-#     """What `--execute` alone prints: every pull, its state and its command."""
+# def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:") -> list[str]:
+#     """Every pull, its state and its command: what `--execute` alone prints,
+#     and `--running` with its own heading."""
 #     here = Path(cwd or Path.cwd()).resolve()
 #     pulls = find_pulls(here)
 #     if not pulls:
@@ -6752,7 +7096,7 @@ if __name__ == "__main__":
 #         ]
 #     width = max(len(p.name) for p in pulls)
 #     state_width = max(len(p.state) for p in pulls)
-#     lines = ["Which pull? Name one:", ""]
+#     lines = [heading, ""]
 #     for pull in pulls:
 #         command, folder = execute_command(pull.manifest, here)
 #         where = "" if folder.resolve() == here else f"   (in {folder})"
@@ -9146,7 +9490,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 91b1d1f4abd2a0a28af3b291d49514a53dff0ad4ef501c37b3aa963146b0705c SIZE: 9307 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ffde5c3b4ebdf7bdde9f9b0787b29ad0af3f8822fcced6a8da7564497153159b SIZE: 11647 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -9339,6 +9683,64 @@ if __name__ == "__main__":
 #             self.app.on_dry_run()
 #         self.assertIn("--dry-run", start.call_args.args[0])
 #         self.assertIn("=== Preview SQL ===", self.written())
+#
+#
+# class RunningPullTests(GuiTestCase):
+#     """D67: while the loaded pull executes, what would overwrite it is grey."""
+#
+#     def setUp(self):
+#         super().setUp()
+#         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+#         self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+#         dump_yaml(SAMPLE_MANIFEST, self.manifest)
+#
+#     def lock(self, manifest=None, heartbeat_age=20):
+#         import json
+#
+#         from ..lock import lock_path
+#
+#         now = time.time()
+#         lock_path(manifest or self.manifest).write_text(json.dumps(
+#             {"pid": 4242, "machine": "VM", "started": now - 600, "heartbeat": now - heartbeat_age}
+#         ), encoding="utf-8")
+#
+#     def states(self):
+#         return {text: button.configure.call_args.kwargs["state"]
+#                 for text, button in self.app.buttons.items()}
+#
+#     def test_a_live_pull_greys_export_split_and_execute_only(self):
+#         self.lock()
+#         self.app.watch_pull()
+#         self.assertEqual(self.states(), {
+#             "Validate": "normal", "Export split": "disabled",
+#             "Preview SQL": "normal", "Execute": "disabled",
+#         })
+#         message = self.app.status_message.configure.call_args.kwargs["text"]
+#         self.assertIn("Executing since", message)
+#         self.assertIn("last heartbeat", message)
+#
+#     def test_they_come_back_when_it_ends(self):
+#         self.lock()
+#         self.app.watch_pull()
+#         self.lock(heartbeat_age=10_000)  # stopped without cleaning up
+#         self.app.watch_pull()
+#         self.assertEqual(set(self.states().values()), {"normal"})
+#
+#     def test_another_projects_pull_greys_nothing_here(self):
+#         other = self.work / "runs" / "Celiac" / "split" / "pullmanifest.yaml"
+#         dump_yaml(SAMPLE_MANIFEST, other)
+#         self.lock(other)
+#         self.app.watch_pull()
+#         self.assertEqual(set(self.states().values()), {"normal"})
+#
+#     def test_execute_greys_them_before_its_lock_appears(self):
+#         self.messagebox.askokcancel.return_value = True
+#         with mock.patch.object(self.app, "run"):
+#             self.app.on_execute()
+#         self.app.check_pull()  # no lock yet
+#         self.assertEqual(self.states()["Execute"], "disabled")
+#         self.assertEqual(self.states()["Export split"], "disabled")
+#         self.assertEqual(self.states()["Validate"], "normal")
 #
 #
 # class DefaultTests(GuiTestCase):
@@ -9735,6 +10137,190 @@ if __name__ == "__main__":
 #         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
 #
 # === END FILE: pullmanager/tests/test_launcher.py ===
+# === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: a4930ab0b021080a945987209f34db16399411bffa95ab970c2024634f2a0d29 SIZE: 7742 ===
+# """The lock a running Execute holds on its manifest (D67)."""
+#
+# from __future__ import annotations
+#
+# import argparse
+# import contextlib
+# import importlib.util
+# import io
+# import json
+# import sys
+# import tempfile
+# import time
+# import unittest
+# from pathlib import Path
+# from unittest import mock
+#
+# from .. import cli, pulls
+# from ..db import DatabaseError
+# from ..launcher import locate_tools
+# from ..lock import STALE_SECONDS, LockHeld, PullLock, live_lock, lock_path, read_lock
+# from ..manifest import Manifest
+# from ..yaml_io import dump_yaml
+# from .support import SAMPLE_MANIFEST
+#
+#
+# class LockTestCase(unittest.TestCase):
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.work = Path(self._tmp.name).resolve()
+#         self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+#         self.manifest.parent.mkdir(parents=True)
+#         dump_yaml(SAMPLE_MANIFEST, self.manifest)
+#
+#     def write_lock(self, heartbeat_age: float, **extra):
+#         now = time.time()
+#         data = {"pid": 4242, "machine": "VM", "started": now - 600,
+#                 "heartbeat": now - heartbeat_age, "token": "theirs", **extra}
+#         lock_path(self.manifest).write_text(json.dumps(data), encoding="utf-8")
+#
+#
+# class PullLockTests(LockTestCase):
+#     def test_a_second_execute_is_refused_while_the_first_holds_it(self):
+#         with PullLock(self.manifest):
+#             self.assertIsNotNone(live_lock(self.manifest))
+#             with self.assertRaises(LockHeld) as caught:
+#                 PullLock(self.manifest).acquire()
+#         message = str(caught.exception)
+#         self.assertIn("IBD_Ancestry is already executing", message)
+#         self.assertIn("process", message)
+#         self.assertIsNone(read_lock(self.manifest), "the lock is removed when the pull ends")
+#         with PullLock(self.manifest):
+#             pass
+#
+#     def test_a_stale_lock_is_taken_over(self):
+#         # Its process stopped without cleaning up: no heartbeat for 2 minutes.
+#         self.write_lock(STALE_SECONDS + 1)
+#         with PullLock(self.manifest) as held:
+#             self.assertEqual(held.replaced.pid, 4242)
+#             self.assertEqual(read_lock(self.manifest).token, held.token)
+#
+#     def test_a_live_lock_of_another_process_is_not_taken(self):
+#         self.write_lock(20)
+#         with self.assertRaises(LockHeld):
+#             PullLock(self.manifest).acquire()
+#         self.assertEqual(read_lock(self.manifest).token, "theirs")
+#
+#     def test_the_heartbeat_keeps_it_live_through_a_long_query(self):
+#         with PullLock(self.manifest, interval=0.05) as held:
+#             first = read_lock(self.manifest).heartbeat
+#             time.sleep(0.3)  # a query that blocks the main thread
+#             self.assertGreater(read_lock(self.manifest).heartbeat, first)
+#             self.assertEqual(read_lock(self.manifest).started, held.started)
+#
+#     def test_release_leaves_a_lock_that_is_not_its_own(self):
+#         held = PullLock(self.manifest)
+#         held.acquire()
+#         self.write_lock(0)  # replaced meanwhile, say by a takeover
+#         held.release()
+#         self.assertEqual(read_lock(self.manifest).token, "theirs")
+#
+#     def test_a_lock_caught_mid_write_counts_as_live(self):
+#         lock_path(self.manifest).write_text("", encoding="utf-8")
+#         self.assertIsNotNone(live_lock(self.manifest))
+#
+#
+# class ExecuteLockTests(LockTestCase):
+#     """The command itself: what `--execute` does with the lock."""
+#
+#     def execute(self, connect_fn):
+#         args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+#             code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect_fn)
+#         return code, out.getvalue()
+#
+#     def test_a_pull_already_executing_is_not_touched(self):
+#         self.write_lock(20)
+#         connected = []
+#         before = self.manifest.read_text(encoding="utf-8")
+#         code, out = self.execute(lambda *a, **k: connected.append(a))
+#         self.assertEqual(code, 1)
+#         self.assertEqual(connected, [], "it must not reach a database")
+#         self.assertIn("already executing", out)
+#         self.assertEqual(self.manifest.read_text(encoding="utf-8"), before)
+#
+#     def test_the_lock_is_held_while_it_runs_and_gone_after_a_failure(self):
+#         seen = []
+#
+#         def connect(*args, **kwargs):
+#             seen.append(live_lock(self.manifest))
+#             raise DatabaseError("login failed")
+#
+#         code, _ = self.execute(connect)
+#         self.assertEqual(code, 1)
+#         self.assertIsNotNone(seen[0])
+#         self.assertIsNone(read_lock(self.manifest))
+#
+#     def test_a_stale_lock_is_reported_and_taken_over(self):
+#         self.write_lock(STALE_SECONDS + 1)
+#
+#         def connect(*args, **kwargs):
+#             raise DatabaseError("login failed")
+#
+#         _, out = self.execute(connect)
+#         self.assertIn("Took over a stale lock: process 4242 on VM", out)
+#
+#
+# class RunningListTests(LockTestCase):
+#     def test_running_says_which_pulls_are_executing(self):
+#         other = self.work / "runs" / "Test_Run" / "split" / "pullmanifest.yaml"
+#         other.parent.mkdir(parents=True)
+#         dump_yaml(SAMPLE_MANIFEST, other)
+#         self.write_lock(20)
+#         out = io.StringIO()
+#         with mock.patch.object(pulls, "home_folders", lambda cwd=None: [self.work]), \
+#                 contextlib.chdir(self.work), contextlib.redirect_stdout(out):
+#             self.assertEqual(cli.main(["--running"]), 0)
+#         lines = out.getvalue().splitlines()
+#         self.assertTrue(lines[0].startswith("Pulls under runs"))
+#         ibd = next(line for line in lines if "IBD_Ancestry" in line)
+#         test_run = next(line for line in lines if "Test_Run" in line)
+#         self.assertIn("executing since", ibd)
+#         self.assertNotIn("executing", test_run)
+#
+#     def test_a_manifest_left_running_without_a_lock_is_stopped(self):
+#         data = json.loads(json.dumps(SAMPLE_MANIFEST))
+#         data["sessions"][0]["phases"]["setup"]["status"] = "running"
+#         dump_yaml(data, self.manifest)
+#         with mock.patch.object(pulls, "home_folders", lambda cwd=None: [self.work]):
+#             state = pulls.find_pulls(self.work)[0].state
+#         self.assertTrue(state.startswith("stopped mid-run"), state)
+#
+#
+# class MakeYamlAgreesTests(LockTestCase):
+#     """makeYaml keeps its own copy of the rule, since it cannot import this."""
+#
+#     def make_yaml(self):
+#         try:
+#             path = locate_tools().make_yaml
+#         except Exception as exc:  # pragma: no cover - depends on the layout
+#             self.skipTest(f"makeYaml not found: {exc}")
+#         spec = importlib.util.spec_from_file_location("makeyaml_for_lock", path)
+#         module = importlib.util.module_from_spec(spec)
+#         sys.modules[spec.name] = module  # its dataclasses look themselves up there
+#         self.addCleanup(sys.modules.pop, spec.name, None)
+#         spec.loader.exec_module(module)
+#         return module
+#
+#     def test_both_see_the_same_lock_live_or_stale(self):
+#         make_yaml = self.make_yaml()
+#         self.assertEqual(make_yaml.PULL_LOCK_FILENAME, lock_path(self.manifest).name)
+#         self.assertEqual(make_yaml.PULL_LOCK_STALE_SECONDS, STALE_SECONDS)
+#         with PullLock(self.manifest):
+#             self.assertIsNotNone(make_yaml.executing_pull(self.manifest.parent))
+#         self.assertIsNone(make_yaml.executing_pull(self.manifest.parent))
+#         for age, live in ((20, True), (STALE_SECONDS + 1, False)):
+#             with self.subTest(age=age):
+#                 self.write_lock(age)
+#                 self.assertEqual(make_yaml.executing_pull(self.manifest.parent) is not None, live)
+#                 self.assertEqual(live_lock(self.manifest) is not None, live)
+#
+# === END FILE: pullmanager/tests/test_lock.py ===
 # === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7 SIZE: 14639 ===
 # """Manifest loading, validation, status transitions, and round-tripping."""
 #
@@ -12684,7 +13270,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: bd04c108a73dd84972c7dec76b0aa5cd38183a3417b6431b65fb2fd5cefd50f8 SIZE: 207153 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 9408fab9505ae72489cec1809f975e7eff3a21060a1a173864b9e61d07086015 SIZE: 210963 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -12707,6 +13293,7 @@ if __name__ == "__main__":
 # import subprocess
 # import sys
 # import tempfile
+# import time
 # import unittest
 # from unittest import mock
 # from dataclasses import dataclass, field
@@ -15468,6 +16055,35 @@ if __name__ == "__main__":
 #         upload["file_loc"] = f"{UPLOAD_STAGING_DIR}/{source.name}"
 #
 #
+# # Pullmanager's lock on a manifest it is executing (D67): stale once its
+# # heartbeat is this old. The same rule as pullmanager/lock.py, which this file
+# # cannot import; a runtime test holds the two together.
+# PULL_LOCK_FILENAME = "pullmanifest.lock"
+# PULL_LOCK_STALE_SECONDS = 120
+#
+#
+# def executing_pull(split_dir: str | Path) -> dict[str, Any] | None:
+#     """The lock of an Execute pulling this split folder now, or None."""
+#     path = Path(split_dir) / PULL_LOCK_FILENAME
+#     try:
+#         stat = path.stat()
+#     except OSError:
+#         return None
+#     try:
+#         data = json.loads(path.read_text(encoding="utf-8"))
+#     except (OSError, ValueError):
+#         data = {}
+#     if not isinstance(data, dict):
+#         data = {}
+#     try:
+#         heartbeat = float(data["heartbeat"])
+#     except (KeyError, TypeError, ValueError):
+#         heartbeat = stat.st_mtime  # a lock caught mid-write is dated by its file
+#     if time.time() - heartbeat >= PULL_LOCK_STALE_SECONDS:
+#         return None
+#     return {**data, "heartbeat": heartbeat}
+#
+#
 # def write_split_artifacts(
 #     template_path: str | Path | None = None,
 #     recipes_path: str | Path | None = None,
@@ -15496,6 +16112,26 @@ if __name__ == "__main__":
 #         if output_dir
 #         else default_split_dir(template_path or default_template_path())
 #     )
+#     held = executing_pull(out_dir)
+#     if held:
+#         who = f"process {held['pid']}" if held.get("pid") else "a process"
+#         if held.get("machine"):
+#             who += f" on {held['machine']}"
+#         try:
+#             since = time.strftime(" since %H:%M", time.localtime(float(held["started"])))
+#         except (KeyError, TypeError, ValueError):
+#             since = ""
+#         result.error(
+#             "pull_executing",
+#             f"{out_dir} holds a pull that is executing now ({who}{since}). Exporting "
+#             "its split would replace the manifest it is writing to.",
+#             "--export-split",
+#             fix="Wait for it to finish, or stop it (Ctrl+C in its window, or Stop in the "
+#             "launcher); it counts as stopped 2 minutes after its last heartbeat. To pull "
+#             "a changed version beside it, copy the transfer YAML under a new name: it "
+#             "gets its own run folder.",
+#         )
+#         return result
 #     finished_yaml = copy.deepcopy(result.finished_yaml)
 #     out_dir.mkdir(parents=True, exist_ok=True)
 #     stage_upload_files(
@@ -17278,6 +17914,35 @@ if __name__ == "__main__":
 #         ):
 #             with self.subTest(name=name):
 #                 self.assertEqual(run_folder_name(Path("/Z/Project D139081") / name), expected)
+#
+#     def test_a_split_being_executed_is_not_replaced(self):
+#         # D67: exporting again replaced the manifest a running Execute writes to.
+#         template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+#         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+#         split = self.tmp / "runs" / "IBD_Ancestry" / "split"
+#         split.mkdir(parents=True)
+#         (split / "pullmanifest.yaml").write_text("sessions: [running]\n", encoding="utf-8")
+#         lock = split / PULL_LOCK_FILENAME
+#         lock.write_text(json.dumps({"pid": 4242, "machine": "VM", "started": time.time() - 600,
+#                                     "heartbeat": time.time() - 20}), encoding="utf-8")
+#         result = write_split_artifacts(template, recipes, split)
+#         self.assertHasError(result, "pull_executing")
+#         self.assertIn("process 4242 on VM", result.errors[0].message)
+#         self.assertEqual((split / "pullmanifest.yaml").read_text(encoding="utf-8"), "sessions: [running]\n")
+#         self.assertFalse((split / "sessions").exists())
+#
+#     def test_a_stale_lock_does_not_stop_the_export(self):
+#         # Its Execute stopped without cleaning up: 2 minutes without a heartbeat.
+#         template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+#         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+#         split = self.tmp / "runs" / "IBD_Ancestry" / "split"
+#         split.mkdir(parents=True)
+#         (split / PULL_LOCK_FILENAME).write_text(
+#             json.dumps({"pid": 4242, "heartbeat": time.time() - PULL_LOCK_STALE_SECONDS - 1}),
+#             encoding="utf-8",
+#         )
+#         self.assertCompiles(write_split_artifacts(template, recipes, split))
+#         self.assertIn("sessions", load_yaml(split / "pullmanifest.yaml"))
 #
 #     def test_two_projects_split_without_out_dir_do_not_overwrite_each_other(self):
 #         first = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
