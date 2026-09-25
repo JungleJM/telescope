@@ -2461,6 +2461,9 @@ def resolved_dimension(dim: dict[str, Any], bucket: dict[str, Any]) -> dict[str,
         "kind": dim.get("kind") or "column_values",
         "column": dim.get("column"),
     }
+    if truthy(dim.get("separate_parquets")):
+        # Its values become parquets of their own when packaged (D72).
+        resolved["separate"] = True
     if bucket.get("is_other"):
         # The catch-all is defined by what it is not, so it has to carry the
         # named values; a predicate for it cannot be built from `is_other` alone.
@@ -4345,6 +4348,44 @@ multipliers:
         self.assertHasError(res, "split_after_build_on_uploaded_pk")
 
 
+class DescriptionFieldTests(MakeYamlTest):
+    """D74: granularity and column descriptions reach the split; D72: the
+    separate_parquets flag reaches each batch."""
+
+    def test_they_travel_through_the_transfer_and_the_split(self):
+        recipes = tiny_recipes().replace(
+            "  - name: PatientWithDx\n    type: PK\n",
+            "  - name: PatientWithDx\n    type: PK\n    granularity: One row per patient\n",
+        ).replace(
+            "      - source: p.Sex\n        name: Sex\n",
+            "      - source: p.Sex\n        name: Sex\n        description: Sex at registration\n",
+        )
+        template = write_temp_yaml(self.tmp, "Desc_temp.yaml", tiny_template())
+        recipes_path = write_temp_yaml(self.tmp, "recipes.yaml", recipes)
+        transfer = build_transfer(template, recipes_path, output_path=self.tmp / "Desc_transfer.yaml", write=True)
+        self.assertCompiles(transfer)
+        out = self.tmp / "split"
+        self.assertCompiles(write_split_artifacts(Path(transfer.output_path), self.tmp / "none.yaml", out))
+        manifest = load_yaml(out / "pullmanifest.yaml")
+        pk_doc = load_yaml(out / manifest["sessions"][0]["phases"]["pk"]["yaml"])
+        pk = pk_doc["cohorts"][0]
+        self.assertEqual(pk["granularity"], "One row per patient")
+        sex = next(c for c in pk["columns"] if c["name"] == "Sex")
+        self.assertEqual(sex["description"], "Sex at registration")
+
+    def test_separate_parquets_is_kept_on_its_batch_dimension(self):
+        res, runs = self.runs_for(extra="""
+batching:
+  - sex:
+      separate_parquets: true
+  - state:
+      values: [LA, MS]
+""")
+        self.assertCompiles(res)
+        dims = runs[0]["batch"]["dimensions"]
+        self.assertEqual({d["name"]: d.get("separate", False) for d in dims}, {"sex": True, "state": False})
+
+
 class TransferTests(MakeYamlTest):
     """The transfer YAML (D49): recipes written out, nothing applied."""
 
@@ -4876,6 +4917,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "dedup": DedupTests,
     "retired_and_validate": RetiredAndValidateTests,
     "run_folders": RunFolderTests,
+    "description_fields": DescriptionFieldTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
 }

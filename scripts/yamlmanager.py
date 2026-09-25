@@ -975,6 +975,10 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                 <button id="addCustomCohort">Add Custom Table</button>
               </div>
               <div class="form-grid">
+                <label>Description<input id="customDescription" type="text" placeholder="What this table holds, for contents.md"></label>
+                <label>Granularity<input id="customGranularity" type="text" placeholder="One row per patient"></label>
+              </div>
+              <div class="form-grid">
                 <label class="checkbox-label"><input id="customPullThisCycle" type="checkbox" checked> Pull this cycle</label>
                 <label>From Table<select id="customFromTable"></select></label>
                 <label>AS<input id="customFromAlias" type="text" placeholder="bpf"></label>
@@ -1214,7 +1218,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .custom-builder { display: grid; gap: 12px; margin-top: 10px; }
 .column-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .column-list { display: grid; gap: 6px; align-content: start; min-height: 42px; }
-.column-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, .35fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
+.column-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, .35fr) minmax(120px, 1fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
 .column-item.removed { opacity: .78; }
 .column-title { display: grid; gap: 2px; min-width: 0; }
 .column-title strong { overflow-wrap: anywhere; }
@@ -1488,7 +1492,7 @@ function syncProjectFields() {
   if (el) el.addEventListener('change', syncProjectFields);
 });
 
-['customName', 'customDestTable', 'customIsPk', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
+['customName', 'customDestTable', 'customDescription', 'customGranularity', 'customIsPk', 'customPullThisCycle', 'customFromTable', 'customFromAlias'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', syncCustomFields);
   if (el) el.addEventListener('change', syncCustomFields);
@@ -1684,6 +1688,8 @@ function blankCustomCohort() {
   return {
     name: '',
     dest_table: '',
+    description: '',
+    granularity: '',
     type: 'fact',
     pull_this_cycle: true,
     columns: [],
@@ -1783,6 +1789,8 @@ function customDraftFromCohort(cohort) {
   const draft = blankCustomCohort();
   draft.name = cohort?.name || '';
   draft.dest_table = cohort?.dest_table || cohort?.name || '';
+  draft.description = cohort?.description || '';
+  draft.granularity = cohort?.granularity || '';
   draft.type = cohort?.type || 'fact';
   draft.pull_this_cycle = cohort?.pull_this_cycle !== false;
   draft.filter.from_table = from.table;
@@ -1834,6 +1842,8 @@ function renderCustomBuilder() {
   renderDictionaryTableOptions();
   setValue('customName', customDraft.name || '');
   setValue('customDestTable', customDraft.dest_table || '');
+  setValue('customDescription', customDraft.description || '');
+  setValue('customGranularity', customDraft.granularity || '');
   setChecked('customIsPk', String(customDraft.type || '').toLowerCase() === 'pk');
   const addButton = document.getElementById('addCustomCohort');
   if (addButton) addButton.textContent = editingCustomIndex === null ? 'Add Custom Table' : 'Save Changes';
@@ -1865,6 +1875,7 @@ function renderCustomColumnRows() {
           <span class="muted">${escapeHtml(meta.type || column.type || '')}${column.nullable === false ? ' · required' : ''}</span>
         </span>
         <input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}" title="Output name">
+        <input data-custom-column-field="description" data-index="${index}" value="${escapeAttr(column.description || '')}" title="Description, for contents.md" placeholder="${escapeAttr(meta.description ? 'blank: the dictionary\'s' : 'Description')}">
         <span class="column-actions">
           <button data-move-custom-column="${index}" data-direction="-1" title="Move up">Up</button>
           <button data-move-custom-column="${index}" data-direction="1" title="Move down">Down</button>
@@ -1881,6 +1892,7 @@ function renderCustomColumnRows() {
           <strong>${escapeHtml(columnName)}</strong>
           <span class="muted">${escapeHtml(meta.type || '')}</span>
         </span>
+        <span></span>
         <span></span>
         <span class="column-actions"><button data-add-removed-column="${escapeAttr(columnName)}" title="Add">+</button></span>
       </div>
@@ -2042,6 +2054,8 @@ function syncCustomFields() {
   const oldAlias = customDraft.filter.from_alias;
   customDraft.name = getValue('customName');
   customDraft.dest_table = getValue('customDestTable');
+  customDraft.description = getValue('customDescription');
+  customDraft.granularity = getValue('customGranularity');
   if (getChecked('customIsPk') && String(customDraft.type || '').toLowerCase() !== 'pk') {
     const existing = currentPk(editingCustomIndex === null ? null : { kind: 'cohort', index: editingCustomIndex });
     if (existing) {
@@ -2080,6 +2094,8 @@ function makeCustomCohort() {
     dest_table: customDraft.dest_table || customDraft.name || 'CustomCohort',
     type: customDraft.type || 'fact',
     pull_this_cycle: customDraft.pull_this_cycle !== false,
+    ...(customDraft.description ? { description: customDraft.description } : {}),
+    ...(customDraft.granularity ? { granularity: customDraft.granularity } : {}),
     columns: customDraft.columns
       .filter(column => column.source || column.name || column.type || column.nullable !== undefined)
       .map(cleanColumn),
@@ -2101,6 +2117,7 @@ function cleanColumn(column) {
   if (column.name) clean.name = column.name;
   if (column.type) clean.type = column.type;
   if (column.nullable !== undefined && column.nullable !== '') clean.nullable = column.nullable === true || column.nullable === 'true';
+  if (column.description) clean.description = column.description;
   return clean;
 }
 
