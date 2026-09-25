@@ -1095,3 +1095,28 @@ YAMLs and their `data\`, `runs\`, the extracted folder and
 `.pullmanager-gui.json`. Queueing several transfer YAMLs is for later
 (roadmap).
 
+### D64. One command each side: `makebundle.py` on the Mac, `python bundle.py` on the VM
+
+**Context.** Building meant `python3 scripts/bundle_pullmanager.py`; on the VM,
+`--verify-bundle` and then `--extract`, two steps to compare one number. And
+the content_id covered only the files carried, not the bundle's own verify and
+extract code, so a change there kept the same number.
+
+**Decision.**
+
+- `python3 makebundle.py`, at the top of the repo, builds `dist/bundle.py` and
+  prints its content_id. It runs `scripts/bundle_pullmanager.py` with the same
+  arguments.
+- `python bundle.py` alone verifies, shows the content_id, and asks before
+  extracting into `pullmanager_runtime` beside itself, writing
+  `pullmanager.py` beside that (D63). Only `y` extracts; anything else, or no
+  one to answer, extracts nothing. The step-by-step options still work.
+- With no folder named, extraction goes beside the bundle, wherever it was run
+  from.
+- The content_id covers the bundle's own code (the prelude above its
+  manifest), recorded as `prelude_sha256`; a bundle whose code was changed
+  after building fails verification.
+
+**Consequences.** Every bundle built from now on has a different id from the
+ones before, even where the carried files are the same.
+

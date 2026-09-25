@@ -39,8 +39,8 @@ patients (3); two recipes dedup by code instead of patient (4);
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:
 
-1. Copy `bundle.py`, `python bundle.py --verify-bundle`, extract, then
-   `python pullmanager.py --tdd` from the working folder.
+1. Copy `bundle.py`, run `python bundle.py`, check the content_id against the
+   Mac's and answer `y`, then `python pullmanager.py --tdd`.
 2. `python pullmanager.py` opens the launcher. Checked on Tk 8.6 on the Mac,
    but the VM's exact Tk is unconfirmed, so watch for option or layout errors.
 3. On the Mac, export a small template with `--export-transfer`: a generated

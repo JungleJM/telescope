@@ -131,14 +131,17 @@ dictionary with no flags and no knowledge that it was bundled.
 Guarantees:
 
 - **Deterministic.** No timestamp. Identity is `content_id`, a hash over the
-  sorted `(path, sha256, size)` list, so rebuilding unchanged sources is
-  byte-identical.
+  sorted `(path, sha256, size)` list and the bundle's own code (the prelude
+  above its manifest, `prelude_sha256`, D64), so rebuilding unchanged sources
+  is byte-identical, and a change to how the bundle verifies or extracts is a
+  new id.
 - **Readable.** Payload lines are comment-prefixed source (`# ` + line; a blank
   line is `#`), not base64, so a file can be read straight out of the bundle.
   A payload line that looks like a marker encodes to `# # === ...` and cannot
   match the anchored marker pattern.
 - **Verified both ways.** Size and SHA-256 checked against the embedded
-  manifest before writing, and re-hashed from disk after.
+  manifest before writing, and re-hashed from disk after. The prelude is
+  checked against `prelude_sha256` too.
 - **Refuses** absolute paths, `..`, drive letters, backslashes, duplicate or
   unlisted sections, unterminated sections, mismatched END markers. CRLF
   sources are rejected at build time.
@@ -190,8 +193,8 @@ template setting. `PULLMANAGER_*` environment variables, or a `.env` passed with
 On the Mac:
 
 ```bash
-python3 scripts/bundle_pullmanager.py --tdd     # optional: the bundle's own tests
-python3 scripts/bundle_pullmanager.py           # writes dist/bundle.py
+python3 makebundle.py            # writes dist/bundle.py and prints its content_id (D64)
+python3 makebundle.py --tdd      # optional: the bundle's own tests
 ```
 
 Copy that one file to the VM. Nothing else travels. The same sources always
@@ -231,8 +234,7 @@ hand. A recipe change is made on the Mac and re-exported.
 ### The Whole Pathway On The VM
 
 ```bash
-python bundle.py --verify-bundle
-python bundle.py --extract             # into pullmanager_runtime, and writes pullmanager.py
+python bundle.py                       # verifies, shows the content_id, y extracts (D64)
 python pullmanager.py --tdd            # prove the delivery
 
 python pullmanager.py                  # the desktop launcher
@@ -1119,7 +1121,7 @@ Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 ```bash
 python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (133)
 python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (346)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (50)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (57)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```
 

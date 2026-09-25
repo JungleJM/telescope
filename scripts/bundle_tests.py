@@ -322,6 +322,25 @@ class TamperTests(BundleTestCase):
         )
         self.assertBundleError("does not match", read_bundle, self.bundle)
 
+    def test_detects_changed_bundle_code(self):
+        # The prelude verifies and extracts; a change to it must not pass as
+        # the same bundle (D64).
+        self.rewrite_bundle(self.bundle_text().replace(
+            'DEFAULT_TARGET = "pullmanager_runtime"', 'DEFAULT_TARGET = "elsewhere"', 1
+        ))
+        self.assertBundleError("own code", read_bundle, self.bundle)
+
+    def test_the_id_changes_with_the_bundle_code(self):
+        from bundle_pullmanager import render_bundle
+        import bundle_pullmanager
+
+        before = read_bundle(self.bundle)[1]["content_id"]
+        original = bundle_pullmanager.BUNDLE_HEADER
+        bundle_pullmanager.BUNDLE_HEADER = original + "# a change to the bundle's own code\n"
+        self.addCleanup(setattr, bundle_pullmanager, "BUNDLE_HEADER", original)
+        self.rewrite_bundle(render_bundle(SOURCE_ROOT))
+        self.assertNotEqual(read_bundle(self.bundle)[1]["content_id"], before)
+
     def test_requires_the_embedded_manifest_block(self):
         self.rewrite_bundle(
             re.sub(r"^BUNDLE_MANIFEST_JSON = r'''.*?'''$", "", self.bundle_text(), flags=re.S | re.M)
@@ -406,6 +425,57 @@ class LauncherTests(BundleTestCase):
         return subprocess.run(
             [sys.executable, *args], capture_output=True, text=True, cwd=self.work
         )
+
+    def run_bundle_answering(self, answer, *args, cwd=None):
+        return subprocess.run(
+            [sys.executable, str(self.work / "bundle.py"), *args],
+            input=answer, capture_output=True, text=True, cwd=cwd or self.work,
+        )
+
+    def test_bundle_alone_shows_the_id_then_extracts_on_yes(self):
+        # D64: one step on the VM: look at the number, answer y.
+        run = self.run_bundle_answering("y\n")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        before_prompt = run.stdout.split("[y/N]")[0]
+        self.assertIn("content_id: ", before_prompt)
+        self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
+        self.assertTrue((self.work / "pullmanager.py").is_file())
+        self.assertNotIn("extracted  ", run.stdout)
+
+    def test_anything_but_yes_extracts_nothing(self):
+        for answer in ("n\n", "\n", ""):
+            with self.subTest(answer=answer):
+                run = self.run_bundle_answering(answer)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertIn("Nothing extracted", run.stdout)
+                self.assertFalse((self.work / "pullmanager_runtime").exists())
+                self.assertFalse((self.work / "pullmanager.py").exists())
+
+    def test_it_extracts_beside_itself_wherever_it_is_run_from(self):
+        run = self.run_bundle_answering("y\n", cwd=self.tmp)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue((self.work / "pullmanager_runtime").is_dir())
+        self.assertFalse((self.tmp / "pullmanager_runtime").exists())
+
+    def test_a_tampered_bundle_asks_nothing(self):
+        text = (self.work / "bundle.py").read_text(encoding="utf-8")
+        (self.work / "bundle.py").write_text(
+            text.replace("# MANIFEST_VERSION = 1", "# MANIFEST_VERSION = 99", 1), encoding="utf-8"
+        )
+        run = self.run_bundle_answering("y\n")
+        self.assertEqual(run.returncode, 2)
+        self.assertNotIn("[y/N]", run.stdout)
+        self.assertFalse((self.work / "pullmanager_runtime").exists())
+
+    def test_makebundle_builds_the_bundle(self):
+        out = self.tmp / "made" / "bundle.py"
+        run = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("content_id: ", run.stdout)
+        self.assertEqual(out.read_bytes(), self.bundle.read_bytes())
 
     def test_extract_with_no_folder_uses_the_default_and_writes_the_launcher(self):
         run = self.run_python("bundle.py", "--extract")

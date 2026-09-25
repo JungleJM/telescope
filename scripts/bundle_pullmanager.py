@@ -9,9 +9,8 @@ The VM cannot pull from git, so development happens as normal modules under
 
 On the VM:
 
-    python bundle.py --verify-bundle
-    python bundle.py --extract              # to ./pullmanager_runtime, plus ./pullmanager.py
-    python pullmanager.py                   # the launcher window
+    python bundle.py          # verify, show the content_id, y to extract (D64)
+    python pullmanager.py     # the launcher window
 
 Bundles are deterministic: the same sources always produce byte-identical
 output, so a rebuild with no source changes leaves git clean.
@@ -72,10 +71,9 @@ BUNDLE_HEADER = '''#!/usr/bin/env python3
 Built by scripts/bundle_pullmanager.py from scripts/pullmanager_src/.
 To change anything here, edit the source module and rebuild the bundle.
 
-    python bundle.py --verify-bundle
-    python bundle.py --list
-    python bundle.py --extract              # to ./pullmanager_runtime, plus ./pullmanager.py
-    python pullmanager.py                   # then: the launcher window
+    python bundle.py                   # verify, show the content_id, y to extract
+    python pullmanager.py              # then: the launcher window
+    python bundle.py --verify-bundle   # or step by step: --list, --extract [DIR]
 """
 '''
 
@@ -155,20 +153,21 @@ def extractor_prelude() -> str:
 
 def render_bundle(root: Path = SOURCE_ROOT) -> str:
     entries, payload_lines = build_sections(root)
+    prelude = BUNDLE_HEADER + extractor_prelude().rstrip("\n") + "\n\n"
+    prelude_sha256 = hashlib.sha256(prelude.encode("utf-8")).hexdigest()
     manifest = {
         "bundle_format_version": BUNDLE_FORMAT_VERSION,
-        "content_id": compute_content_id(entries),
+        "content_id": compute_content_id(entries, prelude_sha256),
         "file_count": len(entries),
         "files": entries,
+        "prelude_sha256": prelude_sha256,
     }
     manifest_json = json.dumps(manifest, indent=2, sort_keys=True)
     if "'''" in manifest_json:
         raise BundleError("Bundle manifest JSON contains a triple quote; cannot embed safely.")
 
     parts = [
-        BUNDLE_HEADER,
-        extractor_prelude().rstrip("\n"),
-        "\n\n",
+        prelude,
         f"BUNDLE_MANIFEST_JSON = r'''{manifest_json}'''\n",
         BUNDLE_FOOTER,
         "\n",
@@ -219,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         size_kb = output.stat().st_size / 1024
         print(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")
         print(f"content_id: {manifest['content_id']}")
+        print(f"Copy {output.name} to the VM and run `python {output.name}` there.")
     except BundleError as exc:
         print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
         return 2
