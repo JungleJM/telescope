@@ -24,6 +24,7 @@ from .sql import (
     column_names,
     column_sources,
     ddl_body,
+    hash_order,
     non_null_predicates,
     quote_literal,
     quote_name,
@@ -63,6 +64,44 @@ def top_clause(
     except (TypeError, ValueError):
         return ""
     return f"TOP ({limit}) " if limit > 0 else ""
+
+
+def sample_keys(cohort: dict[str, Any], key_sets: list[list[str]]) -> list[str]:
+    """The PK's key: its first dedup key set, else its `key_column(s)` (D60)."""
+    if key_sets:
+        return list(key_sets[0])
+    key = cohort.get("key_column") or cohort.get("key_columns")
+    if isinstance(key, str):
+        return [key]
+    return [str(k) for k in key or []]
+
+
+def sample_order(cohort: dict[str, Any], doc: dict[str, Any], key_sets: list[list[str]]) -> str:
+    """The ORDER BY that makes a limited PK a reproducible random sample (D60).
+
+    Without it `TOP (n)` keeps whichever rows the server reaches first, often
+    clustered by site or period. Deduplicated, the key is read from the
+    `[_deduped]` rows by name; otherwise through its source, since an alias
+    cannot be used inside an expression in the same SELECT.
+    """
+    if not normalize_bool(test_option(doc, "random_pk_sample")):
+        return ""
+    keys = sample_keys(cohort, key_sets)
+    if not keys:
+        raise RenderError(
+            f"Cohort {cohort.get('dest_table')!r}: random_pk_sample needs the PK's key, from "
+            "its dedup_keys or key_column, and it has neither."
+        )
+    if key_sets:
+        return hash_order([f"[_deduped].{quote_name(k)}" for k in keys])
+    sources = column_sources(cohort.get("columns") or [])
+    missing = [k for k in keys if k not in sources]
+    if missing:
+        raise RenderError(
+            f"Cohort {cohort.get('dest_table')!r}: key column(s) {', '.join(missing)} are "
+            "not among its columns."
+        )
+    return hash_order([sources[k] for k in keys])
 
 
 def test_option(doc: dict[str, Any], key: str) -> Any:
@@ -248,6 +287,9 @@ def render_cohort(
         notes.extend(more)
     else:
         body = render_select(cohort, top, database=database)
+    sample = sample_order(cohort, doc, key_sets) if top else ""
+    if sample:
+        body += f"\nORDER BY {sample}"
 
     sql = (
         f"-- cohort {cohort.get('name')!r} -> {temp}\n"

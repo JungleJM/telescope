@@ -1938,6 +1938,28 @@ def check_dedup(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
                     )
 
 
+def truthy(value: Any) -> bool:
+    return str(value).strip().lower() in ("true", "yes", "y", "1", "on", "t")
+
+
+def check_random_sample(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """`random_pk_sample` hashes the PK's key, so the PK must declare one (D60)."""
+    if not (truthy(template.get("smallset")) and truthy(template.get("random_pk_sample"))):
+        return
+    for cohort in cohorts:
+        if str(cohort.get("type", "")).lower() != "pk":
+            continue
+        if cohort.get("dedup_keys") or cohort.get("dedup_key") or cohort.get("key_column") or cohort.get("key_columns"):
+            continue
+        result.error(
+            "random_sample_without_key",
+            "`random_pk_sample` orders the PK by a hash of its key, but this PK declares none.",
+            f"{cohort_label(cohort)}",
+            fix="Add `dedup_keys: [[<key column>]]` or `key_column: <column>` to the PK "
+            "cohort, e.g. `key_column: PatientDurableKey`; or set `random_pk_sample: false`.",
+        )
+
+
 def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
     for cohort in cohorts:
@@ -2141,6 +2163,7 @@ def compile_yaml(
 
     cohorts = import_recipes(template, recipes_doc, result)
     check_dedup(cohorts, result)
+    check_random_sample(template, cohorts, result)
     cohorts = expand_multipliers(template, cohorts, result)
     analysis = analyze_cohorts(cohorts)
     cohorts = validate_and_resolve(
@@ -4430,6 +4453,12 @@ class DedupTests(MakeYamlTest):
                 self.assertEqual(
                     by_name[name]["dedup_keys"], [["PatientDurableKey", "BillingCodeValue"]]
                 )
+
+    def test_a_random_sample_needs_the_pks_key(self):
+        text = tiny_template("smallset: true\nstop_at_for_pk_table: 10\nrandom_pk_sample: true\n")
+        self.assertHasError(self.compile_template(text), "random_sample_without_key")
+        keyed = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
+        self.assertCompiles(self.compile_template(keyed))
 
     def test_the_old_spellings_are_refused(self):
         res = self.compile_template(extra=self.cohort(

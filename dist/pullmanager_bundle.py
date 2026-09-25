@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "a6df8f490003774892b06bf099fa4f84205b460c0dc54917541f171487b1ae6a",
+  "content_id": "b92165a60dbda51411727342e5456c95079cb5450e1c594bd4c2b7998d248c6e",
   "file_count": 37,
   "files": [
     {
@@ -465,8 +465,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "983b15d428c1d9f075ad5ad1e261809c9079f4c890781373a874204c76758000",
-      "size": 11397
+      "sha256": "06bb16008e58bf6d40cfa384cf5760264c6bee36a49d3f855c042326c6f9b02f",
+      "size": 13141
     },
     {
       "path": "pullmanager/session.py",
@@ -477,8 +477,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/sql.py",
       "policy": "replace",
-      "sha256": "6221a21908d3866273f448e78a44febd02298d67bd9515e2544ab5ceeeb96c9d",
-      "size": 5719
+      "sha256": "c6b5bc4b185e69ef361d3b244399b9a27fb5ed3261fcfa9de506036206c0d390",
+      "size": 6196
     },
     {
       "path": "pullmanager/tests/__init__.py",
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "1cbdd28ecf0e60621d54839eedb6502cd34922efb16708aeaf9044152764e727",
-      "size": 14303
+      "sha256": "439efb87e686c76efdb714c73edca4de0da01bc04dbce39b63c469a2869da7d3",
+      "size": 16006
     },
     {
       "path": "pullmanager/tests/test_session.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "98592a7ced47f6ce821981c6055a577215ea4ac31da55ecaa172e6be9b3b3637",
-      "size": 191292
+      "sha256": "c7d94aa11ecb6d886b36f78e3bc0ce85d9a7c75f5d3d3e936af6ae589b9c7a36",
+      "size": 192811
     }
   ]
 }'''
@@ -6419,7 +6419,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: 983b15d428c1d9f075ad5ad1e261809c9079f4c890781373a874204c76758000 SIZE: 11397 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 06bb16008e58bf6d40cfa384cf5760264c6bee36a49d3f855c042326c6f9b02f SIZE: 13141 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6446,6 +6446,7 @@ if __name__ == "__main__":
 #     column_names,
 #     column_sources,
 #     ddl_body,
+#     hash_order,
 #     non_null_predicates,
 #     quote_literal,
 #     quote_name,
@@ -6485,6 +6486,44 @@ if __name__ == "__main__":
 #     except (TypeError, ValueError):
 #         return ""
 #     return f"TOP ({limit}) " if limit > 0 else ""
+#
+#
+# def sample_keys(cohort: dict[str, Any], key_sets: list[list[str]]) -> list[str]:
+#     """The PK's key: its first dedup key set, else its `key_column(s)` (D60)."""
+#     if key_sets:
+#         return list(key_sets[0])
+#     key = cohort.get("key_column") or cohort.get("key_columns")
+#     if isinstance(key, str):
+#         return [key]
+#     return [str(k) for k in key or []]
+#
+#
+# def sample_order(cohort: dict[str, Any], doc: dict[str, Any], key_sets: list[list[str]]) -> str:
+#     """The ORDER BY that makes a limited PK a reproducible random sample (D60).
+#
+#     Without it `TOP (n)` keeps whichever rows the server reaches first, often
+#     clustered by site or period. Deduplicated, the key is read from the
+#     `[_deduped]` rows by name; otherwise through its source, since an alias
+#     cannot be used inside an expression in the same SELECT.
+#     """
+#     if not normalize_bool(test_option(doc, "random_pk_sample")):
+#         return ""
+#     keys = sample_keys(cohort, key_sets)
+#     if not keys:
+#         raise RenderError(
+#             f"Cohort {cohort.get('dest_table')!r}: random_pk_sample needs the PK's key, from "
+#             "its dedup_keys or key_column, and it has neither."
+#         )
+#     if key_sets:
+#         return hash_order([f"[_deduped].{quote_name(k)}" for k in keys])
+#     sources = column_sources(cohort.get("columns") or [])
+#     missing = [k for k in keys if k not in sources]
+#     if missing:
+#         raise RenderError(
+#             f"Cohort {cohort.get('dest_table')!r}: key column(s) {', '.join(missing)} are "
+#             "not among its columns."
+#         )
+#     return hash_order([sources[k] for k in keys])
 #
 #
 # def test_option(doc: dict[str, Any], key: str) -> Any:
@@ -6670,6 +6709,9 @@ if __name__ == "__main__":
 #         notes.extend(more)
 #     else:
 #         body = render_select(cohort, top, database=database)
+#     sample = sample_order(cohort, doc, key_sets) if top else ""
+#     if sample:
+#         body += f"\nORDER BY {sample}"
 #
 #     sql = (
 #         f"-- cohort {cohort.get('name')!r} -> {temp}\n"
@@ -7393,7 +7435,7 @@ if __name__ == "__main__":
 #                 )
 #
 # === END FILE: pullmanager/session.py ===
-# === BEGIN FILE: pullmanager/sql.py SHA256: 6221a21908d3866273f448e78a44febd02298d67bd9515e2544ab5ceeeb96c9d SIZE: 5719 ===
+# === BEGIN FILE: pullmanager/sql.py SHA256: c6b5bc4b185e69ef361d3b244399b9a27fb5ed3261fcfa9de506036206c0d390 SIZE: 6196 ===
 # """Shared SQL construction helpers.
 #
 # The delicate part is the WHERE builder. Authors write predicates as a list of
@@ -7458,6 +7500,17 @@ if __name__ == "__main__":
 #         for c in columns
 #         if isinstance(c, dict) and c.get("name") and c.get("source")
 #     }
+#
+#
+# def hash_order(expressions: list[str]) -> str:
+#     """A reproducible pseudo-random ordering over these values (D60).
+#
+#     SHA-256 of the key: rows spread evenly, unlike the order the server finds
+#     them in, yet the same on every run, so a sample can be looked at again.
+#     """
+#     text = [f"CAST({e} AS NVARCHAR(4000))" for e in expressions]
+#     joined = text[0] if len(text) == 1 else "CONCAT(" + ", N'|', ".join(text) + ")"
+#     return f"HASHBYTES('SHA2_256', {joined})"
 #
 #
 # def column_list(columns: list[dict[str, Any]], indent: str = "") -> str:
@@ -9846,7 +9899,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 1cbdd28ecf0e60621d54839eedb6502cd34922efb16708aeaf9044152764e727 SIZE: 14303 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 439efb87e686c76efdb714c73edca4de0da01bc04dbce39b63c469a2869da7d3 SIZE: 16006 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9920,6 +9973,37 @@ if __name__ == "__main__":
 #         doc.update({"smallset": True, "stop_at_for_pk_table": 25})
 #         sql, _ = server_sql.render_cohort(doc["cohorts"][0], doc, doc["cohorts"])
 #         self.assertIn("TOP (25)", sql)
+#
+#     def test_a_random_sample_is_ordered_by_a_hash_of_the_key(self):
+#         # D60: TOP alone keeps whichever rows the server reaches first.
+#         cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]])
+#         doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=3000, random_pk_sample=True)
+#         sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+#         self.assertIn("SELECT TOP (3000)", sql)
+#         self.assertIn(
+#             "WHERE [_deduped].[_dedup_rn] = 1\n"
+#             "ORDER BY HASHBYTES('SHA2_256', CAST([_deduped].[PatientDurableKey] AS NVARCHAR(4000)));",
+#             sql,
+#         )
+#
+#     def test_without_dedup_the_sample_hashes_the_keys_source(self):
+#         cohort = pk_cohort(key_column="PatientDurableKey")
+#         doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=10, random_pk_sample=True)
+#         sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+#         self.assertIn("ORDER BY HASHBYTES('SHA2_256', CAST(p.DurableKey AS NVARCHAR(4000)));", sql)
+#
+#     def test_no_sample_order_without_a_limit_or_the_option(self):
+#         cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]])
+#         for extra in ({"random_pk_sample": True}, {"smallset": True, "stop_at_for_pk_table": 5}):
+#             with self.subTest(extra=extra):
+#                 sql, _ = server_sql.render_cohort(cohort, doc_with(cohort, **extra), [cohort])
+#                 self.assertNotIn("HASHBYTES", sql)
+#
+#     def test_a_sample_without_a_key_is_refused(self):
+#         cohort = pk_cohort()
+#         doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=10, random_pk_sample=True)
+#         with self.assertRaises(RenderError):
+#             server_sql.render_cohort(cohort, doc, [cohort])
 #
 #     def test_no_top_without_smallset(self):
 #         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
@@ -11530,7 +11614,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 98592a7ced47f6ce821981c6055a577215ea4ac31da55ecaa172e6be9b3b3637 SIZE: 191292 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: c7d94aa11ecb6d886b36f78e3bc0ce85d9a7c75f5d3d3e936af6ae589b9c7a36 SIZE: 192811 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -13471,6 +13555,28 @@ if __name__ == "__main__":
 #                     )
 #
 #
+# def truthy(value: Any) -> bool:
+#     return str(value).strip().lower() in ("true", "yes", "y", "1", "on", "t")
+#
+#
+# def check_random_sample(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+#     """`random_pk_sample` hashes the PK's key, so the PK must declare one (D60)."""
+#     if not (truthy(template.get("smallset")) and truthy(template.get("random_pk_sample"))):
+#         return
+#     for cohort in cohorts:
+#         if str(cohort.get("type", "")).lower() != "pk":
+#             continue
+#         if cohort.get("dedup_keys") or cohort.get("dedup_key") or cohort.get("key_column") or cohort.get("key_columns"):
+#             continue
+#         result.error(
+#             "random_sample_without_key",
+#             "`random_pk_sample` orders the PK by a hash of its key, but this PK declares none.",
+#             f"{cohort_label(cohort)}",
+#             fix="Add `dedup_keys: [[<key column>]]` or `key_column: <column>` to the PK "
+#             "cohort, e.g. `key_column: PatientDurableKey`; or set `random_pk_sample: false`.",
+#         )
+#
+#
 # def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
 #     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
 #     for cohort in cohorts:
@@ -13674,6 +13780,7 @@ if __name__ == "__main__":
 #
 #     cohorts = import_recipes(template, recipes_doc, result)
 #     check_dedup(cohorts, result)
+#     check_random_sample(template, cohorts, result)
 #     cohorts = expand_multipliers(template, cohorts, result)
 #     analysis = analyze_cohorts(cohorts)
 #     cohorts = validate_and_resolve(
@@ -15963,6 +16070,12 @@ if __name__ == "__main__":
 #                 self.assertEqual(
 #                     by_name[name]["dedup_keys"], [["PatientDurableKey", "BillingCodeValue"]]
 #                 )
+#
+#     def test_a_random_sample_needs_the_pks_key(self):
+#         text = tiny_template("smallset: true\nstop_at_for_pk_table: 10\nrandom_pk_sample: true\n")
+#         self.assertHasError(self.compile_template(text), "random_sample_without_key")
+#         keyed = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
+#         self.assertCompiles(self.compile_template(keyed))
 #
 #     def test_the_old_spellings_are_refused(self):
 #         res = self.compile_template(extra=self.cohort(

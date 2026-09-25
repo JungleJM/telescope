@@ -72,6 +72,37 @@ class ServerRenderTests(unittest.TestCase):
         sql, _ = server_sql.render_cohort(doc["cohorts"][0], doc, doc["cohorts"])
         self.assertIn("TOP (25)", sql)
 
+    def test_a_random_sample_is_ordered_by_a_hash_of_the_key(self):
+        # D60: TOP alone keeps whichever rows the server reaches first.
+        cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]])
+        doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=3000, random_pk_sample=True)
+        sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+        self.assertIn("SELECT TOP (3000)", sql)
+        self.assertIn(
+            "WHERE [_deduped].[_dedup_rn] = 1\n"
+            "ORDER BY HASHBYTES('SHA2_256', CAST([_deduped].[PatientDurableKey] AS NVARCHAR(4000)));",
+            sql,
+        )
+
+    def test_without_dedup_the_sample_hashes_the_keys_source(self):
+        cohort = pk_cohort(key_column="PatientDurableKey")
+        doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=10, random_pk_sample=True)
+        sql, _ = server_sql.render_cohort(cohort, doc, [cohort])
+        self.assertIn("ORDER BY HASHBYTES('SHA2_256', CAST(p.DurableKey AS NVARCHAR(4000)));", sql)
+
+    def test_no_sample_order_without_a_limit_or_the_option(self):
+        cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]])
+        for extra in ({"random_pk_sample": True}, {"smallset": True, "stop_at_for_pk_table": 5}):
+            with self.subTest(extra=extra):
+                sql, _ = server_sql.render_cohort(cohort, doc_with(cohort, **extra), [cohort])
+                self.assertNotIn("HASHBYTES", sql)
+
+    def test_a_sample_without_a_key_is_refused(self):
+        cohort = pk_cohort()
+        doc = doc_with(cohort, smallset=True, stop_at_for_pk_table=10, random_pk_sample=True)
+        with self.assertRaises(RenderError):
+            server_sql.render_cohort(cohort, doc, [cohort])
+
     def test_no_top_without_smallset(self):
         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
         blocks, _ = self.render(doc)

@@ -64,6 +64,17 @@ def column_sources(columns: list[dict[str, Any]]) -> dict[str, str]:
     }
 
 
+def hash_order(expressions: list[str]) -> str:
+    """A reproducible pseudo-random ordering over these values (D60).
+
+    SHA-256 of the key: rows spread evenly, unlike the order the server finds
+    them in, yet the same on every run, so a sample can be looked at again.
+    """
+    text = [f"CAST({e} AS NVARCHAR(4000))" for e in expressions]
+    joined = text[0] if len(text) == 1 else "CONCAT(" + ", N'|', ".join(text) + ")"
+    return f"HASHBYTES('SHA2_256', {joined})"
+
+
 def column_list(columns: list[dict[str, Any]], indent: str = "") -> str:
     return ", ".join(quote_name(n) for n in column_names(columns))
 
