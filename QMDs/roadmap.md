@@ -16,7 +16,7 @@ When an item here is built, delete it from this file and describe the result in
 | YAML Manager browser UI | Built; Mac only. The Builder changes from testing (PK marking, Multipliers, section notes, Save as Recipe) are tested in code but not yet clicked through |
 | Bundle: build, verify, extract, `.local` preservation | Built and tested. On the VM (D64, content_id `1af88f77`) |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; dry run proven end to end from one copied bundle |
-| Pullmanager: connections, session execution, uploads, transfer | Tested against a fake cursor. **First live run under way** (IBD Ancestry, below): both connections, setup and uploads have run against the databases; nothing after that is confirmed |
+| Pullmanager: connections, session execution, uploads, transfer | Tested against a fake cursor. **First live run under way** (IBD Ancestry, below): its first session ran every phase against the databases |
 | Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Executing for the first time in that run |
 | Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Executing for the first time in that run |
 | Dedup through sources, split levels filtering their PK, control sampling, hash samples, uploads once per pull (D58–D62) | Built and tested against fakes on the Mac; dry-run on the VM. Executing for the first time in that run |
@@ -32,6 +32,9 @@ below:
 - Under `Dual`, each Cosmos session runs before its SneakPeek twin, so the
   quick round comes last (1).
 - The status tab's Refresh button sits alone at the bottom right (1).
+- A PK that names its key only in `dedup_keys` is never checked for
+  uniqueness: every session warns "PK declares no key_column", and a `chunk:`
+  on it would fail its run (1).
 - Execute started from the launcher ends at once with exit code 3221225794
   (`0xC0000142`), before printing anything. The same command typed into
   VSCodium's terminal runs (4).
@@ -43,18 +46,23 @@ below:
 From the first live run. The IBD Ancestry run in progress keeps its split and
 its order; these apply from the next one.
 
-1. **SneakPeek first (D65), and the Refresh button** moved to the top left of
-   the status tab, beside the manifest path. Both are small, and the order
-   matters from the next split.
-2. **`--execute <project>` and the dry run's closing lines (D66).** They make
-   the terminal route easy at once, even if the launcher's Execute never works
-   on the VM.
+1. **SneakPeek first (D65), the Refresh button and the PK's key (D69).** The
+   Refresh button moves to the top left of the status tab, beside the manifest
+   path. All three are small, and the order and the uniqueness check matter
+   from the next split.
+2. **`--execute <project>` (D66), the new names and the preview's closing
+   statement (D71; the Pull Log tab waits for fix 4).** They make the terminal
+   route easy at once, even if the launcher's Execute never works on the VM,
+   and say what the preview is for.
 3. **The running-pull lock (D67):** `--execute` and `--export-split` refuse to
    clash, the launcher greys Export split and Execute and follows the pull,
    and `--running`. Needed before two pulls run at once, and fix 4 relies on it.
-4. **Execute in its own console window, with its log (D68).** The least
-   certain to work on the VM, so last; if it cannot start, it falls back to
-   fix 2's command.
+4. **Execute in its own console window, its log and the Pull Log tab (D68,
+   D71).** The least certain to work on the VM, so late; if it cannot start,
+   it falls back to fix 2's command.
+5. **The session readout (D70):** warnings first, then one table of column
+   widths per session, as notes. Polish, and it reads best once the log
+   exists.
 
 Then rebuild the bundle.
 
@@ -67,8 +75,11 @@ there (its Tk is fine, bar the Refresh button). The IBD Ancestry pull was
 validated, split and dry-run from the launcher, and is executing from
 VSCodium's terminal (`python pullmanager.py --execute
 runs\IBD_Ancestry\split\pullmanifest.yaml`). Its first session,
-`CrohnsblackPatients` on Cosmos, finished setup and uploads and was building
-its PK. Nothing after that is confirmed. The checks, on the VM:
+`CrohnsblackPatients` on Cosmos, finished every phase on instance
+`et4003vpdsql032`: setup, uploads, the PK, and all three Sex batches
+(`sex-other` matched no PK rows, as a catch-all should), with no warning that
+Cosmos and Projects counts disagreed. The next session had started. The checks,
+on the VM:
 
 1. `python pullmanager.py --tdd`: not yet reported from the VM.
 2. The IBD Ancestry pull, once it finishes (D58–D61):

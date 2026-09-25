@@ -1251,3 +1251,73 @@ count on starting `cmd.exe` or `powershell.exe`.
 **Consequences.** A pull's output shows in its console and in the Output tab,
 and the log keeps it after both are closed. Validate, Export split and Dry run
 still run inside the launcher.
+
+### D69. The PK's key is one rule everywhere
+
+**Context.** The PK's key was read two ways. The hash sample and the control
+sample (D59, D60) take its first `dedup_keys` set, else its `key_column(s)`.
+The uniqueness check after the PK phase, chunk ordering and batch selection
+read only `key_column(s)`. The IBD Ancestry PK names its key only through
+`dedup_keys: [[PatientDurableKey]]`. So in the first live run every session
+warned "PK declares no key_column" and its uniqueness was never checked, and a
+`chunk:` on that PK would have failed its run ("Row chunking needs the PK key
+columns to order by").
+
+**Decision.** The PK's key is its first `dedup_keys` set, else its
+`key_column(s)`, wherever it is used: the sample, the uniqueness check, chunk
+ordering and batch selection. One function gives it. A PK with neither still
+warns, naming both ways to declare a key.
+
+**Consequences.** A PK deduplicated on its key always passes the check, since
+the dedup makes it unique; the check still catches a `key_column` that is not
+unique.
+
+### D70. The pull's readout: a plain-text log, and widths once per session as notes
+
+**Context.** The user wants to see what Execute prints (warnings about the PK,
+column widths, the instance) in the launcher, not only in a terminal. It went
+only to the terminal, after each session. The column widths were printed as
+warnings, once per batch: in the first live run, OtherDiagnoses' nine columns
+appeared twice in one session, for Male and for Female. They are information,
+since widths are measured and never applied (D34), and the real warnings among
+them were easy to miss.
+
+**Decision.**
+
+- The log Execute writes (D68) is plain text, the same lines as the terminal.
+  Markdown was considered; the launcher cannot render it, and plain text reads
+  the same in both places.
+- At the end of each session its warnings come first, then one table of column
+  widths: each destination's string columns, with the declared type and the
+  widest value across all of the session's batches. These are notes, not
+  warnings.
+- Warnings are kept for what needs a look: Cosmos and Projects counts that
+  disagree, a count past the threshold, a batch matching no PK rows, too few
+  controls, a PK with no key.
+
+### D71. The launcher's names: Validation Output, Pull Log, Preview SQL; the preview ends in one statement
+
+**Context.** The launcher had one Output tab, for Validate, Export split and
+Dry run, and D68 would have put Execute's log there too. "Dry run" did not say
+that it writes the SQL, nor that Execute does not need it: Execute renders the
+same SQL itself as it goes. The user took it to be a required step.
+
+**Decision.**
+
+- The Output tab is **Validation Output**, for Validate, Export split and
+  Preview SQL. A new **Pull Log** tab follows Execute's log, in place of the
+  Output tab D68 named.
+- The Dry run button is **Preview SQL**. The terminal option stays
+  `--dry-run`.
+- The preview ends with one statement holding everything needed next, in
+  place of D66's closing lines:
+
+  ```text
+  Preview finished: 48 unit(s), 112 SQL block(s), 0 errors, 3 note(s). Nothing was pulled.
+  SQL written to runs\IBD_Ancestry\sql for reading; Execute does not need it.
+  To pull it: press Execute, or in a terminal in <working folder> run:
+      python pullmanager.py --execute IBD_Ancestry
+  ```
+
+  With no SQL folder given (a terminal `--dry-run` without `--out-dir`), the
+  second line says no SQL was written and how to write it.
