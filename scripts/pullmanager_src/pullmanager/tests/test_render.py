@@ -82,10 +82,28 @@ class ServerRenderTests(unittest.TestCase):
         # deduplication at all.
         cohort = pk_cohort(dedup_key=["PatientDurableKey"])
         blocks, notes = self.render(doc_with(cohort))
-        self.assertIn("ROW_NUMBER() OVER (PARTITION BY [PatientDurableKey]", blocks[0].sql)
+        self.assertIn("ROW_NUMBER() OVER (PARTITION BY p.DurableKey", blocks[0].sql)
         self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
         self.assertTrue(any("legacy" in n for n in notes))
         self.assertTrue(any("arbitrary but stable" in n for n in notes))
+
+    def test_dedup_partitions_by_sources_not_column_names(self):
+        # D58: inside the SELECT that names them, only source columns exist.
+        # `[BillingCodeValue]` failed as an invalid column on the server, and
+        # `[PatientDurableKey]` would be ambiguous beside the PK's own.
+        cohort = pk_cohort(
+            type="fact",
+            columns=[
+                {"source": "def.PatientDurableKey", "name": "PatientDurableKey", "type": "BIGINT"},
+                {"source": "dt.Value", "name": "BillingCodeValue", "type": "VARCHAR(400)"},
+            ],
+            dedup_keys=[["PatientDurableKey", "BillingCodeValue"]],
+        )
+        sql, _ = server_sql.render_cohort(cohort, doc_with(cohort))
+        over = sql[sql.index("ROW_NUMBER() OVER ("):]
+        over = over[: over.index(") AS [_dedup_rn]")]
+        self.assertIn("PARTITION BY def.PatientDurableKey, dt.Value", over)
+        self.assertNotIn("[", over)
 
     def test_dedup_key_naming_a_missing_column_is_refused(self):
         with self.assertRaises(RenderError):

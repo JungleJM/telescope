@@ -22,6 +22,7 @@ from .sql import (
     SqlBlock,
     column_list,
     column_names,
+    column_sources,
     ddl_body,
     non_null_predicates,
     quote_literal,
@@ -123,9 +124,21 @@ def render_dedup_select(
 
     Returns the SQL and any notes. Deduplication is always visible in the
     output: the old generator could silently emit none at all.
+
+    Keys are the cohort's column names, but ROW_NUMBER sits in the SELECT that
+    defines those names, where only source columns are visible, so each is
+    written as its source (D58). `[BillingCodeValue]` there was an invalid
+    column; `[PatientDurableKey]` worked only because `dxf` has one.
     """
     notes: list[str] = []
-    keys = [quote_name(k) for k in key_sets[0]]
+    sources = column_sources(cohort.get("columns") or [])
+    unsourced = [k for k in key_sets[0] if k not in sources]
+    if unsourced:
+        raise RenderError(
+            f"Cohort {cohort.get('dest_table')!r}: dedup key(s) {', '.join(unsourced)} "
+            "have no `source` to deduplicate on."
+        )
+    keys = [sources[k] for k in key_sets[0]]
     if len(key_sets) > 1:
         notes.append(
             f"Only the first dedup key set {key_sets[0]} is applied; "

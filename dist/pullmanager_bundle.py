@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "d1b67c6b1b8de7763c375b5e861b5e4bce7562ea7dd7b6780ace64c0be2cc8c2",
+  "content_id": "9f103977897511c1d7d21626d8cbfa1d771eb5be59a528e66bdd121b85efb825",
   "file_count": 37,
   "files": [
     {
@@ -465,8 +465,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "ecbba4ce269ba8707574e2dad7344838433a9cf91f9b7b4ec8a435b41b72646a",
-      "size": 9207
+      "sha256": "d0ec9a712823ff1b9a3cc6af89c9e5757a6900a346d1d3c52c4c11d5561a8abd",
+      "size": 9836
     },
     {
       "path": "pullmanager/session.py",
@@ -477,8 +477,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/sql.py",
       "policy": "replace",
-      "sha256": "e894b41f2d51392c0690d2f9e7c04d1d617fb3288505a65fccfe22dbf03dbc2c",
-      "size": 5320
+      "sha256": "6221a21908d3866273f448e78a44febd02298d67bd9515e2544ab5ceeeb96c9d",
+      "size": 5719
     },
     {
       "path": "pullmanager/tests/__init__.py",
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "21df1b4827e993a915b4b6ec698e95c4848fedf76f90ea3c2f11fdf870597e46",
-      "size": 11696
+      "sha256": "c8f513825252a91ef835d00c4b77a13e256d19d91b0529002707329bfd039395",
+      "size": 12630
     },
     {
       "path": "pullmanager/tests/test_session.py",
@@ -6419,7 +6419,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: ecbba4ce269ba8707574e2dad7344838433a9cf91f9b7b4ec8a435b41b72646a SIZE: 9207 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: d0ec9a712823ff1b9a3cc6af89c9e5757a6900a346d1d3c52c4c11d5561a8abd SIZE: 9836 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6444,6 +6444,7 @@ if __name__ == "__main__":
 #     SqlBlock,
 #     column_list,
 #     column_names,
+#     column_sources,
 #     ddl_body,
 #     non_null_predicates,
 #     quote_literal,
@@ -6545,9 +6546,21 @@ if __name__ == "__main__":
 #
 #     Returns the SQL and any notes. Deduplication is always visible in the
 #     output: the old generator could silently emit none at all.
+#
+#     Keys are the cohort's column names, but ROW_NUMBER sits in the SELECT that
+#     defines those names, where only source columns are visible, so each is
+#     written as its source (D58). `[BillingCodeValue]` there was an invalid
+#     column; `[PatientDurableKey]` worked only because `dxf` has one.
 #     """
 #     notes: list[str] = []
-#     keys = [quote_name(k) for k in key_sets[0]]
+#     sources = column_sources(cohort.get("columns") or [])
+#     unsourced = [k for k in key_sets[0] if k not in sources]
+#     if unsourced:
+#         raise RenderError(
+#             f"Cohort {cohort.get('dest_table')!r}: dedup key(s) {', '.join(unsourced)} "
+#             "have no `source` to deduplicate on."
+#         )
+#     keys = [sources[k] for k in key_sets[0]]
 #     if len(key_sets) > 1:
 #         notes.append(
 #             f"Only the first dedup key set {key_sets[0]} is applied; "
@@ -7339,7 +7352,7 @@ if __name__ == "__main__":
 #                 )
 #
 # === END FILE: pullmanager/session.py ===
-# === BEGIN FILE: pullmanager/sql.py SHA256: e894b41f2d51392c0690d2f9e7c04d1d617fb3288505a65fccfe22dbf03dbc2c SIZE: 5320 ===
+# === BEGIN FILE: pullmanager/sql.py SHA256: 6221a21908d3866273f448e78a44febd02298d67bd9515e2544ab5ceeeb96c9d SIZE: 5719 ===
 # """Shared SQL construction helpers.
 #
 # The delicate part is the WHERE builder. Authors write predicates as a list of
@@ -7391,6 +7404,19 @@ if __name__ == "__main__":
 #
 # def column_names(columns: list[dict[str, Any]]) -> list[str]:
 #     return [str(c["name"]) for c in columns if isinstance(c, dict) and c.get("name")]
+#
+#
+# def column_sources(columns: list[dict[str, Any]]) -> dict[str, str]:
+#     """Each output column's source expression, by its name.
+#
+#     Inside the SELECT that defines them, SQL Server sees only source columns,
+#     not these names (D58).
+#     """
+#     return {
+#         str(c["name"]): str(c["source"])
+#         for c in columns
+#         if isinstance(c, dict) and c.get("name") and c.get("source")
+#     }
 #
 #
 # def column_list(columns: list[dict[str, Any]], indent: str = "") -> str:
@@ -9779,7 +9805,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 21df1b4827e993a915b4b6ec698e95c4848fedf76f90ea3c2f11fdf870597e46 SIZE: 11696 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: c8f513825252a91ef835d00c4b77a13e256d19d91b0529002707329bfd039395 SIZE: 12630 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9864,10 +9890,28 @@ if __name__ == "__main__":
 #         # deduplication at all.
 #         cohort = pk_cohort(dedup_key=["PatientDurableKey"])
 #         blocks, notes = self.render(doc_with(cohort))
-#         self.assertIn("ROW_NUMBER() OVER (PARTITION BY [PatientDurableKey]", blocks[0].sql)
+#         self.assertIn("ROW_NUMBER() OVER (PARTITION BY p.DurableKey", blocks[0].sql)
 #         self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
 #         self.assertTrue(any("legacy" in n for n in notes))
 #         self.assertTrue(any("arbitrary but stable" in n for n in notes))
+#
+#     def test_dedup_partitions_by_sources_not_column_names(self):
+#         # D58: inside the SELECT that names them, only source columns exist.
+#         # `[BillingCodeValue]` failed as an invalid column on the server, and
+#         # `[PatientDurableKey]` would be ambiguous beside the PK's own.
+#         cohort = pk_cohort(
+#             type="fact",
+#             columns=[
+#                 {"source": "def.PatientDurableKey", "name": "PatientDurableKey", "type": "BIGINT"},
+#                 {"source": "dt.Value", "name": "BillingCodeValue", "type": "VARCHAR(400)"},
+#             ],
+#             dedup_keys=[["PatientDurableKey", "BillingCodeValue"]],
+#         )
+#         sql, _ = server_sql.render_cohort(cohort, doc_with(cohort))
+#         over = sql[sql.index("ROW_NUMBER() OVER ("):]
+#         over = over[: over.index(") AS [_dedup_rn]")]
+#         self.assertIn("PARTITION BY def.PatientDurableKey, dt.Value", over)
+#         self.assertNotIn("[", over)
 #
 #     def test_dedup_key_naming_a_missing_column_is_refused(self):
 #         with self.assertRaises(RenderError):

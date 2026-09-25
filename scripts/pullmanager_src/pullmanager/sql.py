@@ -51,6 +51,19 @@ def column_names(columns: list[dict[str, Any]]) -> list[str]:
     return [str(c["name"]) for c in columns if isinstance(c, dict) and c.get("name")]
 
 
+def column_sources(columns: list[dict[str, Any]]) -> dict[str, str]:
+    """Each output column's source expression, by its name.
+
+    Inside the SELECT that defines them, SQL Server sees only source columns,
+    not these names (D58).
+    """
+    return {
+        str(c["name"]): str(c["source"])
+        for c in columns
+        if isinstance(c, dict) and c.get("name") and c.get("source")
+    }
+
+
 def column_list(columns: list[dict[str, Any]], indent: str = "") -> str:
     return ", ".join(quote_name(n) for n in column_names(columns))
 
