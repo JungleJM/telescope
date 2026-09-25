@@ -334,6 +334,27 @@ class LoaderTests(ArtifactTestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
 
+    def test_the_r_scripts_keep_64_bit_keys_as_integer64(self):
+        import shutil
+        import subprocess
+
+        rscript = shutil.which("Rscript")
+        if not rscript:
+            self.skipTest("no Rscript here")
+        has_arrow = subprocess.run([rscript, "-e", 'quit(status = !requireNamespace("arrow", quietly = TRUE))'],
+                                   capture_output=True, timeout=120)
+        if has_arrow.returncode:
+            self.skipTest("this R has no arrow package")
+        self.write()
+        for name, get in (("load_parquets.R", "dplyr::collect(Patients)"), ("examine_parquets.R", "Patients")):
+            with self.subTest(script=name):
+                done = subprocess.run(
+                    [rscript, "-e", f'source("{name}"); cat(class({get}$PatientDurableKey))'],
+                    capture_output=True, text=True, timeout=180, cwd=str(self.out.parent),
+                )
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertTrue(done.stdout.endswith("integer64"), done.stdout)
+
     def test_the_r_scripts_parse(self):
         import shutil
         import subprocess

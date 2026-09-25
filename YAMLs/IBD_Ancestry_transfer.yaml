@@ -1,10 +1,9 @@
 transfer:
   from_template: IBD_Ancestry_temp.yaml
-  recipes_sha256: fba8303c3d8a
+  recipes_sha256: 887bf4f676dc
   recipes_used:
   - OtherDiagnoses
   - PatientWithDx
-  - sex
 cosmos_vars:
   project_db: PROJECTD93A5E7
   cosmos_db: Dual
@@ -17,7 +16,6 @@ test_options:
   random_pk_sample: true
 project_vars:
   project_folder: IBD Ancestry
-vars:
 upload_cohorts:
 - name: IBD_Meds
   dest_table: IBD_Meds
@@ -63,8 +61,9 @@ batching:
   include_other: true
 cohorts:
 - name: Patients
-  description: First DiagnosisEvent of diseaseX for patient, with patient info (sex,
+  description: First DiagnosisEvent of disease X for patient, with patient info (sex,
     birthdate etc) and Index Event info (Age at Diagnosis, ICD code, etc.)
+  granularity: One DiagnosisEvent, only the earliest found, for each patient (by PatientDurableKey).
   type: PK
   pull_this_cycle: true
   dest_table: Patients
@@ -177,6 +176,7 @@ cohorts:
 - name: OtherDiagnoses
   description: Patient's diagnoses besides the index diagnosis - one per patient per
     diagnosis code, not time-based. For seeing if they have other conditions
+  granularity: One diagnoses of a disease by ICD code, for each PatientDurableKey.
   dedup_keys:
   - - PatientDurableKey
     - BillingCodeValue

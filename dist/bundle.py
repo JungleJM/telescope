@@ -459,7 +459,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "a86f3da063215e44c093ab62ee5751405b5299268d0376cbd75dde3e5a0673a7",
+  "content_id": "504befe4f1e7e102977a882129ae3f8617cb6144a040f740cb206590245eb2a5",
   "file_count": 47,
   "files": [
     {
@@ -627,8 +627,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_artifacts.py",
       "policy": "replace",
-      "sha256": "7892c8fa063f100b0c0302f53a320db2bd0158c87555559f6ba840a9183f2659",
-      "size": 14513
+      "sha256": "8ebd16a21507696f012bbe660b59494e92da60eed2db4a11172978612bf8da2b",
+      "size": 15576
     },
     {
       "path": "pullmanager/tests/test_batches.py",
@@ -10099,7 +10099,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 7892c8fa063f100b0c0302f53a320db2bd0158c87555559f6ba840a9183f2659 SIZE: 14513 ===
+# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 8ebd16a21507696f012bbe660b59494e92da60eed2db4a11172978612bf8da2b SIZE: 15576 ===
 # """`--artifacts`: a pull's finished tables as parquets (D72)."""
 #
 # from __future__ import annotations
@@ -10435,6 +10435,27 @@ if __name__ == "__main__":
 #         done = self.run_script("examine_parquets.py")
 #         self.assertEqual(done.returncode, 0, done.stderr)
 #         self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
+#
+#     def test_the_r_scripts_keep_64_bit_keys_as_integer64(self):
+#         import shutil
+#         import subprocess
+#
+#         rscript = shutil.which("Rscript")
+#         if not rscript:
+#             self.skipTest("no Rscript here")
+#         has_arrow = subprocess.run([rscript, "-e", 'quit(status = !requireNamespace("arrow", quietly = TRUE))'],
+#                                    capture_output=True, timeout=120)
+#         if has_arrow.returncode:
+#             self.skipTest("this R has no arrow package")
+#         self.write()
+#         for name, get in (("load_parquets.R", "dplyr::collect(Patients)"), ("examine_parquets.R", "Patients")):
+#             with self.subTest(script=name):
+#                 done = subprocess.run(
+#                     [rscript, "-e", f'source("{name}"); cat(class({get}$PatientDurableKey))'],
+#                     capture_output=True, text=True, timeout=180, cwd=str(self.out.parent),
+#                 )
+#                 self.assertEqual(done.returncode, 0, done.stderr)
+#                 self.assertTrue(done.stdout.endswith("integer64"), done.stdout)
 #
 #     def test_the_r_scripts_parse(self):
 #         import shutil
