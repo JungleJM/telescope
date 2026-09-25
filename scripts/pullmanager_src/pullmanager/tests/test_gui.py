@@ -169,6 +169,32 @@ class ActionTests(GuiTestCase):
         self.messagebox.askokcancel.assert_called_once()
 
 
+class DefaultTests(GuiTestCase):
+    """D63: `python pullmanager.py` with nothing after it opens the launcher."""
+
+    def test_no_arguments_opens_the_launcher(self):
+        from .. import cli
+
+        with mock.patch.object(self.gui, "main", return_value=0) as opened:
+            self.assertEqual(cli.main([]), 0)
+        opened.assert_called_once_with()
+
+    def test_a_command_still_runs_the_command(self):
+        import contextlib
+        import io
+
+        from .. import cli
+
+        path = self.work / "pullmanifest.yaml"
+        dump_yaml(SAMPLE_MANIFEST, path)
+        out = io.StringIO()
+        with mock.patch.object(self.gui, "main", return_value=0) as opened, \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main([str(path)]), 0)
+        opened.assert_not_called()
+        self.assertIn("Sessions: 2", out.getvalue())
+
+
 class StatusTests(GuiTestCase):
     def setUp(self):
         super().setUp()

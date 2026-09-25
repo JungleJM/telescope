@@ -4,14 +4,14 @@
 The VM cannot pull from git, so development happens as normal modules under
 `scripts/pullmanager_src/` and ships as one generated file:
 
-    python3 scripts/bundle_pullmanager.py            # build dist/pullmanager_bundle.py
+    python3 scripts/bundle_pullmanager.py            # build dist/bundle.py
     python3 scripts/bundle_pullmanager.py --tdd      # run bundle/extractor tests
 
 On the VM:
 
-    python pullmanager_bundle.py --verify-bundle
-    python pullmanager_bundle.py --extract ./pullmanager_runtime
-    python ./pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
+    python bundle.py --verify-bundle
+    python bundle.py --extract              # to ./pullmanager_runtime, plus ./pullmanager.py
+    python pullmanager.py                   # the launcher window
 
 Bundles are deterministic: the same sources always produce byte-identical
 output, so a rebuild with no source changes leaves git clean.
@@ -38,7 +38,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS_DIR.parent
 SOURCE_ROOT = SCRIPTS_DIR / "pullmanager_src"
 EXTRACTOR_PATH = SCRIPTS_DIR / "bundle_extractor.py"
-DEFAULT_OUTPUT = REPO_ROOT / "dist" / "pullmanager_bundle.py"
+DEFAULT_OUTPUT = REPO_ROOT / "dist" / "bundle.py"
 
 # The VM needs more than the runtime. The split step runs there, so makeYaml
 # and the data dictionary it validates against travel too. Published paths are
@@ -72,9 +72,10 @@ BUNDLE_HEADER = '''#!/usr/bin/env python3
 Built by scripts/bundle_pullmanager.py from scripts/pullmanager_src/.
 To change anything here, edit the source module and rebuild the bundle.
 
-    python pullmanager_bundle.py --verify-bundle
-    python pullmanager_bundle.py --list
-    python pullmanager_bundle.py --extract ./pullmanager_runtime
+    python bundle.py --verify-bundle
+    python bundle.py --list
+    python bundle.py --extract              # to ./pullmanager_runtime, plus ./pullmanager.py
+    python pullmanager.py                   # then: the launcher window
 """
 '''
 

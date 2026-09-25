@@ -35,26 +35,6 @@ patients (3); two recipes dedup by code instead of patient (4);
 
 ---
 
-## Next: Fixes, In Order
-
-1. **Dedup renders sources (D58).** Blocks every run on the server.
-2. **`dedup_order_by` read, and dedup names checked on the Mac (D58).** Index
-   dates are silently wrong without it.
-3. **`split_after_build` levels filter their PK (D59).** Populations are
-   silently wrong without it.
-4. **Recipes.** OtherDiagnoses keyed by patient, then code. IndexDiagnosis:
-   its own `dest_table`, keyed by patient then code, ordered by
-   `StartDateKey`, restricted to the disease's codes (`ICD_Value`), and no
-   longer excluding the index event, which is the first diagnosis it wants.
-5. **`random_pk_sample` (D60).**
-6. **Controls sampled against their case (D59).** Uses 5's ordering.
-7. **Non-PK uploads land once per pull (D61).**
-8. **Retired options out; Validate says what it checked (D62).**
-
-Then rebuild the bundle and re-export the IBD Ancestry transfer.
-
----
-
 ## Next: The First Live Run
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:

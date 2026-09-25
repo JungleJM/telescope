@@ -36,6 +36,29 @@ DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 MANIFEST_FILENAME = ".bundle-manifest.json"
 
+# Where --extract puts the runtime when no folder is named, and the launcher it
+# writes beside that folder so `python pullmanager.py` works from there (D63).
+DEFAULT_TARGET = "pullmanager_runtime"
+LAUNCHER_NAME = "pullmanager.py"
+LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
+"""Runs Pullmanager from {folder}, the folder bundle.py extracted beside this file.
+
+Written by `python bundle.py --extract`, and rewritten by every extraction, so
+it is not for editing. With no arguments it opens the launcher window; anything
+else goes to Pullmanager as typed (--dry-run, --execute, --tdd, a manifest).
+"""
+
+import runpy
+import sys
+from pathlib import Path
+
+ENTRY = Path(__file__).resolve().parent / {folder!r} / "pullmanager.py"
+if not ENTRY.is_file():
+    sys.exit(f"No Pullmanager at {{ENTRY}}. Extract it again: python bundle.py --extract {folder}")
+sys.argv[0] = str(ENTRY)
+runpy.run_path(str(ENTRY), run_name="__main__")
+'''
+
 # What a re-extraction does to a file that is already there. Everything
 # bundled is managed and gets updated; a locally modified copy is set aside
 # rather than overwritten.
@@ -328,6 +351,18 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     return [section["path"] for section in sections]
 
 
+def write_launcher(target: Path) -> Path:
+    """Write `pullmanager.py` beside the extracted folder, pointing into it (D63).
+
+    Always rewritten, whatever is there: it is a generated shortcut, and the
+    folder it points at may have been extracted under another name this time.
+    """
+    target = Path(target).resolve()
+    launcher = target.parent / LAUNCHER_NAME
+    launcher.write_bytes(LAUNCHER_TEMPLATE.format(folder=target.name).encode("utf-8"))
+    return launcher
+
+
 def bundle_main(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -337,7 +372,14 @@ def bundle_main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--verify-bundle", action="store_true", help="Verify this bundle and exit.")
     parser.add_argument("--list", action="store_true", help="List the files this bundle carries.")
-    parser.add_argument("--extract", metavar="DIR", help="Verify, then extract into DIR.")
+    parser.add_argument(
+        "--extract",
+        metavar="DIR",
+        nargs="?",
+        const=DEFAULT_TARGET,
+        help=f"Verify, then extract into DIR (default {DEFAULT_TARGET}), and write "
+        f"{LAUNCHER_NAME} beside it.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -366,6 +408,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
             for path in written:
                 print(f"extracted  {path}")
             print(f"\nExtracted {len(written)} files to {Path(args.extract).resolve()}")
+            launcher = write_launcher(Path(args.extract))
+            print(f"Wrote {launcher}: `python {LAUNCHER_NAME}` there opens the launcher.")
     except BundleError as exc:
         print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
         return 2

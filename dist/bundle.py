@@ -4,9 +4,10 @@
 Built by scripts/bundle_pullmanager.py from scripts/pullmanager_src/.
 To change anything here, edit the source module and rebuild the bundle.
 
-    python pullmanager_bundle.py --verify-bundle
-    python pullmanager_bundle.py --list
-    python pullmanager_bundle.py --extract ./pullmanager_runtime
+    python bundle.py --verify-bundle
+    python bundle.py --list
+    python bundle.py --extract              # to ./pullmanager_runtime, plus ./pullmanager.py
+    python pullmanager.py                   # then: the launcher window
 """
 from __future__ import annotations
 
@@ -24,6 +25,29 @@ END_RE = re.compile(r"^# === END FILE: (?P<path>\S+) ===$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 MANIFEST_FILENAME = ".bundle-manifest.json"
+
+# Where --extract puts the runtime when no folder is named, and the launcher it
+# writes beside that folder so `python pullmanager.py` works from there (D63).
+DEFAULT_TARGET = "pullmanager_runtime"
+LAUNCHER_NAME = "pullmanager.py"
+LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
+"""Runs Pullmanager from {folder}, the folder bundle.py extracted beside this file.
+
+Written by `python bundle.py --extract`, and rewritten by every extraction, so
+it is not for editing. With no arguments it opens the launcher window; anything
+else goes to Pullmanager as typed (--dry-run, --execute, --tdd, a manifest).
+"""
+
+import runpy
+import sys
+from pathlib import Path
+
+ENTRY = Path(__file__).resolve().parent / {folder!r} / "pullmanager.py"
+if not ENTRY.is_file():
+    sys.exit(f"No Pullmanager at {{ENTRY}}. Extract it again: python bundle.py --extract {folder}")
+sys.argv[0] = str(ENTRY)
+runpy.run_path(str(ENTRY), run_name="__main__")
+'''
 
 # What a re-extraction does to a file that is already there. Everything
 # bundled is managed and gets updated; a locally modified copy is set aside
@@ -317,6 +341,18 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     return [section["path"] for section in sections]
 
 
+def write_launcher(target: Path) -> Path:
+    """Write `pullmanager.py` beside the extracted folder, pointing into it (D63).
+
+    Always rewritten, whatever is there: it is a generated shortcut, and the
+    folder it points at may have been extracted under another name this time.
+    """
+    target = Path(target).resolve()
+    launcher = target.parent / LAUNCHER_NAME
+    launcher.write_bytes(LAUNCHER_TEMPLATE.format(folder=target.name).encode("utf-8"))
+    return launcher
+
+
 def bundle_main(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -326,7 +362,14 @@ def bundle_main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--verify-bundle", action="store_true", help="Verify this bundle and exit.")
     parser.add_argument("--list", action="store_true", help="List the files this bundle carries.")
-    parser.add_argument("--extract", metavar="DIR", help="Verify, then extract into DIR.")
+    parser.add_argument(
+        "--extract",
+        metavar="DIR",
+        nargs="?",
+        const=DEFAULT_TARGET,
+        help=f"Verify, then extract into DIR (default {DEFAULT_TARGET}), and write "
+        f"{LAUNCHER_NAME} beside it.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -355,6 +398,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
             for path in written:
                 print(f"extracted  {path}")
             print(f"\nExtracted {len(written)} files to {Path(args.extract).resolve()}")
+            launcher = write_launcher(Path(args.extract))
+            print(f"Wrote {launcher}: `python {LAUNCHER_NAME}` there opens the launcher.")
     except BundleError as exc:
         print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
         return 2
@@ -363,7 +408,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "9a6a5c0ac388d7da7b243a6976ab33c573b300d1f6d5044c3a0dfa97998670a1",
+  "content_id": "c627ceb3cdfeb4648888071c3479bb642d2a3d2fcf2d1b2d38c3df552ca7ccd2",
   "file_count": 37,
   "files": [
     {
@@ -375,8 +420,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager.py",
       "policy": "replace",
-      "sha256": "36b9c407e6c6357d518b3e35456fad60c0f2585ca1f85404c33cb39807838c4f",
-      "size": 423
+      "sha256": "798def64b0ce7f6b9dc1b4278dd1cb0683eb0f86b101703cb523e333ef520e14",
+      "size": 529
     },
     {
       "path": "pullmanager/__init__.py",
@@ -399,8 +444,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "b3da93062a97deb0d6c4e139fb173aa84f61be0ceb83e32477a86860ee9b3ccd",
-      "size": 11586
+      "sha256": "6683bd6206f581fe7fa371b643adcc506ed540f8cbaea1219ffaf149bca7e67a",
+      "size": 11805
     },
     {
       "path": "pullmanager/db.py",
@@ -513,8 +558,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "ddb9cbe91ea1dff7d8c7c404712ebd0e9cb4664c1bcec66e93876cde9bce3a48",
-      "size": 7490
+      "sha256": "ecbc789156a9ce86e49e72b23a5d473e638e1bdf7cb0d4496bff331dd9fc513f",
+      "size": 8363
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
@@ -3434,13 +3479,15 @@ if __name__ == "__main__":
 #           TerminologyConceptSetDim.
 #
 # === END FILE: YAMLs/datadictionary.yaml ===
-# === BEGIN FILE: pullmanager.py SHA256: 36b9c407e6c6357d518b3e35456fad60c0f2585ca1f85404c33cb39807838c4f SIZE: 423 ===
+# === BEGIN FILE: pullmanager.py SHA256: 798def64b0ce7f6b9dc1b4278dd1cb0683eb0f86b101703cb523e333ef520e14 SIZE: 529 ===
 # #!/usr/bin/env python3
 # """Launcher for the extracted Pullmanager runtime.
 #
-# Sits beside the `pullmanager/` package so the VM can run:
+# Sits beside the `pullmanager/` package. On the VM it is reached through the
+# `pullmanager.py` that `bundle.py --extract` writes into the working folder:
 #
-#     python pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
+#     python pullmanager.py                  # the launcher window
+#     python pullmanager.py --tdd
 # """
 #
 # import sys
@@ -3649,7 +3696,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: b3da93062a97deb0d6c4e139fb173aa84f61be0ceb83e32477a86860ee9b3ccd SIZE: 11586 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 6683bd6206f581fe7fa371b643adcc506ed540f8cbaea1219ffaf149bca7e67a SIZE: 11805 ===
 # """Command line entry point.
 #
 # Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
@@ -3881,7 +3928,8 @@ if __name__ == "__main__":
 #     parser.add_argument(
 #         "--gui",
 #         action="store_true",
-#         help="Open the desktop launcher. Uses tkinter, which ships with Python.",
+#         help="Open the desktop launcher (also what no arguments does). Uses tkinter, "
+#              "which ships with Python.",
 #     )
 #     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
 #     parser.add_argument(
@@ -3917,7 +3965,11 @@ if __name__ == "__main__":
 #
 # def main(argv: list[str] | None = None) -> int:
 #     parser = build_parser()
-#     args = parser.parse_args(argv)
+#     raw = sys.argv[1:] if argv is None else list(argv)
+#     args = parser.parse_args(raw)
+#     if not raw:
+#         # The launcher is what is run most (D63); the commands take arguments.
+#         args.gui = True
 #
 #     if args.tdd is not None:
 #         from .tests import run as run_tests
@@ -8771,7 +8823,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ddb9cbe91ea1dff7d8c7c404712ebd0e9cb4664c1bcec66e93876cde9bce3a48 SIZE: 7490 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ecbc789156a9ce86e49e72b23a5d473e638e1bdf7cb0d4496bff331dd9fc513f SIZE: 8363 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -8941,6 +8993,32 @@ if __name__ == "__main__":
 #         self.app.on_execute()
 #         self.assertFalse(self.app.runner.running)
 #         self.messagebox.askokcancel.assert_called_once()
+#
+#
+# class DefaultTests(GuiTestCase):
+#     """D63: `python pullmanager.py` with nothing after it opens the launcher."""
+#
+#     def test_no_arguments_opens_the_launcher(self):
+#         from .. import cli
+#
+#         with mock.patch.object(self.gui, "main", return_value=0) as opened:
+#             self.assertEqual(cli.main([]), 0)
+#         opened.assert_called_once_with()
+#
+#     def test_a_command_still_runs_the_command(self):
+#         import contextlib
+#         import io
+#
+#         from .. import cli
+#
+#         path = self.work / "pullmanifest.yaml"
+#         dump_yaml(SAMPLE_MANIFEST, path)
+#         out = io.StringIO()
+#         with mock.patch.object(self.gui, "main", return_value=0) as opened, \
+#                 contextlib.redirect_stdout(out):
+#             self.assertEqual(cli.main([str(path)]), 0)
+#         opened.assert_not_called()
+#         self.assertIn("Sessions: 2", out.getvalue())
 #
 #
 # class StatusTests(GuiTestCase):

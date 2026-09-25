@@ -45,7 +45,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Constraints
 
-- Code reaches the VM only through `dist/pullmanager_bundle.py`. The bundle is
+- Code reaches the VM only through `dist/bundle.py`. The bundle is
   committed and deterministic: rebuild it (`python3 scripts/bundle_pullmanager.py`)
   and commit it whenever a bundled file changes.
 - Standard library only, unless the package appears in `YAMLs/DSVM Plugins.yaml`

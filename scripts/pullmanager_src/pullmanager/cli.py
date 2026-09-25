@@ -229,7 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--gui",
         action="store_true",
-        help="Open the desktop launcher. Uses tkinter, which ships with Python.",
+        help="Open the desktop launcher (also what no arguments does). Uses tkinter, "
+             "which ships with Python.",
     )
     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
     parser.add_argument(
@@ -265,7 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw = sys.argv[1:] if argv is None else list(argv)
+    args = parser.parse_args(raw)
+    if not raw:
+        # The launcher is what is run most (D63); the commands take arguments.
+        args.gui = True
 
     if args.tdd is not None:
         from .tests import run as run_tests

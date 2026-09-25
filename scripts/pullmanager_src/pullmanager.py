@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Launcher for the extracted Pullmanager runtime.
 
-Sits beside the `pullmanager/` package so the VM can run:
+Sits beside the `pullmanager/` package. On the VM it is reached through the
+`pullmanager.py` that `bundle.py --extract` writes into the working folder:
 
-    python pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
+    python pullmanager.py                  # the launcher window
+    python pullmanager.py --tdd
 """
 
 import sys

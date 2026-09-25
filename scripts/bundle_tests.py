@@ -56,7 +56,7 @@ class BundleTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
-        self.bundle = self.tmp / "pullmanager_bundle.py"
+        self.bundle = self.tmp / "bundle.py"
         build(self.bundle, SOURCE_ROOT)
 
     def rewrite_bundle(self, text: str) -> None:
@@ -349,7 +349,7 @@ class ExtractionTests(BundleTestCase):
         extract(self.bundle, self.tmp / "runtime")
         self.assertEqual(
             sorted(path.name for path in self.tmp.iterdir()),
-            ["pullmanager_bundle.py", "runtime"],
+            ["bundle.py", "runtime"],
         )
 
     def test_replaces_a_previous_extraction(self):
@@ -391,6 +391,52 @@ class ExtractionTests(BundleTestCase):
         target = self.tmp / "afile"
         target.write_text("not a directory\n", encoding="utf-8")
         self.assertBundleError("not a directory", extract, self.bundle, target)
+
+
+class LauncherTests(BundleTestCase):
+    """D63: `pullmanager.py` in the working folder runs the extracted copy."""
+
+    def setUp(self):
+        super().setUp()
+        self.work = self.tmp / "QueryGenerator"
+        self.work.mkdir()
+        shutil.copyfile(self.bundle, self.work / "bundle.py")
+
+    def run_python(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, *args], capture_output=True, text=True, cwd=self.work
+        )
+
+    def test_extract_with_no_folder_uses_the_default_and_writes_the_launcher(self):
+        run = self.run_python("bundle.py", "--extract")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
+        self.assertIn("pullmanager.py", run.stdout)
+        version = self.run_python("pullmanager.py", "--version")
+        self.assertEqual(version.returncode, 0, version.stderr)
+        self.assertIn("pullmanager", version.stdout)
+
+    def test_the_launcher_works_beside_a_folder_of_its_own_name(self):
+        # Extracted as `pullmanager`, the folder shares the launcher's name.
+        self.assertEqual(self.run_python("bundle.py", "--extract", "pullmanager").returncode, 0)
+        version = self.run_python("pullmanager.py", "--version")
+        self.assertEqual(version.returncode, 0, version.stderr)
+        self.assertIn("pullmanager", version.stdout)
+
+    def test_the_launcher_is_rewritten_by_every_extraction(self):
+        self.run_python("bundle.py", "--extract")
+        (self.work / "pullmanager.py").write_text("print('edited')\n", encoding="utf-8")
+        self.run_python("bundle.py", "--extract", "elsewhere")
+        text = (self.work / "pullmanager.py").read_text(encoding="utf-8")
+        self.assertIn("'elsewhere'", text)
+        self.assertNotIn("edited", text)
+
+    def test_a_missing_folder_says_to_extract_again(self):
+        self.run_python("bundle.py", "--extract")
+        shutil.rmtree(self.work / "pullmanager_runtime")
+        run = self.run_python("pullmanager.py", "--version")
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn("python bundle.py --extract pullmanager_runtime", run.stderr)
 
 
 class EndToEndTests(BundleTestCase):

@@ -108,14 +108,14 @@ without a display uses Xvfb (`brew install xorg-server`).
 
 ### The Bundle
 
-Everything reaches the VM as one self-extracting file,
-`dist/pullmanager_bundle.py`, built by `scripts/bundle_pullmanager.py` from
+Everything reaches the VM as one self-extracting file, `dist/bundle.py`
+(D63), built by `scripts/bundle_pullmanager.py` from
 `scripts/bundle_extractor.py` (the prelude) plus every file it carries.
 
 It carries the whole unit, not just the runtime:
 
 ```text
-pullmanager_runtime/                # the extracted tree (any name; this one is the default)
+pullmanager_runtime/                # the extracted tree (any name; this is --extract's default)
   pullmanager.py                    Pullmanager entry point
   pullmanager/                      runtime package and its tests
   scripts/makeYaml.py               validator and splitter
@@ -145,6 +145,12 @@ Guarantees:
 - **All-or-nothing.** Extraction stages to a sibling temp directory and swaps
   only after everything verifies. It replaces a previous extraction (one with
   `.bundle-manifest.json`) but refuses any other directory without `--force`.
+
+After extracting, `--extract` writes `pullmanager.py` beside the extracted
+folder (D63): a few lines that run that folder's `pullmanager.py` with the
+same arguments. It is rewritten by every extraction, whatever is there, so it
+always points at the folder just extracted; a missing folder makes it say to
+extract again.
 
 ### Updating Never Destroys Work
 
@@ -185,7 +191,7 @@ On the Mac:
 
 ```bash
 python3 scripts/bundle_pullmanager.py --tdd     # optional: the bundle's own tests
-python3 scripts/bundle_pullmanager.py           # writes dist/pullmanager_bundle.py
+python3 scripts/bundle_pullmanager.py           # writes dist/bundle.py
 ```
 
 Copy that one file to the VM. Nothing else travels. The same sources always
@@ -200,9 +206,10 @@ beside it:
 <project share>\
   data\                       big reference files; a dictionary if kept outside the bundle
   QueryGenerator\             where you work: the working directory for every command
-    pullmanager_bundle.py     the copied file
+    bundle.py                 the copied file
+    pullmanager.py            written by --extract: python pullmanager.py opens the launcher
     pullmanager_runtime\      extracted; managed; never put your own files in here
-    IBD_transfer.yaml         a transfer YAML, exported on the Mac
+    IBD_Ancestry_transfer.yaml  a transfer YAML, exported on the Mac, run from here
     data\                     its upload files, at the paths the export listed
     runs\                     one folder per project (D57), so projects run side by side
       IBD_Ancestry\           from IBD_Ancestry_transfer.yaml
@@ -217,22 +224,23 @@ the transfer YAML, so its upload files keep the same places relative to it as
 on the Mac (the export lists them). `YAMLMANAGER_DATA_DICTIONARY` sets the
 dictionary once.
 
-A change made on the VM is an edit to the transfer YAML by hand. A recipe
-change is made on the Mac and re-exported.
+Transfer YAMLs sit at the root, ready to run (D63); a run folder holds only
+what a pull makes. A change made on the VM is an edit to the transfer YAML by
+hand. A recipe change is made on the Mac and re-exported.
 
 ### The Whole Pathway On The VM
 
 ```bash
-python pullmanager_bundle.py --verify-bundle
-python pullmanager_bundle.py --extract ./pullmanager_runtime
-python pullmanager_runtime/pullmanager.py --tdd              # prove the delivery
+python bundle.py --verify-bundle
+python bundle.py --extract             # into pullmanager_runtime, and writes pullmanager.py
+python pullmanager.py --tdd            # prove the delivery
 
-python pullmanager_runtime/pullmanager.py --gui              # desktop launcher
+python pullmanager.py                  # the desktop launcher
 
 # or the same steps by hand
 python pullmanager_runtime/scripts/makeYaml.py --template IBD_Ancestry_transfer.yaml --export-split --out-dir runs/IBD_Ancestry/split
-python pullmanager_runtime/pullmanager.py --dry-run runs/IBD_Ancestry/split/pullmanifest.yaml --out-dir runs/IBD_Ancestry/sql
-python pullmanager_runtime/pullmanager.py --execute runs/IBD_Ancestry/split/pullmanifest.yaml
+python pullmanager.py --dry-run runs/IBD_Ancestry/split/pullmanifest.yaml --out-dir runs/IBD_Ancestry/sql
+python pullmanager.py --execute runs/IBD_Ancestry/split/pullmanifest.yaml
 ```
 
 The repair loop for a VM-side bug: read the file out of the bundle or the
@@ -1073,7 +1081,8 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 pullmanager.py runs/<project>/split/pullmanifest.yaml              # summarize
 pullmanager.py --dry-run runs/<project>/split/pullmanifest.yaml [--out-dir runs/<project>/sql] [-v] [--all] [--retry-failed] [--repull]
 pullmanager.py --execute runs/<project>/split/pullmanifest.yaml [--retry-failed] [--repull] [--env FILE]
-pullmanager.py --gui
+pullmanager.py                                                     # the launcher (D63)
+pullmanager.py --gui                                               # the same
 pullmanager.py --tdd [module]
 ```
 
@@ -1083,7 +1092,8 @@ will do next.
 
 ### The Launcher
 
-`--gui` opens a tkinter window for **running** pulls: choose the transfer YAML,
+`pullmanager.py` with no arguments, or `--gui`, opens a tkinter window for
+**running** pulls: choose the transfer YAML,
 data dictionary, split folder and SQL folder (blank means
 `runs/<project>/split` and `runs/<project>/sql`, named from the transfer YAML's
 file name, D57); then Validate, Export split, Dry
@@ -1108,8 +1118,8 @@ Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
 python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (133)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (344)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (346)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (50)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```
 
