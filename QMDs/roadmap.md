@@ -19,6 +19,7 @@ When an item here is built, delete it from this file and describe the result in
 | Pullmanager: connections, session execution, uploads, transfer | Written and tested against a fake cursor. **Never run against a database** |
 | Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Not yet on the VM |
 | Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Not yet on the VM |
+| Dedup through sources, split levels filtering their PK, control sampling, hash samples, uploads once per pull (D58–D62) | Built and tested against fakes on the Mac; dry-run on the VM. Not yet executed |
 | Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested on the Mac. Not yet used on the VM |
 | Launcher (`--gui`) | Built; tested with a fake tkinter, built for real on Tk 9 and on Tk 8.6 (Mac `python3.13`). Not yet opened on the VM |
 | Artifact handoff (parquets) | Not built |
@@ -58,12 +59,10 @@ Then rebuild the bundle and re-export the IBD Ancestry transfer.
 
 Everything below the dry run is unproven until it meets Cosmos. On the VM:
 
-1. Copy the new bundle, `--verify-bundle`, extract, then `pullmanager.py --tdd`.
-   The extraction should report `recipes.yaml`, the UI and the template
-   example as no longer shipped, with a `.local` for any that were edited
-   there.
-2. `pullmanager.py --gui`. Checked on Tk 8.6 on the Mac, but the VM's exact
-   Tk is unconfirmed, so watch for option or layout errors.
+1. Copy `bundle.py`, `python bundle.py --verify-bundle`, extract, then
+   `python pullmanager.py --tdd` from the working folder.
+2. `python pullmanager.py` opens the launcher. Checked on Tk 8.6 on the Mac,
+   but the VM's exact Tk is unconfirmed, so watch for option or layout errors.
 3. On the Mac, export a small template with `--export-transfer`: a generated
    PK, a parquet upload with a declared `BIGINT` column, and a batched run
    (explicit `values:`, and a `chunk:`). Copy it and its listed uploads over,
@@ -94,6 +93,16 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
    others, open the Projects connection with autocommit on.
 8. An uploaded PK: a parquet list marked `type: pk`, batched by a column it
    carries. Its uniqueness check and batches should read `upload_<dest>`.
+9. The IBD Ancestry pull (D58–D61):
+   - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult`
+     times the same on the black PK, and the PK phase's `control_sample`
+     output agrees.
+   - `SELECT PatientDurableKey, BillingCodeValue FROM <OtherDiagnoses> GROUP BY
+     PatientDurableKey, BillingCodeValue HAVING COUNT(*) > 1` returns nothing.
+   - A patient's `IndexDate` is the earliest `StartDateKey` among their
+     disease-code events.
+   - `upload_IBD_Meds` lands once, in the first session, and no session loads
+     it into Cosmos (the upload phase's `uploads` output says so).
 
 ---
 
@@ -162,6 +171,15 @@ them inferred from `{{prefix}}_{{Var}}`.
 
 The browser UI also does not yet show the uploaded PK source selection, and has
 no button to hand a split folder to Pullmanager.
+
+### Queueing Transfers
+
+Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template
+added gets its transfer version (recipes written out; multipliers and
+batching still in their own sections, D49), and the queue is carried to the
+VM and run. Open: whether the tab lives in YAML Manager (building the queue on
+the Mac), in the launcher (running it on the VM), or both; and whether queued
+pulls run one after another or side by side (D57 allows either).
 
 ### Smaller Open Items
 

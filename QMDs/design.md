@@ -373,7 +373,21 @@ Checks:
   bound recipes read; declared upload columns exist and have a type an upload
   can take (Upload Files, above).
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
-- Multiplier definitions are well formed.
+- Multiplier definitions are well formed. Each `split_after_build` level says
+  which PK rows are its own (`column` and `values`, or `where`;
+  `split_level_without_condition`) and splits the PK only
+  (`split_after_build_target`). `role` is `control` or absent; `row_mult`
+  needs `role: control`, is a positive number, and needs exactly one case
+  level beside it; a sampled control's PK needs a key (D59). `role` and
+  `row_mult` on a `during_build` level are refused.
+- Dedup names the cohort's own columns: every `dedup_keys` and
+  `dedup_order_by` name is one of its `columns` (`bad_dedup_column`, whose fix
+  lists them; a list written inside `dedup_order_by` is told it takes plain
+  names). `dedup_order` and `order_by` are refused (`old_dedup_order`) (D58).
+- `random_pk_sample` under `smallset` needs the PK's key, from `dedup_keys` or
+  `key_column` (`random_sample_without_key`) (D60).
+- A retired option (`stop_at_for_non_pk_tables`, `print_md`, `printout_md`)
+  warns, naming itself (`retired_option`) (D62).
 - Batching definitions, field by field, since a transfer YAML writes them out
   in full: a known `kind`; `column_values` has a `column` on the PK and a
   non-empty `values` list; `row_chunk` has a positive `rows_per_batch` (the
@@ -389,16 +403,37 @@ Checks:
   30 (`bad_temp_prefix`).
 - Every cohort column against the data dictionary (below).
 
+A passing `--validate` writes nothing, and says what it found and what it
+checked (D62):
+
+```text
+OK: IBD_Ancestry_transfer.yaml is valid: 16 cohort(s) in 8 session(s), 24 run(s); 0 warning(s) above.
+Checked: recipes written out in it; every variable and table binding; each column against the data dictionary (...); 1 upload file(s) present, with their declared columns; multipliers and their levels; batching; dedup columns.
+Nothing was written. Export split writes the pull.
+```
+
 Authoring rules applied on the way:
 
-- `dedup_keys` is canonical, a list of lists (`[[DiagnosisEventKey]]`). Legacy
-  `dedup_key` is accepted and normalized, with a warning.
+- `dedup_keys` is canonical, a list of lists
+  (`[[PatientDurableKey, BillingCodeValue]]`); legacy `dedup_key` is accepted
+  and normalized, with a warning. `dedup_order_by`, a plain list
+  (`[StartDateKey]`, an entry may end in ` DESC`), chooses which duplicate
+  survives. Both name the cohort's columns and render as their sources, since
+  `ROW_NUMBER` sits in the SELECT that defines those names (D58):
+  `PARTITION BY def.PatientDurableKey, dt.Value ORDER BY def.StartDateKey`.
+  Without `dedup_order_by`, which duplicate survives is arbitrary and may
+  differ between runs, and a dry run says so.
 - `stop_at_for_pk_table` limits the **root** PK cohort only: the one joining no
   other generated temp. Under `Dual` there is one root per database, and each is
-  limited.
-- `stop_at_for_non_pk_tables`, `print_md` and `printout_md` are dead and warn
-  that they are ignored. (`makeYaml.py --report` is unrelated: it reports on the
-  template, not a run.)
+  limited. A sampled control's limit is `row_mult` times it (D59).
+- With `random_pk_sample`, the limited PK is ordered by
+  `HASHBYTES('SHA2_256', <key>)`, the key being its first dedup key set or its
+  `key_column`: a spread-out sample, the same on every run (D60). Without
+  `smallset` there is no limit, and nothing to sample.
+- `stop_at_for_non_pk_tables`, `print_md` and `printout_md` are retired: gone
+  from the Builder and the example template, and a template that still has
+  one gets a warning (D62). (`makeYaml.py --report` is unrelated: it reports on
+  the template, not a run.)
 - `from` and `join` are schema-qualified alike, and only where no schema is
   present, so `dbo.dbo.` and a qualified temp are impossible.
 - `sql_condition(column, var)` renders a scalar as `=`, a list as `IN`, a
@@ -620,7 +655,7 @@ Every session has the same routine, batched or not:
 | Phase | Does |
 | --- | --- |
 | `setup` | Creates the Projects destination tables (drop and create; kept on a resume) |
-| `upload_cohorts` | Uploads every upload cohort into `##<prefix>_<dest>`, once per session |
+| `upload_cohorts` | Lands each upload in Projects once per pull, and loads its Cosmos temp where the session reads it (D61) |
 | `pk` | Builds the PK table and copies it to Projects, or registers an uploaded one |
 | runs | Pull the remaining cohorts, one run per batch combination |
 
@@ -649,6 +684,26 @@ source: `upload_cohorts` uploads it, and `pk` registers it
 of building one. Its Projects copy is the upload's own (`upload_<dest>`,
 What A Session Does), which its uniqueness check, batches and chunks read, as a
 generated PK's do. Its session carries the template's batching.
+
+### Multipliers
+
+A `during_build` level sets variables (`ICD_Value: [K50.%]`), so each level
+builds its own cohorts. A `split_after_build` level splits the PK by one of
+its columns (D59): its condition joins that PK's `where`, written on the PK's
+own source for the column (`p.FirstRace LIKE 'Black%'`), so each level still
+builds its own PK in its own session. Levels multiply: IBDType × Race × `Dual`
+is 8 sessions.
+
+A level with `role: control` and `row_mult: n` is a control, sampled against
+its case: the multiplier's one other level, in the same group and database
+(`whitePatients` against `blackPatients`, `_sp` against `_sp`). The PK records
+it as `split_after_build[].matched_to`, and the manifest puts every case
+session before any control. Once the control's PK lands in Projects, each
+batch keeps n times its case's rows in that batch, the first in hash order of
+the key (D60), and the rest are deleted, so the Projects PK is the sample and
+every run is drawn from it. The control is matched on the batching columns
+and nothing else. A batch with too few controls keeps them all, with a
+warning.
 
 ### Batching
 
@@ -767,8 +822,17 @@ runtime:
   temp_prefix: tesrun                          # tesrun2 if another pull held tesrun (D50)
   cosmos_created: {Cosmos: "2026-09-17T19:34:56.450"}
 
-# on the manifest (D51)
-cosmos_refresh: {Cosmos: "2026-09-17T19:34:56.450", Cosmos_SneakPeek: "..."}
+# on the pk phase of a sampled control (D59)
+outputs: {control_sample: {matched_to: CrohnsblackPatients, row_mult: 4.0,
+          per_batch: {b1of3-Male: {cases: 812, controls: 3248}}}}
+
+# on an upload phase (D61)
+outputs: {uploads: {IBD_Meds: {projects: landed, cosmos: not read in this session}}}
+
+# on the manifest
+cosmos_refresh: {Cosmos: "2026-09-17T19:34:56.450", Cosmos_SneakPeek: "..."}   # D51
+uploads_landed: {IBD_Meds: {table: PROJECTD93A5E7.dbo.upload_IBD_Meds, rows: 1204,
+                 landed_at: "...", by_session: CrohnsblackPatients}}            # D61
 ```
 
 ### Rules
@@ -860,21 +924,27 @@ the Cosmos refresh date (D51, Running Again), and choose the temp prefix
    run fills has a `_batch NVARCHAR(200) NOT NULL` column holding the run's
    batch label (`all` for an unbatched run). The PK's own copy has none, since
    batches are selected from it.
-2. **Uploads** (D54). Each lands in Projects first, as `upload_<dest>` with
-   its types (Uploads, below), and is committed. Then its Cosmos temp is
-   created with the copy's types, read back from `INFORMATION_SCHEMA`, and
-   filled from the copy through the client (there is no linked server from
-   Cosmos back to Projects). Resuming, the copies are kept and the files are
-   not read; a copy that is missing stops the phase, pointing at `--repull`.
+2. **Uploads** (D54, D61). A non-PK upload lands in Projects once per pull,
+   as `upload_<dest>` with its types (Uploads, below), committed, by the
+   first session to reach it; the manifest records it (`uploads_landed`) and
+   later sessions use that copy. Its Cosmos temp is created with the copy's
+   types, read back from `INFORMATION_SCHEMA`, and filled from the copy
+   through the client (there is no linked server from Cosmos back to
+   Projects), but only in a session whose cohorts read it. An uploaded PK
+   lands and goes up in every session. Resuming, the copies are kept and the
+   files are not read; a copy that is missing stops the phase, pointing at
+   `--repull`.
 3. **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK
    already has its `upload_` copy), then verify uniqueness against the copy
    (`COUNT(*)` against a count of `SELECT DISTINCT keys`; a PK with no key
-   column warns instead). Not rerun on a resume.
+   column warns instead). A sampled control is cut to its sample first
+   (Multipliers). Not rerun on a resume.
 4. **Runs.** For a batched run, the PK temp is emptied and refilled with that
    batch's whole PK rows, selected from the **Projects copy** with a
    parameterized predicate, then uploaded. The cohort SQL runs unchanged: it
    only ever joins the PK temp. On a resume an unbatched run refills it with
-   the whole Projects copy the same way. Each run then:
+   the whole Projects copy the same way, as does an unbatched sampled control,
+   whose temp still holds every row the PK query built. Each run then:
    - deletes its own label's rows from each destination
      (`DELETE ... WHERE _batch = 'b2of4-LA-Male'`), a separate block, so a run
      that failed after landing some rows lands them exactly once when retried;
@@ -914,9 +984,9 @@ it fails, naming the column.
 
 **The copy is the source.** Once landed, the Cosmos temp, an uploaded PK's
 batches and every resume or retry read the copy, never the file. So a file
-changed after a pull started is not seen until `--repull`, which lands every
-upload from its file again; that is the step to take after someone sends a
-corrected file.
+changed after a pull started is not seen until `--repull`, which clears
+`uploads_landed` and lands every upload from its file again; that is the step
+to take after someone sends a corrected file.
 
 Rows travel by parameter binding with `fast_executemany`, chunked:
 
@@ -1037,8 +1107,8 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (116)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (325)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (133)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (344)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

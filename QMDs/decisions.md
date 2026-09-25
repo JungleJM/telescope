@@ -1067,3 +1067,31 @@ eight times, for no cohort that reads it.
   written, and the path was inside the extracted bundle. It says the file is
   valid, how many cohorts, sessions and runs it makes, and what was checked.
 
+### D63. The VM folder: `bundle.py`, a root `pullmanager.py`, transfer YAMLs beside them
+
+**Context.** The working folder on the VM held `pullmanager_bundle.py`, the
+extracted folder and the transfer YAMLs. Starting the launcher meant
+`python pullmanager_runtime\pullmanager.py --gui`: a path into the managed
+folder, and a flag for the thing done most often.
+
+**Decision.**
+
+- The bundle is `bundle.py` (`dist/bundle.py` on the Mac).
+- `bundle.py --extract <folder>` also writes `pullmanager.py` into the folder
+  it extracts beside, the working folder: a few lines that run the extracted
+  copy. It is rewritten on every extraction, without checking what is there;
+  it is not for editing. The code itself stays in the extracted folder, which
+  every update replaces. `--extract` with no folder uses
+  `pullmanager_runtime`.
+- `pullmanager.py` with no arguments opens the launcher. Every other command
+  is unchanged (`--dry-run`, `--execute`, `--tdd`, a manifest to summarize),
+  and `--gui` still works.
+- Transfer YAMLs sit at the root of the working folder, with their upload
+  files at the paths they list, ready to run. A run folder holds only what a
+  pull makes (`runs/<project>/split`, `sql`); nothing is copied into it.
+
+**Consequences.** The root holds `bundle.py`, `pullmanager.py`, the transfer
+YAMLs and their `data\`, `runs\`, the extracted folder and
+`.pullmanager-gui.json`. Queueing several transfer YAMLs is for later
+(roadmap).
+
