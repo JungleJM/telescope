@@ -1321,3 +1321,83 @@ same SQL itself as it goes. The user took it to be a required step.
 
   With no SQL folder given (a terminal `--dry-run` without `--out-dir`), the
   second line says no SQL was written and how to write it.
+
+### D72. `--artifacts` packages a pull's finished tables as parquets
+
+**Context.** The first live pull finished, and its tables sit in Projects. The
+user wants them as files in the project, for R and Python on the VM: the
+parquets cannot leave it.
+
+**Decision.**
+
+- `python pullmanager.py --artifacts IBD_Ancestry` (a project's name, as
+  `--execute` takes, D66), and an **Artifacts** button in the launcher.
+  "Package" and "extract" were rejected as too close to other commands.
+- It writes `runs/<project>/parquets/`, with `SneakPeek/`, `Cosmos/` and
+  `uploads/` inside. Files keep the table's name, so SneakPeek's keep `_sp`
+  and nothing is confused when all are loaded together.
+- **Only finished tables.** A PK table once its PK phase is done; a run's
+  table once every run that fills it is done. Anything else is listed as not
+  packaged, with why. The manifest decides, never what exists in Projects.
+- A table is read from Projects in chunks and written with pyarrow, typed
+  from the table's own column types. `_batch` is dropped: it is internal.
+- A batching dimension with `separate_parquets: true` writes one file per
+  value (`OtherDiagnoses_LA.parquet`), chosen by `_batch` and the manifest's
+  batch list; the split now records the flag on each batch dimension.
+  Dimensions without it stay combined.
+- Uploads are copied from the split's parquet, not read back from Projects.
+- Each run replaces what the last wrote; there is no use for older copies.
+- It refuses while the pull is executing (D67).
+
+### D73. `contents.md` describes every packaged table, for people and for the VM's AI
+
+**Decision.** `runs/<project>/contents.md` holds:
+
+- **A pull summary:** the project, the Cosmos database, when it was pulled,
+  the Cosmos refresh date, whether it was a test sample (`smallset`, and its
+  limit), and each table's row count.
+- **Per table:** granularity, "specific to", description, then its columns.
+  - Granularity is the table's own `granularity`; else "One row per" its
+    `dedup_keys`; else "No granularity given".
+  - "Specific to" is written from the table's multiplier levels and variables
+    as the SQL says them (`p.FirstRace LIKE 'White%'`, `ICD_Value K50.%`,
+    sampled at 4 times its case per batch), so it also shows how the rows were
+    chosen.
+  - Each column is its name, its SQL type as the table holds it, and its type
+    once loaded in each language: `PatientDurableKey: BIGINT (py: int64,
+    r: integer64): description`. The types are for writing code against the
+    files, including by the VM's AI, so they are the programmatic ones.
+  - A column's description is its own `description`; else the data
+    dictionary's for its source column (`p.Sex` is `PatientDim.Sex`, through
+    the table's `from` and `join` aliases); else "No description". Nothing is
+    guessed, and borrowed text is not marked as borrowed.
+  - **Keys and joins (testing; may be removed):** the table's key, and the
+    other tables sharing each of its key columns.
+- Separated batches are tables of their own; uploads are listed too.
+- Descriptions are read from the split, so a changed description reaches
+  `contents.md` through a new split.
+
+### D74. Recipes carry `granularity` per table and `description` per column
+
+**Decision.** A cohort (recipe or custom table) may have `granularity:`, and
+each of its columns `description:`, beside the `description:` a cohort
+already has. They travel through the transfer YAML and the split unchanged,
+and nothing but `contents.md` reads them. The Builder's custom-table editor
+has fields for all three. The user writes them for recipes; blanks fall back
+as D73 says.
+
+### D75. `load_parquets` and `examine_parquets`, in R and in Python
+
+**Decision.** At the root of `runs/<project>/`, beside `contents.md`:
+
+- `load_parquets.R` and `load_parquets.py` open every parquet without reading
+  it into memory (`arrow::open_dataset()`, `pyarrow.dataset`), named by
+  table, for filtering before anything is loaded.
+- `examine_parquets.R` and `examine_parquets.py` read every table into memory
+  (R data frames; pandas with Arrow types, so a nullable integer stays an
+  integer), for browsing small tables.
+- R keeps 64-bit integers as `integer64` (`arrow.int64_downcast = FALSE`), so
+  a key's type is the same in every table and joins match.
+- `HOW_TO.md` says which to use when. The client keeps whichever language it
+  wants and deletes the rest. All use only what the VM has: R `arrow`, Python
+  `pyarrow` and `pandas`.

@@ -68,6 +68,24 @@ Then rebuild the bundle.
 
 ---
 
+## Next: Artifacts, In Order
+
+From `artifact.md` (D72 to D75). The IBD Ancestry pull is to be run again on
+the next bundle, so errors can be traced to this code.
+
+1. **Description fields (D74):** `granularity` and column `description`
+   through makeYaml, the split and the Builder, and `separate_parquets` kept
+   on each batch dimension. The user then writes the recipes' descriptions.
+2. **Parquet export (D72):** finished tables only, SneakPeek, Cosmos and
+   uploads folders, `_batch` dropped, separate batches, the lock respected,
+   the command and the launcher button.
+3. **`contents.md` (D73).**
+4. **`load_parquets`, `examine_parquets` and `HOW_TO.md` (D75).**
+
+Then rebuild the bundle.
+
+---
+
 ## Next: The First Live Run
 
 Where it stands: the D64 bundle is extracted on the VM and the launcher opens
@@ -166,21 +184,16 @@ Observations for when it is built:
 - Big reference files live in a `data/` folder in the parent directory;
   templates reference them relative to the template.
 
-### Artifact Handoff
+### After Artifacts
 
-The old plan's Phase 10.
-
-- Manifest fields describing the local tables that actually completed, so
-  export never trusts planned-but-failed work.
-- An upload needs no export: its parquet already exists (D54), so copy it.
-- Parquet export per cohort, honouring the `separate_parquets` batching flag.
-  Each destination row carries its batch label in `_batch` (D52), which is
-  what a per-batch export splits on.
-- `contents.yaml` and `load_parquets.py`, above.
-- A summary command.
-- Surface measured column widths so templates can be tuned from data. Today
-  they, the row-count comparisons and large-count warnings only go to the
-  console; they could be written to the manifest.
+- **Keys and joins in `contents.md`** (D73) are a test: look at them once
+  built, and remove them if they are more than a reader needs.
+- **Descriptions without a new split.** `contents.md` reads descriptions from
+  the split (D73), so improving one means splitting again, which resets the
+  pull. Reading them from the transfer YAML instead would need a way to match
+  a multiplied table (`whitePatients_sp`) back to its template cohort.
+- **Measured column widths** go only to the console and the log (D70); they
+  could be written to the manifest, so templates can be tuned from data.
 
 ### Table-Input Binding In The UI
 
