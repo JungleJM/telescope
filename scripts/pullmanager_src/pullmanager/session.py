@@ -57,10 +57,18 @@ class SessionReport:
     failed: list[tuple[str, str]] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # (destination, column) -> [declared type, widest value], across every
+    # batch and chunk of the session: notes, not warnings (D34, D70).
+    widths: dict[tuple[str, str], list] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
         return not self.failed
+
+    def record_width(self, dest: str, column: str, declared: str, widest: int) -> None:
+        entry = self.widths.setdefault((dest, column), [declared, int(widest)])
+        entry[0] = entry[0] or declared
+        entry[1] = max(entry[1], int(widest))
 
 
 class SessionRunner:
@@ -747,12 +755,10 @@ class SessionRunner:
                 local_rows[str(row["DestTable"])] = int(row["RowCount"])
         for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
             if row["MaxLength"] is None:
-                continue
-            self.report.warnings.append(
-                f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
-                f"widest value {row['MaxLength']}"
-                if row.get("DeclaredType") else
-                f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
+                continue  # every value empty: nothing measured
+            self.report.record_width(
+                str(row["DestTable"]), str(row["Column"]),
+                str(row.get("DeclaredType") or ""), row["MaxLength"],
             )
         self.projects.commit()
 

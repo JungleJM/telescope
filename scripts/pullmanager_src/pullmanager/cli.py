@@ -287,6 +287,8 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> i
             print(f"  FAILED   {label}: {message}")
         for warning in report.warnings:
             print(f"  warning  {warning}")
+        for line in width_notes(report.widths):
+            print(line)
         print()
     failures = [r for r in reports if r is None or not r.ok]
     ran = len(reports)
@@ -294,6 +296,26 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> i
           f"{len(manifest.sessions) - ran} had nothing to pull.")
     print(f"Manifest updated: {manifest.path}")
     return 1 if failures or idle_failures else 0
+
+
+def width_notes(widths: dict[tuple[str, str], list]) -> list[str]:
+    """One table per session of the widest value in each text column (D70).
+
+    Across all of the session's batches, once, after its warnings: notes, not
+    warnings, since widths are measured and never applied (D34).
+    """
+    if not widths:
+        return []
+    header = ("Table", "Column", "Declared", "Widest")
+    rows = [(dest, column, declared or "-", str(widest))
+            for (dest, column), (declared, widest) in widths.items()]
+    size = [max(len(row[i]) for row in (header, *rows)) for i in range(4)]
+    lines = ["  note     Column widths: the widest value stored in each text column, "
+             "across the session's batches. Measured, not applied."]
+    for row in (header, *rows):
+        cells = [row[i].ljust(size[i]) for i in range(3)] + [row[3].rjust(size[3])]
+        lines.append("           " + "  ".join(cells))
+    return lines
 
 
 def build_parser() -> argparse.ArgumentParser:

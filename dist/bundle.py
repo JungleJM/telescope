@@ -459,7 +459,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "99c0792627e16c28ba85d843545753878bb65aaafe72070fb5947869b65e25a0",
+  "content_id": "ed1b7f9d0f2a9055c0aeac113207bbee0e70c4d3fff5a362fed01f690273a2e4",
   "file_count": 42,
   "files": [
     {
@@ -495,8 +495,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "7c5ded359afefc3a112746313a08e17089fe20b8d65b338b0521152315c5ee1c",
-      "size": 16381
+      "sha256": "18f212453e0e61c06351f1bbb93dd3d45d18e4844a438781100691151d712d74",
+      "size": 17388
     },
     {
       "path": "pullmanager/db.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "35ac23e011ae0de065dfe7898475dd10c57effb3bd09c1c56106a7ff5769c0a4",
-      "size": 33906
+      "sha256": "bc78dea5c9581c6fb4b47bce80a95be64cefb8690c6fc42a35cd07be0022d3da",
+      "size": 34269
     },
     {
       "path": "pullmanager/sql.py",
@@ -681,8 +681,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "162132439541244a42489187044c2ce7a6557d75567a0026fe07f6d71731e241",
-      "size": 41686
+      "sha256": "ea278e53af49e3653cec18e9b0b8117f75c39b6a006688faf66400b8b44c0493",
+      "size": 44384
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -3778,7 +3778,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 7c5ded359afefc3a112746313a08e17089fe20b8d65b338b0521152315c5ee1c SIZE: 16381 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 18f212453e0e61c06351f1bbb93dd3d45d18e4844a438781100691151d712d74 SIZE: 17388 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -4068,6 +4068,8 @@ if __name__ == "__main__":
 #             print(f"  FAILED   {label}: {message}")
 #         for warning in report.warnings:
 #             print(f"  warning  {warning}")
+#         for line in width_notes(report.widths):
+#             print(line)
 #         print()
 #     failures = [r for r in reports if r is None or not r.ok]
 #     ran = len(reports)
@@ -4075,6 +4077,26 @@ if __name__ == "__main__":
 #           f"{len(manifest.sessions) - ran} had nothing to pull.")
 #     print(f"Manifest updated: {manifest.path}")
 #     return 1 if failures or idle_failures else 0
+#
+#
+# def width_notes(widths: dict[tuple[str, str], list]) -> list[str]:
+#     """One table per session of the widest value in each text column (D70).
+#
+#     Across all of the session's batches, once, after its warnings: notes, not
+#     warnings, since widths are measured and never applied (D34).
+#     """
+#     if not widths:
+#         return []
+#     header = ("Table", "Column", "Declared", "Widest")
+#     rows = [(dest, column, declared or "-", str(widest))
+#             for (dest, column), (declared, widest) in widths.items()]
+#     size = [max(len(row[i]) for row in (header, *rows)) for i in range(4)]
+#     lines = ["  note     Column widths: the widest value stored in each text column, "
+#              "across the session's batches. Measured, not applied."]
+#     for row in (header, *rows):
+#         cells = [row[i].ljust(size[i]) for i in range(3)] + [row[3].rjust(size[3])]
+#         lines.append("           " + "  ".join(cells))
+#     return lines
 #
 #
 # def build_parser() -> argparse.ArgumentParser:
@@ -8006,7 +8028,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 35ac23e011ae0de065dfe7898475dd10c57effb3bd09c1c56106a7ff5769c0a4 SIZE: 33906 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: bc78dea5c9581c6fb4b47bce80a95be64cefb8690c6fc42a35cd07be0022d3da SIZE: 34269 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -8066,10 +8088,18 @@ if __name__ == "__main__":
 #     failed: list[tuple[str, str]] = field(default_factory=list)
 #     skipped: list[str] = field(default_factory=list)
 #     warnings: list[str] = field(default_factory=list)
+#     # (destination, column) -> [declared type, widest value], across every
+#     # batch and chunk of the session: notes, not warnings (D34, D70).
+#     widths: dict[tuple[str, str], list] = field(default_factory=dict)
 #
 #     @property
 #     def ok(self) -> bool:
 #         return not self.failed
+#
+#     def record_width(self, dest: str, column: str, declared: str, widest: int) -> None:
+#         entry = self.widths.setdefault((dest, column), [declared, int(widest)])
+#         entry[0] = entry[0] or declared
+#         entry[1] = max(entry[1], int(widest))
 #
 #
 # class SessionRunner:
@@ -8756,12 +8786,10 @@ if __name__ == "__main__":
 #                 local_rows[str(row["DestTable"])] = int(row["RowCount"])
 #         for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
 #             if row["MaxLength"] is None:
-#                 continue
-#             self.report.warnings.append(
-#                 f"{row['DestTable']}.{row['Column']} declared {row['DeclaredType']}, "
-#                 f"widest value {row['MaxLength']}"
-#                 if row.get("DeclaredType") else
-#                 f"{row['DestTable']}.{row['Column']} widest value {row['MaxLength']}"
+#                 continue  # every value empty: nothing measured
+#             self.report.record_width(
+#                 str(row["DestTable"]), str(row["Column"]),
+#                 str(row.get("DeclaredType") or ""), row["MaxLength"],
 #             )
 #         self.projects.commit()
 #
@@ -12447,7 +12475,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 162132439541244a42489187044c2ce7a6557d75567a0026fe07f6d71731e241 SIZE: 41686 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ea278e53af49e3653cec18e9b0b8117f75c39b6a006688faf66400b8b44c0493 SIZE: 44384 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -12546,8 +12574,11 @@ if __name__ == "__main__":
 #
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
 #                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-#                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None):
+#                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
+#                  widths=None):
 #         self.side = side
+#         # Column -> the widest value each measurement of it reports, in turn.
+#         self.widths = {column: list(values) for column, values in (widths or {}).items()}
 #         self.rows = rows
 #         self.distinct = rows if distinct is None else distinct
 #         self.landed = landed
@@ -12665,6 +12696,16 @@ if __name__ == "__main__":
 #             else:
 #                 sets.append((["CohortName", "DestTable", "RowCount"],
 #                              [(dest, dest, self.rows)]))
+#         measured = re.findall(
+#             r"'([^']+)' AS \[DestTable\],\s*'([^']+)' AS \[Column\],\s*'([^']+)' AS \[DeclaredType\]",
+#             sql,
+#         )
+#         if measured:
+#             sets.append((["DestTable", "Column", "DeclaredType", "MaxLength"], [
+#                 (dest, column, declared,
+#                  self.widths[column].pop(0) if self.widths.get(column) else None)
+#                 for dest, column, declared in measured
+#             ]))
 #         return sets
 #
 #     def _landed(self, sql):
@@ -13287,6 +13328,45 @@ if __name__ == "__main__":
 #         self.assertIn("CasePatients", message)
 #         self.assertIn("run it first", message)
 #         self.assertEqual(self.deletes(), [])
+#
+#
+# class ReadoutTests(SessionTestCase):
+#     """D70: widths once per session, the widest across its batches, as notes."""
+#
+#     def execute(self, widths, **projects):
+#         self.make_batched()
+#         tables: dict[str, Counter] = {}
+#
+#         def connect(conn_str, **_):
+#             if "PROJECTD" in conn_str:
+#                 return FakeConnection("projects", tables=tables, widths=widths, **projects)
+#             return FakeConnection("cosmos")
+#
+#         args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+#             code = cli.execute(Manifest.load(self.root / "pullmanifest.yaml"), args, connect_fn=connect)
+#         return code, out.getvalue()
+#
+#     def test_one_line_per_column_holding_the_widest_of_every_batch(self):
+#         # Female measures 6, Male 9. Each batch printed its own before.
+#         code, out = self.execute({"EncounterType": [6, 9], "Sex": [6]})
+#         self.assertEqual(code, 0, out)
+#         rows = [line for line in out.splitlines() if "EncounterType" in line]
+#         self.assertEqual(len(rows), 1, out)
+#         self.assertRegex(rows[0], r"OtherHospitalizations\s+EncounterType\s+NVARCHAR\(300\)\s+9$")
+#         self.assertEqual(len([line for line in out.splitlines() if " Sex " in line]), 1)
+#         self.assertFalse([line for line in out.splitlines() if line.startswith("  warning")], out)
+#
+#     def test_they_are_notes_after_the_warnings(self):
+#         # Projects reports fewer rows than Cosmos: a warning that needs a look.
+#         code, out = self.execute({"EncounterType": [6, 9]}, landed=5)
+#         lines = out.splitlines()
+#         note = next(i for i, line in enumerate(lines) if line.startswith("  note     Column widths"))
+#         warnings = [i for i, line in enumerate(lines) if line.startswith("  warning")]
+#         self.assertTrue(warnings, out)
+#         self.assertLess(max(warnings), note)
+#         self.assertFalse(any("EncounterType" in line for line in lines if "warning" in line))
 #
 #
 # class PkKeyTests(SessionTestCase):

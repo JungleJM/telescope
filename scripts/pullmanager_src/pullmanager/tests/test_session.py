@@ -96,8 +96,11 @@ class FakeConnection:
 
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
-                 pk_rows=3, existing_temps=(), transactional=False, upload_columns=None):
+                 pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
+                 widths=None):
         self.side = side
+        # Column -> the widest value each measurement of it reports, in turn.
+        self.widths = {column: list(values) for column, values in (widths or {}).items()}
         self.rows = rows
         self.distinct = rows if distinct is None else distinct
         self.landed = landed
@@ -215,6 +218,16 @@ class FakeConnection:
             else:
                 sets.append((["CohortName", "DestTable", "RowCount"],
                              [(dest, dest, self.rows)]))
+        measured = re.findall(
+            r"'([^']+)' AS \[DestTable\],\s*'([^']+)' AS \[Column\],\s*'([^']+)' AS \[DeclaredType\]",
+            sql,
+        )
+        if measured:
+            sets.append((["DestTable", "Column", "DeclaredType", "MaxLength"], [
+                (dest, column, declared,
+                 self.widths[column].pop(0) if self.widths.get(column) else None)
+                for dest, column, declared in measured
+            ]))
         return sets
 
     def _landed(self, sql):
@@ -837,6 +850,45 @@ class ControlSampleTests(SessionTestCase):
         self.assertIn("CasePatients", message)
         self.assertIn("run it first", message)
         self.assertEqual(self.deletes(), [])
+
+
+class ReadoutTests(SessionTestCase):
+    """D70: widths once per session, the widest across its batches, as notes."""
+
+    def execute(self, widths, **projects):
+        self.make_batched()
+        tables: dict[str, Counter] = {}
+
+        def connect(conn_str, **_):
+            if "PROJECTD" in conn_str:
+                return FakeConnection("projects", tables=tables, widths=widths, **projects)
+            return FakeConnection("cosmos")
+
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = cli.execute(Manifest.load(self.root / "pullmanifest.yaml"), args, connect_fn=connect)
+        return code, out.getvalue()
+
+    def test_one_line_per_column_holding_the_widest_of_every_batch(self):
+        # Female measures 6, Male 9. Each batch printed its own before.
+        code, out = self.execute({"EncounterType": [6, 9], "Sex": [6]})
+        self.assertEqual(code, 0, out)
+        rows = [line for line in out.splitlines() if "EncounterType" in line]
+        self.assertEqual(len(rows), 1, out)
+        self.assertRegex(rows[0], r"OtherHospitalizations\s+EncounterType\s+NVARCHAR\(300\)\s+9$")
+        self.assertEqual(len([line for line in out.splitlines() if " Sex " in line]), 1)
+        self.assertFalse([line for line in out.splitlines() if line.startswith("  warning")], out)
+
+    def test_they_are_notes_after_the_warnings(self):
+        # Projects reports fewer rows than Cosmos: a warning that needs a look.
+        code, out = self.execute({"EncounterType": [6, 9]}, landed=5)
+        lines = out.splitlines()
+        note = next(i for i, line in enumerate(lines) if line.startswith("  note     Column widths"))
+        warnings = [i for i, line in enumerate(lines) if line.startswith("  warning")]
+        self.assertTrue(warnings, out)
+        self.assertLess(max(warnings), note)
+        self.assertFalse(any("EncounterType" in line for line in lines if "warning" in line))
 
 
 class PkKeyTests(SessionTestCase):
