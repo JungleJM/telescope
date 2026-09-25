@@ -459,8 +459,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "7dfd81767e44d3f909285cc7b8004d358686c69f0400044aca1b8353a4871b38",
-  "file_count": 46,
+  "content_id": "a86f3da063215e44c093ab62ee5751405b5299268d0376cbd75dde3e5a0673a7",
+  "file_count": 47,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -501,8 +501,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "90f4bb212ef354e0d1754628adcb2a91bd6a47de2b34ba93fd1ec30fe139246b",
-      "size": 20050
+      "sha256": "278f71ed50a12c1d4007a54c28d28e4dd1128420a3f707ecc0c42688ce0060c9",
+      "size": 20302
     },
     {
       "path": "pullmanager/contents.py",
@@ -533,6 +533,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "5d63c12e9487c4cb19ebd3c25364dda421506a0974e90eb80fc54eacc34d9694",
       "size": 15345
+    },
+    {
+      "path": "pullmanager/loaders.py",
+      "policy": "replace",
+      "sha256": "c3e14dfa1d1b5be177d7bb28c12afd7c11afb6eb3d8c20cc9fb226a6d5137b97",
+      "size": 7348
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -621,8 +627,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_artifacts.py",
       "policy": "replace",
-      "sha256": "7bbbc369065a7b6d463dee233eaaba937b6620889c5f15da3fbdac082461572e",
-      "size": 12209
+      "sha256": "7892c8fa063f100b0c0302f53a320db2bd0158c87555559f6ba840a9183f2659",
+      "size": 14513
     },
     {
       "path": "pullmanager/tests/test_batches.py",
@@ -4140,7 +4146,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 90f4bb212ef354e0d1754628adcb2a91bd6a47de2b34ba93fd1ec30fe139246b SIZE: 20050 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 278f71ed50a12c1d4007a54c28d28e4dd1128420a3f707ecc0c42688ce0060c9 SIZE: 20302 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -4366,14 +4372,20 @@ if __name__ == "__main__":
 #     from .contents import render
 #     from .pulls import run_folder
 #
-#     contents = run_folder(manifest.path) / "contents.md"
+#     from .loaders import write_loaders
+#
+#     run_dir = run_folder(manifest.path)
+#     contents = run_dir / "contents.md"
 #     contents.write_text(render(manifest, result), encoding="utf-8")
 #     print(f"  wrote    {shown(contents)}")
+#     for path in write_loaders(run_dir, out, pull_name(manifest.path)):
+#         print(f"  wrote    {shown(path)}")
 #     files = sum(len(spec.parts) for spec in result.tables)
 #     print()
 #     print(
 #         f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
-#         f"{len(result.left_out)} left out, in {shown(out)}."
+#         f"{len(result.left_out)} left out. In {shown(run_dir)}: contents.md describes "
+#         "them, HOW_TO.md says how to open them."
 #     )
 #     return 0
 #
@@ -6603,6 +6615,199 @@ if __name__ == "__main__":
 #     return path
 #
 # === END FILE: pullmanager/launcher.py ===
+# === BEGIN FILE: pullmanager/loaders.py SHA256: c3e14dfa1d1b5be177d7bb28c12afd7c11afb6eb3d8c20cc9fb226a6d5137b97 SIZE: 7348 ===
+# """`load_parquets` and `examine_parquets`, in R and Python, and HOW_TO.md (D75).
+#
+# Written at the root of `runs/<project>/`, beside `contents.md`. The client
+# keeps whichever language it uses and deletes the rest. Each names every
+# parquet by its table (`Patients`, `OtherDiagnoses_sp`), so they load side by
+# side without confusion. They use only what the VM has: R `arrow`, `dplyr` and
+# `bit64`; Python `pyarrow` and `pandas`.
+# """
+#
+# from __future__ import annotations
+#
+# from pathlib import Path
+#
+# LOAD_PY = '''"""Open every parquet of {project} without reading it into memory.
+#
+# Run it (in VSCodium: Run Python File in Interactive Window, or `%run`), and
+# each table becomes a variable named for it, a pyarrow Dataset. Nothing is read
+# until you ask, so a table far larger than memory can still be filtered first:
+#
+#     import pandas as pd
+#     female = Patients.to_table(filter=ds.field("Sex") == "Female").to_pandas(types_mapper=pd.ArrowDtype)
+#
+# `tables` holds them all by name. contents.md describes every table and column.
+# If you move this folder, change PARQUETS below.
+# """
+#
+# from pathlib import Path
+#
+# import pyarrow.dataset as ds
+#
+# PARQUETS = Path(r"{parquets}")
+#
+#
+# def load_parquets(folder=PARQUETS):
+#     """Every parquet under `folder`, by table name, opened but not read."""
+#     return {{path.stem: ds.dataset(path, format="parquet")
+#             for path in sorted(Path(folder).rglob("*.parquet"))}}
+#
+#
+# tables = load_parquets()
+# globals().update(tables)
+# print(f"Opened {{len(tables)}} table(s): {{', '.join(tables)}}")
+# '''
+#
+# EXAMINE_PY = '''"""Read every parquet of {project} into memory, for browsing.
+#
+# Run it, and each table becomes a variable named for it, a pandas DataFrame
+# with Arrow types, so a whole-number column with gaps stays whole numbers and
+# a 64-bit key keeps every digit. For large tables use load_parquets.py
+# instead: this reads everything at once. `tables` holds them all by name.
+# If you move this folder, change PARQUETS below.
+# """
+#
+# from pathlib import Path
+#
+# import pandas as pd
+#
+# PARQUETS = Path(r"{parquets}")
+#
+#
+# def examine_parquets(folder=PARQUETS):
+#     """Every parquet under `folder`, by table name, read into memory."""
+#     return {{path.stem: pd.read_parquet(path, dtype_backend="pyarrow")
+#             for path in sorted(Path(folder).rglob("*.parquet"))}}
+#
+#
+# tables = examine_parquets()
+# globals().update(tables)
+# for name, frame in tables.items():
+#     print(f"{{name}}: {{len(frame):,}} rows x {{frame.shape[1]}} columns")
+# '''
+#
+# LOAD_R = '''# Open every parquet of {project} without reading it into memory.
+# #
+# # source() it (in RStudio: Source), and each table becomes a variable named
+# # for it, an Arrow Dataset. Nothing is read until you collect(), so a table far
+# # larger than memory can still be filtered first:
+# #
+# #   female <- Patients |> filter(Sex == "Female") |> collect()
+# #
+# # contents.md describes every table and column. If you move this folder,
+# # change PARQUETS below.
+#
+# options(arrow.int64_downcast = FALSE)  # 64-bit keys stay integer64 in every table
+# library(arrow)
+# library(dplyr)
+#
+# PARQUETS <- "{parquets}"
+#
+# load_parquets <- function(folder = PARQUETS, envir = globalenv()) {{
+#   files <- sort(list.files(folder, pattern = "\\\\.parquet$", recursive = TRUE, full.names = TRUE))
+#   names <- sub("\\\\.parquet$", "", basename(files))
+#   for (i in seq_along(files)) assign(names[i], open_dataset(files[i]), envir = envir)
+#   invisible(names)
+# }}
+#
+# loaded <- load_parquets()
+# message("Opened ", length(loaded), " table(s): ", paste(loaded, collapse = ", "))
+# '''
+#
+# EXAMINE_R = '''# Read every parquet of {project} into memory, for browsing.
+# #
+# # source() it, and each table becomes a variable named for it, a data frame
+# # (a tibble). 64-bit keys are integer64 (package bit64), so every digit is
+# # kept and joins match. For large tables use load_parquets.R instead: this
+# # reads everything at once. If you move this folder, change PARQUETS below.
+#
+# options(arrow.int64_downcast = FALSE)
+# library(arrow)
+# library(bit64)
+#
+# PARQUETS <- "{parquets}"
+#
+# examine_parquets <- function(folder = PARQUETS, envir = globalenv()) {{
+#   files <- sort(list.files(folder, pattern = "\\\\.parquet$", recursive = TRUE, full.names = TRUE))
+#   names <- sub("\\\\.parquet$", "", basename(files))
+#   for (i in seq_along(files)) assign(names[i], read_parquet(files[i]), envir = envir)
+#   invisible(names)
+# }}
+#
+# examined <- examine_parquets()
+# for (name in examined) message(name, ": ", nrow(get(name)), " rows x ", ncol(get(name)), " columns")
+# '''
+#
+# HOW_TO = '''# How To Use These Files: {project}
+#
+# Everything this pull produced is in this folder:
+#
+# | File | What it is |
+# | --- | --- |
+# | `contents.md` | Every table and column: what it holds, one row per what, and its type in SQL, Python and R. Start here. |
+# | `parquets/SneakPeek/` | Tables pulled from COSMOS_SneakPeek. Their names end in `_sp`. |
+# | `parquets/Cosmos/` | Tables pulled from COSMOS. |
+# | `parquets/uploads/` | Lists that were uploaded to make the pull, as supplied. |
+# | `load_parquets.R`, `load_parquets.py` | Open every table without reading it into memory. |
+# | `examine_parquets.R`, `examine_parquets.py` | Read every table into memory. |
+#
+# Keep the language you use and delete the other two scripts if you like.
+#
+# ## Load Or Examine?
+#
+# **Load** (`load_parquets`) opens each table without reading it. Nothing
+# reaches memory until you ask for it, so you can filter, select columns or
+# count first, and read only the result. Use it for large tables, and whenever
+# you want only part of one.
+#
+# - R: `Patients |> filter(Sex == "Female") |> select(PatientDurableKey) |> collect()`
+# - Python: `Patients.to_table(filter=ds.field("Sex") == "Female", columns=["PatientDurableKey"])`
+#
+# **Examine** (`examine_parquets`) reads every table into memory as a data
+# frame, ready to browse, sort and view. Use it for small tables, or a test
+# pull. On a full pull it may need more memory than the machine has.
+#
+# Both name each table after its file: `Patients`, `OtherDiagnoses_sp`.
+#
+# ## Running Them
+#
+# - **RStudio:** open the `.R` file and press Source, or `source("load_parquets.R")`.
+# - **VSCodium:** open the `.py` file and run it in the interactive window, or
+#   `%run load_parquets.py`.
+#
+# Each script names this folder in `PARQUETS` near its top. If the folder is
+# moved, change that line.
+#
+# ## Joining Tables
+#
+# Tables join on the key columns `contents.md` lists, such as
+# `PatientDurableKey`. 64-bit keys are read as `int64` in Python and
+# `integer64` in R in every table, so they match exactly; do not convert them
+# to decimals (`double`), which can lose digits.
+# '''
+#
+#
+# def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
+#     """Write the four scripts and HOW_TO.md; returns what was written."""
+#     location = parquets.resolve()
+#     files = {
+#         "load_parquets.py": LOAD_PY.format(project=project, parquets=location),
+#         "examine_parquets.py": EXAMINE_PY.format(project=project, parquets=location),
+#         # R reads forward slashes on Windows too, and a backslash would escape.
+#         "load_parquets.R": LOAD_R.format(project=project, parquets=location.as_posix()),
+#         "examine_parquets.R": EXAMINE_R.format(project=project, parquets=location.as_posix()),
+#         "HOW_TO.md": HOW_TO.format(project=project),
+#     }
+#     written = []
+#     for name, text in files.items():
+#         path = run_dir / name
+#         path.write_text(text, encoding="utf-8")
+#         written.append(path)
+#     return written
+#
+# === END FILE: pullmanager/loaders.py ===
 # === BEGIN FILE: pullmanager/local_sql.py SHA256: edb9b23bd936f0c2f965b23f1572f7179e84a3a4b2546a42e6b25e078e03d2ee SIZE: 10552 ===
 # """Projects-side SQL: destination tables and the transfer from Cosmos.
 #
@@ -9894,7 +10099,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 7bbbc369065a7b6d463dee233eaaba937b6620889c5f15da3fbdac082461572e SIZE: 12209 ===
+# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 7892c8fa063f100b0c0302f53a320db2bd0158c87555559f6ba840a9183f2659 SIZE: 14513 ===
 # """`--artifacts`: a pull's finished tables as parquets (D72)."""
 #
 # from __future__ import annotations
@@ -10188,6 +10393,64 @@ if __name__ == "__main__":
 #         self.assertIn("already executing", out)
 #         self.assertEqual(db.executed, [])
 #         self.assertFalse(self.out.exists())
+#
+#
+# class LoaderTests(ArtifactTestCase):
+#     """D75: the scripts written beside contents.md open what was packaged."""
+#
+#     def write(self):
+#         from ..loaders import write_loaders
+#
+#         self.set_status()
+#         self.package()
+#         return write_loaders(self.out.parent, self.out, "IBD_Ancestry")
+#
+#     def run_script(self, name):
+#         import subprocess
+#         import sys
+#
+#         return subprocess.run([sys.executable, str(self.out.parent / name)], capture_output=True,
+#                               text=True, timeout=120, cwd=str(self.work))
+#
+#     def test_all_five_files_are_written_at_the_run_folders_root(self):
+#         written = self.write()
+#         self.assertEqual(sorted(p.name for p in written), [
+#             "HOW_TO.md", "examine_parquets.R", "examine_parquets.py",
+#             "load_parquets.R", "load_parquets.py",
+#         ])
+#         self.assertIn(self.out.resolve().as_posix(), (self.out.parent / "load_parquets.R").read_text())
+#
+#     def test_the_python_load_script_opens_every_table_by_name(self):
+#         self.write()
+#         done = self.run_script("load_parquets.py")
+#         self.assertEqual(done.returncode, 0, done.stderr)
+#         self.assertIn("Opened 3 table(s): OtherHospitalizations, Patients, HospitalICDCodes", done.stdout)
+#
+#     def test_the_python_examine_script_reads_them_with_arrow_types(self):
+#         try:
+#             import pandas  # noqa: F401
+#         except ImportError:
+#             self.skipTest("examine_parquets.py needs pandas")
+#         self.write()
+#         done = self.run_script("examine_parquets.py")
+#         self.assertEqual(done.returncode, 0, done.stderr)
+#         self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
+#
+#     def test_the_r_scripts_parse(self):
+#         import shutil
+#         import subprocess
+#
+#         rscript = shutil.which("Rscript")
+#         if not rscript:
+#             self.skipTest("no Rscript here")
+#         self.write()
+#         for name in ("load_parquets.R", "examine_parquets.R"):
+#             with self.subTest(script=name):
+#                 path = (self.out.parent / name).as_posix()
+#                 done = subprocess.run([rscript, "-e", f'invisible(parse("{path}"))'],
+#                                       capture_output=True, text=True, timeout=120)
+#                 self.assertEqual(done.returncode, 0, done.stderr)
+#
 #
 # === END FILE: pullmanager/tests/test_artifacts.py ===
 # === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: 310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c SIZE: 6380 ===

@@ -291,3 +291,61 @@ class CommandTests(ArtifactTestCase):
         self.assertIn("already executing", out)
         self.assertEqual(db.executed, [])
         self.assertFalse(self.out.exists())
+
+
+class LoaderTests(ArtifactTestCase):
+    """D75: the scripts written beside contents.md open what was packaged."""
+
+    def write(self):
+        from ..loaders import write_loaders
+
+        self.set_status()
+        self.package()
+        return write_loaders(self.out.parent, self.out, "IBD_Ancestry")
+
+    def run_script(self, name):
+        import subprocess
+        import sys
+
+        return subprocess.run([sys.executable, str(self.out.parent / name)], capture_output=True,
+                              text=True, timeout=120, cwd=str(self.work))
+
+    def test_all_five_files_are_written_at_the_run_folders_root(self):
+        written = self.write()
+        self.assertEqual(sorted(p.name for p in written), [
+            "HOW_TO.md", "examine_parquets.R", "examine_parquets.py",
+            "load_parquets.R", "load_parquets.py",
+        ])
+        self.assertIn(self.out.resolve().as_posix(), (self.out.parent / "load_parquets.R").read_text())
+
+    def test_the_python_load_script_opens_every_table_by_name(self):
+        self.write()
+        done = self.run_script("load_parquets.py")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Opened 3 table(s): OtherHospitalizations, Patients, HospitalICDCodes", done.stdout)
+
+    def test_the_python_examine_script_reads_them_with_arrow_types(self):
+        try:
+            import pandas  # noqa: F401
+        except ImportError:
+            self.skipTest("examine_parquets.py needs pandas")
+        self.write()
+        done = self.run_script("examine_parquets.py")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
+
+    def test_the_r_scripts_parse(self):
+        import shutil
+        import subprocess
+
+        rscript = shutil.which("Rscript")
+        if not rscript:
+            self.skipTest("no Rscript here")
+        self.write()
+        for name in ("load_parquets.R", "examine_parquets.R"):
+            with self.subTest(script=name):
+                path = (self.out.parent / name).as_posix()
+                done = subprocess.run([rscript, "-e", f'invisible(parse("{path}"))'],
+                                      capture_output=True, text=True, timeout=120)
+                self.assertEqual(done.returncode, 0, done.stderr)
+

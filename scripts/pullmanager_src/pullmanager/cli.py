@@ -223,14 +223,20 @@ def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> 
     from .contents import render
     from .pulls import run_folder
 
-    contents = run_folder(manifest.path) / "contents.md"
+    from .loaders import write_loaders
+
+    run_dir = run_folder(manifest.path)
+    contents = run_dir / "contents.md"
     contents.write_text(render(manifest, result), encoding="utf-8")
     print(f"  wrote    {shown(contents)}")
+    for path in write_loaders(run_dir, out, pull_name(manifest.path)):
+        print(f"  wrote    {shown(path)}")
     files = sum(len(spec.parts) for spec in result.tables)
     print()
     print(
         f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
-        f"{len(result.left_out)} left out, in {shown(out)}."
+        f"{len(result.left_out)} left out. In {shown(run_dir)}: contents.md describes "
+        "them, HOW_TO.md says how to open them."
     )
     return 0
 
