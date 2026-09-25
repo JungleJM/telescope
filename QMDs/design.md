@@ -377,6 +377,10 @@ Checks:
   non-empty `values` list; `row_chunk` has a positive `rows_per_batch` (the
   shipped `chunk` recipe's `required` placeholder is refused). `values: all`
   warns that the pull will stop at it.
+- `project_db` is set (`project_db_missing`: a warning while writing, an error
+  at the split, which needs it) and shaped like `PROJECTD<number>`
+  (`project_db_unexpected`, a warning). Whether the database exists and can be
+  opened is only known when Execute connects.
 - Temps are named with `{{prefix}}_`: `##JVM_` anywhere in a cohort is
   `old_temp_marker`, whose fix is the line rewritten. `prefix` is a reserved
   variable, and `temp_prefix` must be letters, digits and underscores, at most
@@ -501,9 +505,11 @@ names.
 ### Outputs
 
 - **Transfer YAML** (`--export-transfer`, `--out` to choose the file): what the
-  VM receives (D49). The template with cohort recipes merged into their cohorts
-  and batching items replaced by their full definitions; multipliers and
-  batching are declared, not applied. Written only if the template passes full
+  VM receives (D49). The template as written, with cohort recipes merged into
+  their cohorts and batching items replaced by their full definitions;
+  multipliers and batching are declared, not applied. Grouped settings stay in
+  their groups (`cosmos_vars.project_db`), each once, so editing one by hand on
+  the VM takes effect. Written only if the template passes full
   validation. Named `<project_folder>_transfer.yaml`, beside the template by
   default. `file_loc` is never rewritten, since it is what the VM resolves.
   Written to another folder (`--out`), each upload is copied there at its
@@ -968,6 +974,10 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
   10s; no query timeout by default.
 - Scripts are split on lines equal to `GO`, and every result set is drained
   with `nextset()`.
+- A connection that is refused is reported in one line, naming the server and
+  database, with a hint (for "cannot open database" or "login failed": check
+  `project_db`), and the next session still gets its chance. It used to escape
+  as a traceback.
 - `cursor.messages` is read on success and failure alike. That is what surfaces
   the inner error of a failed `OPENQUERY`.
 - `autocommit=False`, so the `BEGIN/COMMIT TRANSACTION` inside a transfer
@@ -1017,8 +1027,8 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (110)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (315)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (113)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (316)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

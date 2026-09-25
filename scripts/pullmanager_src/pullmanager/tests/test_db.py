@@ -347,3 +347,37 @@ class ChunkTests(unittest.TestCase):
 
     def test_empty_input_yields_nothing(self):
         self.assertEqual(list(chunked([], 3)), [])
+
+
+class ConnectFailureTests(unittest.TestCase):
+    """A refused connection is a readable DatabaseError, not a traceback."""
+
+    def fake_pyodbc(self, message):
+        import sys
+        import types
+
+        module = types.ModuleType("pyodbc")
+
+        class Error(Exception):
+            pass
+
+        def connect(*_, **__):
+            raise Error("28000", message)
+
+        module.Error = Error
+        module.connect = connect
+        previous = sys.modules.get("pyodbc")
+        sys.modules["pyodbc"] = module
+        self.addCleanup(lambda: sys.modules.pop("pyodbc") if previous is None
+                        else sys.modules.__setitem__("pyodbc", previous))
+
+    def test_a_database_that_cannot_be_opened_names_itself_and_project_db(self):
+        from ..db import DatabaseError, Settings, connect
+
+        self.fake_pyodbc('Cannot open database "PROJECTD93A57" requested by the login.')
+        string = Settings().projects_connection_string("PROJECTD93A57")
+        with self.assertRaises(DatabaseError) as caught:
+            connect(string)
+        message = str(caught.exception)
+        self.assertIn("PROJECTS, database PROJECTD93A57", message)
+        self.assertIn("project_db", message)

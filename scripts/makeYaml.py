@@ -779,6 +779,7 @@ def validate_and_resolve(
     uploads_elsewhere: bool = False,
 ) -> list[dict[str, Any]]:
     uploads = upload_index(template)
+    check_project_db(template, result)
     temp_prefix(template, result)
     refuse_old_temp_marker(cohorts, result)
     for where, scope in [("vars", template.get("vars"))] + [
@@ -1774,6 +1775,35 @@ def temp_marker(template: dict[str, Any]) -> str:
     return f"##{temp_prefix(template)}_"
 
 
+PROJECT_DB_RE = re.compile(r"^PROJECTD[A-Za-z0-9_]+$")
+
+
+def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
+    """The Projects database every table lands in.
+
+    Missing is a warning here, where a template is being written, and an error
+    at the split, which cannot go on without it. A name not shaped like one is
+    a warning: nothing here can check it is a database you can open.
+    """
+    project_db = str(template.get("project_db") or "").strip()
+    if not project_db:
+        result.warn(
+            "project_db_missing",
+            "No `project_db`: nothing says which Projects database the tables land in.",
+            "cosmos_vars.project_db",
+            fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
+            "`PROJECTD139081` for project D139081.",
+        )
+    elif not PROJECT_DB_RE.match(project_db):
+        result.warn(
+            "project_db_unexpected",
+            f"`project_db: {project_db}` does not look like a Projects database name.",
+            "cosmos_vars.project_db",
+            fix="Projects databases are named PROJECTD followed by the project number, "
+            "e.g. `PROJECTD139081`.",
+        )
+
+
 def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
     for cohort in cohorts:
@@ -2450,6 +2480,15 @@ def write_split_artifacts(
     )
     if result.errors:
         return result
+    if not str(result.finished_yaml.get("project_db") or "").strip():
+        result.error(
+            "project_db_missing",
+            "No `project_db`, so the split has nowhere to land the tables.",
+            "cosmos_vars.project_db",
+            fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
+            "`PROJECTD139081` for project D139081.",
+        )
+        return result
     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
     finished_yaml = copy.deepcopy(result.finished_yaml)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2638,7 +2677,11 @@ def build_transfer(
     recipes_doc = load_recipes(recipes_path, template, quiet) or {}
     used = [str(cohort["recipe"]) for cohort in template.get("cohorts", []) or [] if isinstance(cohort, dict) and "recipe" in cohort]
 
-    body = copy.deepcopy(template)
+    # The template as written, not the normalized copy: normalizing lifts
+    # grouped settings (cosmos_vars, run_vars, test_options, project_vars) to the
+    # top level beside the originals, and the lifted copy wins, so a setting
+    # edited by hand on the VM in its section would silently do nothing.
+    body = copy.deepcopy(load_yaml(template_path) or {})
     body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet)]
     if body.get("batching"):
         body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
@@ -2748,6 +2791,7 @@ def uploaded_pk_template(extra_upload: str = "", key_columns: bool = True) -> st
     keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
     return f"""
 project_folder: Uploaded PK
+project_db: PROJECTD1
 cosmos_db: COSMOS
 vars:
   min_date_key: 20200101
@@ -2768,6 +2812,7 @@ cohorts:
 def tiny_template(extra: str = "") -> str:
     return f"""
 project_folder: Test Run
+project_db: PROJECTD1
 cosmos_db: COSMOS
 vars:
   min_date_key: 20200101
@@ -2889,7 +2934,7 @@ class InferenceTests(MakeYamlTest):
 class NormalizationTests(MakeYamlTest):
     def test_grouped_metadata_vars_are_flattened(self):
         template = tiny_template().replace(
-            "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
+            "project_folder: Test Run\nproject_db: PROJECTD1\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
             "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\n"
             "run_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n"
             "project_vars:\n  project_folder: Test Run\nvars:\n",
@@ -3790,7 +3835,7 @@ class UploadedPkBatchingTests(MakeYamlTest):
             "PatientDurableKey,DiagnosisEventKey,Sex\n1,10,Female\n2,20,Male\n", encoding="utf-8"
         )
         out = self.tmp / "split"
-        text = "project_db: PROJECTD1\n" + uploaded_pk_template() + extra
+        text = uploaded_pk_template() + extra
         return write_split_artifacts(*self.write_pair(text), output_dir=out), out
 
     def test_batching_is_checked_against_the_file_and_reaches_the_session(self):
@@ -3803,9 +3848,7 @@ class UploadedPkBatchingTests(MakeYamlTest):
 
     def test_a_pk_file_not_here_yet_still_makes_a_transfer(self):
         (self.tmp / "pks.csv").write_text("x\n", encoding="utf-8")
-        template, recipes = self.write_pair(
-            "project_db: PROJECTD1\n" + uploaded_pk_template() + "batching:\n  - sex\n"
-        )
+        template, recipes = self.write_pair(uploaded_pk_template() + "batching:\n  - sex\n")
         (self.tmp / "pks.csv").unlink()
         res = build_transfer(template, recipes, write=True)
         self.assertCompiles(res)
@@ -3985,6 +4028,22 @@ batching:
         res = write_split_artifacts(self.template, self.recipes, output_dir=self.tmp / "split")
         self.assertHasError(res, "missing_upload_file")
 
+    def test_each_setting_appears_once_as_written(self):
+        # Hand-editing on the VM must work: a setting written in its section
+        # stays there, with no flattened copy beside it that would win.
+        text = tiny_template(self.EXTRA).replace(
+            "project_db: PROJECTD1\ncosmos_db: COSMOS",
+            "cosmos_vars:\n  project_db: PROJECTD1\n  cosmos_db: COSMOS",
+        )
+        template = write_temp_yaml(self.tmp, "grouped.yaml", text)
+        transfer = Path(build_transfer(template, self.recipes, write=True).output_path)
+        doc = load_yaml(transfer)
+        self.assertEqual(doc["cosmos_vars"]["project_db"], "PROJECTD1")
+        self.assertNotIn("project_db", doc)
+        edited = transfer.read_text(encoding="utf-8").replace("PROJECTD1", "PROJECTD139081")
+        transfer.write_text(edited, encoding="utf-8")
+        self.assertEqual(compile_yaml(transfer, self.no_recipes).finished_yaml["project_db"], "PROJECTD139081")
+
     def test_an_invalid_template_writes_nothing(self):
         broken = write_temp_yaml(
             self.tmp, "broken.yaml", tiny_template().replace("cosmos_db: COSMOS", "cosmos_db: Nowhere")
@@ -4055,6 +4114,18 @@ class BatchingDefinitionTests(MakeYamlTest):
         self.assertIn("chunk: <rows>", res.errors[0].fix)
 
 
+class ProjectDbTests(MakeYamlTest):
+    def test_missing_warns_while_writing_and_stops_the_split(self):
+        text = tiny_template().replace("project_db: PROJECTD1\n", "")
+        self.assertHasWarning(self.compile_template(text), "project_db_missing")
+        res = write_split_artifacts(*self.write_pair(text), output_dir=self.tmp / "split")
+        self.assertHasError(res, "project_db_missing")
+
+    def test_a_name_not_shaped_like_one_warns(self):
+        res = self.compile_template(tiny_template().replace("PROJECTD1", "Projects"))
+        self.assertHasWarning(res, "project_db_unexpected")
+
+
 class FixTests(unittest.TestCase):
     """Every error says what to change (D49): on the VM the YAML is edited by hand."""
 
@@ -4120,6 +4191,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "uploaded_pk_batching": UploadedPkBatchingTests,
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
+    "project_db": ProjectDbTests,
     "fixes": FixTests,
 }
 

@@ -332,7 +332,38 @@ def connect(connection_string: str, *, login_timeout: int = 10, query_timeout: i
             "rendering and --dry-run work without it."
         ) from exc
 
-    connection = pyodbc.connect(connection_string, timeout=login_timeout)
+    try:
+        connection = pyodbc.connect(connection_string, timeout=login_timeout)
+    except pyodbc.Error as exc:
+        raise DatabaseError(connect_failure(connection_string, exc)) from exc
     if query_timeout:
         connection.timeout = query_timeout
     return connection
+
+
+def connect_failure(connection_string: str, exc: BaseException) -> str:
+    """Why a connection failed, naming the server and database, with a hint.
+
+    Raised as a DatabaseError, which the CLI reports in one line and moves on
+    from, rather than a traceback.
+    """
+    parts = dict(
+        part.split("=", 1) for part in connection_string.split(";") if "=" in part
+    )
+    server = parts.get("Server", "?").removeprefix("tcp:")
+    database = parts.get("Database", "?")
+    detail = str(exc.args[-1] if getattr(exc, "args", None) else exc).strip()
+    text = detail.lower()
+    if "cannot open database" in text or "login failed" in text:
+        hint = (
+            f"Check that `{database}` is your project's database (project_db in the "
+            "transfer YAML) and that your login can open it."
+        )
+    elif "server" in text and ("not found" in text or "not accessible" in text or "timeout" in text):
+        hint = (
+            f"Check that the server alias `{server}` resolves from this machine, or set "
+            "PULLMANAGER_COSMOS_SERVER / PULLMANAGER_PROJECTS_SERVER."
+        )
+    else:
+        hint = "Check the server, the database and your access."
+    return f"Could not connect to {server}, database {database}: {detail} {hint}"

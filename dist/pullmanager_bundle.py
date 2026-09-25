@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "94183ef0008ed4b74531f413da086b3f9386303f5b1d573e6b0d944be21f1015",
+  "content_id": "d5b0ead9d7911eea5e09cbf9678eeffbf961fd59044ae1c77fc4749da82c796b",
   "file_count": 37,
   "files": [
     {
@@ -405,8 +405,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/db.py",
       "policy": "replace",
-      "sha256": "66c7b420c9accce5c49e012813de22fa48166835dd1c8ec4583ee083c39b44da",
-      "size": 11579
+      "sha256": "034bdaeda49a192bd206a145ddfcf6af1ff51eb8e694b0ed199484fee8bd693f",
+      "size": 12974
     },
     {
       "path": "pullmanager/executor.py",
@@ -501,8 +501,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_db.py",
       "policy": "replace",
-      "sha256": "e542b71d46f8493d9d45c1ec2d68d2adc73ebb180551a71e810f9a6ce784905c",
-      "size": 13107
+      "sha256": "5db808561eae3afa5e9ca2cfc1c8bbca88140fd69677457e8e986a28d4bac076",
+      "size": 14316
     },
     {
       "path": "pullmanager/tests/test_executor.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "7b1dada2dc060b27c4029c247446a6e0edddea33c8e38579e323a32b139309f1",
-      "size": 173880
+      "sha256": "54a2ef2408c7d299f33a2474f4f9c31bab09574f660ce5d48ef8c2d94c29ebc8",
+      "size": 177463
     }
   ]
 }'''
@@ -3932,7 +3932,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/db.py SHA256: 66c7b420c9accce5c49e012813de22fa48166835dd1c8ec4583ee083c39b44da SIZE: 11579 ===
+# === BEGIN FILE: pullmanager/db.py SHA256: 034bdaeda49a192bd206a145ddfcf6af1ff51eb8e694b0ed199484fee8bd693f SIZE: 12974 ===
 # """Database adapter.
 #
 # pyodbc is imported lazily so the rest of the package -- planning, rendering,
@@ -4267,10 +4267,41 @@ if __name__ == "__main__":
 #             "rendering and --dry-run work without it."
 #         ) from exc
 #
-#     connection = pyodbc.connect(connection_string, timeout=login_timeout)
+#     try:
+#         connection = pyodbc.connect(connection_string, timeout=login_timeout)
+#     except pyodbc.Error as exc:
+#         raise DatabaseError(connect_failure(connection_string, exc)) from exc
 #     if query_timeout:
 #         connection.timeout = query_timeout
 #     return connection
+#
+#
+# def connect_failure(connection_string: str, exc: BaseException) -> str:
+#     """Why a connection failed, naming the server and database, with a hint.
+#
+#     Raised as a DatabaseError, which the CLI reports in one line and moves on
+#     from, rather than a traceback.
+#     """
+#     parts = dict(
+#         part.split("=", 1) for part in connection_string.split(";") if "=" in part
+#     )
+#     server = parts.get("Server", "?").removeprefix("tcp:")
+#     database = parts.get("Database", "?")
+#     detail = str(exc.args[-1] if getattr(exc, "args", None) else exc).strip()
+#     text = detail.lower()
+#     if "cannot open database" in text or "login failed" in text:
+#         hint = (
+#             f"Check that `{database}` is your project's database (project_db in the "
+#             "transfer YAML) and that your login can open it."
+#         )
+#     elif "server" in text and ("not found" in text or "not accessible" in text or "timeout" in text):
+#         hint = (
+#             f"Check that the server alias `{server}` resolves from this machine, or set "
+#             "PULLMANAGER_COSMOS_SERVER / PULLMANAGER_PROJECTS_SERVER."
+#         )
+#     else:
+#         hint = "Check the server, the database and your access."
+#     return f"Could not connect to {server}, database {database}: {detail} {hint}"
 #
 # === END FILE: pullmanager/db.py ===
 # === BEGIN FILE: pullmanager/executor.py SHA256: 7e41afe3e3acefe7f712c72fc1e8b96a5ea87aed96566231523258ccc80e79c3 SIZE: 11126 ===
@@ -7721,7 +7752,7 @@ if __name__ == "__main__":
 #         self.assertEqual(selection.params, ["Male"])
 #
 # === END FILE: pullmanager/tests/test_batches.py ===
-# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: e542b71d46f8493d9d45c1ec2d68d2adc73ebb180551a71e810f9a6ce784905c SIZE: 13107 ===
+# === BEGIN FILE: pullmanager/tests/test_db.py SHA256: 5db808561eae3afa5e9ca2cfc1c8bbca88140fd69677457e8e986a28d4bac076 SIZE: 14316 ===
 # """Adapter behaviour, exercised against a fake cursor.
 #
 # pyodbc is not installed on the development machine and there is no database to
@@ -8071,6 +8102,40 @@ if __name__ == "__main__":
 #
 #     def test_empty_input_yields_nothing(self):
 #         self.assertEqual(list(chunked([], 3)), [])
+#
+#
+# class ConnectFailureTests(unittest.TestCase):
+#     """A refused connection is a readable DatabaseError, not a traceback."""
+#
+#     def fake_pyodbc(self, message):
+#         import sys
+#         import types
+#
+#         module = types.ModuleType("pyodbc")
+#
+#         class Error(Exception):
+#             pass
+#
+#         def connect(*_, **__):
+#             raise Error("28000", message)
+#
+#         module.Error = Error
+#         module.connect = connect
+#         previous = sys.modules.get("pyodbc")
+#         sys.modules["pyodbc"] = module
+#         self.addCleanup(lambda: sys.modules.pop("pyodbc") if previous is None
+#                         else sys.modules.__setitem__("pyodbc", previous))
+#
+#     def test_a_database_that_cannot_be_opened_names_itself_and_project_db(self):
+#         from ..db import DatabaseError, Settings, connect
+#
+#         self.fake_pyodbc('Cannot open database "PROJECTD93A57" requested by the login.')
+#         string = Settings().projects_connection_string("PROJECTD93A57")
+#         with self.assertRaises(DatabaseError) as caught:
+#             connect(string)
+#         message = str(caught.exception)
+#         self.assertIn("PROJECTS, database PROJECTD93A57", message)
+#         self.assertIn("project_db", message)
 #
 # === END FILE: pullmanager/tests/test_db.py ===
 # === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: 6f18db04156bba30226574531903f205b8af7a646aa1453767756fd5c57e0b68 SIZE: 8587 ===
@@ -11213,7 +11278,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 7b1dada2dc060b27c4029c247446a6e0edddea33c8e38579e323a32b139309f1 SIZE: 173880 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 54a2ef2408c7d299f33a2474f4f9c31bab09574f660ce5d48ef8c2d94c29ebc8 SIZE: 177463 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11995,6 +12060,7 @@ if __name__ == "__main__":
 #     uploads_elsewhere: bool = False,
 # ) -> list[dict[str, Any]]:
 #     uploads = upload_index(template)
+#     check_project_db(template, result)
 #     temp_prefix(template, result)
 #     refuse_old_temp_marker(cohorts, result)
 #     for where, scope in [("vars", template.get("vars"))] + [
@@ -12990,6 +13056,35 @@ if __name__ == "__main__":
 #     return f"##{temp_prefix(template)}_"
 #
 #
+# PROJECT_DB_RE = re.compile(r"^PROJECTD[A-Za-z0-9_]+$")
+#
+#
+# def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
+#     """The Projects database every table lands in.
+#
+#     Missing is a warning here, where a template is being written, and an error
+#     at the split, which cannot go on without it. A name not shaped like one is
+#     a warning: nothing here can check it is a database you can open.
+#     """
+#     project_db = str(template.get("project_db") or "").strip()
+#     if not project_db:
+#         result.warn(
+#             "project_db_missing",
+#             "No `project_db`: nothing says which Projects database the tables land in.",
+#             "cosmos_vars.project_db",
+#             fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
+#             "`PROJECTD139081` for project D139081.",
+#         )
+#     elif not PROJECT_DB_RE.match(project_db):
+#         result.warn(
+#             "project_db_unexpected",
+#             f"`project_db: {project_db}` does not look like a Projects database name.",
+#             "cosmos_vars.project_db",
+#             fix="Projects databases are named PROJECTD followed by the project number, "
+#             "e.g. `PROJECTD139081`.",
+#         )
+#
+#
 # def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
 #     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
 #     for cohort in cohorts:
@@ -13666,6 +13761,15 @@ if __name__ == "__main__":
 #     )
 #     if result.errors:
 #         return result
+#     if not str(result.finished_yaml.get("project_db") or "").strip():
+#         result.error(
+#             "project_db_missing",
+#             "No `project_db`, so the split has nowhere to land the tables.",
+#             "cosmos_vars.project_db",
+#             fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
+#             "`PROJECTD139081` for project D139081.",
+#         )
+#         return result
 #     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
 #     finished_yaml = copy.deepcopy(result.finished_yaml)
 #     out_dir.mkdir(parents=True, exist_ok=True)
@@ -13854,7 +13958,11 @@ if __name__ == "__main__":
 #     recipes_doc = load_recipes(recipes_path, template, quiet) or {}
 #     used = [str(cohort["recipe"]) for cohort in template.get("cohorts", []) or [] if isinstance(cohort, dict) and "recipe" in cohort]
 #
-#     body = copy.deepcopy(template)
+#     # The template as written, not the normalized copy: normalizing lifts
+#     # grouped settings (cosmos_vars, run_vars, test_options, project_vars) to the
+#     # top level beside the originals, and the lifted copy wins, so a setting
+#     # edited by hand on the VM in its section would silently do nothing.
+#     body = copy.deepcopy(load_yaml(template_path) or {})
 #     body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet)]
 #     if body.get("batching"):
 #         body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
@@ -13964,6 +14072,7 @@ if __name__ == "__main__":
 #     keys = "    key_columns: [PatientDurableKey, DiagnosisEventKey]\n" if key_columns else ""
 #     return f"""
 # project_folder: Uploaded PK
+# project_db: PROJECTD1
 # cosmos_db: COSMOS
 # vars:
 #   min_date_key: 20200101
@@ -13984,6 +14093,7 @@ if __name__ == "__main__":
 # def tiny_template(extra: str = "") -> str:
 #     return f"""
 # project_folder: Test Run
+# project_db: PROJECTD1
 # cosmos_db: COSMOS
 # vars:
 #   min_date_key: 20200101
@@ -14105,7 +14215,7 @@ if __name__ == "__main__":
 # class NormalizationTests(MakeYamlTest):
 #     def test_grouped_metadata_vars_are_flattened(self):
 #         template = tiny_template().replace(
-#             "project_folder: Test Run\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
+#             "project_folder: Test Run\nproject_db: PROJECTD1\ncosmos_db: COSMOS\nvars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n",
 #             "cosmos_vars:\n  project_db: PROJECTD33A929\n  cosmos_db: COSMOS\n"
 #             "run_vars:\n  min_date_key: 20200101\n  max_date_key: 20240101\n"
 #             "project_vars:\n  project_folder: Test Run\nvars:\n",
@@ -15006,7 +15116,7 @@ if __name__ == "__main__":
 #             "PatientDurableKey,DiagnosisEventKey,Sex\n1,10,Female\n2,20,Male\n", encoding="utf-8"
 #         )
 #         out = self.tmp / "split"
-#         text = "project_db: PROJECTD1\n" + uploaded_pk_template() + extra
+#         text = uploaded_pk_template() + extra
 #         return write_split_artifacts(*self.write_pair(text), output_dir=out), out
 #
 #     def test_batching_is_checked_against_the_file_and_reaches_the_session(self):
@@ -15019,9 +15129,7 @@ if __name__ == "__main__":
 #
 #     def test_a_pk_file_not_here_yet_still_makes_a_transfer(self):
 #         (self.tmp / "pks.csv").write_text("x\n", encoding="utf-8")
-#         template, recipes = self.write_pair(
-#             "project_db: PROJECTD1\n" + uploaded_pk_template() + "batching:\n  - sex\n"
-#         )
+#         template, recipes = self.write_pair(uploaded_pk_template() + "batching:\n  - sex\n")
 #         (self.tmp / "pks.csv").unlink()
 #         res = build_transfer(template, recipes, write=True)
 #         self.assertCompiles(res)
@@ -15201,6 +15309,22 @@ if __name__ == "__main__":
 #         res = write_split_artifacts(self.template, self.recipes, output_dir=self.tmp / "split")
 #         self.assertHasError(res, "missing_upload_file")
 #
+#     def test_each_setting_appears_once_as_written(self):
+#         # Hand-editing on the VM must work: a setting written in its section
+#         # stays there, with no flattened copy beside it that would win.
+#         text = tiny_template(self.EXTRA).replace(
+#             "project_db: PROJECTD1\ncosmos_db: COSMOS",
+#             "cosmos_vars:\n  project_db: PROJECTD1\n  cosmos_db: COSMOS",
+#         )
+#         template = write_temp_yaml(self.tmp, "grouped.yaml", text)
+#         transfer = Path(build_transfer(template, self.recipes, write=True).output_path)
+#         doc = load_yaml(transfer)
+#         self.assertEqual(doc["cosmos_vars"]["project_db"], "PROJECTD1")
+#         self.assertNotIn("project_db", doc)
+#         edited = transfer.read_text(encoding="utf-8").replace("PROJECTD1", "PROJECTD139081")
+#         transfer.write_text(edited, encoding="utf-8")
+#         self.assertEqual(compile_yaml(transfer, self.no_recipes).finished_yaml["project_db"], "PROJECTD139081")
+#
 #     def test_an_invalid_template_writes_nothing(self):
 #         broken = write_temp_yaml(
 #             self.tmp, "broken.yaml", tiny_template().replace("cosmos_db: COSMOS", "cosmos_db: Nowhere")
@@ -15271,6 +15395,18 @@ if __name__ == "__main__":
 #         self.assertIn("chunk: <rows>", res.errors[0].fix)
 #
 #
+# class ProjectDbTests(MakeYamlTest):
+#     def test_missing_warns_while_writing_and_stops_the_split(self):
+#         text = tiny_template().replace("project_db: PROJECTD1\n", "")
+#         self.assertHasWarning(self.compile_template(text), "project_db_missing")
+#         res = write_split_artifacts(*self.write_pair(text), output_dir=self.tmp / "split")
+#         self.assertHasError(res, "project_db_missing")
+#
+#     def test_a_name_not_shaped_like_one_warns(self):
+#         res = self.compile_template(tiny_template().replace("PROJECTD1", "Projects"))
+#         self.assertHasWarning(res, "project_db_unexpected")
+#
+#
 # class FixTests(unittest.TestCase):
 #     """Every error says what to change (D49): on the VM the YAML is edited by hand."""
 #
@@ -15336,6 +15472,7 @@ if __name__ == "__main__":
 #     "uploaded_pk_batching": UploadedPkBatchingTests,
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
+#     "project_db": ProjectDbTests,
 #     "fixes": FixTests,
 # }
 #

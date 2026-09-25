@@ -1398,7 +1398,7 @@ function ensureDraftShape() {
 function blankTemplate() {
   return {
     cosmos_vars: {
-      project_db: 'PROJECTD93A57',
+      project_db: '',
       cosmos_db: 'COSMOS'
     },
     run_vars: {
