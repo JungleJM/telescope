@@ -268,6 +268,8 @@ recipes:
     description: Patient's diagnoses besides the index diagnosis - one per patient per diagnosis code, not time-based. For seeing if they have other conditions
     dedup_keys:
       - [PatientDurableKey, BillingCodeValue]
+    dedup_order_by:
+      - StartDateKey
     pull_this_cycle: true 
     type: fact
     dest_table: OtherDiagnoses

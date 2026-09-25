@@ -2037,6 +2037,16 @@ def check_dedup(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
         order = cohort.get("dedup_order_by") or []
         order_names = []
         for entry in [order] if isinstance(order, str) else order:
+            if isinstance(entry, list):
+                # Written like dedup_keys, which is a list of lists.
+                result.error(
+                    "bad_dedup_column",
+                    f"`dedup_order_by` has a list inside it, `{entry}`; it takes plain names.",
+                    f"{label}.dedup_order_by",
+                    fix="Unlike `dedup_keys`, `dedup_order_by` is a plain list: write "
+                    f"`- {entry[0] if entry else '<column>'}`, not `- {entry}`.",
+                )
+                continue
             words = str(entry).split()
             if len(words) == 2 and words[1].upper() in DEDUP_DIRECTIONS:
                 order_names.append(words[0])
@@ -4638,6 +4648,14 @@ class DedupTests(MakeYamlTest):
         self.assertHasError(self.compile_template(text), "random_sample_without_key")
         keyed = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
         self.assertCompiles(self.compile_template(keyed))
+
+    def test_an_ordering_written_like_dedup_keys_says_how_to_fix_it(self):
+        res = self.compile_template(extra=self.cohort(
+            dedup_keys="[[PatientDurableKey]]", dedup_order_by="[[IndexDate]]"
+        ))
+        found = [m for m in res.errors if m.code == "bad_dedup_column"]
+        self.assertEqual(len(found), 1, summarize_result(res))
+        self.assertIn("`- IndexDate`", found[0].fix)
 
     def test_the_old_spellings_are_refused(self):
         res = self.compile_template(extra=self.cohort(

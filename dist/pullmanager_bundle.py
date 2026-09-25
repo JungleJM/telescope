@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "9be34d20e5130d4138603183121cab60f9d989562ffbca9ef58fb5f538b85b24",
+  "content_id": "9a6a5c0ac388d7da7b243a6976ab33c573b300d1f6d5044c3a0dfa97998670a1",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "b2d721d24b8a24fc4f5b6b2145adeeffa1f0016017c9ea3d7f97e258c1d6ae82",
-      "size": 205255
+      "sha256": "15920a17b176fb6cfcf29bbd43cc6a4dd2c3b7122c5c23d878262869d49cdad2",
+      "size": 206199
     }
   ]
 }'''
@@ -11984,7 +11984,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: b2d721d24b8a24fc4f5b6b2145adeeffa1f0016017c9ea3d7f97e258c1d6ae82 SIZE: 205255 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 15920a17b176fb6cfcf29bbd43cc6a4dd2c3b7122c5c23d878262869d49cdad2 SIZE: 206199 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -14024,6 +14024,16 @@ if __name__ == "__main__":
 #         order = cohort.get("dedup_order_by") or []
 #         order_names = []
 #         for entry in [order] if isinstance(order, str) else order:
+#             if isinstance(entry, list):
+#                 # Written like dedup_keys, which is a list of lists.
+#                 result.error(
+#                     "bad_dedup_column",
+#                     f"`dedup_order_by` has a list inside it, `{entry}`; it takes plain names.",
+#                     f"{label}.dedup_order_by",
+#                     fix="Unlike `dedup_keys`, `dedup_order_by` is a plain list: write "
+#                     f"`- {entry[0] if entry else '<column>'}`, not `- {entry}`.",
+#                 )
+#                 continue
 #             words = str(entry).split()
 #             if len(words) == 2 and words[1].upper() in DEDUP_DIRECTIONS:
 #                 order_names.append(words[0])
@@ -16625,6 +16635,14 @@ if __name__ == "__main__":
 #         self.assertHasError(self.compile_template(text), "random_sample_without_key")
 #         keyed = text.replace("    name: Patients\n", "    name: Patients\n    key_column: PatientDurableKey\n")
 #         self.assertCompiles(self.compile_template(keyed))
+#
+#     def test_an_ordering_written_like_dedup_keys_says_how_to_fix_it(self):
+#         res = self.compile_template(extra=self.cohort(
+#             dedup_keys="[[PatientDurableKey]]", dedup_order_by="[[IndexDate]]"
+#         ))
+#         found = [m for m in res.errors if m.code == "bad_dedup_column"]
+#         self.assertEqual(len(found), 1, summarize_result(res))
+#         self.assertIn("`- IndexDate`", found[0].fix)
 #
 #     def test_the_old_spellings_are_refused(self):
 #         res = self.compile_template(extra=self.cohort(
