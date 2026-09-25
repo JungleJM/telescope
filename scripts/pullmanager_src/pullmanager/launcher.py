@@ -169,6 +169,11 @@ def command_execute(
     return command + ["--keep-open"] if keep_open else command
 
 
+def command_artifacts(tools: Tools, paths: Paths) -> list[str]:
+    """Package the pull's finished tables (D72), by its name as Execute is."""
+    return [sys.executable, str(tools.pullmanager), "--artifacts", execute_target(paths)]
+
+
 def child_environment() -> dict[str, str]:
     """Stream output live, in UTF-8, whatever the console code page is.
 

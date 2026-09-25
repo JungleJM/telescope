@@ -176,13 +176,20 @@ class NameTests(GuiTestCase):
     def test_the_buttons(self):
         self.assertEqual(
             [button.options["text"] for button in self.app.action_buttons],
-            ["Validate", "Export split", "Preview SQL", "Execute"],
+            ["Validate", "Export split", "Preview SQL", "Execute", "Artifacts"],
         )
 
     def test_the_tabs(self):
         tabs = [call.kwargs["text"] for call in self.app.notebook.add.call_args_list]
         self.assertEqual(tabs[0], "Validation Output")
         self.assertIn("Status", tabs)
+
+    def test_artifacts_packages_the_loaded_pull_by_name(self):
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        with mock.patch.object(self.app.runner, "start") as start:
+            self.app.on_artifacts()
+        command = start.call_args.args[0]
+        self.assertEqual(command[command.index("--artifacts") + 1], "IBD_Ancestry")
 
     def test_the_preview_runs_the_dry_run(self):
         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
@@ -220,7 +227,7 @@ class RunningPullTests(GuiTestCase):
         self.app.watch_pull()
         self.assertEqual(self.states(), {
             "Validate": "normal", "Export split": "disabled",
-            "Preview SQL": "normal", "Execute": "disabled",
+            "Preview SQL": "normal", "Execute": "disabled", "Artifacts": "disabled",
         })
         message = self.app.status_message.configure.call_args.kwargs["text"]
         self.assertIn("Executing since", message)

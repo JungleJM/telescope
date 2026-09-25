@@ -459,8 +459,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "4ae1c3825cefc01cebc53bbbb960e7ab2570cdcf502fd907ac43ee634ddd4eff",
-  "file_count": 42,
+  "content_id": "59e8fd709ef10503273ece6d78d68eee17fb8aae08ae65813d75a363b8f6fcb2",
+  "file_count": 44,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -487,6 +487,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 79
     },
     {
+      "path": "pullmanager/artifacts.py",
+      "policy": "replace",
+      "sha256": "bc95817e1bb25e1c40fd878eb1d177443b4e0397512c659fe9d740501942f9bc",
+      "size": 13681
+    },
+    {
       "path": "pullmanager/batches.py",
       "policy": "replace",
       "sha256": "3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2",
@@ -495,8 +501,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "18f212453e0e61c06351f1bbb93dd3d45d18e4844a438781100691151d712d74",
-      "size": 17388
+      "sha256": "13c9f5641fefffed3c05bce473d698420dde946ba5a4f8b643a2c79d251aece6",
+      "size": 19814
     },
     {
       "path": "pullmanager/db.py",
@@ -513,14 +519,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "ef8564d954c32abca74a11349ecc38d1437ebc8b9dc84f68da951e7b7e1ec214",
-      "size": 19017
+      "sha256": "5545edaaacba1ae5e87c1474eebf08735e8c4a5f530fc3f63116d8c8180dd049",
+      "size": 19292
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "a01f36f6b750fc9cd10584a472c486ba158f668029d61fa6a81cfc91fcaf05e5",
-      "size": 15110
+      "sha256": "5d63c12e9487c4cb19ebd3c25364dda421506a0974e90eb80fc54eacc34d9694",
+      "size": 15345
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -561,8 +567,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/pulls.py",
       "policy": "replace",
-      "sha256": "7c848a772e31d100c210535124e40e30c8259b5b6e1f19a1c6a76cd1bfa54838",
-      "size": 10387
+      "sha256": "9758216ded90db5e06ab585f9a5a9d0da19ad4d24f8ace2d903bccf871d9714f",
+      "size": 10498
     },
     {
       "path": "pullmanager/refresh.py",
@@ -607,6 +613,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "size": 4541
     },
     {
+      "path": "pullmanager/tests/test_artifacts.py",
+      "policy": "replace",
+      "sha256": "7bbbc369065a7b6d463dee233eaaba937b6620889c5f15da3fbdac082461572e",
+      "size": 12209
+    },
+    {
       "path": "pullmanager/tests/test_batches.py",
       "policy": "replace",
       "sha256": "310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c",
@@ -627,8 +639,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "0e0f91f4b00aabfe22aa4f590e01c6f7fe0a89f9a59a1243a1b4c003ae64968f",
-      "size": 16436
+      "sha256": "efdda3b7faa101a10878fc3447d372e03e7b8d5ba5d9c147e25d984d7725ca52",
+      "size": 16835
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
@@ -3598,6 +3610,344 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
+# === BEGIN FILE: pullmanager/artifacts.py SHA256: bc95817e1bb25e1c40fd878eb1d177443b4e0397512c659fe9d740501942f9bc SIZE: 13681 ===
+# """`--artifacts`: a pull's finished tables, as parquets in its run folder (D72).
+#
+#     runs/<project>/parquets/SneakPeek/   tables pulled from COSMOS_SneakPeek (`_sp`)
+#     runs/<project>/parquets/Cosmos/      tables pulled from COSMOS
+#     runs/<project>/parquets/uploads/     the uploads, copied from the split
+#
+# Only finished tables are packaged, and the manifest decides which those are,
+# never what happens to exist in Projects: a PK table once its PK phase is done,
+# a run's table once every run that fills it is. The rest are listed with why.
+# Each table is read from Projects in chunks and written with pyarrow, typed
+# from its own columns; `_batch` is internal and dropped. A batching dimension
+# marked `separate_parquets` gives one file per value. Each packaging replaces
+# the last.
+# """
+#
+# from __future__ import annotations
+#
+# import re
+# import shutil
+# from dataclasses import dataclass, field
+# from pathlib import Path
+# from typing import Any, Callable, Iterator
+#
+# from . import uploads
+# from .batches import dimension_predicate
+# from .manifest import Manifest, Session
+# from .models import DONE, SKIPPED
+# from .naming import destination
+# from .normalize import NormalizationError, cosmos_database
+# from .pulls import run_folder
+# from .yaml_io import load_yaml
+#
+# PARQUETS_DIR = "parquets"
+# SNEAKPEEK_DIR = "SneakPeek"
+# COSMOS_DIR = "Cosmos"
+# UPLOADS_DIR = "uploads"
+# BATCH_COLUMN = "_batch"
+# SP_SUFFIX = "_sp"
+# FETCH_ROWS = 50_000
+#
+#
+# class ArtifactError(RuntimeError):
+#     """Raised when a pull cannot be packaged at all."""
+#
+#
+# @dataclass
+# class Part:
+#     """One parquet file of a table: the whole table, or one separated value."""
+#
+#     label: str  # "" for the whole table, else its values joined: "LA", "LA_Female"
+#     where: str = ""  # a WHERE clause selecting it, with its params
+#     params: list[Any] = field(default_factory=list)
+#     path: Path | None = None
+#     rows: int = 0
+#
+#
+# @dataclass
+# class TableSpec:
+#     """A destination table the pull made, and what it takes to package it."""
+#
+#     dest: str
+#     kind: str  # "pk", "run" or "upload"
+#     session: str
+#     folder: str  # SneakPeek, Cosmos or uploads
+#     cohort: dict[str, Any] = field(default_factory=dict)
+#     doc: dict[str, Any] = field(default_factory=dict)  # the phase document it came from
+#     parts: list[Part] = field(default_factory=list)
+#     columns: list[tuple[str, str]] = field(default_factory=list)  # name, SQL type, as held
+#     source_file: Path | None = None  # an upload's parquet in the split
+#
+#     @property
+#     def rows(self) -> int:
+#         return sum(part.rows for part in self.parts)
+#
+#
+# @dataclass
+# class Plan:
+#     tables: list[TableSpec] = field(default_factory=list)
+#     left_out: list[tuple[str, str]] = field(default_factory=list)  # table, why
+#
+#
+# def is_settled(node: Any) -> bool:
+#     return node.status in (DONE, SKIPPED)
+#
+#
+# def database_folder(cohort: dict[str, Any], doc: dict[str, Any]) -> str:
+#     try:
+#         database = cosmos_database(cohort.get("cosmos_db") or doc.get("cosmos_db"))
+#     except NormalizationError:
+#         database = "COSMOS"
+#     return SNEAKPEEK_DIR if database.lower() == "cosmos_sneakpeek" else COSMOS_DIR
+#
+#
+# def safe_part(value: Any) -> str:
+#     return re.sub(r"[^A-Za-z0-9]+", "_", str(value)).strip("_") or "blank"
+#
+#
+# def file_name(dest: str, label: str) -> str:
+#     """`OtherDiagnoses_LA.parquet`; a SneakPeek table keeps `_sp` last."""
+#     if not label:
+#         return f"{dest}.parquet"
+#     if dest.endswith(SP_SUFFIX):
+#         return f"{dest[: -len(SP_SUFFIX)]}_{label}{SP_SUFFIX}.parquet"
+#     return f"{dest}_{label}.parquet"
+#
+#
+# def separate_parts(session: Session, kind: str) -> list[Part]:
+#     """One part per combination of the separated dimensions' values (D72).
+#
+#     A run's table is chosen by its `_batch` labels; a PK table, which has no
+#     `_batch`, by the dimensions' own predicates on its columns.
+#     """
+#     groups: dict[str, list[Any]] = {}
+#     group_dims: dict[str, list[dict[str, Any]]] = {}
+#     for run in session.runs:
+#         dims = [d for d in (run.batch or {}).get("dimensions") or [] if d.get("separate")]
+#         if not dims:
+#             continue
+#         label = "_".join(
+#             "other" if d.get("is_other") else safe_part(d.get("value")) for d in dims
+#         )
+#         groups.setdefault(label, []).append((run.batch or {}).get("name"))
+#         group_dims[label] = dims
+#     parts: list[Part] = []
+#     for label, batch_names in groups.items():
+#         if kind == "run":
+#             marks = ", ".join("?" for _ in batch_names)
+#             parts.append(Part(label, f" WHERE [{BATCH_COLUMN}] IN ({marks})", list(batch_names)))
+#         else:
+#             clauses, params = [], []
+#             for dim in group_dims[label]:
+#                 clause, values = dimension_predicate(dim)
+#                 clauses.append(clause)
+#                 params.extend(values)
+#             parts.append(Part(label, " WHERE " + " AND ".join(clauses), params))
+#     return parts or [Part("")]
+#
+#
+# def plan(manifest: Manifest) -> Plan:
+#     """Which tables to package, from the manifest and the split's documents."""
+#     result = Plan()
+#     seen: set[str] = set()
+#     uploads_seen: set[str] = set()
+#     for session in manifest.sessions:
+#         phases = {phase.name: phase for phase in session.phases}
+#         pk_phase = phases.get("pk")
+#         if pk_phase is not None and pk_phase.yaml:
+#             doc = load_yaml(manifest.resolve(pk_phase)) or {}
+#             source = pk_phase.pk_source or {}
+#             for cohort in doc.get("cohorts") or []:
+#                 if not isinstance(cohort, dict) or cohort.get("dest_table") != session.pk_table:
+#                     continue
+#                 dest = str(cohort["dest_table"])
+#                 if source.get("kind") == "uploaded_cohort":
+#                     continue  # packaged as an upload
+#                 if dest in seen:
+#                     continue
+#                 seen.add(dest)
+#                 if not is_settled(pk_phase):
+#                     result.left_out.append((dest, f"its PK phase is {pk_phase.status}"))
+#                     continue
+#                 result.tables.append(TableSpec(
+#                     dest, "pk", session.session_id, database_folder(cohort, doc), cohort, doc,
+#                     separate_parts(session, "pk"),
+#                 ))
+#         if session.runs:
+#             doc = load_yaml(manifest.resolve(session.runs[0])) or {}
+#             unsettled = [run for run in session.runs if not is_settled(run)]
+#             for cohort in doc.get("cohorts") or []:
+#                 if not isinstance(cohort, dict) or not cohort.get("dest_table"):
+#                     continue
+#                 dest = str(cohort["dest_table"])
+#                 if dest in seen or dest == session.pk_table:
+#                     continue
+#                 seen.add(dest)
+#                 if unsettled:
+#                     states = ", ".join(sorted({run.status for run in unsettled}))
+#                     result.left_out.append(
+#                         (dest, f"{len(unsettled)} of its {len(session.runs)} run(s) are not done ({states})")
+#                     )
+#                     continue
+#                 result.tables.append(TableSpec(
+#                     dest, "run", session.session_id, database_folder(cohort, doc), cohort, doc,
+#                     separate_parts(session, "run"),
+#                 ))
+#         upload_phase = phases.get("upload_cohorts")
+#         if upload_phase is not None and upload_phase.yaml:
+#             doc = load_yaml(manifest.resolve(upload_phase)) or {}
+#             for item in doc.get("upload_cohorts") or []:
+#                 if not isinstance(item, dict):
+#                     continue
+#                 dest = str(item.get("dest_table") or item.get("name") or "")
+#                 if not dest or dest in uploads_seen:
+#                     continue
+#                 uploads_seen.add(dest)
+#                 if str(item.get("file_type", "")).lower() != "parquet" or not item.get("file_loc"):
+#                     result.left_out.append(
+#                         (dest, "an upload with no parquet in the split; it is in Projects as "
+#                                f"{uploads.copy_table(dest)}")
+#                     )
+#                     continue
+#                 spec = TableSpec(dest, "upload", session.session_id, UPLOADS_DIR, item, doc, [Part("")])
+#                 spec.source_file = manifest.root / str(item["file_loc"])
+#                 result.tables.append(spec)
+#     return result
+#
+#
+# # --------------------------------------------------------------- writing
+#
+# def arrow_type(pa: Any, sql_type: str) -> Any:
+#     """The Arrow type for a SQL Server column type, as INFORMATION_SCHEMA gives it."""
+#     base = sql_type.split("(")[0].upper()
+#     if base == "BIGINT":
+#         return pa.int64()
+#     if base == "INT":
+#         return pa.int32()
+#     if base in ("SMALLINT", "TINYINT"):
+#         return pa.int16()
+#     if base == "BIT":
+#         return pa.bool_()
+#     if base == "FLOAT":
+#         return pa.float64()
+#     if base == "REAL":
+#         return pa.float32()
+#     if base in ("DECIMAL", "NUMERIC"):
+#         inside = sql_type[sql_type.index("(") + 1: sql_type.index(")")] if "(" in sql_type else "18,0"
+#         precision, _, scale = inside.partition(",")
+#         return pa.decimal128(int(precision), int(scale or 0))
+#     if base in ("MONEY", "SMALLMONEY"):
+#         return pa.decimal128(19, 4)
+#     if base == "DATE":
+#         return pa.date32()
+#     if base in ("DATETIME", "DATETIME2", "SMALLDATETIME"):
+#         return pa.timestamp("us")
+#     if base == "TIME":
+#         return pa.time64("us")
+#     if base in ("BINARY", "VARBINARY", "IMAGE"):
+#         return pa.binary()
+#     return pa.string()
+#
+#
+# def select_expression(name: str, sql_type: str) -> str:
+#     """Types the driver cannot hand back as Python values are read as text."""
+#     base = sql_type.split("(")[0].upper()
+#     if base in ("DATETIMEOFFSET", "UNIQUEIDENTIFIER", "XML", "SQL_VARIANT", "HIERARCHYID",
+#                 "GEOGRAPHY", "GEOMETRY"):
+#         return f"CONVERT(NVARCHAR(MAX), [{name}]) AS [{name}]"
+#     return f"[{name}]"
+#
+#
+# def describe(cursor: Any, project_db: str, table: str) -> list[tuple[str, str]]:
+#     sql, params = uploads.describe_sql(project_db, table)
+#     cursor.execute(sql, params)
+#     return [(str(row[0]), uploads.type_from_info(*row[1:6])) for row in cursor.fetchall()]
+#
+#
+# def batches_of(cursor: Any, size: int = FETCH_ROWS) -> Iterator[list[tuple]]:
+#     while True:
+#         rows = cursor.fetchmany(size)
+#         if not rows:
+#             return
+#         yield [tuple(row) for row in rows]
+#
+#
+# def write_part(cursor: Any, pa: Any, pq: Any, sql: str, params: list[Any],
+#                columns: list[tuple[str, str]], path: Path) -> int:
+#     """Stream one SELECT into one parquet file; returns its row count."""
+#     schema = pa.schema([(name, arrow_type(pa, sql_type)) for name, sql_type in columns])
+#     tmp = path.with_name(path.name + ".tmp")
+#     rows = 0
+#     cursor.execute(sql, params)
+#     with pq.ParquetWriter(tmp, schema) as writer:
+#         for chunk in batches_of(cursor):
+#             arrays = [
+#                 pa.array([row[i] for row in chunk], type=schema.field(i).type)
+#                 for i in range(len(columns))
+#             ]
+#             writer.write_batch(pa.record_batch(arrays, schema=schema))
+#             rows += len(chunk)
+#     tmp.replace(path)
+#     return rows
+#
+#
+# def package(manifest: Manifest, connection: Any, out_dir: Path,
+#             log: Callable[[str], None] = print) -> Plan:
+#     """Write every finished table's parquet(s) under `out_dir`, replacing the last."""
+#     try:
+#         import pyarrow as pa
+#         import pyarrow.parquet as pq
+#     except ImportError as exc:
+#         raise ArtifactError(f"--artifacts needs pyarrow, which this Python lacks ({exc}).") from exc
+#     project_db = str(manifest.project.get("project_db") or "")
+#     if not project_db:
+#         raise ArtifactError("The manifest names no project_db, so there is nothing to read from.")
+#     result = plan(manifest)
+#     if out_dir.exists():
+#         shutil.rmtree(out_dir)  # each packaging replaces the last (D72)
+#     cursor = connection.cursor()
+#     for spec in result.tables:
+#         folder = out_dir / spec.folder
+#         folder.mkdir(parents=True, exist_ok=True)
+#         if spec.kind == "upload":
+#             part = spec.parts[0]
+#             part.path = folder / file_name(spec.dest, "")
+#             shutil.copyfile(spec.source_file, part.path)
+#             table = pq.read_metadata(part.path)
+#             part.rows = table.num_rows
+#             schema = pq.read_schema(part.path)
+#             spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
+#             log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows)")
+#             continue
+#         described = describe(cursor, project_db, spec.dest)
+#         if not described:
+#             result.left_out.append((spec.dest, f"it is not in {project_db}"))
+#             continue
+#         spec.columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
+#         select = ", ".join(select_expression(name, sql_type) for name, sql_type in spec.columns)
+#         for part in spec.parts:
+#             part.path = folder / file_name(spec.dest, part.label)
+#             sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
+#             part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
+#             log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows)")
+#     result.tables = [spec for spec in result.tables if spec.columns]
+#     return result
+#
+#
+# def shown(path: Path, out_dir: Path) -> str:
+#     try:
+#         return str(path.relative_to(out_dir.parent))
+#     except ValueError:
+#         return str(path)
+#
+#
+# def parquets_folder(manifest_path: Path) -> Path:
+#     return run_folder(manifest_path) / PARQUETS_DIR
+#
+# === END FILE: pullmanager/artifacts.py ===
 # === BEGIN FILE: pullmanager/batches.py SHA256: 3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2 SIZE: 6547 ===
 # """Turning a logical batch into the rows it selects.
 #
@@ -3778,7 +4128,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 18f212453e0e61c06351f1bbb93dd3d45d18e4844a438781100691151d712d74 SIZE: 17388 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 13c9f5641fefffed3c05bce473d698420dde946ba5a4f8b643a2c79d251aece6 SIZE: 19814 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -3957,6 +4307,59 @@ if __name__ == "__main__":
 #             pull_lock.release()
 #
 #
+# def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+#     """Package the pull's finished tables (D72), then describe them (D73, D75)."""
+#     from .artifacts import ArtifactError, package, parquets_folder
+#     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
+#     from .lock import held_message, live_lock, pull_name
+#
+#     held = live_lock(manifest.path)
+#     if held is not None:
+#         print(f"ERROR {held_message(held, manifest.path)} Package it once it has finished.",
+#               file=sys.stderr)
+#         return 1
+#     try:
+#         load_env_file(args.env)
+#     except DatabaseError as exc:
+#         print(f"ERROR {exc}", file=sys.stderr)
+#         return 1
+#     settings = Settings.from_env()
+#     project_db = str(manifest.project.get("project_db") or "")
+#     out = parquets_folder(manifest.path)
+#     print(f"Artifacts {pull_name(manifest.path)}: {shown(out)}")
+#     try:
+#         connection = (connect_fn or connect)(
+#             settings.projects_connection_string(project_db),
+#             login_timeout=settings.login_timeout,
+#             query_timeout=settings.query_timeout,
+#         )
+#     except DatabaseError as exc:
+#         print(f"ERROR could not connect to Projects: {exc}", file=sys.stderr)
+#         return 1
+#     try:
+#         result = package(manifest, connection, out)
+#     except ArtifactError as exc:
+#         print(f"ERROR {exc}", file=sys.stderr)
+#         return 1
+#     except Exception as exc:  # a driver error, naming the table in its SQL
+#         print(f"ERROR packaging stopped: {exc}", file=sys.stderr)
+#         return 1
+#     finally:
+#         try:
+#             connection.close()
+#         except Exception:
+#             pass
+#     for dest, why in result.left_out:
+#         print(f"  left out {dest}: {why}")
+#     files = sum(len(spec.parts) for spec in result.tables)
+#     print()
+#     print(
+#         f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
+#         f"{len(result.left_out)} left out, in {shown(out)}."
+#     )
+#     return 0
+#
+#
 # def keep_open(code: int, input_fn=input) -> None:
 #     """Hold the console window Execute runs in until `exit` is typed (D68).
 #
@@ -4123,6 +4526,12 @@ if __name__ == "__main__":
 #              "Takes a project's name or a manifest; with neither, lists the pulls.",
 #     )
 #     parser.add_argument(
+#         "--artifacts",
+#         action="store_true",
+#         help="Package a pull's finished tables as parquets in runs/<project>/, with "
+#              "contents.md and load scripts. Takes a project's name or a manifest.",
+#     )
+#     parser.add_argument(
 #         "--keep-open",
 #         action="store_true",
 #         help="After the command, keep the window open until exit is typed. The "
@@ -4210,10 +4619,10 @@ if __name__ == "__main__":
 #             print(line)
 #         return 0
 #
-#     if args.execute and not args.dry_run:
+#     if (args.execute or args.artifacts) and not args.dry_run:
 #         # D66: a project's name finds its manifest; no name lists the pulls.
 #         if not args.manifest:
-#             for line in listing():
+#             for line in listing(option="--artifacts" if args.artifacts else "--execute"):
 #                 print(line)
 #             return 1
 #         try:
@@ -4238,6 +4647,8 @@ if __name__ == "__main__":
 #             return 1
 #         if args.dry_run:
 #             return dry_run(manifest, args)
+#         if args.artifacts:
+#             return artifacts(manifest, args)
 #         if args.execute:
 #             return execute(manifest, args)
 #         summarize(manifest)
@@ -4976,7 +5387,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: ef8564d954c32abca74a11349ecc38d1437ebc8b9dc84f68da951e7b7e1ec214 SIZE: 19017 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: 5545edaaacba1ae5e87c1474eebf08735e8c4a5f530fc3f63116d8c8180dd049 SIZE: 19292 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -5005,8 +5416,9 @@ if __name__ == "__main__":
 # # After Execute is pressed its buttons stay grey this long waiting for its
 # # lock, so they cannot be pressed twice before it appears.
 # EXECUTE_GRACE_SECONDS = 60
-# # Buttons that would overwrite a pull that is executing (D67).
-# PULL_WRITERS = ("Export split", "Execute")
+# # Buttons that wait for a pull that is executing: Export split and Execute
+# # would overwrite it (D67); Artifacts packages only a finished pull (D72).
+# PULL_WRITERS = ("Export split", "Execute", "Artifacts")
 #
 # STATUS_COLOURS = {
 #     "done": "#1a7f37",
@@ -5090,6 +5502,7 @@ if __name__ == "__main__":
 #             ("Export split", self.on_export_split),
 #             ("Preview SQL", self.on_dry_run),
 #             ("Execute", self.on_execute),
+#             ("Artifacts", self.on_artifacts),
 #         ):
 #             button = ttk.Button(actions, text=text, command=handler)
 #             button.pack(side="left", padx=(0, 6))
@@ -5191,6 +5604,9 @@ if __name__ == "__main__":
 #             "Preview SQL",
 #             lambda: launcher.command_dry_run(self.tools, self.paths(), self.options()),
 #         )
+#
+#     def on_artifacts(self) -> None:
+#         self.run("Artifacts", lambda: launcher.command_artifacts(self.tools, self.paths()))
 #
 #     def on_execute(self) -> None:
 #         if not messagebox.askokcancel(
@@ -5441,7 +5857,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: a01f36f6b750fc9cd10584a472c486ba158f668029d61fa6a81cfc91fcaf05e5 SIZE: 15110 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: 5d63c12e9487c4cb19ebd3c25364dda421506a0974e90eb80fc54eacc34d9694 SIZE: 15345 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -5611,6 +6027,11 @@ if __name__ == "__main__":
 #         *_resume_flags(options),
 #     ]
 #     return command + ["--keep-open"] if keep_open else command
+#
+#
+# def command_artifacts(tools: Tools, paths: Paths) -> list[str]:
+#     """Package the pull's finished tables (D72), by its name as Execute is."""
+#     return [sys.executable, str(tools.pullmanager), "--artifacts", execute_target(paths)]
 #
 #
 # def child_environment() -> dict[str, str]:
@@ -7199,7 +7620,7 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
-# === BEGIN FILE: pullmanager/pulls.py SHA256: 7c848a772e31d100c210535124e40e30c8259b5b6e1f19a1c6a76cd1bfa54838 SIZE: 10387 ===
+# === BEGIN FILE: pullmanager/pulls.py SHA256: 9758216ded90db5e06ab585f9a5a9d0da19ad4d24f8ace2d903bccf871d9714f SIZE: 10498 ===
 # """Finding a pull by its project's name, and listing the pulls there are (D66).
 #
 # A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
@@ -7425,7 +7846,8 @@ if __name__ == "__main__":
 #     return pulls
 #
 #
-# def execute_command(manifest: Path, cwd: Path | None = None) -> tuple[str, Path]:
+# def execute_command(manifest: Path, cwd: Path | None = None,
+#                     option: str = "--execute") -> tuple[str, Path]:
 #     """The command that pulls this manifest, and the folder to type it in.
 #
 #     By its project's name when it sits where names find it
@@ -7438,9 +7860,9 @@ if __name__ == "__main__":
 #         and split.name == SPLIT_DIR
 #         and run_dir.parent.name == RUNS_DIR
 #     ):
-#         return f"python pullmanager.py --execute {run_dir.name}", run_dir.parent.parent
+#         return f"python pullmanager.py {option} {run_dir.name}", run_dir.parent.parent
 #     here = Path(cwd or Path.cwd()).resolve()
-#     return f'python pullmanager.py --execute "{shown(manifest, here)}"', here
+#     return f'python pullmanager.py {option} "{shown(manifest, here)}"', here
 #
 #
 # def shown(path: Path, cwd: Path | None = None) -> str:
@@ -7453,9 +7875,10 @@ if __name__ == "__main__":
 #         return str(path)
 #
 #
-# def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:") -> list[str]:
-#     """Every pull, its state and its command: what `--execute` alone prints,
-#     and `--running` with its own heading."""
+# def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:",
+#             option: str = "--execute") -> list[str]:
+#     """Every pull, its state and its command: what `--execute` (or
+#     `--artifacts`) alone prints, and `--running` with its own heading."""
 #     here = Path(cwd or Path.cwd()).resolve()
 #     pulls = find_pulls(here)
 #     if not pulls:
@@ -7467,7 +7890,7 @@ if __name__ == "__main__":
 #     state_width = max(len(p.state) for p in pulls)
 #     lines = [heading, ""]
 #     for pull in pulls:
-#         command, folder = execute_command(pull.manifest, here)
+#         command, folder = execute_command(pull.manifest, here, option)
 #         where = "" if folder.resolve() == here else f"   (in {folder})"
 #         lines.append(f"  {pull.name:<{width}}  {pull.state:<{state_width}}  {command}{where}")
 #     return lines
@@ -9169,6 +9592,302 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
+# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 7bbbc369065a7b6d463dee233eaaba937b6620889c5f15da3fbdac082461572e SIZE: 12209 ===
+# """`--artifacts`: a pull's finished tables as parquets (D72)."""
+#
+# from __future__ import annotations
+#
+# import argparse
+# import contextlib
+# import datetime as dt
+# import io
+# import json
+# import re
+# import shutil
+# import tempfile
+# import time
+# import unittest
+# from pathlib import Path
+# from unittest import mock
+#
+# from .. import artifacts, cli
+# from ..lock import lock_path
+# from ..manifest import Manifest
+# from ..yaml_io import dump_yaml, load_yaml
+#
+# FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
+# DB = "PROJECTD33A929"
+#
+# # INFORMATION_SCHEMA rows: name, type, length, precision, scale, datetime precision.
+# PATIENTS = [
+#     ("PatientDurableKey", "bigint", None, 19, 0, None),
+#     ("Sex", "varchar", 50, None, None, None),
+#     ("BirthDate", "date", None, None, None, 0),
+# ]
+# HOSPITALIZATIONS = [
+#     ("InpatientEncounterKey", "bigint", None, 19, 0, None),
+#     ("PatientDurableKey", "bigint", None, 19, 0, None),
+#     ("InpatientAdmissionInstant", "datetime2", None, None, None, 7),
+#     ("LengthOfStayInDays", "int", None, 10, 0, None),
+#     ("_batch", "nvarchar", 200, None, None, None),
+# ]
+#
+#
+# def pyarrow_or_skip(case):
+#     try:
+#         import pyarrow  # noqa: F401
+#         import pyarrow.parquet  # noqa: F401
+#     except ImportError:
+#         case.skipTest("packaging needs pyarrow")
+#
+#
+# class FakeCursor:
+#     def __init__(self, db):
+#         self.db = db
+#         self._rows: list[tuple] = []
+#
+#     def execute(self, sql, params=None):
+#         params = list(params or [])
+#         self.db.executed.append((sql, params))
+#         if "INFORMATION_SCHEMA.COLUMNS" in sql:
+#             self._rows = list(self.db.columns.get(params[0], []))
+#             return
+#         match = re.match(r"SELECT (.+) FROM \S+\.dbo\.(\w+)(?: WHERE (.+))?;$", sql, re.S)
+#         assert match, sql
+#         names = re.findall(r"\[(\w+)\] AS|\[(\w+)\]", match.group(1))
+#         names = [a or b for a, b in names]
+#         rows = self.db.rows[match.group(2)]
+#         where = match.group(3) or ""
+#         if "[_batch] IN" in where:
+#             rows = [r for r in rows if r["_batch"] in params]
+#         for column in re.findall(r"\[(\w+)\] = \?", where):
+#             value = params.pop(0)
+#             rows = [r for r in rows if r[column] == value]
+#         self._rows = [tuple(r[n] for n in names) for r in rows]
+#
+#     def fetchall(self):
+#         rows, self._rows = self._rows, []
+#         return rows
+#
+#     def fetchmany(self, size):
+#         rows, self._rows = self._rows[:size], self._rows[size:]
+#         return rows
+#
+#
+# class FakeProjects:
+#     def __init__(self, columns, rows):
+#         self.columns, self.rows = columns, rows
+#         self.executed: list = []
+#         self.closed = False
+#
+#     def cursor(self):
+#         return FakeCursor(self)
+#
+#     def close(self):
+#         self.closed = True
+#
+#
+# def patients(n=3):
+#     return [{"PatientDurableKey": 10_000_000_000 + i, "Sex": ("Female", "Male")[i % 2],
+#              "BirthDate": dt.date(1980, 1, 1 + i)} for i in range(n)]
+#
+#
+# def hospitalizations(labels=("all",)):
+#     rows = []
+#     for i, label in enumerate(labels * 2):
+#         rows.append({"InpatientEncounterKey": 500 + i, "PatientDurableKey": 10_000_000_000 + i,
+#                      "InpatientAdmissionInstant": dt.datetime(2021, 5, 1, 8, 30, i),
+#                      "LengthOfStayInDays": None if i == 0 else i, "_batch": label})
+#     return rows
+#
+#
+# class ArtifactTestCase(unittest.TestCase):
+#     def setUp(self):
+#         if not FIXTURES.is_dir():
+#             self.skipTest(f"fixtures not found at {FIXTURES}")
+#         pyarrow_or_skip(self)
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.work = Path(self._tmp.name).resolve()
+#         self.split = self.work / "runs" / "IBD_Ancestry" / "split"
+#         shutil.copytree(FIXTURES, self.split)
+#         self.out = self.work / "runs" / "IBD_Ancestry" / "parquets"
+#
+#     def set_status(self, phases="done", runs="done"):
+#         data = load_yaml(self.split / "pullmanifest.yaml")
+#         for session in data["sessions"]:
+#             for node in session["phases"].values():
+#                 node["status"] = phases
+#             for node in session["runs"]:
+#                 node["status"] = runs
+#         dump_yaml(data, self.split / "pullmanifest.yaml")
+#
+#     def make_batched(self, separate=True):
+#         """Two runs, Female and Male, on a sex dimension."""
+#         runs_dir = self.split / "sessions" / "Patients" / "runs"
+#         doc = load_yaml(runs_dir / "run.yaml")
+#         runs = []
+#         for i, value in enumerate(("Female", "Male"), start=1):
+#             dim = {"name": "sex", "kind": "column_values", "column": "Sex", "value": value}
+#             if separate:
+#                 dim["separate"] = True
+#             batch = {"name": f"b{i}of2-{value}", "dimensions": [dim], "runtime": []}
+#             doc["pull_context"]["batch"] = batch
+#             dump_yaml(doc, runs_dir / f"{value}.yaml")
+#             runs.append({"run_id": f"Patients__{value}", "yaml": f"sessions/Patients/runs/{value}.yaml",
+#                          "status": "done", "batch": batch})
+#         data = load_yaml(self.split / "pullmanifest.yaml")
+#         data["sessions"][0]["runs"] = runs
+#         dump_yaml(data, self.split / "pullmanifest.yaml")
+#
+#     def projects(self, labels=("all",)):
+#         return FakeProjects(
+#             {"Patients": PATIENTS, "OtherHospitalizations": HOSPITALIZATIONS},
+#             {"Patients": patients(), "OtherHospitalizations": hospitalizations(labels)},
+#         )
+#
+#     def package(self, db=None):
+#         manifest = Manifest.load(self.split / "pullmanifest.yaml")
+#         return artifacts.package(manifest, db or self.projects(), self.out, log=lambda _: None)
+#
+#     def read(self, relative):
+#         import pyarrow.parquet as pq
+#
+#         return pq.read_table(self.out / relative)
+#
+#
+# class PackageTests(ArtifactTestCase):
+#     def test_every_finished_table_lands_with_its_types_and_no_batch_column(self):
+#         self.set_status()
+#         result = self.package()
+#         self.assertEqual(result.left_out, [])
+#         patients_table = self.read("Cosmos/Patients.parquet")
+#         self.assertEqual(patients_table.column("PatientDurableKey").to_pylist(),
+#                          [r["PatientDurableKey"] for r in patients()])
+#         self.assertEqual(str(patients_table.schema.field("PatientDurableKey").type), "int64")
+#         self.assertEqual(str(patients_table.schema.field("BirthDate").type), "date32[day]")
+#         facts = self.read("Cosmos/OtherHospitalizations.parquet")
+#         self.assertNotIn("_batch", facts.column_names)
+#         self.assertEqual(facts.num_rows, 2)
+#         self.assertEqual(facts.column("LengthOfStayInDays").to_pylist(), [None, 1])
+#         self.assertEqual(str(facts.schema.field("InpatientAdmissionInstant").type), "timestamp[us]")
+#         spec = next(s for s in result.tables if s.dest == "OtherHospitalizations")
+#         self.assertEqual([c for c, _ in spec.columns][-1], "LengthOfStayInDays")
+#         self.assertEqual(dict(spec.columns)["InpatientEncounterKey"], "BIGINT")
+#
+#     def test_uploads_are_copied_from_the_split(self):
+#         self.set_status()
+#         self.package()
+#         copied = self.out / "uploads" / "HospitalICDCodes.parquet"
+#         self.assertEqual(copied.read_bytes(),
+#                          (self.split / "uploads" / "hospital_icd_codes.parquet").read_bytes())
+#
+#     def test_unfinished_tables_are_left_out_saying_why(self):
+#         # The manifest decides, not what exists in Projects.
+#         self.set_status(phases="done", runs="failed")
+#         result = self.package()
+#         self.assertTrue((self.out / "Cosmos" / "Patients.parquet").is_file())
+#         self.assertFalse((self.out / "Cosmos" / "OtherHospitalizations.parquet").exists())
+#         why = dict(result.left_out)["OtherHospitalizations"]
+#         self.assertIn("1 of its 1 run(s) are not done (failed)", why)
+#
+#     def test_a_pk_phase_not_done_leaves_the_pk_out(self):
+#         data = load_yaml(self.split / "pullmanifest.yaml")
+#         data["sessions"][0]["phases"]["pk"]["status"] = "running"
+#         dump_yaml(data, self.split / "pullmanifest.yaml")
+#         result = self.package()
+#         self.assertIn("Patients", dict(result.left_out))
+#
+#     def test_a_large_table_is_read_in_chunks(self):
+#         self.set_status()
+#         db = self.projects()
+#         db.rows["Patients"] = patients(25)
+#         with mock.patch.object(artifacts, "FETCH_ROWS", 10):
+#             self.package(db)
+#         self.assertEqual(self.read("Cosmos/Patients.parquet").num_rows, 25)
+#
+#     def test_each_packaging_replaces_the_last(self):
+#         self.set_status()
+#         stale = self.out / "Cosmos" / "Dropped.parquet"
+#         stale.parent.mkdir(parents=True)
+#         stale.write_bytes(b"old")
+#         self.package()
+#         self.assertFalse(stale.exists())
+#         self.assertTrue((self.out / "Cosmos" / "Patients.parquet").is_file())
+#
+#
+# class SeparateTests(ArtifactTestCase):
+#     """A dimension marked separate_parquets gives one file per value."""
+#
+#     def test_each_value_gets_its_own_files(self):
+#         self.set_status()
+#         self.make_batched(separate=True)
+#         self.package(self.projects(labels=("b1of2-Female", "b2of2-Male")))
+#         female = self.read("Cosmos/OtherHospitalizations_Female.parquet")
+#         self.assertEqual(female.num_rows, 2)
+#         self.assertEqual(self.read("Cosmos/OtherHospitalizations_Male.parquet").num_rows, 2)
+#         self.assertFalse((self.out / "Cosmos" / "OtherHospitalizations.parquet").exists())
+#         # The PK has no _batch: it is split on its own Sex column.
+#         self.assertEqual(self.read("Cosmos/Patients_Female.parquet").column("Sex").to_pylist(),
+#                          ["Female", "Female"])
+#         self.assertEqual(self.read("Cosmos/Patients_Male.parquet").num_rows, 1)
+#
+#     def test_without_the_flag_the_batches_stay_together(self):
+#         self.set_status()
+#         self.make_batched(separate=False)
+#         self.package(self.projects(labels=("b1of2-Female", "b2of2-Male")))
+#         self.assertEqual(self.read("Cosmos/OtherHospitalizations.parquet").num_rows, 4)
+#
+#     def test_a_sneakpeek_table_keeps_its_suffix_last(self):
+#         self.assertEqual(artifacts.file_name("OtherDiagnoses_sp", "LA"), "OtherDiagnoses_LA_sp.parquet")
+#         self.assertEqual(artifacts.file_name("OtherDiagnoses", "LA"), "OtherDiagnoses_LA.parquet")
+#
+#
+# class SneakPeekFolderTests(ArtifactTestCase):
+#     def test_sneakpeek_tables_go_to_their_own_folder(self):
+#         self.set_status()
+#         for rel in ("sessions/Patients/pk.yaml", "sessions/Patients/runs/run.yaml"):
+#             doc = load_yaml(self.split / rel)
+#             for cohort in doc["cohorts"]:
+#                 cohort["cosmos_db"] = "COSMOS_SneakPeek"
+#             dump_yaml(doc, self.split / rel)
+#         self.package()
+#         self.assertTrue((self.out / "SneakPeek" / "Patients.parquet").is_file())
+#         self.assertTrue((self.out / "SneakPeek" / "OtherHospitalizations.parquet").is_file())
+#         self.assertFalse((self.out / "Cosmos").exists())
+#
+#
+# class CommandTests(ArtifactTestCase):
+#     def run_artifacts(self, db):
+#         args = argparse.Namespace(env=None)
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+#             code = cli.artifacts(Manifest.load(self.split / "pullmanifest.yaml"), args,
+#                                  connect_fn=lambda *a, **k: db)
+#         return code, out.getvalue()
+#
+#     def test_it_says_what_it_wrote_and_left_out(self):
+#         self.set_status(runs="failed")
+#         db = self.projects()
+#         code, out = self.run_artifacts(db)
+#         self.assertEqual(code, 0, out)
+#         self.assertIn("left out OtherHospitalizations", out)
+#         self.assertIn("Artifacts finished: 2 table(s)", out)
+#         self.assertTrue(db.closed)
+#
+#     def test_a_pull_still_executing_is_not_packaged(self):
+#         self.set_status()
+#         now = time.time()
+#         lock_path(self.split / "pullmanifest.yaml").write_text(json.dumps(
+#             {"pid": 4242, "machine": "VM", "started": now, "heartbeat": now}), encoding="utf-8")
+#         db = self.projects()
+#         code, out = self.run_artifacts(db)
+#         self.assertEqual(code, 1)
+#         self.assertIn("already executing", out)
+#         self.assertEqual(db.executed, [])
+#         self.assertFalse(self.out.exists())
+#
+# === END FILE: pullmanager/tests/test_artifacts.py ===
 # === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: 310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c SIZE: 6380 ===
 # """Turning a logical batch into a selection over the local PK table."""
 #
@@ -9947,7 +10666,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 0e0f91f4b00aabfe22aa4f590e01c6f7fe0a89f9a59a1243a1b4c003ae64968f SIZE: 16436 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: efdda3b7faa101a10878fc3447d372e03e7b8d5ba5d9c147e25d984d7725ca52 SIZE: 16835 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -10126,13 +10845,20 @@ if __name__ == "__main__":
 #     def test_the_buttons(self):
 #         self.assertEqual(
 #             [button.options["text"] for button in self.app.action_buttons],
-#             ["Validate", "Export split", "Preview SQL", "Execute"],
+#             ["Validate", "Export split", "Preview SQL", "Execute", "Artifacts"],
 #         )
 #
 #     def test_the_tabs(self):
 #         tabs = [call.kwargs["text"] for call in self.app.notebook.add.call_args_list]
 #         self.assertEqual(tabs[0], "Validation Output")
 #         self.assertIn("Status", tabs)
+#
+#     def test_artifacts_packages_the_loaded_pull_by_name(self):
+#         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+#         with mock.patch.object(self.app.runner, "start") as start:
+#             self.app.on_artifacts()
+#         command = start.call_args.args[0]
+#         self.assertEqual(command[command.index("--artifacts") + 1], "IBD_Ancestry")
 #
 #     def test_the_preview_runs_the_dry_run(self):
 #         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
@@ -10170,7 +10896,7 @@ if __name__ == "__main__":
 #         self.app.watch_pull()
 #         self.assertEqual(self.states(), {
 #             "Validate": "normal", "Export split": "disabled",
-#             "Preview SQL": "normal", "Execute": "disabled",
+#             "Preview SQL": "normal", "Execute": "disabled", "Artifacts": "disabled",
 #         })
 #         message = self.app.status_message.configure.call_args.kwargs["text"]
 #         self.assertIn("Executing since", message)

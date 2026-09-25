@@ -176,6 +176,59 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
             pull_lock.release()
 
 
+def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+    """Package the pull's finished tables (D72), then describe them (D73, D75)."""
+    from .artifacts import ArtifactError, package, parquets_folder
+    from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
+    from .lock import held_message, live_lock, pull_name
+
+    held = live_lock(manifest.path)
+    if held is not None:
+        print(f"ERROR {held_message(held, manifest.path)} Package it once it has finished.",
+              file=sys.stderr)
+        return 1
+    try:
+        load_env_file(args.env)
+    except DatabaseError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    settings = Settings.from_env()
+    project_db = str(manifest.project.get("project_db") or "")
+    out = parquets_folder(manifest.path)
+    print(f"Artifacts {pull_name(manifest.path)}: {shown(out)}")
+    try:
+        connection = (connect_fn or connect)(
+            settings.projects_connection_string(project_db),
+            login_timeout=settings.login_timeout,
+            query_timeout=settings.query_timeout,
+        )
+    except DatabaseError as exc:
+        print(f"ERROR could not connect to Projects: {exc}", file=sys.stderr)
+        return 1
+    try:
+        result = package(manifest, connection, out)
+    except ArtifactError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # a driver error, naming the table in its SQL
+        print(f"ERROR packaging stopped: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+    for dest, why in result.left_out:
+        print(f"  left out {dest}: {why}")
+    files = sum(len(spec.parts) for spec in result.tables)
+    print()
+    print(
+        f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
+        f"{len(result.left_out)} left out, in {shown(out)}."
+    )
+    return 0
+
+
 def keep_open(code: int, input_fn=input) -> None:
     """Hold the console window Execute runs in until `exit` is typed (D68).
 
@@ -342,6 +395,12 @@ def build_parser() -> argparse.ArgumentParser:
              "Takes a project's name or a manifest; with neither, lists the pulls.",
     )
     parser.add_argument(
+        "--artifacts",
+        action="store_true",
+        help="Package a pull's finished tables as parquets in runs/<project>/, with "
+             "contents.md and load scripts. Takes a project's name or a manifest.",
+    )
+    parser.add_argument(
         "--keep-open",
         action="store_true",
         help="After the command, keep the window open until exit is typed. The "
@@ -429,10 +488,10 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             print(line)
         return 0
 
-    if args.execute and not args.dry_run:
+    if (args.execute or args.artifacts) and not args.dry_run:
         # D66: a project's name finds its manifest; no name lists the pulls.
         if not args.manifest:
-            for line in listing():
+            for line in listing(option="--artifacts" if args.artifacts else "--execute"):
                 print(line)
             return 1
         try:
@@ -457,6 +516,8 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             return 1
         if args.dry_run:
             return dry_run(manifest, args)
+        if args.artifacts:
+            return artifacts(manifest, args)
         if args.execute:
             return execute(manifest, args)
         summarize(manifest)

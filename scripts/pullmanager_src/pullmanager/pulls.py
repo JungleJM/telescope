@@ -223,7 +223,8 @@ def find_pulls(cwd: Path | None = None) -> list[Pull]:
     return pulls
 
 
-def execute_command(manifest: Path, cwd: Path | None = None) -> tuple[str, Path]:
+def execute_command(manifest: Path, cwd: Path | None = None,
+                    option: str = "--execute") -> tuple[str, Path]:
     """The command that pulls this manifest, and the folder to type it in.
 
     By its project's name when it sits where names find it
@@ -236,9 +237,9 @@ def execute_command(manifest: Path, cwd: Path | None = None) -> tuple[str, Path]
         and split.name == SPLIT_DIR
         and run_dir.parent.name == RUNS_DIR
     ):
-        return f"python pullmanager.py --execute {run_dir.name}", run_dir.parent.parent
+        return f"python pullmanager.py {option} {run_dir.name}", run_dir.parent.parent
     here = Path(cwd or Path.cwd()).resolve()
-    return f'python pullmanager.py --execute "{shown(manifest, here)}"', here
+    return f'python pullmanager.py {option} "{shown(manifest, here)}"', here
 
 
 def shown(path: Path, cwd: Path | None = None) -> str:
@@ -251,9 +252,10 @@ def shown(path: Path, cwd: Path | None = None) -> str:
         return str(path)
 
 
-def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:") -> list[str]:
-    """Every pull, its state and its command: what `--execute` alone prints,
-    and `--running` with its own heading."""
+def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:",
+            option: str = "--execute") -> list[str]:
+    """Every pull, its state and its command: what `--execute` (or
+    `--artifacts`) alone prints, and `--running` with its own heading."""
     here = Path(cwd or Path.cwd()).resolve()
     pulls = find_pulls(here)
     if not pulls:
@@ -265,7 +267,7 @@ def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:") -> 
     state_width = max(len(p.state) for p in pulls)
     lines = [heading, ""]
     for pull in pulls:
-        command, folder = execute_command(pull.manifest, here)
+        command, folder = execute_command(pull.manifest, here, option)
         where = "" if folder.resolve() == here else f"   (in {folder})"
         lines.append(f"  {pull.name:<{width}}  {pull.state:<{state_width}}  {command}{where}")
     return lines

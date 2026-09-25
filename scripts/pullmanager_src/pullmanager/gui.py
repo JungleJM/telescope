@@ -26,8 +26,9 @@ LOCK_CHECK_MS = 1000
 # After Execute is pressed its buttons stay grey this long waiting for its
 # lock, so they cannot be pressed twice before it appears.
 EXECUTE_GRACE_SECONDS = 60
-# Buttons that would overwrite a pull that is executing (D67).
-PULL_WRITERS = ("Export split", "Execute")
+# Buttons that wait for a pull that is executing: Export split and Execute
+# would overwrite it (D67); Artifacts packages only a finished pull (D72).
+PULL_WRITERS = ("Export split", "Execute", "Artifacts")
 
 STATUS_COLOURS = {
     "done": "#1a7f37",
@@ -111,6 +112,7 @@ class LauncherApp:
             ("Export split", self.on_export_split),
             ("Preview SQL", self.on_dry_run),
             ("Execute", self.on_execute),
+            ("Artifacts", self.on_artifacts),
         ):
             button = ttk.Button(actions, text=text, command=handler)
             button.pack(side="left", padx=(0, 6))
@@ -212,6 +214,9 @@ class LauncherApp:
             "Preview SQL",
             lambda: launcher.command_dry_run(self.tools, self.paths(), self.options()),
         )
+
+    def on_artifacts(self) -> None:
+        self.run("Artifacts", lambda: launcher.command_artifacts(self.tools, self.paths()))
 
     def on_execute(self) -> None:
         if not messagebox.askokcancel(
