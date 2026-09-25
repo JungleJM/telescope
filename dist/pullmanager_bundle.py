@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "c794e68188aa80d2c1a234e404e83ec9e3595ef8f90ccb9f45a8d8617c000e8e",
+  "content_id": "a6df8f490003774892b06bf099fa4f84205b460c0dc54917541f171487b1ae6a",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "c0578408e7d91eab7585d1f776d565d4c3f6d4e2f36238c2ec0bd8cd28d283f3",
-      "size": 190256
+      "sha256": "98592a7ced47f6ce821981c6055a577215ea4ac31da55ecaa172e6be9b3b3637",
+      "size": 191292
     }
   ]
 }'''
@@ -11530,7 +11530,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: c0578408e7d91eab7585d1f776d565d4c3f6d4e2f36238c2ec0bd8cd28d283f3 SIZE: 190256 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 98592a7ced47f6ce821981c6055a577215ea4ac31da55ecaa172e6be9b3b3637 SIZE: 191292 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -15944,6 +15944,25 @@ if __name__ == "__main__":
 #     def test_a_key_that_names_no_column_is_an_error(self):
 #         res = self.compile_template(extra=self.cohort(dedup_keys="[[BillingCodeValue]]"))
 #         self.assertHasError(res, "bad_dedup_column")
+#
+#     def test_the_bundled_recipes_dedup_by_their_own_columns(self):
+#         # IndexDiagnosis ordered by a column it lacks and wrote into
+#         # OtherDiagnoses; both kept one row per code across every patient.
+#         path = default_recipes_path()
+#         if not path.is_file():
+#             self.skipTest("needs the repo's recipes")
+#         recipes = (load_yaml(path) or {}).get("recipes") or []
+#         res = CompileResult()
+#         check_dedup([dict(r, _source=f"recipes ({r.get('name')})") for r in recipes], res)
+#         self.assertEqual(res.errors, [], summarize_result(res))
+#         dests = [r["dest_table"] for r in recipes if r.get("dest_table")]
+#         self.assertEqual(sorted(d for d in set(dests) if dests.count(d) > 1), [])
+#         by_name = {r["name"]: r for r in recipes}
+#         for name in ("OtherDiagnoses", "IndexDiagnosis"):
+#             with self.subTest(recipe=name):
+#                 self.assertEqual(
+#                     by_name[name]["dedup_keys"], [["PatientDurableKey", "BillingCodeValue"]]
+#                 )
 #
 #     def test_the_old_spellings_are_refused(self):
 #         res = self.compile_template(extra=self.cohort(

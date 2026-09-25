@@ -4412,6 +4412,25 @@ class DedupTests(MakeYamlTest):
         res = self.compile_template(extra=self.cohort(dedup_keys="[[BillingCodeValue]]"))
         self.assertHasError(res, "bad_dedup_column")
 
+    def test_the_bundled_recipes_dedup_by_their_own_columns(self):
+        # IndexDiagnosis ordered by a column it lacks and wrote into
+        # OtherDiagnoses; both kept one row per code across every patient.
+        path = default_recipes_path()
+        if not path.is_file():
+            self.skipTest("needs the repo's recipes")
+        recipes = (load_yaml(path) or {}).get("recipes") or []
+        res = CompileResult()
+        check_dedup([dict(r, _source=f"recipes ({r.get('name')})") for r in recipes], res)
+        self.assertEqual(res.errors, [], summarize_result(res))
+        dests = [r["dest_table"] for r in recipes if r.get("dest_table")]
+        self.assertEqual(sorted(d for d in set(dests) if dests.count(d) > 1), [])
+        by_name = {r["name"]: r for r in recipes}
+        for name in ("OtherDiagnoses", "IndexDiagnosis"):
+            with self.subTest(recipe=name):
+                self.assertEqual(
+                    by_name[name]["dedup_keys"], [["PatientDurableKey", "BillingCodeValue"]]
+                )
+
     def test_the_old_spellings_are_refused(self):
         res = self.compile_template(extra=self.cohort(
             dedup_keys="[[PatientDurableKey]]", order_by="[IndexDate]"
