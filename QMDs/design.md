@@ -623,7 +623,12 @@ Every session has the same routine, batched or not:
 
 Each YAML is standalone-valid: it repeats the project metadata, drops the
 `multipliers` and `batching` instructions so nothing expands twice, and carries
-a `pull_context` saying where it belongs:
+a `pull_context` saying where it belongs. The metadata appears once, flat at
+the top level (`project_db`, `smallset`, …; `run_vars` merged into `vars`): the
+groups a template may use (`cosmos_vars`, `run_vars`, `test_options`,
+`project_vars`) are lifted out, not kept beside their copies. The runtime reads
+the top level, and falls back to a `test_options` group for splits made before
+this.
 
 ```yaml
 pull_context:
@@ -1027,8 +1032,8 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (113)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (316)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (114)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (317)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

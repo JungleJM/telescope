@@ -357,6 +357,11 @@ def missing_template_message(template_path: Path) -> str | None:
     return f"No template at {path}."
 
 
+# Groups a template may use to organise settings; normalizing lifts their
+# contents to the top level, which is the one copy a split carries.
+GROUPED_SECTIONS = ("cosmos_vars", "run_vars", "project_vars", "test_options")
+
+
 def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
     template = copy.deepcopy(template or {})
     for section_name in ("cosmos_vars", "project_vars", "test_options"):
@@ -2028,6 +2033,11 @@ def compile_yaml(
         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
     finished = copy.deepcopy(template)
+    # Normalizing lifted every grouped setting to the top level (run_vars into
+    # vars). Keeping the groups too left two copies of each in every split
+    # document, and readers disagreed about which to read.
+    for section in GROUPED_SECTIONS:
+        finished.pop(section, None)
     finished["temp_prefix"] = temp_prefix(template)
     finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
     finished.pop("example_cohorts", None)
@@ -4116,6 +4126,43 @@ class BatchingDefinitionTests(MakeYamlTest):
         self.assertIn("chunk: <rows>", res.errors[0].fix)
 
 
+class OneCopyTests(MakeYamlTest):
+    """Each setting once in a split: no group beside its lifted copy."""
+
+    GROUPED = """
+cosmos_vars:
+  project_db: PROJECTD1
+  cosmos_db: COSMOS
+run_vars:
+  min_date_key: 20200101
+  max_date_key: 20240101
+test_options:
+  smallset: true
+  stop_at_for_pk_table: 10
+project_vars:
+  project_folder: Test Run
+vars:
+  ICD_Value: [K50]
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients
+"""
+
+    def test_a_split_document_carries_each_setting_once(self):
+        out = self.tmp / "split"
+        res = write_split_artifacts(*self.write_pair(self.GROUPED), output_dir=out)
+        self.assertCompiles(res)
+        setup = load_yaml(out / load_yaml(out / "pullmanifest.yaml")["sessions"][0]["phases"]["setup"]["yaml"])
+        for group in GROUPED_SECTIONS:
+            self.assertNotIn(group, setup)
+        self.assertEqual(
+            {k: setup.get(k) for k in ("project_db", "smallset", "stop_at_for_pk_table", "project_folder")},
+            {"project_db": "PROJECTD1", "smallset": True, "stop_at_for_pk_table": 10,
+             "project_folder": "Test Run"},
+        )
+        self.assertEqual(setup["vars"]["min_date_key"], 20200101)
+
+
 class ProjectDbTests(MakeYamlTest):
     def test_missing_warns_while_writing_and_stops_the_split(self):
         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -4193,6 +4240,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "uploaded_pk_batching": UploadedPkBatchingTests,
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
+    "one_copy": OneCopyTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
 }

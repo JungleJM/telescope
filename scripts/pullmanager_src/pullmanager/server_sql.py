@@ -52,17 +52,28 @@ def top_clause(
     database. Those are parallel chains, not competing ones, so each has its
     own root and each is limited.
     """
-    options = doc.get("test_options") or {}
-    if not normalize_bool(options.get("smallset") or options.get("smallest")):
+    if not normalize_bool(test_option(doc, "smallset") or test_option(doc, "smallest")):
         return ""
     if not any(cohort is root for root in roots):
         return ""
-    limit = options.get("stop_at_for_pk_table")
+    limit = test_option(doc, "stop_at_for_pk_table")
     try:
         limit = int(limit)
     except (TypeError, ValueError):
         return ""
     return f"TOP ({limit}) " if limit > 0 else ""
+
+
+def test_option(doc: dict[str, Any], key: str) -> Any:
+    """A test option: at the split document's top level, where YAML Manager
+    writes it, else in a `test_options` group (splits made before that).
+
+    Reading only the group meant a template that wrote `smallset` at the top
+    level silently lost its row limit.
+    """
+    if key in doc:
+        return doc[key]
+    return (doc.get("test_options") or {}).get(key)
 
 
 def cohort_predicates(cohort: dict[str, Any]) -> list[str]:

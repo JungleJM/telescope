@@ -64,6 +64,14 @@ class ServerRenderTests(unittest.TestCase):
         self.assertIn("TOP (500)", by_dest["PKTable2"])
         self.assertNotIn("TOP (", by_dest["PKTable"])
 
+    def test_top_level_test_options_limit_the_pk(self):
+        # Where YAML Manager writes them. Reading only a test_options group
+        # silently dropped this limit.
+        doc = doc_with(pk_cohort())
+        doc.update({"smallset": True, "stop_at_for_pk_table": 25})
+        sql, _ = server_sql.render_cohort(doc["cohorts"][0], doc, doc["cohorts"])
+        self.assertIn("TOP (25)", sql)
+
     def test_no_top_without_smallset(self):
         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
         blocks, _ = self.render(doc)
