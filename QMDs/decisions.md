@@ -964,3 +964,106 @@ open, and the last one to save is what the next launch restores. Re-exporting
 the same project still replaces its manifest, as before. In Projects, two
 projects with different `project_db` are separate; two landing the same
 `dest_table` in the same database still collide.
+
+### D58. Dedup names the cohort's own columns; the SQL uses their sources
+
+**Context.** The first dry run on the VM showed dedup rendered inside the query
+that defines the cohort's columns, where SQL Server sees only source columns:
+`PARTITION BY [BillingCodeValue]` names the alias of `dt.Value`, so every
+OtherDiagnoses run would have failed as an invalid column. The PK worked only
+because `PatientDurableKey` is also a column of `dxf`. And the ordering every
+recipe writes, `dedup_order_by`, was never read (the runtime read `dedup_order`
+or `order_by`, which nothing writes), so "the first diagnosis" was any one.
+
+**Decision.**
+
+- `dedup_keys` and `dedup_order_by` name the cohort's output columns
+  (`columns[].name`); the SQL uses each one's `source`. An ordering entry may
+  end in ` DESC` or ` ASC`.
+- `dedup_order_by` is the one spelling. `dedup_order` and `order_by` are
+  refused, with a fix naming it.
+- YAML Manager checks both on the Mac: a name that is not one of the cohort's
+  columns is an error, so it cannot reach the VM.
+- Without `dedup_order_by`, which duplicate survives is arbitrary and may
+  differ between runs; the note says so (it said "stable", which SQL Server
+  does not promise). Ties in the ordering, two diagnoses on one day, are
+  arbitrary too.
+
+### D59. A `split_after_build` level filters its own PK; a control is sampled against its case
+
+**Context.** The Race multiplier (black, white) made one session per level, but
+nothing applied the level: both PKs selected the same patients, of every race.
+`role: control` and `row_mult` were carried along and ignored.
+
+**Decision.**
+
+- Each level's condition is added to its PK's `where`: `column` and `values`
+  rendered as `sql_condition` does, through the PK's own source for that
+  column (`p.FirstRace LIKE 'Black%'`), or a level's `where` as written. Each
+  level still builds its own PK in its own session. A level with neither is
+  an error.
+- `role: control` with `row_mult: n` makes that level's PK a reproducible
+  random sample (D60's ordering) of n times its case, per batch: for each
+  batch combination (sex, say), n times the case's rows in that batch. The
+  control is matched on the batching columns and nothing else. Its case is
+  the other level of the same multiplier, in the same group and Cosmos
+  database; a control with `row_mult` needs exactly one such level. A `role`
+  other than `control`, or `row_mult` without it, is an error.
+- The sample is taken when the control's PK lands in Projects: rows beyond n
+  times the case's count are removed from that copy, batch by batch, so the
+  Projects PK is the sample and every run is drawn from it. Where there are
+  fewer than n times, all are kept, with a warning.
+- The manifest puts each case session before its control. A control whose
+  case has no PK in Projects fails its PK phase, saying so.
+- Under `smallset`, a control's `stop_at_for_pk_table` is multiplied by n, so
+  the sample has enough to draw from.
+
+**Consequences.** Matching on more than the batching columns (age, say) is
+for later.
+
+### D60. `random_pk_sample` orders the limited PK by a hash of its key
+
+**Context.** The option was offered in the Builder and ignored: `TOP (n)`
+returns whichever rows the server reaches first, often clustered by site or
+period.
+
+**Decision.** With `smallset` and `random_pk_sample`, the root PK's `TOP (n)`
+is ordered by `HASHBYTES('SHA2_256', <key>)`: a pseudo-random sample that is
+the same on every run, so a result can be looked at again. The key is the PK's
+first `dedup_keys` set, else its `key_column(s)`; with neither, validation
+errors. `NEWID()` was rejected because it differs every run. The same ordering
+draws a control's sample (D59). Without `smallset` there is no limit, so
+nothing to sample.
+
+**Consequences.** The whole candidate population is hashed and sorted before
+the limit; acceptable for test runs.
+
+### D61. A non-PK upload lands in Projects once per pull
+
+**Context.** Every session landed every upload from its file into Projects
+and loaded it into Cosmos. The IBD Ancestry pull would have landed IBD_Meds
+eight times, for no cohort that reads it.
+
+**Decision.**
+
+- The file lands in Projects (`upload_<dest>`) once per pull, by the first
+  session that runs its upload phase; the manifest records it, and later
+  sessions use that copy. `--repull` or a Cosmos refresh clears the record and
+  the file lands again.
+- Its Cosmos temp is loaded only in a session whose cohorts read it (their
+  SQL names `##<prefix>_<dest>`). A temp lives only as long as its session's
+  connection, so each such session still loads its own.
+- An uploaded PK is unchanged: every session loads it. Whether it has to,
+  batched, is for later.
+
+### D62. Retired test options are removed; Validate says what it checked
+
+**Decision.**
+
+- `stop_at_for_non_pk_tables`, `print_md` and `printout_md` are gone from the
+  Builder and the example template. A template that still has one gets a
+  warning naming it; design.md said so already, but nothing emitted it.
+- `--validate` no longer says "finished YAML ready at" a path: nothing is
+  written, and the path was inside the extracted bundle. It says the file is
+  valid, how many cohorts, sessions and runs it makes, and what was checked.
+

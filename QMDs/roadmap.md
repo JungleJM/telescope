@@ -25,8 +25,32 @@ When an item here is built, delete it from this file and describe the result in
 
 ## Known Bugs
 
-None known. Everything found so far was found by reading the code or in a dry
-run; nothing has run against a database yet.
+Found in the first dry run on the VM (IBD Ancestry, September 2026), all in
+the fixes below: dedup names aliases the server cannot see, so every
+OtherDiagnoses run would fail (1); `dedup_order_by` is ignored (2);
+`split_after_build` levels are not applied, so black and white pull the same
+patients (3); two recipes dedup by code instead of patient (4);
+`random_pk_sample` is ignored (5); retired options do not warn (8).
+
+---
+
+## Next: Fixes, In Order
+
+1. **Dedup renders sources (D58).** Blocks every run on the server.
+2. **`dedup_order_by` read, and dedup names checked on the Mac (D58).** Index
+   dates are silently wrong without it.
+3. **`split_after_build` levels filter their PK (D59).** Populations are
+   silently wrong without it.
+4. **Recipes.** OtherDiagnoses keyed by patient, then code. IndexDiagnosis:
+   its own `dest_table`, keyed by patient then code, ordered by
+   `StartDateKey`, restricted to the disease's codes (`ICD_Value`), and no
+   longer excluding the index event, which is the first diagnosis it wants.
+5. **`random_pk_sample` (D60).**
+6. **Controls sampled against their case (D59).** Uses 5's ordering.
+7. **Non-PK uploads land once per pull (D61).**
+8. **Retired options out; Validate says what it checked (D62).**
+
+Then rebuild the bundle and re-export the IBD Ancestry transfer.
 
 ---
 
@@ -146,9 +170,14 @@ no button to hand a split folder to Pullmanager.
   renderer owns temp names.
 - **Declaring upload column types in the Builder.** `columns:` with types
   (D54) has no field in the Uploads section yet; add it in the YAML.
-- **An uploaded PK is sent to Cosmos whole** in the upload phase, even when
-  every run is batched and refills it from the copy. Correct; one upload more
-  than needed.
+- **An uploaded PK is sent to Cosmos whole** in the upload phase of every
+  session, even when every run is batched and refills it from the copy
+  (D61 left it so). To address later: whether a batched uploaded PK needs to
+  go up at all, and once per session.
+- **Matching controls.** A control is sampled at `row_mult` times its case per
+  batch (D59), so it is matched on the batching columns only. Deeper matching
+  (age, and so on) is to address later, as is a control with several case
+  levels.
 - **`split_after_build` on an uploaded PK** is refused (D54). It could be
   supported by splitting the rows as the copy lands, if a list ever needs it.
 - **One PK per multiplier group.** Two `type: PK` cohorts in one group are an
