@@ -271,22 +271,28 @@ What is left:
        PatientDurableKey:
          type: bigint (foreign key to PatientDim.DurableKey)
          references: PatientDim.DurableKey
+         grade: seen            # DiagnosisEventFact page, ER diagram
    PatientDim:
      primary_key: PatientKey
      one_row_per: [DurableKey]
      when: IsCurrent = 1
+     grade: said               # VM AI; counted once the query below is run
    DiagnosisTerminologyDim:
      one_row_per: [DiagnosisKey, Type]
+     grade: said
    LabComponentResultFact:
      columns:
        LabComponentKey:
          references: LabComponentDim.LabComponentKey
          sentinels: {-1: unmapped}
+         grade: said
    ```
 
-   Open: these names; whether to replace or keep the prose annotation; how to
-   write annotations that name a table and no column, or two alternatives; and
-   where each entry records its grade.
+   Every entry records its grade (`seen`, `counted` or `said`), with a comment
+   saying where it came from, and validation reads only `seen` and `counted`.
+   A `said` entry is a question waiting for its page or its count. Open: these
+   names; whether to replace or keep the prose annotation; how to write
+   annotations that name a table and no column, or two alternatives.
 3. **Confirm with data** on the VM, `COSMOS_SneakPeek` first, then `COSMOS`
    if cheap; a date window on a large fact table. Four query shapes:
 
