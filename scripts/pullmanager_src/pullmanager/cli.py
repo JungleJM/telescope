@@ -220,6 +220,12 @@ def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> 
             pass
     for dest, why in result.left_out:
         print(f"  left out {dest}: {why}")
+    from .contents import render
+    from .pulls import run_folder
+
+    contents = run_folder(manifest.path) / "contents.md"
+    contents.write_text(render(manifest, result), encoding="utf-8")
+    print(f"  wrote    {shown(contents)}")
     files = sum(len(spec.parts) for spec in result.tables)
     print()
     print(

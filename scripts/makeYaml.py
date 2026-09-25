@@ -1334,6 +1334,18 @@ def expand_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], 
             new["vars"] = merge_vars(group_vars, new.get("vars"))
             new["_group_key"] = prefix
             new["_multiplier_group"] = group_meta
+            # Public, so the split keeps it: contents.md says what each table
+            # is specific to from it (D73).
+            new["multiplier_levels"] = [
+                {
+                    "multiplier": mult.get("name"),
+                    "strat": level.get("strat"),
+                    "stage": mult.get("stage"),
+                    **({"vars": copy.deepcopy(level["vars"])}
+                       if mult.get("stage") == "during_build" and level.get("vars") else {}),
+                }
+                for mult, level in combo
+            ]
             sources = {
                 str(c["name"]): str(c["source"])
                 for c in new.get("columns") or []
@@ -4372,6 +4384,24 @@ class DescriptionFieldTests(MakeYamlTest):
         self.assertEqual(pk["granularity"], "One row per patient")
         sex = next(c for c in pk["columns"] if c["name"] == "Sex")
         self.assertEqual(sex["description"], "Sex at registration")
+
+    def test_each_table_records_its_multiplier_levels(self):
+        res = self.compile_template(tiny_template("""
+multipliers:
+  - name: Type
+    stage: during_build
+    levels:
+      - strat: A
+        vars:
+          ICD_Value: A%
+      - strat: B
+        vars:
+          ICD_Value: B%
+""").replace("  ICD_Value:\n    - K50\n    - K51\n", ""))
+        self.assertCompiles(res)
+        levels = self.cohorts_by_name(res)["BOtherDx"]["multiplier_levels"]
+        self.assertEqual(levels, [{"multiplier": "Type", "strat": "B", "stage": "during_build",
+                                   "vars": {"ICD_Value": "B%"}}])
 
     def test_separate_parquets_is_kept_on_its_batch_dimension(self):
         res, runs = self.runs_for(extra="""
