@@ -144,14 +144,14 @@ def render_dedup_select(
             f"Only the first dedup key set {key_sets[0]} is applied; "
             f"{len(key_sets) - 1} further set(s) were declared."
         )
-    order = cohort.get("dedup_order") or cohort.get("order_by")
-    if order:
-        order_sql = order if isinstance(order, str) else ", ".join(str(o) for o in order)
+    order_by = dedup_order_by(cohort, sources)
+    if order_by:
+        order_sql = ", ".join(order_by)
     else:
         order_sql = ", ".join(keys)
         notes.append(
-            f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
-            "key columns, so the surviving row among duplicates is arbitrary but stable."
+            f"No dedup_order_by for {cohort.get('dest_table')!r}, so which duplicate "
+            "survives is arbitrary and may differ between runs."
         )
     inner = render_select(cohort, top="", inner_indent="        ", database=database)
     inner = inner.replace(
@@ -169,6 +169,47 @@ def render_dedup_select(
         f"WHERE [_deduped].[_dedup_rn] = 1"
     )
     return sql, notes
+
+
+ORDER_DIRECTIONS = ("ASC", "DESC")
+
+
+def dedup_order_by(cohort: dict[str, Any], sources: dict[str, str]) -> list[str]:
+    """`dedup_order_by`, each column name written as its source (D58).
+
+    `[IndexDate, EncounterKey DESC]` becomes `dxf.StartDateKey, dxf.EncounterKey
+    DESC`. The spellings read before, `dedup_order` and `order_by`, were written
+    by nothing while every recipe wrote this one, so "the first diagnosis" was
+    any diagnosis; they are refused rather than guessed at.
+    """
+    for old in ("dedup_order", "order_by"):
+        if cohort.get(old):
+            raise RenderError(
+                f"Cohort {cohort.get('dest_table')!r}: `{old}` is not read. Write "
+                "`dedup_order_by: [<column>, ...]`."
+            )
+    raw = cohort.get("dedup_order_by")
+    if not raw:
+        return []
+    entries = [raw] if isinstance(raw, str) else list(raw)
+    rendered = []
+    for entry in entries:
+        name, direction = split_order_entry(entry)
+        if name not in sources:
+            raise RenderError(
+                f"Cohort {cohort.get('dest_table')!r}: dedup_order_by names `{name}`, "
+                f"which is not one of its columns ({', '.join(sources) or 'none'})."
+            )
+        rendered.append(f"{sources[name]} {direction}" if direction else sources[name])
+    return rendered
+
+
+def split_order_entry(entry: Any) -> tuple[str, str]:
+    """`IndexDate DESC` -> (`IndexDate`, `DESC`); `IndexDate` -> (`IndexDate`, ``)."""
+    words = str(entry).split()
+    if len(words) == 2 and words[1].upper() in ORDER_DIRECTIONS:
+        return words[0], words[1].upper()
+    return str(entry).strip(), ""
 
 
 def _indent(text: str, prefix: str) -> str:

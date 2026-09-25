@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "9f103977897511c1d7d21626d8cbfa1d771eb5be59a528e66bdd121b85efb825",
+  "content_id": "789d6739a745b2bd873301146ced16021063b9714e21649a89d6ff2985f3b5d5",
   "file_count": 37,
   "files": [
     {
@@ -465,8 +465,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "d0ec9a712823ff1b9a3cc6af89c9e5757a6900a346d1d3c52c4c11d5561a8abd",
-      "size": 9836
+      "sha256": "983b15d428c1d9f075ad5ad1e261809c9079f4c890781373a874204c76758000",
+      "size": 11397
     },
     {
       "path": "pullmanager/session.py",
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "c8f513825252a91ef835d00c4b77a13e256d19d91b0529002707329bfd039395",
-      "size": 12630
+      "sha256": "1cbdd28ecf0e60621d54839eedb6502cd34922efb16708aeaf9044152764e727",
+      "size": 14303
     },
     {
       "path": "pullmanager/tests/test_session.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "b38ee604f8a4bbce1701cf7783e78b26b251118d10efb58d6b87ab582b8691e0",
-      "size": 182261
+      "sha256": "30bf6750bace692b2638b3d05577b21f384a5c6674c8c8c94e53d5a0dd4b7bce",
+      "size": 186299
     }
   ]
 }'''
@@ -6419,7 +6419,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: d0ec9a712823ff1b9a3cc6af89c9e5757a6900a346d1d3c52c4c11d5561a8abd SIZE: 9836 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 983b15d428c1d9f075ad5ad1e261809c9079f4c890781373a874204c76758000 SIZE: 11397 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6566,14 +6566,14 @@ if __name__ == "__main__":
 #             f"Only the first dedup key set {key_sets[0]} is applied; "
 #             f"{len(key_sets) - 1} further set(s) were declared."
 #         )
-#     order = cohort.get("dedup_order") or cohort.get("order_by")
-#     if order:
-#         order_sql = order if isinstance(order, str) else ", ".join(str(o) for o in order)
+#     order_by = dedup_order_by(cohort, sources)
+#     if order_by:
+#         order_sql = ", ".join(order_by)
 #     else:
 #         order_sql = ", ".join(keys)
 #         notes.append(
-#             f"No dedup ordering supplied for {cohort.get('dest_table')!r}; ordering by the "
-#             "key columns, so the surviving row among duplicates is arbitrary but stable."
+#             f"No dedup_order_by for {cohort.get('dest_table')!r}, so which duplicate "
+#             "survives is arbitrary and may differ between runs."
 #         )
 #     inner = render_select(cohort, top="", inner_indent="        ", database=database)
 #     inner = inner.replace(
@@ -6591,6 +6591,47 @@ if __name__ == "__main__":
 #         f"WHERE [_deduped].[_dedup_rn] = 1"
 #     )
 #     return sql, notes
+#
+#
+# ORDER_DIRECTIONS = ("ASC", "DESC")
+#
+#
+# def dedup_order_by(cohort: dict[str, Any], sources: dict[str, str]) -> list[str]:
+#     """`dedup_order_by`, each column name written as its source (D58).
+#
+#     `[IndexDate, EncounterKey DESC]` becomes `dxf.StartDateKey, dxf.EncounterKey
+#     DESC`. The spellings read before, `dedup_order` and `order_by`, were written
+#     by nothing while every recipe wrote this one, so "the first diagnosis" was
+#     any diagnosis; they are refused rather than guessed at.
+#     """
+#     for old in ("dedup_order", "order_by"):
+#         if cohort.get(old):
+#             raise RenderError(
+#                 f"Cohort {cohort.get('dest_table')!r}: `{old}` is not read. Write "
+#                 "`dedup_order_by: [<column>, ...]`."
+#             )
+#     raw = cohort.get("dedup_order_by")
+#     if not raw:
+#         return []
+#     entries = [raw] if isinstance(raw, str) else list(raw)
+#     rendered = []
+#     for entry in entries:
+#         name, direction = split_order_entry(entry)
+#         if name not in sources:
+#             raise RenderError(
+#                 f"Cohort {cohort.get('dest_table')!r}: dedup_order_by names `{name}`, "
+#                 f"which is not one of its columns ({', '.join(sources) or 'none'})."
+#             )
+#         rendered.append(f"{sources[name]} {direction}" if direction else sources[name])
+#     return rendered
+#
+#
+# def split_order_entry(entry: Any) -> tuple[str, str]:
+#     """`IndexDate DESC` -> (`IndexDate`, `DESC`); `IndexDate` -> (`IndexDate`, ``)."""
+#     words = str(entry).split()
+#     if len(words) == 2 and words[1].upper() in ORDER_DIRECTIONS:
+#         return words[0], words[1].upper()
+#     return str(entry).strip(), ""
 #
 #
 # def _indent(text: str, prefix: str) -> str:
@@ -9805,7 +9846,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: c8f513825252a91ef835d00c4b77a13e256d19d91b0529002707329bfd039395 SIZE: 12630 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 1cbdd28ecf0e60621d54839eedb6502cd34922efb16708aeaf9044152764e727 SIZE: 14303 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9893,7 +9934,7 @@ if __name__ == "__main__":
 #         self.assertIn("ROW_NUMBER() OVER (PARTITION BY p.DurableKey", blocks[0].sql)
 #         self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
 #         self.assertTrue(any("legacy" in n for n in notes))
-#         self.assertTrue(any("arbitrary but stable" in n for n in notes))
+#         self.assertTrue(any("arbitrary and may differ" in n for n in notes))
 #
 #     def test_dedup_partitions_by_sources_not_column_names(self):
 #         # D58: inside the SELECT that names them, only source columns exist.
@@ -9912,6 +9953,39 @@ if __name__ == "__main__":
 #         over = over[: over.index(") AS [_dedup_rn]")]
 #         self.assertIn("PARTITION BY def.PatientDurableKey, dt.Value", over)
 #         self.assertNotIn("[", over)
+#
+#     def test_dedup_order_by_keeps_the_earliest(self):
+#         # D58: every recipe writes dedup_order_by, which was never read, so the
+#         # "first diagnosis" kept was any one.
+#         cohort = pk_cohort(
+#             columns=[
+#                 {"source": "dxf.PatientDurableKey", "name": "PatientDurableKey", "type": "BIGINT"},
+#                 {"source": "dxf.StartDateKey", "name": "IndexDate", "type": "INT"},
+#                 {"source": "dxf.EncounterKey", "name": "IndexEncounter", "type": "BIGINT"},
+#             ],
+#             dedup_keys=[["PatientDurableKey"]],
+#             dedup_order_by=["IndexDate", "IndexEncounter DESC"],
+#         )
+#         sql, notes = server_sql.render_cohort(cohort, doc_with(cohort))
+#         self.assertIn(
+#             "PARTITION BY dxf.PatientDurableKey ORDER BY dxf.StartDateKey, dxf.EncounterKey DESC",
+#             sql,
+#         )
+#         self.assertFalse(any("arbitrary" in n for n in notes))
+#
+#     def test_dedup_order_by_naming_no_column_is_refused(self):
+#         cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]], dedup_order_by=["IndexDate"])
+#         with self.assertRaises(RenderError) as caught:
+#             self.render(doc_with(cohort))
+#         self.assertIn("IndexDate", str(caught.exception))
+#
+#     def test_the_old_ordering_spellings_are_refused(self):
+#         for old in ("dedup_order", "order_by"):
+#             with self.subTest(old=old):
+#                 cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]], **{old: "p.DurableKey"})
+#                 with self.assertRaises(RenderError) as caught:
+#                     self.render(doc_with(cohort))
+#                 self.assertIn("dedup_order_by", str(caught.exception))
 #
 #     def test_dedup_key_naming_a_missing_column_is_refused(self):
 #         with self.assertRaises(RenderError):
@@ -11456,7 +11530,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: b38ee604f8a4bbce1701cf7783e78b26b251118d10efb58d6b87ab582b8691e0 SIZE: 182261 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 30bf6750bace692b2638b3d05577b21f384a5c6674c8c8c94e53d5a0dd4b7bce SIZE: 186299 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -13292,6 +13366,59 @@ if __name__ == "__main__":
 #         )
 #
 #
+# DEDUP_DIRECTIONS = ("ASC", "DESC")
+#
+#
+# def dedup_key_names(value: Any) -> list[str]:
+#     """Every column name `dedup_keys` (or legacy `dedup_key`) mentions."""
+#     if isinstance(value, str):
+#         return [value]
+#     if isinstance(value, list):
+#         return [str(n) for item in value for n in (item if isinstance(item, list) else [item])]
+#     return []
+#
+#
+# def check_dedup(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+#     """Dedup keys and ordering name the cohort's own columns (D58).
+#
+#     The pull writes each as that column's source, so a name that is not a
+#     column cannot be rendered; caught here, on the Mac, rather than on the VM.
+#     """
+#     for cohort in cohorts:
+#         label = cohort_label(cohort)
+#         columns = [str(c["name"]) for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+#         for old in ("dedup_order", "order_by"):
+#             if cohort.get(old):
+#                 result.error(
+#                     "old_dedup_order",
+#                     f"`{old}` is not read; the ordering of duplicates is `dedup_order_by`.",
+#                     f"{label}.{old}",
+#                     fix="Write `dedup_order_by: [<column>, ...]`, naming the cohort's columns, "
+#                     "e.g. `dedup_order_by: [IndexDate]`.",
+#                 )
+#         order = cohort.get("dedup_order_by") or []
+#         order_names = []
+#         for entry in [order] if isinstance(order, str) else order:
+#             words = str(entry).split()
+#             if len(words) == 2 and words[1].upper() in DEDUP_DIRECTIONS:
+#                 order_names.append(words[0])
+#             else:
+#                 order_names.append(str(entry).strip())
+#         for field, names in (
+#             ("dedup_keys", dedup_key_names(cohort.get("dedup_keys", cohort.get("dedup_key")))),
+#             ("dedup_order_by", order_names),
+#         ):
+#             for name in names:
+#                 if name not in columns:
+#                     result.error(
+#                         "bad_dedup_column",
+#                         f"`{field}` names `{name}`, which is not one of this cohort's columns.",
+#                         f"{label}.{field}",
+#                         fix=f"Use a name from its `columns`: {', '.join(columns) or 'none'}. "
+#                         "An ordering entry may end in ` DESC`.",
+#                     )
+#
+#
 # def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
 #     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
 #     for cohort in cohorts:
@@ -13494,6 +13621,7 @@ if __name__ == "__main__":
 #         return result
 #
 #     cohorts = import_recipes(template, recipes_doc, result)
+#     check_dedup(cohorts, result)
 #     cohorts = expand_multipliers(template, cohorts, result)
 #     analysis = analyze_cohorts(cohorts)
 #     cohorts = validate_and_resolve(
@@ -15684,6 +15812,46 @@ if __name__ == "__main__":
 #             self.assertEqual(setup["project_folder"], folder)
 #
 #
+# class DedupTests(MakeYamlTest):
+#     """D58: dedup names the cohort's own columns, checked here, not on the VM."""
+#
+#     def cohort(self, **dedup) -> str:
+#         lines = "".join(f"    {key}: {value}\n" for key, value in dedup.items())
+#         return f"""
+#   - name: Custom
+#     type: fact
+#     columns:
+#       - {{source: dxf.PatientDurableKey, name: PatientDurableKey, type: BIGINT}}
+#       - {{source: dxf.StartDateKey, name: IndexDate, type: INT}}
+# {lines}    filter:
+#       from: DiagnosisEventFact AS dxf
+# """
+#
+#     def test_names_of_its_columns_compile(self):
+#         res = self.compile_template(extra=self.cohort(
+#             dedup_keys="[[PatientDurableKey]]", dedup_order_by="[IndexDate DESC]"
+#         ))
+#         self.assertFalse([m for m in res.errors if "dedup" in m.code], summarize_result(res))
+#
+#     def test_an_ordering_that_names_no_column_is_an_error(self):
+#         # IndexDiagnosis ordered by IndexDate, a column it does not have.
+#         res = self.compile_template(extra=self.cohort(
+#             dedup_keys="[[PatientDurableKey]]", dedup_order_by="[StartDateKey]"
+#         ))
+#         self.assertHasError(res, "bad_dedup_column")
+#         self.assertIn("PatientDurableKey, IndexDate", res.errors[0].fix)
+#
+#     def test_a_key_that_names_no_column_is_an_error(self):
+#         res = self.compile_template(extra=self.cohort(dedup_keys="[[BillingCodeValue]]"))
+#         self.assertHasError(res, "bad_dedup_column")
+#
+#     def test_the_old_spellings_are_refused(self):
+#         res = self.compile_template(extra=self.cohort(
+#             dedup_keys="[[PatientDurableKey]]", order_by="[IndexDate]"
+#         ))
+#         self.assertHasError(res, "old_dedup_order")
+#
+#
 # class ProjectDbTests(MakeYamlTest):
 #     def test_missing_warns_while_writing_and_stops_the_split(self):
 #         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -15762,6 +15930,7 @@ if __name__ == "__main__":
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
 #     "one_copy": OneCopyTests,
+#     "dedup": DedupTests,
 #     "run_folders": RunFolderTests,
 #     "project_db": ProjectDbTests,
 #     "fixes": FixTests,

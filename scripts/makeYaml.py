@@ -1833,6 +1833,59 @@ def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
         )
 
 
+DEDUP_DIRECTIONS = ("ASC", "DESC")
+
+
+def dedup_key_names(value: Any) -> list[str]:
+    """Every column name `dedup_keys` (or legacy `dedup_key`) mentions."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(n) for item in value for n in (item if isinstance(item, list) else [item])]
+    return []
+
+
+def check_dedup(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """Dedup keys and ordering name the cohort's own columns (D58).
+
+    The pull writes each as that column's source, so a name that is not a
+    column cannot be rendered; caught here, on the Mac, rather than on the VM.
+    """
+    for cohort in cohorts:
+        label = cohort_label(cohort)
+        columns = [str(c["name"]) for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+        for old in ("dedup_order", "order_by"):
+            if cohort.get(old):
+                result.error(
+                    "old_dedup_order",
+                    f"`{old}` is not read; the ordering of duplicates is `dedup_order_by`.",
+                    f"{label}.{old}",
+                    fix="Write `dedup_order_by: [<column>, ...]`, naming the cohort's columns, "
+                    "e.g. `dedup_order_by: [IndexDate]`.",
+                )
+        order = cohort.get("dedup_order_by") or []
+        order_names = []
+        for entry in [order] if isinstance(order, str) else order:
+            words = str(entry).split()
+            if len(words) == 2 and words[1].upper() in DEDUP_DIRECTIONS:
+                order_names.append(words[0])
+            else:
+                order_names.append(str(entry).strip())
+        for field, names in (
+            ("dedup_keys", dedup_key_names(cohort.get("dedup_keys", cohort.get("dedup_key")))),
+            ("dedup_order_by", order_names),
+        ):
+            for name in names:
+                if name not in columns:
+                    result.error(
+                        "bad_dedup_column",
+                        f"`{field}` names `{name}`, which is not one of this cohort's columns.",
+                        f"{label}.{field}",
+                        fix=f"Use a name from its `columns`: {', '.join(columns) or 'none'}. "
+                        "An ordering entry may end in ` DESC`.",
+                    )
+
+
 def refuse_old_temp_marker(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
     """`##JVM_` was every project's prefix; writing it now would bypass D50."""
     for cohort in cohorts:
@@ -2035,6 +2088,7 @@ def compile_yaml(
         return result
 
     cohorts = import_recipes(template, recipes_doc, result)
+    check_dedup(cohorts, result)
     cohorts = expand_multipliers(template, cohorts, result)
     analysis = analyze_cohorts(cohorts)
     cohorts = validate_and_resolve(
@@ -4225,6 +4279,46 @@ class RunFolderTests(MakeYamlTest):
             self.assertEqual(setup["project_folder"], folder)
 
 
+class DedupTests(MakeYamlTest):
+    """D58: dedup names the cohort's own columns, checked here, not on the VM."""
+
+    def cohort(self, **dedup) -> str:
+        lines = "".join(f"    {key}: {value}\n" for key, value in dedup.items())
+        return f"""
+  - name: Custom
+    type: fact
+    columns:
+      - {{source: dxf.PatientDurableKey, name: PatientDurableKey, type: BIGINT}}
+      - {{source: dxf.StartDateKey, name: IndexDate, type: INT}}
+{lines}    filter:
+      from: DiagnosisEventFact AS dxf
+"""
+
+    def test_names_of_its_columns_compile(self):
+        res = self.compile_template(extra=self.cohort(
+            dedup_keys="[[PatientDurableKey]]", dedup_order_by="[IndexDate DESC]"
+        ))
+        self.assertFalse([m for m in res.errors if "dedup" in m.code], summarize_result(res))
+
+    def test_an_ordering_that_names_no_column_is_an_error(self):
+        # IndexDiagnosis ordered by IndexDate, a column it does not have.
+        res = self.compile_template(extra=self.cohort(
+            dedup_keys="[[PatientDurableKey]]", dedup_order_by="[StartDateKey]"
+        ))
+        self.assertHasError(res, "bad_dedup_column")
+        self.assertIn("PatientDurableKey, IndexDate", res.errors[0].fix)
+
+    def test_a_key_that_names_no_column_is_an_error(self):
+        res = self.compile_template(extra=self.cohort(dedup_keys="[[BillingCodeValue]]"))
+        self.assertHasError(res, "bad_dedup_column")
+
+    def test_the_old_spellings_are_refused(self):
+        res = self.compile_template(extra=self.cohort(
+            dedup_keys="[[PatientDurableKey]]", order_by="[IndexDate]"
+        ))
+        self.assertHasError(res, "old_dedup_order")
+
+
 class ProjectDbTests(MakeYamlTest):
     def test_missing_warns_while_writing_and_stops_the_split(self):
         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -4303,6 +4397,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
+    "dedup": DedupTests,
     "run_folders": RunFolderTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,

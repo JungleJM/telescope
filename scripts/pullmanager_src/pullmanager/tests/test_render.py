@@ -85,7 +85,7 @@ class ServerRenderTests(unittest.TestCase):
         self.assertIn("ROW_NUMBER() OVER (PARTITION BY p.DurableKey", blocks[0].sql)
         self.assertIn("[_dedup_rn] = 1", blocks[0].sql)
         self.assertTrue(any("legacy" in n for n in notes))
-        self.assertTrue(any("arbitrary but stable" in n for n in notes))
+        self.assertTrue(any("arbitrary and may differ" in n for n in notes))
 
     def test_dedup_partitions_by_sources_not_column_names(self):
         # D58: inside the SELECT that names them, only source columns exist.
@@ -104,6 +104,39 @@ class ServerRenderTests(unittest.TestCase):
         over = over[: over.index(") AS [_dedup_rn]")]
         self.assertIn("PARTITION BY def.PatientDurableKey, dt.Value", over)
         self.assertNotIn("[", over)
+
+    def test_dedup_order_by_keeps_the_earliest(self):
+        # D58: every recipe writes dedup_order_by, which was never read, so the
+        # "first diagnosis" kept was any one.
+        cohort = pk_cohort(
+            columns=[
+                {"source": "dxf.PatientDurableKey", "name": "PatientDurableKey", "type": "BIGINT"},
+                {"source": "dxf.StartDateKey", "name": "IndexDate", "type": "INT"},
+                {"source": "dxf.EncounterKey", "name": "IndexEncounter", "type": "BIGINT"},
+            ],
+            dedup_keys=[["PatientDurableKey"]],
+            dedup_order_by=["IndexDate", "IndexEncounter DESC"],
+        )
+        sql, notes = server_sql.render_cohort(cohort, doc_with(cohort))
+        self.assertIn(
+            "PARTITION BY dxf.PatientDurableKey ORDER BY dxf.StartDateKey, dxf.EncounterKey DESC",
+            sql,
+        )
+        self.assertFalse(any("arbitrary" in n for n in notes))
+
+    def test_dedup_order_by_naming_no_column_is_refused(self):
+        cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]], dedup_order_by=["IndexDate"])
+        with self.assertRaises(RenderError) as caught:
+            self.render(doc_with(cohort))
+        self.assertIn("IndexDate", str(caught.exception))
+
+    def test_the_old_ordering_spellings_are_refused(self):
+        for old in ("dedup_order", "order_by"):
+            with self.subTest(old=old):
+                cohort = pk_cohort(dedup_keys=[["PatientDurableKey"]], **{old: "p.DurableKey"})
+                with self.assertRaises(RenderError) as caught:
+                    self.render(doc_with(cohort))
+                self.assertIn("dedup_order_by", str(caught.exception))
 
     def test_dedup_key_naming_a_missing_column_is_refused(self):
         with self.assertRaises(RenderError):
