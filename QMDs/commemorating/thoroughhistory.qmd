@@ -1088,11 +1088,32 @@ Every planning document that ever existed, and what became of it.
 | `CLAUDE.md`, `Readme.MD` | 23 Sep | Working method; "Peer through the Cosmos" | Current |
 | `sideproject-phewas/` | 23 Sep | Offline R package install | Removed the same day |
 | `recentResearch.qmd` | 23 Sep | Your research: prefixes, refresh, uploads, resume | Folded into D50 to D53 |
-| `keys_research_for_vm.md` | 23 Sep | Brief for the VM's AI on keys | Moved to `keys_research/` |
+| `keys_research_for_vm.md` | 23 Sep | Brief for the VM's AI on keys | Moved to `keys_research/`; summarized and deleted 25 Sep (below) |
 | `responses.md` | 24 Sep | Your answers and UI test notes | Folded into D54 to D56 |
-| `keys_research/vm_ai_answer.md` | 24 Sep | The VM AI's answer, transcribed | Current, pending |
+| `keys_research/vm_ai_answer.md` | 24 Sep | The VM AI's answer, transcribed | Summarized and deleted 25 Sep (below) |
 | `response/responses.md` | 25 Sep | Your responses to D65 to D68, readout request | Being folded (D69 to D71) |
 | `commemorating/` | 25 Sep | This task | Current |
+
+**The keys research, in brief.** The brief (138 lines) asked the VM's AI three
+questions: are keys declared where SQL can read them (`INFORMATION_SCHEMA`,
+`sys.foreign_keys`, `sys.indexes`, after a `HAS_PERMS_BY_NAME` probe); do they
+hold in the data (`PatientDim.DurableKey` unique with and without
+`IsCurrent = 1`, `DiagnosisKey` repeating in `DiagnosisTerminologyDim`,
+orphaned diagnosis events); and what does the interactive dictionary show. It
+also carried the D50 global-temp probe and the D51 `create_date` query. The
+answer (704 lines, transcribed from six screenshots of 11 printed pages) ran
+none of the queries. It said keys are hidden from analyst logins rather than
+absent; the dictionary cannot be exported, only supplied by Epic; `-1` marks
+unmapped or mixture keys and fact tables hold negative placeholder rows;
+`DiagnosisTerminologyDim` needs a `Type` filter; `create_date` is not a load
+date. It then repeated one uniqueness query and one orphan query for every
+key family (patient, encounter, diagnosis, procedure, medication, lab), and
+admitted its dictionary descriptions were "paraphrased based on Epic's
+conventions, not exact text". What remains useful went into design.md (the
+findings with how sure each is, and how to read the `DiagnosisEventFact`
+dictionary page, which is kept) and the roadmap (four query shapes, and the
+rule that each relationship is graded seen, counted or said, with only the
+first two trusted). Both files are in git history before `d6f2030`.
 
 ---
 
