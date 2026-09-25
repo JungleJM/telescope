@@ -29,6 +29,7 @@ from .executor import (
     should_execute,
 )
 from .manifest import Manifest, Phase, Session
+from .models import now_iso
 from .naming import destination, global_temp, temp_prefix
 from .normalize import cosmos_database, normalize_dedup_keys
 from .uploads import UploadError
@@ -287,7 +288,7 @@ class SessionRunner:
             self._run_setup(path)
             return None
         if kind == "upload_cohorts":
-            return self._run_uploads(path)
+            return self._run_uploads(node, path)
         if kind == "pk":
             return self._run_pk(node, path)
         return self._run_run(node, path)
@@ -315,33 +316,76 @@ class SessionRunner:
 
     # ------------------------------------------------------------- uploads
 
-    def _run_uploads(self, path: Path) -> int | None:
+    def _run_uploads(self, node: Any, path: Path) -> int | None:
         """Land each upload in Projects, then load its Cosmos temp from that copy (D54).
 
         Resuming, the copies are kept and the files are not read: the copy is
         the source, so the batches still to run see what the finished ones saw.
+
+        A non-PK upload lands once per pull, by the first session to get here;
+        later sessions use that copy (D61). Its Cosmos temp is loaded only
+        where this session's cohorts read it: a temp lives as long as its
+        session's connection, so each reader loads its own. An uploaded PK is
+        landed and loaded in every session, as before.
         """
         doc = load_yaml(path) or {}
         enabled = uploads.enabled_uploads(doc)
         if not enabled:
             return None
         uploaded = 0
+        report: dict[str, dict[str, Any]] = {}
         for cohort in enabled:
             dest = uploads.upload_dest(cohort)
             copy = destination(self.project_db, uploads.copy_table(dest))
-            if self.resuming:
+            is_pk = str(cohort.get("type", "")).lower() == "pk"
+            landed = None if is_pk else self.manifest.uploads_landed.get(dest)
+            if self.resuming or landed:
                 if not self._projects_table_exists(copy):
-                    raise SessionError(
-                        f"{copy} is missing. The finished batches were pulled with it, so "
-                        "landing the file again could mix populations. Run --repull."
+                    why = (
+                        "The finished batches were pulled with it"
+                        if self.resuming else
+                        f"It was landed earlier in this pull ({landed.get('landed_at')}) and "
+                        "the sessions before this one read it"
                     )
+                    raise SessionError(
+                        f"{copy} is missing. {why}, so landing the file again could mix "
+                        "populations. Run --repull."
+                    )
+                state = "kept" if self.resuming else "landed earlier in this pull"
             else:
-                self._land_upload(cohort, copy)
-            uploaded += self._load_temp_from_copy(dest, copy)
+                rows = self._land_upload(cohort, copy)
+                if not is_pk:
+                    self.manifest.uploads_landed[dest] = {
+                        "table": copy, "rows": rows, "landed_at": now_iso(),
+                        "by_session": self.session.session_id,
+                    }
+                state = "landed"
+            if is_pk or self._session_reads(dest):
+                loaded = self._load_temp_from_copy(dest, copy)
+                uploaded += loaded
+                cosmos: Any = loaded
+            else:
+                cosmos = "not read in this session"
+            report[dest] = {"projects": state, "cosmos": cosmos}
+        node.outputs["uploads"] = report
         return uploaded
 
-    def _land_upload(self, cohort: dict[str, Any], copy: str) -> None:
-        """The file (or dbtable) into its typed Projects copy, committed."""
+    def _session_reads(self, dest: str) -> bool:
+        """Whether any cohort this session builds names the upload's temp."""
+        temp = global_temp(dest, self.planned_prefix or self.prefix).lower()
+        for kind, _, path in iter_units(self.manifest, self.session):
+            if kind not in ("pk", "run") or not path.is_file():
+                continue
+            for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+                if temp in json.dumps(cohort, default=str).lower():
+                    return True
+        return False
+
+    def _land_upload(self, cohort: dict[str, Any], copy: str) -> int | None:
+        """The file (or dbtable) into its typed Projects copy, committed.
+
+        Returns the file's row count; None for a dbtable, copied server-side.
+        """
         if uploads.upload_kind(cohort) == "dbtable":
             source = cohort.get("source_table") or uploads.upload_dest(cohort)
             self._execute(
@@ -350,7 +394,7 @@ class SessionRunner:
                 label=f"upload {cohort.get('name')} copy",
             )
             self.projects.commit()
-            return
+            return None
         table = uploads.read_parquet(cohort, self.upload_root)
         self.report.warnings.extend(table.notes)
         self._execute(
@@ -363,6 +407,7 @@ class SessionRunner:
                 chunk_size=self.settings.upload_chunk,
             )
         self.projects.commit()
+        return len(table.rows)
 
     def _projects_table_exists(self, table: str) -> bool:
         cursor = self.projects.cursor()

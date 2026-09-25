@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "2a4b42197dee85a69348e1a2bd54e8502a106fc70ee1fc8c16e9b1b189fdee8a",
+  "content_id": "93c2b363b2b25db340735981ff8c212a2dfe189b8ae78df76bedebbeea412983",
   "file_count": 37,
   "files": [
     {
@@ -435,8 +435,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/manifest.py",
       "policy": "replace",
-      "sha256": "f35d386c328cf4d697b8ea8f7a1a9d69cf153a672596368a948f9bd05033f60a",
-      "size": 12126
+      "sha256": "95157b77cdb330a2f047b82c50cd932e625967c7f847e1e004135c60f5812716",
+      "size": 12466
     },
     {
       "path": "pullmanager/models.py",
@@ -471,8 +471,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "eeb7da9f102ba38d72a1f65698a6caf37ae1a6800c73346de0cc74afae2024bf",
-      "size": 32175
+      "sha256": "166b32989162e0b028f5130d1b3f41a1844c61fc076bf300836660501f65aeda",
+      "size": 34429
     },
     {
       "path": "pullmanager/sql.py",
@@ -555,8 +555,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "bf8ac07368c55852d7cde638a9ff7613c7d5cdec1fe92072708a81907a62540c",
-      "size": 36740
+      "sha256": "62ed2d28b489a28bef739cc73525052808569afbc5798797bbb85084c9eaf052",
+      "size": 39575
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -5584,7 +5584,7 @@ if __name__ == "__main__":
 #     return blocks
 #
 # === END FILE: pullmanager/local_sql.py ===
-# === BEGIN FILE: pullmanager/manifest.py SHA256: f35d386c328cf4d697b8ea8f7a1a9d69cf153a672596368a948f9bd05033f60a SIZE: 12126 ===
+# === BEGIN FILE: pullmanager/manifest.py SHA256: 95157b77cdb330a2f047b82c50cd932e625967c7f847e1e004135c60f5812716 SIZE: 12466 ===
 # """Load, mutate, and write back `pullmanifest.yaml`.
 #
 # The manifest is YAML Manager's plan on the way in and Pullmanager's status
@@ -5904,8 +5904,17 @@ if __name__ == "__main__":
 #         """Each Cosmos database's `create_date` when this manifest last ran (D51)."""
 #         return self._data.setdefault("cosmos_refresh", {})
 #
+#     @property
+#     def uploads_landed(self) -> dict[str, Any]:
+#         """Uploads already landed in Projects in this pull, by destination (D61)."""
+#         return self._data.setdefault("uploads_landed", {})
+#
 #     def reset_all(self, reason: str) -> None:
-#         """Every session starts over, finished work included."""
+#         """Every session starts over, finished work included.
+#
+#         The uploads land again too: a re-pull reads the files afresh (D61).
+#         """
+#         self._data.pop("uploads_landed", None)
 #         for session in self.sessions:
 #             session.runtime.clear()
 #             for child in session.children:
@@ -6835,7 +6844,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: eeb7da9f102ba38d72a1f65698a6caf37ae1a6800c73346de0cc74afae2024bf SIZE: 32175 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 166b32989162e0b028f5130d1b3f41a1844c61fc076bf300836660501f65aeda SIZE: 34429 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6867,6 +6876,7 @@ if __name__ == "__main__":
 #     should_execute,
 # )
 # from .manifest import Manifest, Phase, Session
+# from .models import now_iso
 # from .naming import destination, global_temp, temp_prefix
 # from .normalize import cosmos_database, normalize_dedup_keys
 # from .uploads import UploadError
@@ -7125,7 +7135,7 @@ if __name__ == "__main__":
 #             self._run_setup(path)
 #             return None
 #         if kind == "upload_cohorts":
-#             return self._run_uploads(path)
+#             return self._run_uploads(node, path)
 #         if kind == "pk":
 #             return self._run_pk(node, path)
 #         return self._run_run(node, path)
@@ -7153,33 +7163,76 @@ if __name__ == "__main__":
 #
 #     # ------------------------------------------------------------- uploads
 #
-#     def _run_uploads(self, path: Path) -> int | None:
+#     def _run_uploads(self, node: Any, path: Path) -> int | None:
 #         """Land each upload in Projects, then load its Cosmos temp from that copy (D54).
 #
 #         Resuming, the copies are kept and the files are not read: the copy is
 #         the source, so the batches still to run see what the finished ones saw.
+#
+#         A non-PK upload lands once per pull, by the first session to get here;
+#         later sessions use that copy (D61). Its Cosmos temp is loaded only
+#         where this session's cohorts read it: a temp lives as long as its
+#         session's connection, so each reader loads its own. An uploaded PK is
+#         landed and loaded in every session, as before.
 #         """
 #         doc = load_yaml(path) or {}
 #         enabled = uploads.enabled_uploads(doc)
 #         if not enabled:
 #             return None
 #         uploaded = 0
+#         report: dict[str, dict[str, Any]] = {}
 #         for cohort in enabled:
 #             dest = uploads.upload_dest(cohort)
 #             copy = destination(self.project_db, uploads.copy_table(dest))
-#             if self.resuming:
+#             is_pk = str(cohort.get("type", "")).lower() == "pk"
+#             landed = None if is_pk else self.manifest.uploads_landed.get(dest)
+#             if self.resuming or landed:
 #                 if not self._projects_table_exists(copy):
-#                     raise SessionError(
-#                         f"{copy} is missing. The finished batches were pulled with it, so "
-#                         "landing the file again could mix populations. Run --repull."
+#                     why = (
+#                         "The finished batches were pulled with it"
+#                         if self.resuming else
+#                         f"It was landed earlier in this pull ({landed.get('landed_at')}) and "
+#                         "the sessions before this one read it"
 #                     )
+#                     raise SessionError(
+#                         f"{copy} is missing. {why}, so landing the file again could mix "
+#                         "populations. Run --repull."
+#                     )
+#                 state = "kept" if self.resuming else "landed earlier in this pull"
 #             else:
-#                 self._land_upload(cohort, copy)
-#             uploaded += self._load_temp_from_copy(dest, copy)
+#                 rows = self._land_upload(cohort, copy)
+#                 if not is_pk:
+#                     self.manifest.uploads_landed[dest] = {
+#                         "table": copy, "rows": rows, "landed_at": now_iso(),
+#                         "by_session": self.session.session_id,
+#                     }
+#                 state = "landed"
+#             if is_pk or self._session_reads(dest):
+#                 loaded = self._load_temp_from_copy(dest, copy)
+#                 uploaded += loaded
+#                 cosmos: Any = loaded
+#             else:
+#                 cosmos = "not read in this session"
+#             report[dest] = {"projects": state, "cosmos": cosmos}
+#         node.outputs["uploads"] = report
 #         return uploaded
 #
-#     def _land_upload(self, cohort: dict[str, Any], copy: str) -> None:
-#         """The file (or dbtable) into its typed Projects copy, committed."""
+#     def _session_reads(self, dest: str) -> bool:
+#         """Whether any cohort this session builds names the upload's temp."""
+#         temp = global_temp(dest, self.planned_prefix or self.prefix).lower()
+#         for kind, _, path in iter_units(self.manifest, self.session):
+#             if kind not in ("pk", "run") or not path.is_file():
+#                 continue
+#             for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+#                 if temp in json.dumps(cohort, default=str).lower():
+#                     return True
+#         return False
+#
+#     def _land_upload(self, cohort: dict[str, Any], copy: str) -> int | None:
+#         """The file (or dbtable) into its typed Projects copy, committed.
+#
+#         Returns the file's row count; None for a dbtable, copied server-side.
+#         """
 #         if uploads.upload_kind(cohort) == "dbtable":
 #             source = cohort.get("source_table") or uploads.upload_dest(cohort)
 #             self._execute(
@@ -7188,7 +7241,7 @@ if __name__ == "__main__":
 #                 label=f"upload {cohort.get('name')} copy",
 #             )
 #             self.projects.commit()
-#             return
+#             return None
 #         table = uploads.read_parquet(cohort, self.upload_root)
 #         self.report.warnings.extend(table.notes)
 #         self._execute(
@@ -7201,6 +7254,7 @@ if __name__ == "__main__":
 #                 chunk_size=self.settings.upload_chunk,
 #             )
 #         self.projects.commit()
+#         return len(table.rows)
 #
 #     def _projects_table_exists(self, table: str) -> bool:
 #         cursor = self.projects.cursor()
@@ -10415,7 +10469,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: bf8ac07368c55852d7cde638a9ff7613c7d5cdec1fe92072708a81907a62540c SIZE: 36740 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 62ed2d28b489a28bef739cc73525052808569afbc5798797bbb85084c9eaf052 SIZE: 39575 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -11101,6 +11155,59 @@ if __name__ == "__main__":
 #         # The temp takes the copy's types, not text for everything.
 #         self.assertIn(f"CREATE TABLE {self.TEMP}\n(\n    [DiagnosisCode] NVARCHAR(55) NULL", cosmos)
 #         self.assertTrue(any(self.TEMP in sql for sql, _ in self.cosmos.inserted))
+#
+#     def start_over_without_repull(self):
+#         """As a later session does: from scratch, in the same pull."""
+#         manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         for child in manifest.sessions[0].children:
+#             child.reset("a later session")
+#         manifest.save()
+#
+#     def test_a_later_session_uses_the_copy_landed_earlier_in_the_pull(self):
+#         # D61: every session landed the file again; eight sessions, eight copies.
+#         self.assertTrue(self.execute().ok)
+#         self.start_over_without_repull()
+#         second = self.execute()
+#         self.assertTrue(second.ok, second.failed)
+#         self.assertNotIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+#         # Its Cosmos temp died with the first session's connection: loaded again.
+#         self.assertIn(f"CREATE TABLE {self.TEMP}", "\n".join(self.cosmos.executed))
+#         manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         self.assertEqual(manifest.uploads_landed["HospitalICDCodes"]["table"], self.COPY)
+#         phase = manifest.sessions[0].phases[1]
+#         self.assertEqual(phase.outputs["uploads"]["HospitalICDCodes"]["projects"],
+#                          "landed earlier in this pull")
+#
+#     def test_a_repull_lands_the_file_again(self):
+#         self.assertTrue(self.execute().ok)
+#         manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         manifest.reset_all("re-pulled: --repull")
+#         manifest.save()
+#         self.assertTrue(self.execute().ok)
+#         self.assertIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+#
+#     def test_a_reused_copy_that_is_gone_is_refused(self):
+#         self.assertTrue(self.execute().ok)
+#         self.start_over_without_repull()
+#         del self.tables[self.COPY]
+#         report = self.execute()
+#         message = dict(report.failed)["Patients/upload_cohorts"]
+#         self.assertIn("landed earlier in this pull", message)
+#         self.assertIn("--repull", message)
+#
+#     def test_an_upload_no_cohort_reads_is_landed_but_not_sent_to_cosmos(self):
+#         path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+#         doc = load_yaml(path)
+#         unused = dict(doc["upload_cohorts"][0], name="Unused", dest_table="Unused")
+#         doc["upload_cohorts"].append(unused)
+#         dump_yaml(doc, path)
+#         report = self.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertIn("PROJECTD33A929.dbo.upload_Unused", self.tables)
+#         self.assertNotIn("CREATE TABLE ##manvalbas_Unused", "\n".join(self.cosmos.executed))
+#         self.assertFalse([sql for sql, _ in self.cosmos.inserted if "##manvalbas_Unused" in sql])
+#         phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[1]
+#         self.assertEqual(phase.outputs["uploads"]["Unused"]["cosmos"], "not read in this session")
 #
 #     def test_a_retry_uses_the_copy_not_the_file(self):
 #         # The file is gone (or changed) by the retry; the copy is what counts.

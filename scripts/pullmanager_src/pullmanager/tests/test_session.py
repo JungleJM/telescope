@@ -684,6 +684,59 @@ class UploadCopyTests(SessionTestCase):
         self.assertIn(f"CREATE TABLE {self.TEMP}\n(\n    [DiagnosisCode] NVARCHAR(55) NULL", cosmos)
         self.assertTrue(any(self.TEMP in sql for sql, _ in self.cosmos.inserted))
 
+    def start_over_without_repull(self):
+        """As a later session does: from scratch, in the same pull."""
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        for child in manifest.sessions[0].children:
+            child.reset("a later session")
+        manifest.save()
+
+    def test_a_later_session_uses_the_copy_landed_earlier_in_the_pull(self):
+        # D61: every session landed the file again; eight sessions, eight copies.
+        self.assertTrue(self.execute().ok)
+        self.start_over_without_repull()
+        second = self.execute()
+        self.assertTrue(second.ok, second.failed)
+        self.assertNotIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+        # Its Cosmos temp died with the first session's connection: loaded again.
+        self.assertIn(f"CREATE TABLE {self.TEMP}", "\n".join(self.cosmos.executed))
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.assertEqual(manifest.uploads_landed["HospitalICDCodes"]["table"], self.COPY)
+        phase = manifest.sessions[0].phases[1]
+        self.assertEqual(phase.outputs["uploads"]["HospitalICDCodes"]["projects"],
+                         "landed earlier in this pull")
+
+    def test_a_repull_lands_the_file_again(self):
+        self.assertTrue(self.execute().ok)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        manifest.reset_all("re-pulled: --repull")
+        manifest.save()
+        self.assertTrue(self.execute().ok)
+        self.assertIn(f"CREATE TABLE {self.COPY}", "\n".join(self.projects.executed))
+
+    def test_a_reused_copy_that_is_gone_is_refused(self):
+        self.assertTrue(self.execute().ok)
+        self.start_over_without_repull()
+        del self.tables[self.COPY]
+        report = self.execute()
+        message = dict(report.failed)["Patients/upload_cohorts"]
+        self.assertIn("landed earlier in this pull", message)
+        self.assertIn("--repull", message)
+
+    def test_an_upload_no_cohort_reads_is_landed_but_not_sent_to_cosmos(self):
+        path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+        doc = load_yaml(path)
+        unused = dict(doc["upload_cohorts"][0], name="Unused", dest_table="Unused")
+        doc["upload_cohorts"].append(unused)
+        dump_yaml(doc, path)
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertIn("PROJECTD33A929.dbo.upload_Unused", self.tables)
+        self.assertNotIn("CREATE TABLE ##manvalbas_Unused", "\n".join(self.cosmos.executed))
+        self.assertFalse([sql for sql, _ in self.cosmos.inserted if "##manvalbas_Unused" in sql])
+        phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[1]
+        self.assertEqual(phase.outputs["uploads"]["Unused"]["cosmos"], "not read in this session")
+
     def test_a_retry_uses_the_copy_not_the_file(self):
         # The file is gone (or changed) by the retry; the copy is what counts.
         first = self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})

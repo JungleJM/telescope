@@ -317,8 +317,17 @@ class Manifest:
         """Each Cosmos database's `create_date` when this manifest last ran (D51)."""
         return self._data.setdefault("cosmos_refresh", {})
 
+    @property
+    def uploads_landed(self) -> dict[str, Any]:
+        """Uploads already landed in Projects in this pull, by destination (D61)."""
+        return self._data.setdefault("uploads_landed", {})
+
     def reset_all(self, reason: str) -> None:
-        """Every session starts over, finished work included."""
+        """Every session starts over, finished work included.
+
+        The uploads land again too: a re-pull reads the files afresh (D61).
+        """
+        self._data.pop("uploads_landed", None)
         for session in self.sessions:
             session.runtime.clear()
             for child in session.children:
