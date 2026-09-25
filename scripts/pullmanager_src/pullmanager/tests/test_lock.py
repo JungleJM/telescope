@@ -179,3 +179,95 @@ class MakeYamlAgreesTests(LockTestCase):
                 self.write_lock(age)
                 self.assertEqual(make_yaml.executing_pull(self.manifest.parent) is not None, live)
                 self.assertEqual(live_lock(self.manifest) is not None, live)
+
+
+class ExecuteLogTests(LockTestCase):
+    """D68: whatever starts it, Execute writes what it prints to a log."""
+
+    def execute(self, connect_fn):
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect_fn)
+        return code, out.getvalue()
+
+    def logs(self):
+        return sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+
+    def test_the_log_holds_what_the_terminal_showed(self):
+        recorded = []
+
+        def connect(*args, **kwargs):
+            recorded.append(read_lock(self.manifest).log)
+            raise DatabaseError("login failed for PROJECTS")
+
+        code, out = self.execute(connect)
+        [log] = self.logs()
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("login failed for PROJECTS", out)
+        self.assertEqual(text, out)
+        self.assertTrue(text.startswith("Execute IBD_Ancestry: "))
+        # The lock names it, whole, for the launcher to follow.
+        self.assertEqual(recorded, [str(log.resolve())])
+
+    def test_a_refused_execute_says_why_in_its_log(self):
+        self.write_lock(20)
+        code, _ = self.execute(lambda *a, **k: None)
+        self.assertEqual(code, 1)
+        [log] = self.logs()
+        self.assertIn("already executing", log.read_text(encoding="utf-8"))
+
+    def test_ctrl_c_stops_it_releasing_the_lock(self):
+        def connect(*args, **kwargs):
+            raise KeyboardInterrupt
+
+        code, out = self.execute(connect)
+        self.assertEqual(code, 130)
+        self.assertIn("Stopped (Ctrl+C)", out)
+        self.assertIsNone(read_lock(self.manifest))
+
+
+class KeepOpenTests(LockTestCase):
+    """D68: the console stays until exit is typed; Enter alone does nothing."""
+
+    def test_only_exit_closes_it(self):
+        answers = iter(["", "close", "  EXIT  ", "never asked"])
+        asked = []
+
+        def answer(prompt):
+            asked.append(prompt)
+            return next(answers)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.keep_open(0, answer)
+        self.assertEqual(len(asked), 3)
+        self.assertIn(
+            "Safe to close: the pull has finished (exit code 0). "
+            "Type exit and press Enter to close this window.",
+            out.getvalue(),
+        )
+
+    def test_the_command_waits_after_a_failure_too(self):
+        # An unknown name ends at once; its window must still stay to be read.
+        answers = iter(["exit"])
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(pulls, "home_folders", lambda cwd=None: [self.work]), \
+                contextlib.chdir(self.work), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--execute", "Nope", "--keep-open"], input_fn=lambda _: next(answers))
+        self.assertEqual(code, 1)
+        self.assertIn("No pull named 'Nope'", err.getvalue())
+        self.assertIn("exit code 1", out.getvalue())
+
+
+class ClearLockTests(LockTestCase):
+    def test_stop_clears_only_the_lock_of_the_process_it_ended(self):
+        from ..lock import clear_lock_of
+
+        self.write_lock(20)
+        self.assertFalse(clear_lock_of(self.manifest, 1111))
+        self.assertIsNotNone(read_lock(self.manifest))
+        self.assertTrue(clear_lock_of(self.manifest, 4242))
+        self.assertIsNone(read_lock(self.manifest))
+

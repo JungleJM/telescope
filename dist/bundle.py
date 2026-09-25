@@ -459,8 +459,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "23d2f534f58e266d79ef6c39c150b2639b2612238fbf7abfc7a0f3e0d1b999bc",
-  "file_count": 41,
+  "content_id": "99c0792627e16c28ba85d843545753878bb65aaafe72070fb5947869b65e25a0",
+  "file_count": 42,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -495,8 +495,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "f3667599f950be2fa3fb78d7d537391df3159a674756ad3670a6390a9e8ef8f8",
-      "size": 14270
+      "sha256": "7c5ded359afefc3a112746313a08e17089fe20b8d65b338b0521152315c5ee1c",
+      "size": 16381
     },
     {
       "path": "pullmanager/db.py",
@@ -513,14 +513,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "efd630beaa96f8902feb4b7adc5e22a1339c527163afef9579fa008f00c19d1c",
-      "size": 13873
+      "sha256": "ef8564d954c32abca74a11349ecc38d1437ebc8b9dc84f68da951e7b7e1ec214",
+      "size": 19017
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "ba95adbbec3e65d8bfd115a37ea5aac0efab8c98f545b211ef44572057c3709b",
-      "size": 10776
+      "sha256": "a01f36f6b750fc9cd10584a472c486ba158f668029d61fa6a81cfc91fcaf05e5",
+      "size": 15110
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -531,8 +531,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/lock.py",
       "policy": "replace",
-      "sha256": "0a38c5f43d328b2fcfa8bdc7e14a892f73b369bea1f6b79c814a84bdbd528f4f",
-      "size": 7454
+      "sha256": "b99f5a55451667cf026963e9f652ab3116c260519874d10003f4e8760e4c621a",
+      "size": 8125
     },
     {
       "path": "pullmanager/manifest.py",
@@ -561,14 +561,20 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/pulls.py",
       "policy": "replace",
-      "sha256": "6a646275b4a4072dc53f032adc0711a8151e1b5194b31bf6f6e9bb3f18e0994b",
-      "size": 9637
+      "sha256": "7c848a772e31d100c210535124e40e30c8259b5b6e1f19a1c6a76cd1bfa54838",
+      "size": 10387
     },
     {
       "path": "pullmanager/refresh.py",
       "policy": "replace",
       "sha256": "cba6481d9b483b324e84d673ebba7810aa54ceb9322ab9c2efc0badfdb864898",
       "size": 3632
+    },
+    {
+      "path": "pullmanager/runlog.py",
+      "policy": "replace",
+      "sha256": "8b045cf4349d9ca485d1892776172f228301c94e5724fc8e64f4051e3b982c86",
+      "size": 2454
     },
     {
       "path": "pullmanager/server_sql.py",
@@ -621,20 +627,20 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "ffde5c3b4ebdf7bdde9f9b0787b29ad0af3f8822fcced6a8da7564497153159b",
-      "size": 11647
+      "sha256": "0e0f91f4b00aabfe22aa4f590e01c6f7fe0a89f9a59a1243a1b4c003ae64968f",
+      "size": 16436
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "b3db54e5931bc2600768abdbfcf06869eb1ad75ee65923d10671c27d695e1143",
-      "size": 14598
+      "sha256": "527de4133e5b260810b7388bff63b5186155b0af4726021b4934b62fafb75976",
+      "size": 18576
     },
     {
       "path": "pullmanager/tests/test_lock.py",
       "policy": "replace",
-      "sha256": "a4930ab0b021080a945987209f34db16399411bffa95ab970c2024634f2a0d29",
-      "size": 7742
+      "sha256": "1ed2d719f34c5fff022816b4295f841c259afedc334d8da5b263297ae1361b9c",
+      "size": 11311
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -3772,7 +3778,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: f3667599f950be2fa3fb78d7d537391df3159a674756ad3670a6390a9e8ef8f8 SIZE: 14270 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 7c5ded359afefc3a112746313a08e17089fe20b8d65b338b0521152315c5ee1c SIZE: 16381 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -3917,25 +3923,70 @@ if __name__ == "__main__":
 #
 #
 # def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
-#     """Pull the manifest, holding its lock throughout (D67)."""
-#     from .lock import LockHeld, PullLock, clock_time
+#     """Pull the manifest, writing a log (D68) and holding its lock (D67)."""
+#     from datetime import datetime
 #
-#     pull_lock = PullLock(manifest.path)
-#     try:
-#         pull_lock.acquire()
-#     except LockHeld as exc:
-#         print(f"ERROR {exc}", file=sys.stderr)
-#         return 1
-#     try:
-#         if pull_lock.replaced:
-#             stale = pull_lock.replaced
+#     from .lock import LockHeld, PullLock, clock_time, pull_name
+#     from .runlog import execute_log
+#
+#     with execute_log(manifest.path) as log:
+#         print(f"Execute {pull_name(manifest.path)}: {manifest.path}")
+#         print(f"Started {datetime.now():%Y-%m-%d %H:%M:%S}, process {os.getpid()}. "
+#               f"Also written to {shown(log)}")
+#         pull_lock = PullLock(manifest.path, log=log.resolve())
+#         try:
+#             pull_lock.acquire()
+#         except LockHeld as exc:
+#             print(f"ERROR {exc}", file=sys.stderr)
+#             return 1
+#         try:
+#             if pull_lock.replaced:
+#                 stale = pull_lock.replaced
+#                 print(
+#                     f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
+#                     f"(last heartbeat {clock_time(stale.heartbeat)})."
+#                 )
+#             return _execute(manifest, args, connect_fn)
+#         except KeyboardInterrupt:
 #             print(
-#                 f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
-#                 f"(last heartbeat {clock_time(stale.heartbeat)})."
+#                 "\nStopped (Ctrl+C). Whatever it was working on stays 'running' in the "
+#                 "manifest; the next --execute pulls it again."
 #             )
-#         return _execute(manifest, args, connect_fn)
-#     finally:
-#         pull_lock.release()
+#             return 130
+#         finally:
+#             pull_lock.release()
+#
+#
+# def keep_open(code: int, input_fn=input) -> None:
+#     """Hold the console window Execute runs in until `exit` is typed (D68).
+#
+#     Only `exit` closes it, so an Enter pressed by accident does not lose the
+#     output. The pull is over by now and its lock released.
+#     """
+#     print()
+#     print(
+#         f"Safe to close: the pull has finished (exit code {code}). "
+#         "Type exit and press Enter to close this window."
+#     )
+#     while True:
+#         try:
+#             answer = input_fn("> ")
+#         except (EOFError, KeyboardInterrupt):
+#             return
+#         if answer.strip().lower() == "exit":
+#             return
+#
+#
+# def set_console_title(text: str) -> None:
+#     """Name the console window, on Windows; elsewhere nothing."""
+#     if os.name != "nt":
+#         return
+#     try:
+#         import ctypes
+#
+#         ctypes.windll.kernel32.SetConsoleTitleW(text)
+#     except Exception:
+#         pass
 #
 #
 # def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
@@ -4050,6 +4101,12 @@ if __name__ == "__main__":
 #              "Takes a project's name or a manifest; with neither, lists the pulls.",
 #     )
 #     parser.add_argument(
+#         "--keep-open",
+#         action="store_true",
+#         help="After the command, keep the window open until exit is typed. The "
+#              "launcher's Execute uses it for the console window it opens.",
+#     )
+#     parser.add_argument(
 #         "--running",
 #         action="store_true",
 #         help="List every pull under runs/, whether it is executing, and its command.",
@@ -4092,13 +4149,22 @@ if __name__ == "__main__":
 #     return parser
 #
 #
-# def main(argv: list[str] | None = None) -> int:
+# def main(argv: list[str] | None = None, input_fn=input) -> int:
 #     parser = build_parser()
 #     raw = sys.argv[1:] if argv is None else list(argv)
 #     args = parser.parse_args(raw)
 #     if not raw:
 #         # The launcher is what is run most (D63); the commands take arguments.
 #         args.gui = True
+#     if args.keep_open:
+#         set_console_title(f"Pullmanager: executing {args.manifest or ''}".rstrip())
+#     code = dispatch(parser, args)
+#     if args.keep_open:
+#         keep_open(code, input_fn)
+#     return code
+#
+#
+# def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 #
 #     if args.tdd is not None:
 #         from .tests import run as run_tests
@@ -4888,7 +4954,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: efd630beaa96f8902feb4b7adc5e22a1339c527163afef9579fa008f00c19d1c SIZE: 13873 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: ef8564d954c32abca74a11349ecc38d1437ebc8b9dc84f68da951e7b7e1ec214 SIZE: 19017 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -4905,14 +4971,15 @@ if __name__ == "__main__":
 # from pathlib import Path
 # from tkinter import filedialog, messagebox, scrolledtext, ttk
 #
-# from . import launcher
+# from . import launcher, pulls
 # from .launcher import LauncherError, Options, Paths
-# from .lock import LockInfo, live_lock
+# from .lock import LockInfo, clear_lock_of, live_lock
 #
 # POLL_MS = 100
 # STATUS_REFRESH_MS = 3000
-# # How often the loaded pull's lock is read (D67), whoever started the pull.
-# LOCK_CHECK_MS = 3000
+# # How often the loaded pull's lock (D67) and log (D68) are read, whoever
+# # started the pull. The status tab refreshes every STATUS_REFRESH_MS of it.
+# LOCK_CHECK_MS = 1000
 # # After Execute is pressed its buttons stay grey this long waiting for its
 # # lock, so they cannot be pressed twice before it appears.
 # EXECUTE_GRACE_SECONDS = 60
@@ -4951,6 +5018,12 @@ if __name__ == "__main__":
 #         self._next_status_refresh = 0
 #         self.pull_lock: LockInfo | None = None  # the loaded pull's live lock
 #         self._execute_pressed: float | None = None
+#         # Execute runs in a console window of its own; its log is followed (D68).
+#         self.console = launcher.ConsoleRunner()
+#         self.follower = launcher.LogFollower()
+#         self._console_log_seen = False
+#         self._console_handled = True
+#         self._status_countdown = 0
 #
 #         root.title(f"Pullmanager - {workdir}")
 #         root.geometry("1100x760")
@@ -5015,6 +5088,14 @@ if __name__ == "__main__":
 #         self.output.pack(fill="both", expand=True)
 #         # Validate, Export split and Preview SQL, which run inside the window.
 #         notebook.add(output_tab, text="Validation Output")
+#
+#         # Execute's log, however it was started (D68, D71).
+#         self.pull_tab = ttk.Frame(notebook)
+#         self.pull_output = scrolledtext.ScrolledText(
+#             self.pull_tab, wrap="none", font=("Consolas", 10), state="disabled"
+#         )
+#         self.pull_output.pack(fill="both", expand=True)
+#         notebook.add(self.pull_tab, text="Pull Log")
 #
 #         status_tab = ttk.Frame(notebook)
 #         # Refresh and the manifest it reads, above the tree they describe.
@@ -5095,23 +5176,67 @@ if __name__ == "__main__":
 #             "This runs against Cosmos and Projects and updates the manifest.\n\nContinue?",
 #         ):
 #             return
+#         try:
+#             command = launcher.command_execute(
+#                 self.tools, self.paths(), self.options(), keep_open=launcher.CAN_OPEN_CONSOLE
+#             )
+#         except LauncherError as exc:
+#             messagebox.showwarning("Execute", str(exc))
+#             return
+#         self._save_settings()
 #         # Grey its buttons at once, before its lock appears (D67).
 #         self._execute_pressed = time.monotonic()
 #         self.update_buttons()
-#         self.run(
-#             "Execute",
-#             lambda: launcher.command_execute(self.tools, self.paths(), self.options()),
+#         try:
+#             self.console.start(command, cwd=self.workdir)
+#         except (LauncherError, OSError) as exc:
+#             self._execute_pressed = None
+#             self.update_buttons()
+#             self.cannot_start(f"its window could not be opened: {exc}")
+#             return
+#         self._console_log_seen = False
+#         self._console_handled = False
+#         self.update_stop()
+#         self.bar.configure(text="Execute is running in its own window; its output follows in Pull Log.")
+#         self.notebook.select(self.pull_tab)
+#
+#     def cannot_start(self, why: str) -> None:
+#         """Say so, and give the command that works from a terminal (D66, D68)."""
+#         manifest = self._manifest()
+#         command, folder = pulls.execute_command(manifest) if manifest else ("", self.workdir)
+#         text = (
+#             f"Execute could not start from the launcher: {why}.\n\n"
+#             f"Run it from a terminal instead. In {folder}, type:\n\n    {command}"
 #         )
+#         self.write_pull_log(f"\n{text}\n")
+#         self.bar.configure(text="Execute could not start; see Pull Log.")
+#         messagebox.showerror("Execute", text)
 #
 #     def on_stop(self) -> None:
-#         if not self.runner.running:
+#         if self.runner.running:
+#             if messagebox.askyesno(
+#                 "Stop",
+#                 "Stop the running command?\n\nWhatever it was working on stays 'running' "
+#                 "in the manifest, and a resume replays it.",
+#             ):
+#                 self.runner.stop()
 #             return
-#         if messagebox.askyesno(
+#         if self.console.alive and messagebox.askyesno(
 #             "Stop",
-#             "Stop the running command?\n\nWhatever it was working on stays 'running' "
-#             "in the manifest, and a resume replays it.",
+#             "Stop the pull? Its window closes.\n\nWhatever it was working on stays "
+#             "'running' in the manifest, and the next Execute pulls it again.",
 #         ):
-#             self.runner.stop()
+#             pid = self.console.pid
+#             self.console.stop()
+#             try:
+#                 self.console.wait(timeout=10)
+#             except Exception:
+#                 pass
+#             manifest = self._manifest()
+#             # Ended from outside, it could not remove its own lock.
+#             if manifest is not None:
+#                 clear_lock_of(manifest, pid)
+#             self.watch_once()
 #
 #     def run(self, label: str, build) -> None:
 #         try:
@@ -5148,8 +5273,12 @@ if __name__ == "__main__":
 #
 #     def set_busy(self, busy: bool, message: str) -> None:
 #         self.update_buttons()
-#         self.stop_button.configure(state="normal" if busy else "disabled")
+#         self.update_stop()
 #         self.bar.configure(text=message)
+#
+#     def update_stop(self) -> None:
+#         live = self.runner.running or self.console.alive
+#         self.stop_button.configure(state="normal" if live else "disabled")
 #
 #     def update_buttons(self) -> None:
 #         """Everything waits for the window's own command. While the loaded
@@ -5162,18 +5291,65 @@ if __name__ == "__main__":
 #             button.configure(state="disabled" if off else "normal")
 #
 #     def watch_pull(self) -> None:
-#         """Read the loaded pull's lock, however it was started, and follow it."""
-#         was_live = self.pull_lock is not None
-#         self.check_pull()
-#         if self.pull_lock is not None or was_live:
-#             self.refresh_status()
+#         """Every second: the loaded pull's lock and log, however it was started."""
+#         self.watch_once()
 #         self.root.after(LOCK_CHECK_MS, self.watch_pull)
 #
-#     def check_pull(self) -> None:
+#     def watch_once(self) -> None:
+#         was_live = self.pull_lock is not None
+#         self.check_pull()
+#         self.follow_log()
+#         self.check_console()
+#         live = self.pull_lock is not None
+#         self._status_countdown -= LOCK_CHECK_MS
+#         if (live and self._status_countdown <= 0) or (was_live and not live):
+#             self.refresh_status()
+#             self._status_countdown = STATUS_REFRESH_MS
+#
+#     def _manifest(self) -> Path | None:
 #         try:
-#             manifest = self.workdir / self.paths().manifest()
+#             return self.workdir / self.paths().manifest()
 #         except LauncherError:
-#             manifest = None
+#             return None
+#
+#     def follow_log(self) -> None:
+#         """Show what the pull's log has added: the live Execute's, else the newest."""
+#         manifest = self._manifest()
+#         log = launcher.pull_log(manifest, self.pull_lock)
+#         switched, text = self.follower.read(log)
+#         if switched:
+#             self.pull_output.configure(state="normal")
+#             self.pull_output.delete("1.0", "end")
+#             self.pull_output.configure(state="disabled")
+#             if log is not None:
+#                 self.write_pull_log(f"--- {pulls.shown(log, self.workdir)} ---\n")
+#         if text:
+#             self.write_pull_log(text)
+#         if log is not None and not self._console_log_seen and self.console.started:
+#             try:
+#                 self._console_log_seen = log.stat().st_mtime >= self.console.started - 2
+#             except OSError:
+#                 pass
+#
+#     def check_console(self) -> None:
+#         """Notice the console's process ending; one that wrote no log never started."""
+#         if self._console_handled or self.console.alive:
+#             return
+#         self._console_handled = True
+#         self._execute_pressed = None
+#         self.follow_log()  # anything written at the very end
+#         code = self.console.returncode
+#         if not self._console_log_seen:
+#             self.cannot_start(f"it ended with exit code {launcher.exit_code_words(code)} "
+#                               "before writing its log")
+#         else:
+#             self.write_pull_log(f"--- Execute's window closed, exit code {code} ---\n")
+#             self.bar.configure(text="Execute has finished.")
+#         self.update_buttons()
+#         self.update_stop()
+#
+#     def check_pull(self) -> None:
+#         manifest = self._manifest()
 #         self.pull_lock = live_lock(manifest) if manifest else None
 #         pressed = self._execute_pressed
 #         if self.pull_lock is not None or (
@@ -5187,6 +5363,12 @@ if __name__ == "__main__":
 #         self.output.insert("end", text)
 #         self.output.see("end")
 #         self.output.configure(state="disabled")
+#
+#     def write_pull_log(self, text: str) -> None:
+#         self.pull_output.configure(state="normal")
+#         self.pull_output.insert("end", text)
+#         self.pull_output.see("end")
+#         self.pull_output.configure(state="disabled")
 #
 #     def refresh_status(self) -> None:
 #         try:
@@ -5213,6 +5395,7 @@ if __name__ == "__main__":
 #         self.status_message.configure(text=message or f"{manifest}")
 #
 #     def on_close(self) -> None:
+#         # A pull in its own window carries on when this one closes.
 #         if self.runner.running and not messagebox.askyesno(
 #             "Quit", "A command is still running. Stop it and quit?"
 #         ):
@@ -5236,7 +5419,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: ba95adbbec3e65d8bfd115a37ea5aac0efab8c98f545b211ef44572057c3709b SIZE: 10776 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: a01f36f6b750fc9cd10584a472c486ba158f668029d61fa6a81cfc91fcaf05e5 SIZE: 15110 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -5245,22 +5428,33 @@ if __name__ == "__main__":
 # cannot freeze the window, gives Stop something real to terminate, and
 # guarantees the GUI never behaves differently from the CLI.
 #
+# Execute runs in a console window of its own (D68), as it would from a
+# terminal: started from the window with its output piped back, it failed on the
+# VM before printing a line (exit code 0xC0000142). The window follows its log.
+#
 # Everything testable lives here. The tkinter view only wires widgets to it.
 # """
 #
 # from __future__ import annotations
 #
+# import codecs
 # import json
 # import os
 # import queue
 # import subprocess
 # import sys
 # import threading
+# import time
 # from dataclasses import asdict, dataclass, field
 # from pathlib import Path
 #
+# from .lock import LockInfo
 # from .manifest import Manifest, ManifestError
-# from .pulls import MANIFEST_FILENAME, RUNS_DIR, run_folder_name
+# from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
+#
+# # Windows can give Execute a console window of its own; elsewhere it runs
+# # unseen and its output is read from its log.
+# CAN_OPEN_CONSOLE = hasattr(subprocess, "CREATE_NEW_CONSOLE")
 #
 # SETTINGS_FILENAME = ".pullmanager-gui.json"
 # # What an older launcher saved as if chosen: it meant "the default" (D57).
@@ -5379,11 +5573,22 @@ if __name__ == "__main__":
 #     ]
 #
 #
-# def command_execute(tools: Tools, paths: Paths, options: Options) -> list[str]:
-#     return [
-#         sys.executable, str(tools.pullmanager), "--execute", str(paths.manifest()),
+# def execute_target(paths: Paths) -> str:
+#     """What `--execute` is given: the project's name (D66), or the manifest's
+#     path when a split folder was typed, since a name finds only `runs/`."""
+#     if paths.split_dir.strip():
+#         return str(paths.manifest())
+#     return paths.run_dir().name
+#
+#
+# def command_execute(
+#     tools: Tools, paths: Paths, options: Options, keep_open: bool = False
+# ) -> list[str]:
+#     command = [
+#         sys.executable, str(tools.pullmanager), "--execute", execute_target(paths),
 #         *_resume_flags(options),
 #     ]
+#     return command + ["--keep-open"] if keep_open else command
 #
 #
 # def child_environment() -> dict[str, str]:
@@ -5475,6 +5680,106 @@ if __name__ == "__main__":
 #         if self._reader is not None:
 #             self._reader.join(timeout=timeout)
 #         return self._process.returncode
+#
+#
+# class ConsoleRunner:
+#     """Execute in a console window of its own (D68).
+#
+#     Its output goes to that window and its log, never through the launcher,
+#     which follows the log instead. Only the latest is tracked: a finished pull
+#     whose window waits for `exit` does not stop another from starting.
+#     """
+#
+#     def __init__(self) -> None:
+#         self._process: subprocess.Popen | None = None
+#         self.command: list[str] = []
+#         self.started = 0.0
+#         self.returncode: int | None = None
+#
+#     @property
+#     def pid(self) -> int | None:
+#         return self._process.pid if self._process is not None else None
+#
+#     @property
+#     def alive(self) -> bool:
+#         return self._process is not None and self.poll() is None
+#
+#     def start(self, command: list[str], cwd: str | Path | None = None) -> None:
+#         if CAN_OPEN_CONSOLE:
+#             streams = {"creationflags": subprocess.CREATE_NEW_CONSOLE}
+#         else:
+#             streams = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+#                        "stderr": subprocess.DEVNULL}
+#         self.command = list(command)
+#         self.returncode = None
+#         self.started = time.time()
+#         self._process = subprocess.Popen(
+#             command, cwd=str(cwd) if cwd else None, env=child_environment(), **streams
+#         )
+#
+#     def poll(self) -> int | None:
+#         if self._process is not None:
+#             self.returncode = self._process.poll()
+#         return self.returncode
+#
+#     def stop(self) -> None:
+#         if self.alive:
+#             self._process.terminate()
+#
+#     def wait(self, timeout: float | None = None) -> int | None:
+#         if self._process is None:
+#             return None
+#         self._process.wait(timeout=timeout)
+#         return self.poll()
+#
+#
+# def exit_code_words(code: int | None) -> str:
+#     """`3221225794 (0xC0000142)`: Windows failures read better in hex."""
+#     if code is None:
+#         return "none"
+#     if code > 0xFFFF:
+#         return f"{code} (0x{code & 0xFFFFFFFF:08X})"
+#     return str(code)
+#
+#
+# def pull_log(manifest: Path | None, lock: LockInfo | None = None) -> Path | None:
+#     """The log to show: the one the live Execute writes, else the newest."""
+#     if manifest is None:
+#         return None
+#     if lock is not None and lock.log:
+#         path = Path(lock.log)  # written absolute by Execute
+#         if path.is_file():
+#             return path
+#     return newest_log(manifest)
+#
+#
+# class LogFollower:
+#     """What a growing log has added since it was last read."""
+#
+#     def __init__(self) -> None:
+#         self.path: Path | None = None
+#         self._position = 0
+#         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+#
+#     def read(self, path: Path | None) -> tuple[bool, str]:
+#         """(switched, text). Switched means a different log from last time,
+#         and the text is then all of it; otherwise only what is new."""
+#         switched = path != self.path
+#         if switched:
+#             self.path = path
+#             self._position = 0
+#             # A character cut in two by a read is completed by the next.
+#             self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+#         if path is None:
+#             return switched, ""
+#         try:
+#             with open(path, "rb") as handle:
+#                 handle.seek(self._position)
+#                 data = handle.read()
+#         except OSError:
+#             return switched, ""
+#         self._position += len(data)
+#         return switched, self._decoder.decode(data)
 #
 #
 # @dataclass
@@ -5846,7 +6151,7 @@ if __name__ == "__main__":
 #     return blocks
 #
 # === END FILE: pullmanager/local_sql.py ===
-# === BEGIN FILE: pullmanager/lock.py SHA256: 0a38c5f43d328b2fcfa8bdc7e14a892f73b369bea1f6b79c814a84bdbd528f4f SIZE: 7454 ===
+# === BEGIN FILE: pullmanager/lock.py SHA256: b99f5a55451667cf026963e9f652ab3116c260519874d10003f4e8760e4c621a SIZE: 8125 ===
 # """The lock a running Execute holds on its manifest (D67).
 #
 # `running` in the manifest cannot say whether a pull is running now: a pull
@@ -5908,6 +6213,7 @@ if __name__ == "__main__":
 #     started: float
 #     heartbeat: float
 #     token: str = ""
+#     log: str = ""  # the log its Execute writes (D68)
 #
 #     def age(self, now: float | None = None) -> float:
 #         return (time.time() if now is None else now) - self.heartbeat
@@ -5966,6 +6272,7 @@ if __name__ == "__main__":
 #         started=number("started"),
 #         heartbeat=number("heartbeat"),
 #         token=str(data.get("token") or ""),
+#         log=str(data.get("log") or ""),
 #     )
 #
 #
@@ -5993,8 +6300,9 @@ if __name__ == "__main__":
 #     """Held by `--execute` for as long as it runs: `with PullLock(path): ...`."""
 #
 #     def __init__(self, manifest: str | Path, *, interval: float = HEARTBEAT_SECONDS,
-#                  clock=time.time) -> None:
+#                  clock=time.time, log: str | Path | None = None) -> None:
 #         self.manifest = Path(manifest)
+#         self.log = str(log or "")
 #         self.path = lock_path(manifest)
 #         self.interval = interval
 #         self.clock = clock
@@ -6019,6 +6327,7 @@ if __name__ == "__main__":
 #             "heartbeat": self.clock(),
 #             "token": self.token,
 #             "manifest": str(self.manifest),
+#             "log": self.log,
 #         }, indent=2) + "\n"
 #
 #     def acquire(self) -> None:
@@ -6070,6 +6379,22 @@ if __name__ == "__main__":
 #                 self.path.unlink()
 #             except OSError:
 #                 pass
+#
+#
+# def clear_lock_of(manifest: str | Path, pid: int | None) -> bool:
+#     """Remove the lock of a process the launcher ended with Stop.
+#
+#     Ended from outside, it could not remove its own lock, which would hold the
+#     pull for 2 minutes. Only that process's lock is removed.
+#     """
+#     held = read_lock(manifest)
+#     if held is None or pid is None or held.pid != pid:
+#         return False
+#     try:
+#         held.path.unlink()
+#     except OSError:
+#         return False
+#     return True
 #
 # === END FILE: pullmanager/lock.py ===
 # === BEGIN FILE: pullmanager/manifest.py SHA256: 95157b77cdb330a2f047b82c50cd932e625967c7f847e1e004135c60f5812716 SIZE: 12466 ===
@@ -6852,7 +7177,7 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
-# === BEGIN FILE: pullmanager/pulls.py SHA256: 6a646275b4a4072dc53f032adc0711a8151e1b5194b31bf6f6e9bb3f18e0994b SIZE: 9637 ===
+# === BEGIN FILE: pullmanager/pulls.py SHA256: 7c848a772e31d100c210535124e40e30c8259b5b6e1f19a1c6a76cd1bfa54838 SIZE: 10387 ===
 # """Finding a pull by its project's name, and listing the pulls there are (D66).
 #
 # A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
@@ -6875,6 +7200,7 @@ if __name__ == "__main__":
 #
 # RUNS_DIR = "runs"
 # SPLIT_DIR = "split"
+# LOGS_DIR = "logs"
 # MANIFEST_FILENAME = "pullmanifest.yaml"
 # # Dropped from a transfer YAML's file name to name its run folder (D57).
 # RUN_NAME_SUFFIXES = ("_transfer", "_temp")
@@ -6920,6 +7246,27 @@ if __name__ == "__main__":
 #     here = Path(cwd or Path.cwd()).resolve()
 #     beside = Path(__file__).resolve().parents[2]
 #     return [here] if beside == here else [here, beside]
+#
+#
+# def run_folder(manifest: str | Path) -> Path:
+#     """`runs/<project>` for its split's manifest; the manifest's own folder
+#     for one kept anywhere else."""
+#     manifest = Path(manifest)
+#     return manifest.parent.parent if manifest.parent.name == SPLIT_DIR else manifest.parent
+#
+#
+# def logs_folder(manifest: str | Path) -> Path:
+#     """Where Execute writes what it prints (D68): `runs/<project>/logs`."""
+#     return run_folder(manifest) / LOGS_DIR
+#
+#
+# def newest_log(manifest: str | Path) -> Path | None:
+#     """The latest `execute-<date>-<time>.log`; the names sort by time."""
+#     try:
+#         logs = sorted(logs_folder(manifest).glob("execute-*.log"))
+#     except OSError:
+#         return None
+#     return logs[-1] if logs else None
 #
 #
 # def is_manifest_file(path: Path) -> bool:
@@ -7199,6 +7546,88 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
+# === BEGIN FILE: pullmanager/runlog.py SHA256: 8b045cf4349d9ca485d1892776172f228301c94e5724fc8e64f4051e3b982c86 SIZE: 2454 ===
+# """Everything Execute prints, written to a log as well (D68).
+#
+# However Execute is started (its own console window, a terminal, the Mac),
+# what it prints also goes to `runs/<project>/logs/execute-<date>-<time>.log`,
+# flushed line by line, so the launcher's Pull Log tab can follow it and it is
+# kept after every window is closed. It is plain text, the same lines as the
+# terminal (D70).
+# """
+#
+# from __future__ import annotations
+#
+# import contextlib
+# import sys
+# from datetime import datetime
+# from pathlib import Path
+# from typing import Iterator, TextIO
+#
+# from .pulls import logs_folder
+#
+#
+# class Tee:
+#     """A stream that writes to the console and the log alike.
+#
+#     The console may be missing (no window to write to) or closed; the log is
+#     still written.
+#     """
+#
+#     def __init__(self, stream: TextIO | None, log: TextIO) -> None:
+#         self.stream = stream
+#         self.log = log
+#
+#     def write(self, text: str) -> int:
+#         if self.stream is not None:
+#             try:
+#                 self.stream.write(text)
+#             except (OSError, ValueError):
+#                 self.stream = None
+#         self.log.write(text)
+#         return len(text)
+#
+#     def flush(self) -> None:
+#         if self.stream is not None:
+#             try:
+#                 self.stream.flush()
+#             except (OSError, ValueError):
+#                 self.stream = None
+#         self.log.flush()
+#
+#     def isatty(self) -> bool:
+#         return bool(self.stream is not None and self.stream.isatty())
+#
+#     @property
+#     def encoding(self) -> str:
+#         return getattr(self.stream, "encoding", None) or "utf-8"
+#
+#
+# def new_log_path(manifest: str | Path, now: datetime | None = None) -> Path:
+#     folder = logs_folder(manifest)
+#     folder.mkdir(parents=True, exist_ok=True)
+#     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+#     path = folder / f"execute-{stamp}.log"
+#     number = 2
+#     while path.exists():
+#         path = folder / f"execute-{stamp}-{number}.log"
+#         number += 1
+#     return path
+#
+#
+# @contextlib.contextmanager
+# def execute_log(manifest: str | Path) -> Iterator[Path]:
+#     """Copy stdout and stderr into a new log for as long as the block runs."""
+#     path = new_log_path(manifest)
+#     with open(path, "x", encoding="utf-8", newline="\n", buffering=1) as log:
+#         saved = sys.stdout, sys.stderr
+#         sys.stdout, sys.stderr = Tee(saved[0], log), Tee(saved[1], log)
+#         try:
+#             yield path
+#         finally:
+#             sys.stdout, sys.stderr = saved
+#
+# === END FILE: pullmanager/runlog.py ===
 # === BEGIN FILE: pullmanager/server_sql.py SHA256: 7e64754b9265096582c47c7952842c16916f3238348e7c5271c5b0c42fc3e6f2 SIZE: 13872 ===
 # """Cosmos-side SQL.
 #
@@ -9490,7 +9919,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ffde5c3b4ebdf7bdde9f9b0787b29ad0af3f8822fcced6a8da7564497153159b SIZE: 11647 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 0e0f91f4b00aabfe22aa4f590e01c6f7fe0a89f9a59a1243a1b4c003ae64968f SIZE: 16436 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -9743,6 +10172,130 @@ if __name__ == "__main__":
 #         self.assertEqual(self.states()["Validate"], "normal")
 #
 #
+# class FakeConsole:
+#     """Execute's own window, standing in for the process."""
+#
+#     def __init__(self, returncode=None):
+#         self.command = None
+#         self.started = 0.0
+#         self.returncode = returncode
+#         self.pid = 4242
+#         self.stopped = False
+#
+#     @property
+#     def alive(self):
+#         return self.command is not None and self.returncode is None
+#
+#     def start(self, command, cwd=None):
+#         self.command, self.cwd, self.started = command, cwd, time.time()
+#
+#     def stop(self):
+#         self.stopped = True
+#         self.returncode = 1
+#
+#     def wait(self, timeout=None):
+#         return self.returncode
+#
+#     def poll(self):
+#         return self.returncode
+#
+#
+# class ConsoleTests(GuiTestCase):
+#     """D68: Execute opens its own window; the Pull Log tab follows its log."""
+#
+#     def setUp(self):
+#         super().setUp()
+#         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+#         self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+#         dump_yaml(SAMPLE_MANIFEST, self.manifest)
+#         self.logs = self.manifest.parent.parent / "logs"
+#         self.app.console = self.console = FakeConsole()
+#         self.messagebox.askokcancel.return_value = True
+#         self.messagebox.askyesno.return_value = True
+#
+#     def pull_log(self):
+#         return "".join(call.args[1] for call in self.app.pull_output.insert.call_args_list)
+#
+#     def write_log(self, text, name="execute-20260925-140300.log"):
+#         self.logs.mkdir(parents=True, exist_ok=True)
+#         with open(self.logs / name, "a", encoding="utf-8") as handle:
+#             handle.write(text)
+#         return self.logs / name
+#
+#     def lock(self, log):
+#         import json
+#
+#         from ..lock import lock_path
+#
+#         now = time.time()
+#         lock_path(self.manifest).write_text(json.dumps(
+#             {"pid": 4242, "machine": "VM", "started": now, "heartbeat": now, "log": str(log)}
+#         ), encoding="utf-8")
+#
+#     def test_execute_opens_its_window_on_the_projects_name(self):
+#         from .. import launcher
+#
+#         with mock.patch.object(launcher, "CAN_OPEN_CONSOLE", True):
+#             self.app.on_execute()
+#         command = self.console.command
+#         self.assertEqual(command[command.index("--execute") + 1], "IBD_Ancestry")
+#         self.assertIn("--keep-open", command)
+#         self.assertEqual(self.console.cwd, self.work)
+#         self.assertFalse(self.app.runner.running, "it does not run inside the window")
+#         self.app.notebook.select.assert_called_with(self.app.pull_tab)
+#
+#     def test_the_pull_log_follows_the_live_executes_log(self):
+#         self.app.on_execute()
+#         log = self.write_log("Execute IBD_Ancestry: started\n")
+#         self.lock(log)
+#         self.app.watch_once()
+#         self.assertIn("Execute IBD_Ancestry: started", self.pull_log())
+#         self.write_log("=== CrohnsblackPatients ===\n")
+#         self.app.watch_once()
+#         self.assertEqual(self.pull_log().count("Execute IBD_Ancestry: started"), 1)
+#         self.assertIn("=== CrohnsblackPatients ===", self.pull_log())
+#
+#     def test_a_window_that_ends_before_its_log_gives_the_terminal_command(self):
+#         # What the VM did from the launcher: ended at once, printing nothing.
+#         self.app.on_execute()
+#         self.console.returncode = 3221225794
+#         self.app.watch_once()
+#         message = self.messagebox.showerror.call_args.args[1]
+#         self.assertIn("0xC0000142", message)
+#         self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+#         self.assertIn(str(self.work), message)
+#         self.assertIn("python pullmanager.py --execute IBD_Ancestry", self.pull_log())
+#         self.assertEqual(self.app.buttons["Execute"].configure.call_args.kwargs["state"], "normal")
+#
+#     def test_a_window_that_could_not_open_says_so_the_same_way(self):
+#         def refuse(command, cwd=None):
+#             raise OSError("Access is denied")
+#
+#         self.console.start = refuse
+#         self.app.on_execute()
+#         message = self.messagebox.showerror.call_args.args[1]
+#         self.assertIn("Access is denied", message)
+#         self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+#
+#     def test_a_pull_that_ran_ends_without_an_error(self):
+#         self.app.on_execute()
+#         self.write_log("Execute IBD_Ancestry: started\n")
+#         self.app.watch_once()
+#         self.console.returncode = 0
+#         self.app.watch_once()
+#         self.messagebox.showerror.assert_not_called()
+#         self.assertIn("exit code 0", self.pull_log())
+#
+#     def test_stop_ends_the_pull_and_frees_its_lock(self):
+#         from ..lock import read_lock
+#
+#         self.app.on_execute()
+#         self.lock(self.write_log("started\n"))
+#         self.app.on_stop()
+#         self.assertTrue(self.console.stopped)
+#         self.assertIsNone(read_lock(self.manifest))
+#
+#
 # class DefaultTests(GuiTestCase):
 #     """D63: `python pullmanager.py` with nothing after it opens the launcher."""
 #
@@ -9800,7 +10353,7 @@ if __name__ == "__main__":
 #         self.assertIn("transfer YAML", message)
 #
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: b3db54e5931bc2600768abdbfcf06869eb1ad75ee65923d10671c27d695e1143 SIZE: 14598 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 527de4133e5b260810b7388bff63b5186155b0af4726021b4934b62fafb75976 SIZE: 18576 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -9930,6 +10483,16 @@ if __name__ == "__main__":
 #                 command = command_execute(TOOLS, Paths(split_dir="s"), options)
 #                 self.assertNotIn("--resume-partial", command)
 #
+#     def test_execute_passes_a_typed_split_folders_manifest(self):
+#         # A name finds only runs/<project>/split, so a chosen folder goes by path.
+#         command = command_execute(TOOLS, Paths(template="T_transfer.yaml", split_dir="s"), Options())
+#         self.assertEqual(command[command.index("--execute") + 1], str(Path("s") / "pullmanifest.yaml"))
+#
+#     def test_its_console_is_kept_open_until_exit_is_typed(self):
+#         paths = Paths(template="T_transfer.yaml")
+#         self.assertIn("--keep-open", command_execute(TOOLS, paths, Options(), keep_open=True))
+#         self.assertNotIn("--keep-open", command_execute(TOOLS, paths, Options()))
+#
 #     def test_child_output_is_unbuffered_utf8(self):
 #         # Buffered, a long pull prints nothing until it ends; without UTF-8 a
 #         # Windows code page mangles anything outside ASCII.
@@ -9950,7 +10513,9 @@ if __name__ == "__main__":
 #         dry_run = command_dry_run(TOOLS, paths, Options())
 #         self.assertIn(str(Path(split) / "pullmanifest.yaml"), dry_run)
 #         self.assertEqual(dry_run[dry_run.index("--out-dir") + 1], str(Path("runs") / "IBD_Ancestry" / "sql"))
-#         self.assertIn(str(Path(split) / "pullmanifest.yaml"), command_execute(TOOLS, paths, Options()))
+#         # Execute is given the project's name, which finds that manifest (D66).
+#         execute = command_execute(TOOLS, paths, Options())
+#         self.assertEqual(execute[execute.index("--execute") + 1], "IBD_Ancestry")
 #
 #     def test_the_share_folder_name_plays_no_part(self):
 #         # The repo sits in "Project D139081"; the project is named by its file.
@@ -10042,6 +10607,78 @@ if __name__ == "__main__":
 #         self.addCleanup(runner.stop)
 #         with self.assertRaises(LauncherError):
 #             runner.start([sys.executable, "-c", "pass"], cwd=self.tmp)
+#
+#
+# class ConsoleRunnerTests(TempDirTestCase):
+#     """D68: Execute's own window. On the Mac there is none: it runs unseen."""
+#
+#     def test_runs_the_command_and_reports_its_exit_code(self):
+#         runner = launcher.ConsoleRunner()
+#         marker = self.tmp / "ran.txt"
+#         runner.start([sys.executable, "-c", f"open({str(marker)!r}, 'w').write('x'); raise SystemExit(3)"],
+#                      cwd=self.tmp)
+#         self.assertEqual(runner.wait(timeout=15), 3)
+#         self.assertFalse(runner.alive)
+#         self.assertTrue(marker.is_file())
+#
+#     def test_stop_ends_it(self):
+#         runner = launcher.ConsoleRunner()
+#         runner.start([sys.executable, "-c", "import time; time.sleep(60)"], cwd=self.tmp)
+#         self.assertTrue(runner.alive)
+#         runner.stop()
+#         runner.wait(timeout=10)
+#         self.assertFalse(runner.alive)
+#
+#     def test_windows_failures_are_shown_in_hex(self):
+#         self.assertEqual(launcher.exit_code_words(3221225794), "3221225794 (0xC0000142)")
+#         self.assertEqual(launcher.exit_code_words(1), "1")
+#
+#
+# class LogFollowerTests(TempDirTestCase):
+#     def test_reads_only_what_was_added(self):
+#         log = self.tmp / "execute-20260925-140300.log"
+#         log.write_text("one\n", encoding="utf-8")
+#         follower = launcher.LogFollower()
+#         self.assertEqual(follower.read(log), (True, "one\n"))
+#         with open(log, "a", encoding="utf-8") as handle:
+#             handle.write("two\n")
+#         self.assertEqual(follower.read(log), (False, "two\n"))
+#         self.assertEqual(follower.read(log), (False, ""))
+#
+#     def test_a_character_cut_by_a_read_arrives_whole(self):
+#         log = self.tmp / "execute.log"
+#         data = "Crohn’s\n".encode("utf-8")
+#         cut = data.index("’".encode("utf-8")) + 1
+#         log.write_bytes(data[:cut])
+#         follower = launcher.LogFollower()
+#         _, first = follower.read(log)
+#         with open(log, "ab") as handle:
+#             handle.write(data[cut:])
+#         _, second = follower.read(log)
+#         self.assertEqual(first + second, "Crohn’s\n")
+#
+#     def test_a_new_log_starts_over(self):
+#         first, second = self.tmp / "a.log", self.tmp / "b.log"
+#         first.write_text("old\n", encoding="utf-8")
+#         second.write_text("new\n", encoding="utf-8")
+#         follower = launcher.LogFollower()
+#         follower.read(first)
+#         self.assertEqual(follower.read(second), (True, "new\n"))
+#
+#     def test_the_live_executes_log_is_shown_before_a_newer_one(self):
+#         from ..lock import LockInfo
+#
+#         manifest = self.tmp / "runs" / "P" / "split" / "pullmanifest.yaml"
+#         logs = self.tmp / "runs" / "P" / "logs"
+#         logs.mkdir(parents=True)
+#         running = logs / "execute-20260925-140300.log"
+#         refused = logs / "execute-20260925-150000.log"  # a second Execute, refused
+#         running.write_text("pulling\n", encoding="utf-8")
+#         refused.write_text("already executing\n", encoding="utf-8")
+#         lock = LockInfo(path=manifest.with_suffix(".lock"), pid=1, machine="VM", started=0,
+#                         heartbeat=time.time(), log=str(running))
+#         self.assertEqual(launcher.pull_log(manifest, lock), running)
+#         self.assertEqual(launcher.pull_log(manifest, None), refused)
 #
 #
 # class StatusRowTests(TempDirTestCase):
@@ -10137,7 +10774,7 @@ if __name__ == "__main__":
 #         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
 #
 # === END FILE: pullmanager/tests/test_launcher.py ===
-# === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: a4930ab0b021080a945987209f34db16399411bffa95ab970c2024634f2a0d29 SIZE: 7742 ===
+# === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: 1ed2d719f34c5fff022816b4295f841c259afedc334d8da5b263297ae1361b9c SIZE: 11311 ===
 # """The lock a running Execute holds on its manifest (D67)."""
 #
 # from __future__ import annotations
@@ -10319,6 +10956,98 @@ if __name__ == "__main__":
 #                 self.write_lock(age)
 #                 self.assertEqual(make_yaml.executing_pull(self.manifest.parent) is not None, live)
 #                 self.assertEqual(live_lock(self.manifest) is not None, live)
+#
+#
+# class ExecuteLogTests(LockTestCase):
+#     """D68: whatever starts it, Execute writes what it prints to a log."""
+#
+#     def execute(self, connect_fn):
+#         args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+#             code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect_fn)
+#         return code, out.getvalue()
+#
+#     def logs(self):
+#         return sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+#
+#     def test_the_log_holds_what_the_terminal_showed(self):
+#         recorded = []
+#
+#         def connect(*args, **kwargs):
+#             recorded.append(read_lock(self.manifest).log)
+#             raise DatabaseError("login failed for PROJECTS")
+#
+#         code, out = self.execute(connect)
+#         [log] = self.logs()
+#         text = log.read_text(encoding="utf-8")
+#         self.assertIn("login failed for PROJECTS", out)
+#         self.assertEqual(text, out)
+#         self.assertTrue(text.startswith("Execute IBD_Ancestry: "))
+#         # The lock names it, whole, for the launcher to follow.
+#         self.assertEqual(recorded, [str(log.resolve())])
+#
+#     def test_a_refused_execute_says_why_in_its_log(self):
+#         self.write_lock(20)
+#         code, _ = self.execute(lambda *a, **k: None)
+#         self.assertEqual(code, 1)
+#         [log] = self.logs()
+#         self.assertIn("already executing", log.read_text(encoding="utf-8"))
+#
+#     def test_ctrl_c_stops_it_releasing_the_lock(self):
+#         def connect(*args, **kwargs):
+#             raise KeyboardInterrupt
+#
+#         code, out = self.execute(connect)
+#         self.assertEqual(code, 130)
+#         self.assertIn("Stopped (Ctrl+C)", out)
+#         self.assertIsNone(read_lock(self.manifest))
+#
+#
+# class KeepOpenTests(LockTestCase):
+#     """D68: the console stays until exit is typed; Enter alone does nothing."""
+#
+#     def test_only_exit_closes_it(self):
+#         answers = iter(["", "close", "  EXIT  ", "never asked"])
+#         asked = []
+#
+#         def answer(prompt):
+#             asked.append(prompt)
+#             return next(answers)
+#
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out):
+#             cli.keep_open(0, answer)
+#         self.assertEqual(len(asked), 3)
+#         self.assertIn(
+#             "Safe to close: the pull has finished (exit code 0). "
+#             "Type exit and press Enter to close this window.",
+#             out.getvalue(),
+#         )
+#
+#     def test_the_command_waits_after_a_failure_too(self):
+#         # An unknown name ends at once; its window must still stay to be read.
+#         answers = iter(["exit"])
+#         out, err = io.StringIO(), io.StringIO()
+#         with mock.patch.object(pulls, "home_folders", lambda cwd=None: [self.work]), \
+#                 contextlib.chdir(self.work), \
+#                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+#             code = cli.main(["--execute", "Nope", "--keep-open"], input_fn=lambda _: next(answers))
+#         self.assertEqual(code, 1)
+#         self.assertIn("No pull named 'Nope'", err.getvalue())
+#         self.assertIn("exit code 1", out.getvalue())
+#
+#
+# class ClearLockTests(LockTestCase):
+#     def test_stop_clears_only_the_lock_of_the_process_it_ended(self):
+#         from ..lock import clear_lock_of
+#
+#         self.write_lock(20)
+#         self.assertFalse(clear_lock_of(self.manifest, 1111))
+#         self.assertIsNotNone(read_lock(self.manifest))
+#         self.assertTrue(clear_lock_of(self.manifest, 4242))
+#         self.assertIsNone(read_lock(self.manifest))
+#
 #
 # === END FILE: pullmanager/tests/test_lock.py ===
 # === BEGIN FILE: pullmanager/tests/test_manifest.py SHA256: 78f8843188969abfa24793cbd298a3e24ede337d3ebb80a5a3a7c1c365f42ff7 SIZE: 14639 ===

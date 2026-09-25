@@ -127,6 +127,16 @@ class CommandTests(unittest.TestCase):
                 command = command_execute(TOOLS, Paths(split_dir="s"), options)
                 self.assertNotIn("--resume-partial", command)
 
+    def test_execute_passes_a_typed_split_folders_manifest(self):
+        # A name finds only runs/<project>/split, so a chosen folder goes by path.
+        command = command_execute(TOOLS, Paths(template="T_transfer.yaml", split_dir="s"), Options())
+        self.assertEqual(command[command.index("--execute") + 1], str(Path("s") / "pullmanifest.yaml"))
+
+    def test_its_console_is_kept_open_until_exit_is_typed(self):
+        paths = Paths(template="T_transfer.yaml")
+        self.assertIn("--keep-open", command_execute(TOOLS, paths, Options(), keep_open=True))
+        self.assertNotIn("--keep-open", command_execute(TOOLS, paths, Options()))
+
     def test_child_output_is_unbuffered_utf8(self):
         # Buffered, a long pull prints nothing until it ends; without UTF-8 a
         # Windows code page mangles anything outside ASCII.
@@ -147,7 +157,9 @@ class RunFolderTests(unittest.TestCase):
         dry_run = command_dry_run(TOOLS, paths, Options())
         self.assertIn(str(Path(split) / "pullmanifest.yaml"), dry_run)
         self.assertEqual(dry_run[dry_run.index("--out-dir") + 1], str(Path("runs") / "IBD_Ancestry" / "sql"))
-        self.assertIn(str(Path(split) / "pullmanifest.yaml"), command_execute(TOOLS, paths, Options()))
+        # Execute is given the project's name, which finds that manifest (D66).
+        execute = command_execute(TOOLS, paths, Options())
+        self.assertEqual(execute[execute.index("--execute") + 1], "IBD_Ancestry")
 
     def test_the_share_folder_name_plays_no_part(self):
         # The repo sits in "Project D139081"; the project is named by its file.
@@ -239,6 +251,78 @@ class CommandRunnerTests(TempDirTestCase):
         self.addCleanup(runner.stop)
         with self.assertRaises(LauncherError):
             runner.start([sys.executable, "-c", "pass"], cwd=self.tmp)
+
+
+class ConsoleRunnerTests(TempDirTestCase):
+    """D68: Execute's own window. On the Mac there is none: it runs unseen."""
+
+    def test_runs_the_command_and_reports_its_exit_code(self):
+        runner = launcher.ConsoleRunner()
+        marker = self.tmp / "ran.txt"
+        runner.start([sys.executable, "-c", f"open({str(marker)!r}, 'w').write('x'); raise SystemExit(3)"],
+                     cwd=self.tmp)
+        self.assertEqual(runner.wait(timeout=15), 3)
+        self.assertFalse(runner.alive)
+        self.assertTrue(marker.is_file())
+
+    def test_stop_ends_it(self):
+        runner = launcher.ConsoleRunner()
+        runner.start([sys.executable, "-c", "import time; time.sleep(60)"], cwd=self.tmp)
+        self.assertTrue(runner.alive)
+        runner.stop()
+        runner.wait(timeout=10)
+        self.assertFalse(runner.alive)
+
+    def test_windows_failures_are_shown_in_hex(self):
+        self.assertEqual(launcher.exit_code_words(3221225794), "3221225794 (0xC0000142)")
+        self.assertEqual(launcher.exit_code_words(1), "1")
+
+
+class LogFollowerTests(TempDirTestCase):
+    def test_reads_only_what_was_added(self):
+        log = self.tmp / "execute-20260925-140300.log"
+        log.write_text("one\n", encoding="utf-8")
+        follower = launcher.LogFollower()
+        self.assertEqual(follower.read(log), (True, "one\n"))
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write("two\n")
+        self.assertEqual(follower.read(log), (False, "two\n"))
+        self.assertEqual(follower.read(log), (False, ""))
+
+    def test_a_character_cut_by_a_read_arrives_whole(self):
+        log = self.tmp / "execute.log"
+        data = "Crohn’s\n".encode("utf-8")
+        cut = data.index("’".encode("utf-8")) + 1
+        log.write_bytes(data[:cut])
+        follower = launcher.LogFollower()
+        _, first = follower.read(log)
+        with open(log, "ab") as handle:
+            handle.write(data[cut:])
+        _, second = follower.read(log)
+        self.assertEqual(first + second, "Crohn’s\n")
+
+    def test_a_new_log_starts_over(self):
+        first, second = self.tmp / "a.log", self.tmp / "b.log"
+        first.write_text("old\n", encoding="utf-8")
+        second.write_text("new\n", encoding="utf-8")
+        follower = launcher.LogFollower()
+        follower.read(first)
+        self.assertEqual(follower.read(second), (True, "new\n"))
+
+    def test_the_live_executes_log_is_shown_before_a_newer_one(self):
+        from ..lock import LockInfo
+
+        manifest = self.tmp / "runs" / "P" / "split" / "pullmanifest.yaml"
+        logs = self.tmp / "runs" / "P" / "logs"
+        logs.mkdir(parents=True)
+        running = logs / "execute-20260925-140300.log"
+        refused = logs / "execute-20260925-150000.log"  # a second Execute, refused
+        running.write_text("pulling\n", encoding="utf-8")
+        refused.write_text("already executing\n", encoding="utf-8")
+        lock = LockInfo(path=manifest.with_suffix(".lock"), pid=1, machine="VM", started=0,
+                        heartbeat=time.time(), log=str(running))
+        self.assertEqual(launcher.pull_log(manifest, lock), running)
+        self.assertEqual(launcher.pull_log(manifest, None), refused)
 
 
 class StatusRowTests(TempDirTestCase):

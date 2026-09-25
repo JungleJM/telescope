@@ -142,25 +142,70 @@ def _report_exclusions(left_out, failures) -> None:
 
 
 def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
-    """Pull the manifest, holding its lock throughout (D67)."""
-    from .lock import LockHeld, PullLock, clock_time
+    """Pull the manifest, writing a log (D68) and holding its lock (D67)."""
+    from datetime import datetime
 
-    pull_lock = PullLock(manifest.path)
-    try:
-        pull_lock.acquire()
-    except LockHeld as exc:
-        print(f"ERROR {exc}", file=sys.stderr)
-        return 1
-    try:
-        if pull_lock.replaced:
-            stale = pull_lock.replaced
+    from .lock import LockHeld, PullLock, clock_time, pull_name
+    from .runlog import execute_log
+
+    with execute_log(manifest.path) as log:
+        print(f"Execute {pull_name(manifest.path)}: {manifest.path}")
+        print(f"Started {datetime.now():%Y-%m-%d %H:%M:%S}, process {os.getpid()}. "
+              f"Also written to {shown(log)}")
+        pull_lock = PullLock(manifest.path, log=log.resolve())
+        try:
+            pull_lock.acquire()
+        except LockHeld as exc:
+            print(f"ERROR {exc}", file=sys.stderr)
+            return 1
+        try:
+            if pull_lock.replaced:
+                stale = pull_lock.replaced
+                print(
+                    f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
+                    f"(last heartbeat {clock_time(stale.heartbeat)})."
+                )
+            return _execute(manifest, args, connect_fn)
+        except KeyboardInterrupt:
             print(
-                f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
-                f"(last heartbeat {clock_time(stale.heartbeat)})."
+                "\nStopped (Ctrl+C). Whatever it was working on stays 'running' in the "
+                "manifest; the next --execute pulls it again."
             )
-        return _execute(manifest, args, connect_fn)
-    finally:
-        pull_lock.release()
+            return 130
+        finally:
+            pull_lock.release()
+
+
+def keep_open(code: int, input_fn=input) -> None:
+    """Hold the console window Execute runs in until `exit` is typed (D68).
+
+    Only `exit` closes it, so an Enter pressed by accident does not lose the
+    output. The pull is over by now and its lock released.
+    """
+    print()
+    print(
+        f"Safe to close: the pull has finished (exit code {code}). "
+        "Type exit and press Enter to close this window."
+    )
+    while True:
+        try:
+            answer = input_fn("> ")
+        except (EOFError, KeyboardInterrupt):
+            return
+        if answer.strip().lower() == "exit":
+            return
+
+
+def set_console_title(text: str) -> None:
+    """Name the console window, on Windows; elsewhere nothing."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleTitleW(text)
+    except Exception:
+        pass
 
 
 def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
@@ -275,6 +320,12 @@ def build_parser() -> argparse.ArgumentParser:
              "Takes a project's name or a manifest; with neither, lists the pulls.",
     )
     parser.add_argument(
+        "--keep-open",
+        action="store_true",
+        help="After the command, keep the window open until exit is typed. The "
+             "launcher's Execute uses it for the console window it opens.",
+    )
+    parser.add_argument(
         "--running",
         action="store_true",
         help="List every pull under runs/, whether it is executing, and its command.",
@@ -317,13 +368,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, input_fn=input) -> int:
     parser = build_parser()
     raw = sys.argv[1:] if argv is None else list(argv)
     args = parser.parse_args(raw)
     if not raw:
         # The launcher is what is run most (D63); the commands take arguments.
         args.gui = True
+    if args.keep_open:
+        set_console_title(f"Pullmanager: executing {args.manifest or ''}".rstrip())
+    code = dispatch(parser, args)
+    if args.keep_open:
+        keep_open(code, input_fn)
+    return code
+
+
+def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
     if args.tdd is not None:
         from .tests import run as run_tests

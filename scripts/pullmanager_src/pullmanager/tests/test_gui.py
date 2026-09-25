@@ -250,6 +250,130 @@ class RunningPullTests(GuiTestCase):
         self.assertEqual(self.states()["Validate"], "normal")
 
 
+class FakeConsole:
+    """Execute's own window, standing in for the process."""
+
+    def __init__(self, returncode=None):
+        self.command = None
+        self.started = 0.0
+        self.returncode = returncode
+        self.pid = 4242
+        self.stopped = False
+
+    @property
+    def alive(self):
+        return self.command is not None and self.returncode is None
+
+    def start(self, command, cwd=None):
+        self.command, self.cwd, self.started = command, cwd, time.time()
+
+    def stop(self):
+        self.stopped = True
+        self.returncode = 1
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+    def poll(self):
+        return self.returncode
+
+
+class ConsoleTests(GuiTestCase):
+    """D68: Execute opens its own window; the Pull Log tab follows its log."""
+
+    def setUp(self):
+        super().setUp()
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
+        self.logs = self.manifest.parent.parent / "logs"
+        self.app.console = self.console = FakeConsole()
+        self.messagebox.askokcancel.return_value = True
+        self.messagebox.askyesno.return_value = True
+
+    def pull_log(self):
+        return "".join(call.args[1] for call in self.app.pull_output.insert.call_args_list)
+
+    def write_log(self, text, name="execute-20260925-140300.log"):
+        self.logs.mkdir(parents=True, exist_ok=True)
+        with open(self.logs / name, "a", encoding="utf-8") as handle:
+            handle.write(text)
+        return self.logs / name
+
+    def lock(self, log):
+        import json
+
+        from ..lock import lock_path
+
+        now = time.time()
+        lock_path(self.manifest).write_text(json.dumps(
+            {"pid": 4242, "machine": "VM", "started": now, "heartbeat": now, "log": str(log)}
+        ), encoding="utf-8")
+
+    def test_execute_opens_its_window_on_the_projects_name(self):
+        from .. import launcher
+
+        with mock.patch.object(launcher, "CAN_OPEN_CONSOLE", True):
+            self.app.on_execute()
+        command = self.console.command
+        self.assertEqual(command[command.index("--execute") + 1], "IBD_Ancestry")
+        self.assertIn("--keep-open", command)
+        self.assertEqual(self.console.cwd, self.work)
+        self.assertFalse(self.app.runner.running, "it does not run inside the window")
+        self.app.notebook.select.assert_called_with(self.app.pull_tab)
+
+    def test_the_pull_log_follows_the_live_executes_log(self):
+        self.app.on_execute()
+        log = self.write_log("Execute IBD_Ancestry: started\n")
+        self.lock(log)
+        self.app.watch_once()
+        self.assertIn("Execute IBD_Ancestry: started", self.pull_log())
+        self.write_log("=== CrohnsblackPatients ===\n")
+        self.app.watch_once()
+        self.assertEqual(self.pull_log().count("Execute IBD_Ancestry: started"), 1)
+        self.assertIn("=== CrohnsblackPatients ===", self.pull_log())
+
+    def test_a_window_that_ends_before_its_log_gives_the_terminal_command(self):
+        # What the VM did from the launcher: ended at once, printing nothing.
+        self.app.on_execute()
+        self.console.returncode = 3221225794
+        self.app.watch_once()
+        message = self.messagebox.showerror.call_args.args[1]
+        self.assertIn("0xC0000142", message)
+        self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+        self.assertIn(str(self.work), message)
+        self.assertIn("python pullmanager.py --execute IBD_Ancestry", self.pull_log())
+        self.assertEqual(self.app.buttons["Execute"].configure.call_args.kwargs["state"], "normal")
+
+    def test_a_window_that_could_not_open_says_so_the_same_way(self):
+        def refuse(command, cwd=None):
+            raise OSError("Access is denied")
+
+        self.console.start = refuse
+        self.app.on_execute()
+        message = self.messagebox.showerror.call_args.args[1]
+        self.assertIn("Access is denied", message)
+        self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+
+    def test_a_pull_that_ran_ends_without_an_error(self):
+        self.app.on_execute()
+        self.write_log("Execute IBD_Ancestry: started\n")
+        self.app.watch_once()
+        self.console.returncode = 0
+        self.app.watch_once()
+        self.messagebox.showerror.assert_not_called()
+        self.assertIn("exit code 0", self.pull_log())
+
+    def test_stop_ends_the_pull_and_frees_its_lock(self):
+        from ..lock import read_lock
+
+        self.app.on_execute()
+        self.lock(self.write_log("started\n"))
+        self.app.on_stop()
+        self.assertTrue(self.console.stopped)
+        self.assertIsNone(read_lock(self.manifest))
+
+
 class DefaultTests(GuiTestCase):
     """D63: `python pullmanager.py` with nothing after it opens the launcher."""
 

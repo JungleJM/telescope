@@ -20,6 +20,7 @@ from .yaml_io import load_yaml
 
 RUNS_DIR = "runs"
 SPLIT_DIR = "split"
+LOGS_DIR = "logs"
 MANIFEST_FILENAME = "pullmanifest.yaml"
 # Dropped from a transfer YAML's file name to name its run folder (D57).
 RUN_NAME_SUFFIXES = ("_transfer", "_temp")
@@ -65,6 +66,27 @@ def home_folders(cwd: Path | None = None) -> list[Path]:
     here = Path(cwd or Path.cwd()).resolve()
     beside = Path(__file__).resolve().parents[2]
     return [here] if beside == here else [here, beside]
+
+
+def run_folder(manifest: str | Path) -> Path:
+    """`runs/<project>` for its split's manifest; the manifest's own folder
+    for one kept anywhere else."""
+    manifest = Path(manifest)
+    return manifest.parent.parent if manifest.parent.name == SPLIT_DIR else manifest.parent
+
+
+def logs_folder(manifest: str | Path) -> Path:
+    """Where Execute writes what it prints (D68): `runs/<project>/logs`."""
+    return run_folder(manifest) / LOGS_DIR
+
+
+def newest_log(manifest: str | Path) -> Path | None:
+    """The latest `execute-<date>-<time>.log`; the names sort by time."""
+    try:
+        logs = sorted(logs_folder(manifest).glob("execute-*.log"))
+    except OSError:
+        return None
+    return logs[-1] if logs else None
 
 
 def is_manifest_file(path: Path) -> bool:

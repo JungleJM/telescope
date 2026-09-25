@@ -6,22 +6,33 @@ subprocess. That keeps database work out of the UI thread, means a long pull
 cannot freeze the window, gives Stop something real to terminate, and
 guarantees the GUI never behaves differently from the CLI.
 
+Execute runs in a console window of its own (D68), as it would from a
+terminal: started from the window with its output piped back, it failed on the
+VM before printing a line (exit code 0xC0000142). The window follows its log.
+
 Everything testable lives here. The tkinter view only wires widgets to it.
 """
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import queue
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .lock import LockInfo
 from .manifest import Manifest, ManifestError
-from .pulls import MANIFEST_FILENAME, RUNS_DIR, run_folder_name
+from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
+
+# Windows can give Execute a console window of its own; elsewhere it runs
+# unseen and its output is read from its log.
+CAN_OPEN_CONSOLE = hasattr(subprocess, "CREATE_NEW_CONSOLE")
 
 SETTINGS_FILENAME = ".pullmanager-gui.json"
 # What an older launcher saved as if chosen: it meant "the default" (D57).
@@ -140,11 +151,22 @@ def command_dry_run(tools: Tools, paths: Paths, options: Options) -> list[str]:
     ]
 
 
-def command_execute(tools: Tools, paths: Paths, options: Options) -> list[str]:
-    return [
-        sys.executable, str(tools.pullmanager), "--execute", str(paths.manifest()),
+def execute_target(paths: Paths) -> str:
+    """What `--execute` is given: the project's name (D66), or the manifest's
+    path when a split folder was typed, since a name finds only `runs/`."""
+    if paths.split_dir.strip():
+        return str(paths.manifest())
+    return paths.run_dir().name
+
+
+def command_execute(
+    tools: Tools, paths: Paths, options: Options, keep_open: bool = False
+) -> list[str]:
+    command = [
+        sys.executable, str(tools.pullmanager), "--execute", execute_target(paths),
         *_resume_flags(options),
     ]
+    return command + ["--keep-open"] if keep_open else command
 
 
 def child_environment() -> dict[str, str]:
@@ -236,6 +258,106 @@ class CommandRunner:
         if self._reader is not None:
             self._reader.join(timeout=timeout)
         return self._process.returncode
+
+
+class ConsoleRunner:
+    """Execute in a console window of its own (D68).
+
+    Its output goes to that window and its log, never through the launcher,
+    which follows the log instead. Only the latest is tracked: a finished pull
+    whose window waits for `exit` does not stop another from starting.
+    """
+
+    def __init__(self) -> None:
+        self._process: subprocess.Popen | None = None
+        self.command: list[str] = []
+        self.started = 0.0
+        self.returncode: int | None = None
+
+    @property
+    def pid(self) -> int | None:
+        return self._process.pid if self._process is not None else None
+
+    @property
+    def alive(self) -> bool:
+        return self._process is not None and self.poll() is None
+
+    def start(self, command: list[str], cwd: str | Path | None = None) -> None:
+        if CAN_OPEN_CONSOLE:
+            streams = {"creationflags": subprocess.CREATE_NEW_CONSOLE}
+        else:
+            streams = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+                       "stderr": subprocess.DEVNULL}
+        self.command = list(command)
+        self.returncode = None
+        self.started = time.time()
+        self._process = subprocess.Popen(
+            command, cwd=str(cwd) if cwd else None, env=child_environment(), **streams
+        )
+
+    def poll(self) -> int | None:
+        if self._process is not None:
+            self.returncode = self._process.poll()
+        return self.returncode
+
+    def stop(self) -> None:
+        if self.alive:
+            self._process.terminate()
+
+    def wait(self, timeout: float | None = None) -> int | None:
+        if self._process is None:
+            return None
+        self._process.wait(timeout=timeout)
+        return self.poll()
+
+
+def exit_code_words(code: int | None) -> str:
+    """`3221225794 (0xC0000142)`: Windows failures read better in hex."""
+    if code is None:
+        return "none"
+    if code > 0xFFFF:
+        return f"{code} (0x{code & 0xFFFFFFFF:08X})"
+    return str(code)
+
+
+def pull_log(manifest: Path | None, lock: LockInfo | None = None) -> Path | None:
+    """The log to show: the one the live Execute writes, else the newest."""
+    if manifest is None:
+        return None
+    if lock is not None and lock.log:
+        path = Path(lock.log)  # written absolute by Execute
+        if path.is_file():
+            return path
+    return newest_log(manifest)
+
+
+class LogFollower:
+    """What a growing log has added since it was last read."""
+
+    def __init__(self) -> None:
+        self.path: Path | None = None
+        self._position = 0
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+    def read(self, path: Path | None) -> tuple[bool, str]:
+        """(switched, text). Switched means a different log from last time,
+        and the text is then all of it; otherwise only what is new."""
+        switched = path != self.path
+        if switched:
+            self.path = path
+            self._position = 0
+            # A character cut in two by a read is completed by the next.
+            self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        if path is None:
+            return switched, ""
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(self._position)
+                data = handle.read()
+        except OSError:
+            return switched, ""
+        self._position += len(data)
+        return switched, self._decoder.decode(data)
 
 
 @dataclass

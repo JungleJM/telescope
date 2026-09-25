@@ -14,14 +14,15 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import launcher
+from . import launcher, pulls
 from .launcher import LauncherError, Options, Paths
-from .lock import LockInfo, live_lock
+from .lock import LockInfo, clear_lock_of, live_lock
 
 POLL_MS = 100
 STATUS_REFRESH_MS = 3000
-# How often the loaded pull's lock is read (D67), whoever started the pull.
-LOCK_CHECK_MS = 3000
+# How often the loaded pull's lock (D67) and log (D68) are read, whoever
+# started the pull. The status tab refreshes every STATUS_REFRESH_MS of it.
+LOCK_CHECK_MS = 1000
 # After Execute is pressed its buttons stay grey this long waiting for its
 # lock, so they cannot be pressed twice before it appears.
 EXECUTE_GRACE_SECONDS = 60
@@ -60,6 +61,12 @@ class LauncherApp:
         self._next_status_refresh = 0
         self.pull_lock: LockInfo | None = None  # the loaded pull's live lock
         self._execute_pressed: float | None = None
+        # Execute runs in a console window of its own; its log is followed (D68).
+        self.console = launcher.ConsoleRunner()
+        self.follower = launcher.LogFollower()
+        self._console_log_seen = False
+        self._console_handled = True
+        self._status_countdown = 0
 
         root.title(f"Pullmanager - {workdir}")
         root.geometry("1100x760")
@@ -124,6 +131,14 @@ class LauncherApp:
         self.output.pack(fill="both", expand=True)
         # Validate, Export split and Preview SQL, which run inside the window.
         notebook.add(output_tab, text="Validation Output")
+
+        # Execute's log, however it was started (D68, D71).
+        self.pull_tab = ttk.Frame(notebook)
+        self.pull_output = scrolledtext.ScrolledText(
+            self.pull_tab, wrap="none", font=("Consolas", 10), state="disabled"
+        )
+        self.pull_output.pack(fill="both", expand=True)
+        notebook.add(self.pull_tab, text="Pull Log")
 
         status_tab = ttk.Frame(notebook)
         # Refresh and the manifest it reads, above the tree they describe.
@@ -204,23 +219,67 @@ class LauncherApp:
             "This runs against Cosmos and Projects and updates the manifest.\n\nContinue?",
         ):
             return
+        try:
+            command = launcher.command_execute(
+                self.tools, self.paths(), self.options(), keep_open=launcher.CAN_OPEN_CONSOLE
+            )
+        except LauncherError as exc:
+            messagebox.showwarning("Execute", str(exc))
+            return
+        self._save_settings()
         # Grey its buttons at once, before its lock appears (D67).
         self._execute_pressed = time.monotonic()
         self.update_buttons()
-        self.run(
-            "Execute",
-            lambda: launcher.command_execute(self.tools, self.paths(), self.options()),
+        try:
+            self.console.start(command, cwd=self.workdir)
+        except (LauncherError, OSError) as exc:
+            self._execute_pressed = None
+            self.update_buttons()
+            self.cannot_start(f"its window could not be opened: {exc}")
+            return
+        self._console_log_seen = False
+        self._console_handled = False
+        self.update_stop()
+        self.bar.configure(text="Execute is running in its own window; its output follows in Pull Log.")
+        self.notebook.select(self.pull_tab)
+
+    def cannot_start(self, why: str) -> None:
+        """Say so, and give the command that works from a terminal (D66, D68)."""
+        manifest = self._manifest()
+        command, folder = pulls.execute_command(manifest) if manifest else ("", self.workdir)
+        text = (
+            f"Execute could not start from the launcher: {why}.\n\n"
+            f"Run it from a terminal instead. In {folder}, type:\n\n    {command}"
         )
+        self.write_pull_log(f"\n{text}\n")
+        self.bar.configure(text="Execute could not start; see Pull Log.")
+        messagebox.showerror("Execute", text)
 
     def on_stop(self) -> None:
-        if not self.runner.running:
+        if self.runner.running:
+            if messagebox.askyesno(
+                "Stop",
+                "Stop the running command?\n\nWhatever it was working on stays 'running' "
+                "in the manifest, and a resume replays it.",
+            ):
+                self.runner.stop()
             return
-        if messagebox.askyesno(
+        if self.console.alive and messagebox.askyesno(
             "Stop",
-            "Stop the running command?\n\nWhatever it was working on stays 'running' "
-            "in the manifest, and a resume replays it.",
+            "Stop the pull? Its window closes.\n\nWhatever it was working on stays "
+            "'running' in the manifest, and the next Execute pulls it again.",
         ):
-            self.runner.stop()
+            pid = self.console.pid
+            self.console.stop()
+            try:
+                self.console.wait(timeout=10)
+            except Exception:
+                pass
+            manifest = self._manifest()
+            # Ended from outside, it could not remove its own lock.
+            if manifest is not None:
+                clear_lock_of(manifest, pid)
+            self.watch_once()
 
     def run(self, label: str, build) -> None:
         try:
@@ -257,8 +316,12 @@ class LauncherApp:
 
     def set_busy(self, busy: bool, message: str) -> None:
         self.update_buttons()
-        self.stop_button.configure(state="normal" if busy else "disabled")
+        self.update_stop()
         self.bar.configure(text=message)
+
+    def update_stop(self) -> None:
+        live = self.runner.running or self.console.alive
+        self.stop_button.configure(state="normal" if live else "disabled")
 
     def update_buttons(self) -> None:
         """Everything waits for the window's own command. While the loaded
@@ -271,18 +334,65 @@ class LauncherApp:
             button.configure(state="disabled" if off else "normal")
 
     def watch_pull(self) -> None:
-        """Read the loaded pull's lock, however it was started, and follow it."""
-        was_live = self.pull_lock is not None
-        self.check_pull()
-        if self.pull_lock is not None or was_live:
-            self.refresh_status()
+        """Every second: the loaded pull's lock and log, however it was started."""
+        self.watch_once()
         self.root.after(LOCK_CHECK_MS, self.watch_pull)
 
-    def check_pull(self) -> None:
+    def watch_once(self) -> None:
+        was_live = self.pull_lock is not None
+        self.check_pull()
+        self.follow_log()
+        self.check_console()
+        live = self.pull_lock is not None
+        self._status_countdown -= LOCK_CHECK_MS
+        if (live and self._status_countdown <= 0) or (was_live and not live):
+            self.refresh_status()
+            self._status_countdown = STATUS_REFRESH_MS
+
+    def _manifest(self) -> Path | None:
         try:
-            manifest = self.workdir / self.paths().manifest()
+            return self.workdir / self.paths().manifest()
         except LauncherError:
-            manifest = None
+            return None
+
+    def follow_log(self) -> None:
+        """Show what the pull's log has added: the live Execute's, else the newest."""
+        manifest = self._manifest()
+        log = launcher.pull_log(manifest, self.pull_lock)
+        switched, text = self.follower.read(log)
+        if switched:
+            self.pull_output.configure(state="normal")
+            self.pull_output.delete("1.0", "end")
+            self.pull_output.configure(state="disabled")
+            if log is not None:
+                self.write_pull_log(f"--- {pulls.shown(log, self.workdir)} ---\n")
+        if text:
+            self.write_pull_log(text)
+        if log is not None and not self._console_log_seen and self.console.started:
+            try:
+                self._console_log_seen = log.stat().st_mtime >= self.console.started - 2
+            except OSError:
+                pass
+
+    def check_console(self) -> None:
+        """Notice the console's process ending; one that wrote no log never started."""
+        if self._console_handled or self.console.alive:
+            return
+        self._console_handled = True
+        self._execute_pressed = None
+        self.follow_log()  # anything written at the very end
+        code = self.console.returncode
+        if not self._console_log_seen:
+            self.cannot_start(f"it ended with exit code {launcher.exit_code_words(code)} "
+                              "before writing its log")
+        else:
+            self.write_pull_log(f"--- Execute's window closed, exit code {code} ---\n")
+            self.bar.configure(text="Execute has finished.")
+        self.update_buttons()
+        self.update_stop()
+
+    def check_pull(self) -> None:
+        manifest = self._manifest()
         self.pull_lock = live_lock(manifest) if manifest else None
         pressed = self._execute_pressed
         if self.pull_lock is not None or (
@@ -296,6 +406,12 @@ class LauncherApp:
         self.output.insert("end", text)
         self.output.see("end")
         self.output.configure(state="disabled")
+
+    def write_pull_log(self, text: str) -> None:
+        self.pull_output.configure(state="normal")
+        self.pull_output.insert("end", text)
+        self.pull_output.see("end")
+        self.pull_output.configure(state="disabled")
 
     def refresh_status(self) -> None:
         try:
@@ -322,6 +438,7 @@ class LauncherApp:
         self.status_message.configure(text=message or f"{manifest}")
 
     def on_close(self) -> None:
+        # A pull in its own window carries on when this one closes.
         if self.runner.running and not messagebox.askyesno(
             "Quit", "A command is still running. Stop it and quit?"
         ):

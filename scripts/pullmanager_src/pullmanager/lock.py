@@ -59,6 +59,7 @@ class LockInfo:
     started: float
     heartbeat: float
     token: str = ""
+    log: str = ""  # the log its Execute writes (D68)
 
     def age(self, now: float | None = None) -> float:
         return (time.time() if now is None else now) - self.heartbeat
@@ -117,6 +118,7 @@ def read_lock(manifest: str | Path) -> LockInfo | None:
         started=number("started"),
         heartbeat=number("heartbeat"),
         token=str(data.get("token") or ""),
+        log=str(data.get("log") or ""),
     )
 
 
@@ -144,8 +146,9 @@ class PullLock:
     """Held by `--execute` for as long as it runs: `with PullLock(path): ...`."""
 
     def __init__(self, manifest: str | Path, *, interval: float = HEARTBEAT_SECONDS,
-                 clock=time.time) -> None:
+                 clock=time.time, log: str | Path | None = None) -> None:
         self.manifest = Path(manifest)
+        self.log = str(log or "")
         self.path = lock_path(manifest)
         self.interval = interval
         self.clock = clock
@@ -170,6 +173,7 @@ class PullLock:
             "heartbeat": self.clock(),
             "token": self.token,
             "manifest": str(self.manifest),
+            "log": self.log,
         }, indent=2) + "\n"
 
     def acquire(self) -> None:
@@ -221,3 +225,19 @@ class PullLock:
                 self.path.unlink()
             except OSError:
                 pass
+
+
+def clear_lock_of(manifest: str | Path, pid: int | None) -> bool:
+    """Remove the lock of a process the launcher ended with Stop.
+
+    Ended from outside, it could not remove its own lock, which would hold the
+    pull for 2 minutes. Only that process's lock is removed.
+    """
+    held = read_lock(manifest)
+    if held is None or pid is None or held.pid != pid:
+        return False
+    try:
+        held.path.unlink()
+    except OSError:
+        return False
+    return True
