@@ -378,7 +378,7 @@ Checks:
   shipped `chunk` recipe's `required` placeholder is refused). `values: all`
   warns that the pull will stop at it.
 - `project_db` is set (`project_db_missing`: a warning while writing, an error
-  at the split, which needs it) and shaped like `PROJECTD<number>`
+  at the split, which needs it) and shaped like `PROJECTD<code>`
   (`project_db_unexpected`, a warning). Whether the database exists and can be
   opened is only known when Execute connects.
 - Temps are named with `{{prefix}}_`: `##JVM_` anywhere in a cohort is

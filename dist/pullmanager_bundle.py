@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "d5b0ead9d7911eea5e09cbf9678eeffbf961fd59044ae1c77fc4749da82c796b",
+  "content_id": "124dc09016283612b93e2a9f3d7058de783baf3aee13c522b3cdfe2c627c177c",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "54a2ef2408c7d299f33a2474f4f9c31bab09574f660ce5d48ef8c2d94c29ebc8",
-      "size": 177463
+      "sha256": "cc7f00cb4e68ae3eb93843f81ebb2b8cd02ed202b875b7beba008ab4c6a37167",
+      "size": 177671
     }
   ]
 }'''
@@ -11278,7 +11278,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 54a2ef2408c7d299f33a2474f4f9c31bab09574f660ce5d48ef8c2d94c29ebc8 SIZE: 177463 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: cc7f00cb4e68ae3eb93843f81ebb2b8cd02ed202b875b7beba008ab4c6a37167 SIZE: 177671 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -13072,16 +13072,17 @@ if __name__ == "__main__":
 #             "project_db_missing",
 #             "No `project_db`: nothing says which Projects database the tables land in.",
 #             "cosmos_vars.project_db",
-#             fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
-#             "`PROJECTD139081` for project D139081.",
+#             fix="Set `project_db:` under `cosmos_vars` to your project's Projects "
+#             "database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
+#             "derived from the project folder's number.",
 #         )
 #     elif not PROJECT_DB_RE.match(project_db):
 #         result.warn(
 #             "project_db_unexpected",
 #             f"`project_db: {project_db}` does not look like a Projects database name.",
 #             "cosmos_vars.project_db",
-#             fix="Projects databases are named PROJECTD followed by the project number, "
-#             "e.g. `PROJECTD139081`.",
+#             fix="Projects databases are named PROJECTD followed by a code, e.g. "
+#             "`PROJECTD93A5E7`; copy the name exactly as the database shows it.",
 #         )
 #
 #
@@ -13766,8 +13767,9 @@ if __name__ == "__main__":
 #             "project_db_missing",
 #             "No `project_db`, so the split has nowhere to land the tables.",
 #             "cosmos_vars.project_db",
-#             fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
-#             "`PROJECTD139081` for project D139081.",
+#             fix="Set `project_db:` under `cosmos_vars` to your project's Projects "
+#             "database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
+#             "derived from the project folder's number.",
 #         )
 #         return result
 #     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR

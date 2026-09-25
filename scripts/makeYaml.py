@@ -1791,16 +1791,17 @@ def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
             "project_db_missing",
             "No `project_db`: nothing says which Projects database the tables land in.",
             "cosmos_vars.project_db",
-            fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
-            "`PROJECTD139081` for project D139081.",
+            fix="Set `project_db:` under `cosmos_vars` to your project's Projects "
+            "database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
+            "derived from the project folder's number.",
         )
     elif not PROJECT_DB_RE.match(project_db):
         result.warn(
             "project_db_unexpected",
             f"`project_db: {project_db}` does not look like a Projects database name.",
             "cosmos_vars.project_db",
-            fix="Projects databases are named PROJECTD followed by the project number, "
-            "e.g. `PROJECTD139081`.",
+            fix="Projects databases are named PROJECTD followed by a code, e.g. "
+            "`PROJECTD93A5E7`; copy the name exactly as the database shows it.",
         )
 
 
@@ -2485,8 +2486,9 @@ def write_split_artifacts(
             "project_db_missing",
             "No `project_db`, so the split has nowhere to land the tables.",
             "cosmos_vars.project_db",
-            fix="Set `project_db:` under `cosmos_vars` to your project's database, e.g. "
-            "`PROJECTD139081` for project D139081.",
+            fix="Set `project_db:` under `cosmos_vars` to your project's Projects "
+            "database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
+            "derived from the project folder's number.",
         )
         return result
     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
