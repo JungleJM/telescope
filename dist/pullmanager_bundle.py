@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "789d6739a745b2bd873301146ced16021063b9714e21649a89d6ff2985f3b5d5",
+  "content_id": "c794e68188aa80d2c1a234e404e83ec9e3595ef8f90ccb9f45a8d8617c000e8e",
   "file_count": 37,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "30bf6750bace692b2638b3d05577b21f384a5c6674c8c8c94e53d5a0dd4b7bce",
-      "size": 186299
+      "sha256": "c0578408e7d91eab7585d1f776d565d4c3f6d4e2f36238c2ec0bd8cd28d283f3",
+      "size": 190256
     }
   ]
 }'''
@@ -11530,7 +11530,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 30bf6750bace692b2638b3d05577b21f384a5c6674c8c8c94e53d5a0dd4b7bce SIZE: 186299 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: c0578408e7d91eab7585d1f776d565d4c3f6d4e2f36238c2ec0bd8cd28d283f3 SIZE: 190256 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -12866,8 +12866,13 @@ if __name__ == "__main__":
 #             new["vars"] = merge_vars(group_vars, new.get("vars"))
 #             new["_group_key"] = prefix
 #             new["_multiplier_group"] = group_meta
+#             sources = {
+#                 str(c["name"]): str(c["source"])
+#                 for c in new.get("columns") or []
+#                 if isinstance(c, dict) and c.get("name") and c.get("source")
+#             }
 #             split_filters = [
-#                 split_after_build_filter(mult, level, result)
+#                 split_after_build_filter(mult, level, result, sources)
 #                 for mult, level in combo
 #                 if mult.get("stage") == "split_after_build"
 #                 and mult.get("applies_to") == "PKTable"
@@ -12876,11 +12881,36 @@ if __name__ == "__main__":
 #             split_filters = [item for item in split_filters if item]
 #             if split_filters:
 #                 new["split_after_build"] = split_filters
+#                 # D59: the level is what makes this PK its own population.
+#                 add_where(new, [f.get("condition") or f.get("where") for f in split_filters])
 #             expanded.append(new)
 #     return expanded
 #
 #
-# def split_after_build_filter(mult: dict[str, Any], level: dict[str, Any], result: CompileResult) -> dict[str, Any] | None:
+# def add_where(cohort: dict[str, Any], conditions: list[Any]) -> None:
+#     """Append conditions to a cohort's `filter.where`, a string or a list."""
+#     conditions = [c for c in conditions if c]
+#     if not conditions:
+#         return
+#     block = cohort.setdefault("filter", {}) or {}
+#     cohort["filter"] = block
+#     where = block.get("where")
+#     existing = [] if not where else [where] if isinstance(where, str) else list(where)
+#     block["where"] = existing + conditions
+#
+#
+# def split_after_build_filter(
+#     mult: dict[str, Any],
+#     level: dict[str, Any],
+#     result: CompileResult,
+#     sources: dict[str, str] | None = None,
+# ) -> dict[str, Any] | None:
+#     """One level's split of the PK, and the condition that selects it (D59).
+#
+#     The condition is written on the PK's own source for the column
+#     (`p.FirstRace`), since it joins that PK's `where`. A column the PK does
+#     not produce is reported by validate_multipliers.
+#     """
 #     if not isinstance(level, dict):
 #         return None
 #     item = {
@@ -12895,7 +12925,9 @@ if __name__ == "__main__":
 #         values = level.get("values")
 #         item["column"] = level["column"]
 #         item["values"] = values
-#         item["condition"] = render_sql_condition(f"pk.{level['column']}", values, result, str(level.get("strat")))
+#         source = (sources or {}).get(str(level["column"]))
+#         if source:
+#             item["condition"] = render_sql_condition(source, values, result, str(level.get("strat")))
 #     elif level.get("where"):
 #         item["where"] = level["where"]
 #     return item
@@ -12928,8 +12960,28 @@ if __name__ == "__main__":
 #                 fix="Use `stage: during_build` (each level builds its own cohorts) or "
 #                 "`stage: split_after_build` (one build, split by a PK column).",
 #             )
+#         if stage == "split_after_build" and mult.get("applies_to") != "PKTable":
+#             result.error(
+#                 "split_after_build_target",
+#                 f"`split_after_build` splits the PK only, not `{mult.get('applies_to')}`.",
+#                 f"{where}.applies_to",
+#                 fix="Set `applies_to: PKTable`.",
+#             )
+#             continue
 #         if stage == "split_after_build":
-#             targets = pk_candidates if mult.get("applies_to") == "PKTable" else [mult.get("applies_to")]
+#             for level_idx, level in enumerate(mult.get("levels", []) or []):
+#                 if isinstance(level, dict) and not (
+#                     (level.get("column") and "values" in level) or level.get("where")
+#                 ):
+#                     result.error(
+#                         "split_level_without_condition",
+#                         f"Level `{level.get('strat')}` does not say which PK rows are its own.",
+#                         f"{where}.levels[{level_idx}] ({level.get('strat')})",
+#                         fix="Give it `column: <PK column>` and `values: [...]`, e.g. "
+#                         "`column: FirstRace` with `values: [\"Black%\"]`, or a `where:` "
+#                         "written against the PK recipe's own aliases.",
+#                     )
+#             targets = pk_candidates
 #             target_cols = sorted({col for target in targets for col in (table_schemas.get(str(target)) or [])})
 #             for level_idx, level in enumerate(mult.get("levels", []) or []):
 #                 col = level.get("column") if isinstance(level, dict) else None
@@ -14651,7 +14703,55 @@ if __name__ == "__main__":
 # """)
 #         pk = self.cohorts_by_name(res)["blackPatients"]
 #         self.assertIn("split_after_build", pk)
-#         self.assertIn("pk.FirstRace LIKE 'Black %'", json.dumps(pk))
+#         self.assertIn("p.FirstRace LIKE 'Black %'", pk["split_after_build"][0]["condition"])
+#
+#     def test_each_split_level_selects_its_own_patients(self):
+#         # D59: black and white once built the same PK, of every race.
+#         res = self.compile_template(extra="""
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: black
+#         column: FirstRace
+#         values: ["Black%"]
+#       - strat: white
+#         column: FirstRace
+#         values: ["White%"]
+# """)
+#         self.assertCompiles(res)
+#         cohorts = self.cohorts_by_name(res)
+#         black = cohorts["blackPatients"]["filter"]["where"]
+#         white = cohorts["whitePatients"]["filter"]["where"]
+#         self.assertEqual(black[-1], "p.FirstRace LIKE 'Black%'")
+#         self.assertEqual(white[-1], "p.FirstRace LIKE 'White%'")
+#         self.assertEqual(black[:-1], white[:-1])
+#         # Only the PK is filtered; each session's facts follow their own PK.
+#         self.assertNotIn("FirstRace", json.dumps(cohorts["blackOtherDx"]["filter"]))
+#
+#     def test_a_level_without_a_condition_is_an_error(self):
+#         res = self.compile_template(extra="""
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: PKTable
+#     levels:
+#       - strat: black
+#         column: FirstRace
+# """)
+#         self.assertHasError(res, "split_level_without_condition")
+#
+#     def test_only_the_pk_can_be_split(self):
+#         res = self.compile_template(extra="""
+# multipliers:
+#   - name: Race
+#     stage: split_after_build
+#     applies_to: OtherDx
+#     levels:
+#       - {strat: black, column: FirstRace, values: [Black]}
+# """)
+#         self.assertHasError(res, "split_after_build_target")
 #
 #
 # class BatchingTests(MakeYamlTest):
