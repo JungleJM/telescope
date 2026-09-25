@@ -1,0 +1,1153 @@
+---
+title: "Designing Telescope to Peer Through the Cosmos"
+subtitle: "A thorough history: the raw record, to be whittled into a portfolio piece"
+date: 2026-09-25
+format:
+  html:
+    toc: true
+    toc-depth: 2
+---
+
+## About This Record
+
+This is the full record of the Telescope work, including what was later edited
+away, as raw material for a resume section and a portfolio piece. It is not
+the finished document.
+
+- **Sources.** All 130 commits in this repository (17 to 25 September 2026),
+  every planning document ever committed (most since deleted, recovered from
+  git), the current `design.md`, `decisions.md` and `roadmap.md`, and the
+  VM-side analysis of the Gen1 generator (`old_Generator_analysis.qmd`).
+- **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
+  number (D1 to D71). Section 12 explains how to recover any deleted document.
+- **Gaps.** `[confirm]` marks what only you know. Section 11 collects those
+  questions, and they need answering before anything here goes on a resume.
+- **Gen1.** Section 4 is reconstructed from the VM AI's analysis of the old
+  code. The VM brief in `vm_gen1_history_prompt.md` asks for Gen1's own
+  history, which should replace or extend it.
+- **Proprietary detail.** Server names, project database names and internal
+  paths are left out on purpose. Scrub further before sharing anything.
+
+---
+
+## 1. The Project On One Page
+
+**What it is.** Telescope turns a research cohort definition into a complete,
+reproducible data pull from Epic Cosmos (Epic's de-identified,
+multi-organization research database) into a project database. It runs on an
+air-gapped Windows data-science VM that cannot reach git, the internet, or a
+web browser.
+
+It is two programs joined by files:
+
+- **YAML Manager** (authored on the Mac) assembles a pull from reusable
+  *recipes*, validates every column against a data dictionary of Cosmos, and
+  writes one self-describing *transfer YAML*.
+- **Pullmanager** (runs on the VM) validates it again, plans it into
+  sessions and batches, writes its own SQL, holds each Cosmos connection open
+  for as long as its temporary tables must live, and moves data from Cosmos
+  into the project database. It records every step in a manifest, so a failed
+  batch can be retried alone and a monthly Cosmos refresh is detected.
+
+Both reach the VM as **one 700 KB self-verifying text file**, pasted across,
+because nothing else can cross.
+
+**Where it came from.** It replaces *Gen1*: a generator you built earlier on
+the VM (`generator.py`, `makeCosmos.py`, `makeProjects.py`, `makeR`) that had
+grown into a roughly 2,000-line supervisor script. Telescope keeps Gen1's
+hard-won behaviours as tested contracts and drops its architecture.
+
+**Your role.** You were the only person on the project: problem owner,
+product manager, designer, architect, QA lead, release manager, the only
+tester who could reach the database, and the operator of the live pulls. AI
+coding assistants did most of the typing, under a process you set (Section
+6.10). `[confirm]` which parts you wrote by hand.
+
+**Status on 25 September 2026.** The first live pull, *IBD Ancestry*, is
+running on the VM. Crohn's disease and ulcerative colitis are each split by
+ancestry, with Black patients as cases and White patients as 4:1 sampled
+controls. Each group is pulled from both Cosmos and SneakPeek, and batched by
+sex.
+
+**The pain point** (a hypothesis from the evidence; `[confirm]` and rewrite in
+your own words):
+
+- Research pulls from Cosmos were hand-built SQL.
+- Large pulls were unreliable (Gen1 warned past 80 million rows).
+- A connection drop destroyed the temporary tables a pull depended on.
+- Data could not simply be moved between systems.
+- Small authoring mistakes failed silently and changed row counts without an
+  error, for example a misspelt dedup key that switched off deduplication.
+
+Gen1 automated the SQL. Telescope made the pulls reliable, recoverable,
+reproducible and hard to get wrong.
+
+---
+
+## 2. By The Numbers
+
+| Measure | Value | Source |
+| --- | --- | --- |
+| Telescope elapsed time | 8 days, 17 to 25 Sep 2026 | git log |
+| Commits | 130, some in every hour of the day except 10:00 | git log |
+| Python written | about 18,000 lines: YAML Manager 5,020; browser UI 3,290; Pullmanager runtime 4,653; its tests 3,806; bundle tooling 1,380 | `wc -l` |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | design.md |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | commit messages |
+| Architecture decisions recorded | 71 (D1 to D68 committed; D69 to D71 drafted 25 Sep) | decisions.md |
+| First decision record | 39 decisions, written 22 Sep 22:47 | `ea74c3d` |
+| Planning documents written, then consolidated | about 20 files → 3 (D47) | git history |
+| Current design documents | 2,797 lines | design, decisions, roadmap |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines, the dependency gate | `DSVM Plugins.yaml` |
+| Bundle size | 211 KB → 451 KB → 699 KB | D41, `dist/bundle.py` |
+| Bugs caught before they touched data | 35 listed in Section 8 | commits, decisions |
+| One fix's effect | the sample template went from 1,120 generated SQL files to 168 | `61befa4` |
+| First live pull | 8 sessions (2 diseases × 2 ancestry groups × 2 databases), each with setup, uploads, PK and 3 sex batches: 48 units | IBD Ancestry YAML, D66 |
+
+---
+
+## 3. The Environment And Its Hurdles
+
+This is what makes the project unusual, and why it is worth telling.
+
+### 3.1 The Air Gap: Text Goes In, Screenshots Come Out
+
+- The VM is **air-gapped Windows**. It cannot pull from git, reach the
+  internet, or sync with the Mac.
+- **Code goes in only as pasted text.** Nothing comes back out as files.
+- **What comes back is screenshots.** The Gen1 code analysis arrived as 10
+  two-page screenshots of a 19-page PDF and was OCR-transcribed. The VM AI's
+  answer on database keys came as six screenshots of 11 printed pages (682
+  lines). The dry-run and live-run results came as screenshots too.
+- **OCR damages text**, and that has consequences. An analysis built on
+  OCR-damaged transcriptions produced ten false findings. You caught them by
+  comparing against the real files and retracted them (Section 5, 22 Sep).
+  Arrows lost in printing had to be restored by hand.
+- The only thing allowed back from the VM in the side project was package
+  names and versions.
+
+### 3.2 No Zip, No Installer, No File Transfer
+
+With no archive tool and no file transfer, delivery needed its own format. The
+**bundle** (D3 to D6, D42, D64) is:
+
+- one `.py` file that extracts itself;
+- comment-prefixed rather than base64, so any file can be read straight out
+  of it and copied back to the Mac for repair;
+- checked with SHA-256 and file size, before writing and again after;
+- staged in a temporary folder and swapped in only when everything verifies,
+  so a bad paste leaves the working copy untouched;
+- refused if it contains path traversal, including the Windows-only forms;
+- deterministic: the same sources always give the same `content_id`, so one
+  number tells you whether the VM is current;
+- careful with local work: an edit made on the VM survives an update as
+  `<name>.local`.
+
+You reused the technique for an R package the VM lacked (PheWAS, 23 Sep). The
+package went across as about five 1 MB text parts. Each part carries its own
+hash, and the error message names the one part to paste again.
+
+### 3.3 A Fixed Package List
+
+- Only the standard library, plus what appears in the VM's installed-software
+  list (`DSVM Plugins.yaml`, captured 18 Sep).
+- The VM runs Python 3.13.9, with `pyarrow` 22.0.0, `ruamel.yaml` 0.17.17,
+  `pyyaml` 6.0.3 and `numpy` 2.1.3. Nothing can be installed.
+- The Mac was set up to match: a python.org 3.13.9 with exactly those versions
+  (`requirements-vm.txt`), so what passes on the Mac passes on the VM.
+- Even the test framework was chosen for this: stdlib `unittest` rather than
+  pytest (D7).
+
+### 3.4 No HTML
+
+- The VM cannot load a page served from localhost, cannot open a static HTML
+  file, and has no in-editor browser.
+- Its only Python desktop toolkit is tkinter. The `shiny` and `tcltk` entries
+  in its package list turned out to be R, not Python.
+- So the web authoring UI stays on the Mac, and the VM gets a tkinter launcher
+  (D44). The launcher is a front end over the command line, not a second
+  implementation.
+
+### 3.5 A Locked-Down Windows
+
+- Some programs are blocked: `ipconfig` fails with "Access is denied".
+- Execute started from the launcher died before printing anything (exit code
+  `0xC0000142`, a DLL failed to initialize), although the same command typed
+  into VSCodium's terminal runs.
+- The fix could not assume `cmd.exe` or PowerShell was allowed. It opens a
+  new console running Python directly (D68).
+
+### 3.6 The Database Topology
+
+- **Narrow permissions.** `sys.partitions` returns nothing and `VIEW DATABASE
+  PERFORMANCE STATE` is denied, so row counts come from counting (D33). Key
+  metadata is invisible to the analyst login.
+- **One-way linking.** Projects can read Cosmos, but Cosmos cannot read
+  Projects. Every upload therefore travels through the client (D38, D54).
+- **Temporary tables die with the connection.** Every Cosmos global temp table
+  vanishes when its connection closes. This one fact shapes the whole session
+  model (D36).
+- **The instance name changes.** The Cosmos instance name differs on every
+  connection, so it is captured each time and never cached (D37).
+- **A 1,000-row limit.** T-SQL caps a literal `INSERT ... VALUES` at 1,000
+  rows, which Gen1 hit. Uploads now bind parameters instead (D38).
+- **Monthly rebuilds.** Cosmos is rebuilt about once a month, and a pull must
+  never mix data from before and after a refresh (D51).
+- **Two databases.** Cosmos and COSMOS_SneakPeek, where a pull on both
+  (`Dual`) spans two databases in one session (D39, D65).
+- **Shared namespace.** Global temp table names are instance-wide, so two
+  concurrent pulls could drop each other's tables (D50).
+
+### 3.7 No Database To Test Against
+
+- The development machines cannot reach either database and have no driver.
+- Everything database-facing is tested against fakes: a fake cursor, and a
+  fake Projects database that tracks rows per batch and can model
+  transactions. The GUI is tested against a fake tkinter.
+- **You were the only integration test.** You ran every build on the VM and
+  reported back, often by screenshot.
+
+### 3.8 The VM's AI
+
+- Kilo Code in VSCodium, backed by OpenAI GPT-5 through a local proxy. It
+  cannot read images and has no prompt caching.
+- Asked to run key-checking queries, it explained what they would show
+  instead of running them. You noticed (Section 6.10).
+
+### 3.9 Learning The Languages
+
+You did not know SQL, Python or R before Gen1. `[confirm]`: when you started,
+how you learned, and how long Gen1 took.
+
+### 3.10 Three Machines, Self-Hosted
+
+- **Mac:** the main development and authoring machine.
+- **Linux dev box:** Bluefin, an immutable Fedora. It gained Tk 9 and Xvfb so
+  the launcher could be driven with a real Tk and no display.
+- **The VM.**
+- The repository is on a **self-hosted Gitea server reached over Tailscale**,
+  not a hosted service.
+
+---
+
+## 4. Generation 1: The Generator On The VM
+
+Reconstructed from `old_Generator_analysis.qmd`, the VM AI's analysis of the
+old code (OCR-transcribed, 21 Sep), plus `generator_understanding.md` and the
+verified example pull (`inputSimple.yaml`, `examplecos.sql`,
+`exampleproj.sql`). Gen1's own history, with dates, is for the VM brief to
+supply.
+
+### 4.1 What Gen1 Was
+
+A YAML-driven pipeline, supervised by a single script:
+
+1. `generator.py`, the supervisor, over 2,100 lines by its last version. It
+   parsed the command line, loaded and validated the YAML, built `Cosmos.sql`,
+   ran it through `pyodbc`, captured telemetry and each cohort's success, then
+   called `makeProjects.py` with the Cosmos instance discovered at run time.
+2. It then ran only the Projects SQL blocks for cohorts that had succeeded,
+   optionally ran `makeR`, wrote a markdown run report, and copied the scripts
+   into a folder for the run.
+3. `makeCosmos.py` was the earlier, standalone Cosmos generator. It produced a
+   four-batch, `GO`-separated script and was later absorbed into
+   `generator.py`.
+4. `makeProjects.py` was the Projects-side transfer generator.
+5. `makeR` generated R scripts that turned the pulled tables into parquet
+   files for data scientists.
+
+### 4.2 Gen1 Decisions Visible In The Code
+
+These are your earlier design choices, as the code records them.
+`[confirm]` which were yours and which the VM AI proposed.
+
+- **Pulls defined as YAML.** Cohorts with `columns` (source, name, type,
+  nullable) and `filter` (from, join, where). This authoring model carried
+  into Telescope unchanged.
+- **Global temp naming** `##JVM_<table>` (your initials), with a guard against
+  a doubled `JVM_JVM_`.
+- **The transfer pattern.** Cosmos global temp, then `OPENQUERY` into a local
+  staging table, then a fully qualified Projects table.
+- **Run-time server discovery.** Capture `SELECT @@SERVERNAME` and pass it to
+  the Projects side, because the linked-server name differs from the alias.
+- **Date placeholders** `{{min_date_key}}` and `{{max_date_key}}`, filled in
+  one place.
+- **A WHERE builder that inserts `AND` automatically**, without breaking
+  lines that start with AND or OR, comments, parenthesized groups or IN
+  lists.
+- **Non-nullable columns become filters**: `nullable: false` adds an
+  `IS NOT NULL` condition.
+- **Deduplication through staging tables** (`#Keys`, `#Cohort`,
+  `#Cohort_Dedup`). A later version checked the dedup keys against the
+  columns and fell back visibly when they did not match.
+- **Test options**: small pulls, row limits for the PK and other tables, and
+  a random PK sample.
+- **On/off switches.** SQL-level variables such as `@Pull<table>` and
+  `@Push<table>` to switch cohorts and uploads on and off.
+- **Upload cohorts** of three kinds:
+  - `dbtable`: read through `OPENQUERY`.
+  - `csv`: first a single column of diagnosis codes, later general CSV with
+    BOM handling, header normalization, escaping and empty-to-NULL.
+  - `parquet`: a stub that documented why Cosmos cannot read it.
+- **Telemetry.** Raw, staged and deduplicated counts; each cohort's duration;
+  labels like `[PatientDim|Cosmos=filter]`; a warning past 80 million rows.
+- **Safety.** Fail fast on Cosmos errors, with the server's messages
+  including the inner `OPENQUERY` error. Transfer to Projects only for
+  cohorts that succeeded on Cosmos. A 10-second timeout on Projects
+  connections, and explicit closing.
+- **Paths.** Deriving the external project path, with stray Unicode
+  separators and control characters stripped.
+- **Outputs.** Run output folders, copies of the scripts, and an optional
+  markdown report.
+
+### 4.3 Why Gen1 Was Replaced
+
+The analysis named the problems itself. `generator.py` mixed command-line
+parsing, configuration, SQL generation, database execution, telemetry parsing,
+file copying, reporting and orchestration of the other scripts. Logic was
+duplicated across three scripts with different strengths of validation.
+Several patterns were fragile:
+
+- The Projects SQL to run was chosen by searching its text for a table name.
+  That match also fires on this project's own `PKTable` / `PKTable2` pair, so
+  `PKTable2` was dropped and refilled on every run (D31).
+- Row counts were recovered by reading result-set column names (D32).
+- The destination table was dropped inside every transfer, so batching would
+  have kept only the last batch (D21).
+- The PK row limit applied to every PK-typed cohort, compounding into an
+  unrepresentative sample (D29).
+- The singular `dedup_key` was silently ignored, so no deduplication happened
+  and nothing said so (D28).
+
+Gen1's lessons became tested contracts in Telescope: the naming, run-time
+server capture, date placeholders, NOT NULL filters, grouped WHERE handling,
+dedup normalization, CSV header handling, uploaded-PK validation, one PK per
+session, separate Cosmos and Projects counts, large-count warnings, and
+server-message error reporting. Its architecture did not carry over.
+
+---
+
+## 5. Telescope Timeline
+
+### Before 17 Sep: Gen1 On The VM
+
+See Section 4. `[confirm]` dates and duration.
+
+### 17 Sep: The Seed
+
+`a30f1cc` is the initial commit:
+
+- `template.yaml`, already sketching the future:
+  - `cosmos_db: Dual`, where SneakPeek copies finish before Cosmos;
+  - multipliers (IBDType: UC/Crohn's; Race: Black cases with White controls
+    at `pk_mult: 4`);
+  - batching by state, sex or row count;
+  - cohorts built from recipes.
+- `recipes.yaml`, with a first recipe (a patient-with-diagnosis cohort).
+- `next.qmd`: remove the legacy code, add a `both` option for `cosmos_db`,
+  and add stratification through multipliers.
+
+### 18 Sep: The YAML Manager Spec And Compiler (19 commits, 01:34 to 14:22)
+
+- **The VM inventory.** The VM's installed-software list, 1,375 lines, became
+  the dependency gate (`67f23c4`, `38a4d55`).
+- **The coding tasks.** Import recipes before any multiplier or batching;
+  treat `Dual` as a multiplier that adds `_sp`; each cohort opens and closes
+  its connections.
+- **`managerplan.qmd`, the full feature specification** (1,112 lines,
+  `6b9f903`):
+  - recipe import and override;
+  - variable scopes;
+  - inferring required variables, table inputs (from
+    `##JVM_{{Var}} AS alias`), required columns and output columns;
+  - validating table contracts;
+  - detecting the PK table automatically, with an override;
+  - `sql_condition` rendering: `=` versus `IN` versus `LIKE`;
+  - a warning for `_` in `LIKE` values;
+  - quoting rules and custom cohorts;
+  - two multiplier stages: `during_build` changes a disease definition,
+    `split_after_build` stratifies a built PK. Controls with `row_mult`;
+  - batching presets.
+- **`productionplan.qmd`**, the product context:
+  - a polished Mac UI and a spartan VM UI on one backend;
+  - deployment constraints and a single-file strategy;
+  - build phases and a copy-update workflow.
+- **`makeYaml.py` built through phase 7** (1,466 lines, 18 tests). Validating
+  against the real template exposed a design bug straight away: after
+  multiplication there are several PK cohorts, so `PKTable` must be resolved
+  per multiplier group.
+- **A test suite of six fixture templates**, three of them failing on purpose.
+  An early lesson: report each problem once.
+- **The first UI.** A static HTML dashboard prototype (2,667 lines), then
+  template-builder inputs, live refresh and a colour-coded graph of how
+  cohorts connect.
+
+### 20 Sep: The Split Insight (12 commits)
+
+- **UI-independent backend.** The backend was abstracted to serve any Python
+  UI (`f5a7df0`).
+- **Your splitting notes** (`splittingVMtasks`, in your own words), the core
+  architectural insight of the project:
+  - Global temp tables die at disconnect, so each multiplied cohort must run
+    inside one held-open server session.
+  - Every script should be generated before connecting.
+  - Batches come after the PK exists, drawn from it.
+  - The output is not one big YAML: it is a *pre-YAML*, split into
+    per-session and per-batch documents, with a manifest to drive
+    Pullmanager.
+  - A `makeArtifacts` step would write parquet files and a
+    `parquetcontents.yaml` describing **what was actually pulled**, not what
+    was planned, since a pull can fail halfway.
+  - You also answered ten design questions: what the pre-YAML contains, when
+    splitting happens, whether a manifest is needed, and more.
+- **Built that night.** `yamlmanagerDesign.qmd` was written, then phases 0 to
+  9 were built between 23:43 and 23:59: rename, pre-YAML export, split plan
+  model, manifest generation, split YAML writing, multiplier and batch
+  sessions, uploaded PK cohorts, command line, UI previews.
+
+### 21 Sep: Dictionary, UI And Gen1 Archaeology (12 commits)
+
+- **UI refinement.** Grouped settings sections (`cosmos_vars`, `run_vars`,
+  `test_options`, `project_vars`); a clearer cohort-connection graph with
+  stable colours, showing uploads.
+- **The data dictionary** (`4073d9a`): 2,792 lines covering 17 Cosmos tables.
+  `[confirm]` how it was built. Then a custom-table builder driven by the
+  dictionary, with joins scoped to tables already in the cohort.
+- **Mining Gen1** (`3ed8769`): the OCR transcription of the Gen1 analysis, a
+  first digest of it, an analysis of one example pull, and the example YAML
+  and SQL triple as fixtures.
+
+### 22 Sep: Pullmanager Built (24 commits)
+
+The day AI pair-programming with Claude begins in the commit trailers.
+
+- **11:21, the refactor plan.** A self-extracting bundle with verified cut
+  marks, which the plan called a "lock-and-key" system.
+- **14:27, phases 0 to 2: contracts, bundle, manifest I/O** (`a129b74`).
+  - The contract was built against **real** exported output rather than the
+    design prose, which turned out wrong in six places (D1).
+  - The same commit fixed batching: axes now cross-multiply. The old code
+    would have pulled the full cohort three times over (D15).
+- **Test framework.** The bespoke test harness was migrated to `unittest`
+  (D7).
+- **Session epochs** (D14). A manifest node marked `done` does not mean its
+  temp tables still exist.
+- **Mechanical facts from Gen1.** Connection strings, `GO` splitting, draining
+  every result set, capturing server messages, transaction behaviour. Also:
+  there are no credentials at all (D35).
+- **19:50, the OCR retraction** (`47a901c`). Comparing the transcriptions
+  against the real files showed nearly every recorded "mismatch" was OCR
+  damage, so ten findings were withdrawn. One real bug survived: `dedup_key`
+  was silently ignored. The corrected files then served as the specification
+  for SQL rendering (D1).
+- **The phases, with the runtime suite's test count:**
+  - Phase 3, naming and normalization (47 → 94). It caught a `dbo.dbo.`
+    double-qualification bug (D30).
+  - Data dictionary validation. On its first run it caught a test fixture
+    selecting a column from a table it never joined (D26).
+  - Phase 4, SQL rendering (→ 135).
+  - Phase 5, dry run (→ 155).
+  - Phase 6, the `pyodbc` adapter (→ 182).
+  - Phases 7 and 8, session execution and local transfer (→ 230).
+- **Bugs fixed that evening:**
+  - nothing read the `.env` file;
+  - the Projects host now has a default;
+  - `Dual` would have read the wrong database silently (D39).
+- **22:47, the decision record** (`ea74c3d`): 39 decisions, with superseded
+  entries kept "because the reasoning that led to the wrong answer is usually
+  the reasoning that will lead there again."
+- **23:00, the pathway run end to end** (`c34ac66`). Upload files did not
+  survive the handoff (D40), and the bundle lacked the split step (D41).
+- **23:15 to 23:51, protecting VM work.** Updates stop destroying work done on
+  the VM (`.local`, D42), and the template ships as an example file.
+
+### 23 Sep: First Contact With The VM (24 commits)
+
+- **04:33, the first VM screenshot error:** a missing default template. It led
+  to typed paths resolving from the working directory (D48), and exposed
+  `--datadictionary` being ignored on export.
+- **04:39, the tkinter launcher** (D44, 249 → 289 tests).
+- **06:23, table-input errors that suggest, never pick** (D45).
+- **06:27, `--resume-partial` disabled** (D46). Reconciling the documents
+  against the code found that it deleted the batches it promised to keep, and
+  its test passed because it checked the wrong thing. This produced the
+  project's QA rule: **test the outcome**.
+- **06:35, seven design documents became three** (D47). The Gen1 documents
+  were deleted at 08:36.
+- **13:43 to 15:18, side project:** installing PheWAS on the offline VM,
+  shipped as hashed text parts. Then removed with the note "Back to main repo
+  goal."
+- **17:53 to 19:12, working rules.** `CLAUDE.md` (the working method) and the
+  README.
+- **19:40 and 20:17, the transfer YAML** planned and built (D49). Recipes stay
+  on the Mac, and every error carries its fix.
+- **21:41, your research note** (`recentResearch.qmd`):
+  - per-project temp prefixes: the first three letters of each word;
+  - the refresh-detection query you found (`sys.databases.create_date`);
+  - whether bulk uploads can scale to 250,000 to 1 million patients;
+  - a challenge to partial resume: can a batch be rebuilt deterministically?
+- **21:49 to 22:10, D50 to D53 decided and built:**
+  - Multiplied cohorts ran in every session. 1,120 SQL files became 168, and
+    the wrong population could no longer land.
+  - Refresh detection, and retrying a failed batch alone.
+  - Chunked runs, which had silently pulled only the first chunk.
+  - Per-project prefixes.
+  - The **keys brief** for the VM's AI was written.
+
+### 24 Sep: Uploads, UI Testing, And The First Execute (31 commits)
+
+- **11:13 to 11:24, D54 and D55, from your answers:**
+  - Pivot from standardizing CSV to **typed parquet**: CSV is converted at
+    split time with declared column types.
+  - Uploads land in Projects as `upload_<table>`, and that copy is the
+    source ("the copy is the source").
+  - **Commit each cohort before pulling the next** (your "bird in hand").
+  - It also fixed invalid T-SQL for multi-column keys.
+- **11:31, Builder UI changes from your Mac testing notes:**
+  - PK checkbox, and single-PK enforcement that names the existing PK;
+  - a Multipliers section;
+  - section subtitles taken from your template comments;
+  - join-type explanations;
+  - button placement and names;
+  - Save as Recipe (D56);
+  - a read-only summary of multipliers and batching.
+- **11:38 to 12:53, the VM AI's keys answer.** You screenshotted and
+  transcribed it, noted it had not run any query, and folded it into the
+  docs.
+- **11:51, `Pullmanager 0.3.0`.** The long-lived branch was merged into main.
+- **13:50, UI fixes.** Save & Refresh; clearer YAML errors; an upload type
+  check; `requirements-vm.txt`.
+- **17:08, missing upload files warn.** Upload files often reach the VM
+  without passing through the Mac, so a missing file warns in the transfer
+  YAML and fails only at the split.
+- **22:38, the first Execute on the VM failed** opening the project database:
+  - the Builder had filled in a placeholder database name;
+  - connection failures are now one readable line;
+  - duplicated settings were removed, because a hand edit to the grouped copy
+    did nothing.
+  - You corrected a wrong assumption at 22:45: the project database name does
+    not follow from the folder name.
+- **22:53, D57.** Each project gets its own `runs/<project>/` folder.
+- **23:29, D58 to D62, from the first VM dry run:**
+  - Dedup SQL named an alias SQL Server cannot see, so every OtherDiagnoses
+    run would have failed.
+  - `dedup_order_by` was never read.
+  - The Race multiplier was never applied, so the Black and White cohorts
+    were the same patients.
+  - `random_pk_sample` was ignored.
+  - An upload would have landed eight times.
+  - Eight fixes were built between 23:30 and 23:43.
+
+### 25 Sep: The First Live Run (7 commits so far)
+
+- **00:31 to 00:48, simpler commands** (D63, D64): `python bundle.py`, answer
+  `y`, then `python pullmanager.py`. The bundle's own code joined its
+  identity hash.
+- **The IBD Ancestry run.**
+  - The launcher opened on the VM, and the pull was validated, split and
+    dry-run from it.
+  - Execute from the launcher died with `0xC0000142`, so the pull started from
+    VSCodium's terminal instead.
+  - Its first session finished setup and uploads and began building its PK.
+- **02:17, D65 to D68 decided:**
+  - SneakPeek sessions run first, as the quick round;
+  - `--execute IBD_Ancestry` by name;
+  - a lock with a heartbeat, so pulls cannot collide;
+  - Execute in its own console, closed only by typing `exit`, as you asked.
+- **02:21, your responses.** You agreed the fixes, and asked for:
+  - the terminal readout visible in the GUI (D70);
+  - "Output" renamed "Validation Output", and "Dry run" renamed "Preview
+    SQL", because you had taken it for a required step (D71).
+  - The live run also showed the PK's key being read two ways, so its
+    uniqueness was never checked (D69).
+  - D69 to D71 are drafted but not yet committed.
+
+---
+
+## 6. The Work, By Role
+
+Each bullet names its evidence. `[confirm]` wherever the record shows the
+outcome but not who originated it.
+
+### 6.1 Product Management
+
+- **Found and defined the problem, twice.** Gen1 automated hand-written SQL.
+  Telescope re-scoped the problem to reliable, recoverable, reproducible
+  pulls, and chose to rebuild rather than port: the old code is "a reference
+  quarry, not a porting source" (D2).
+- **Wrote the requirements yourself:**
+  - the first feature list (`next.qmd`, 17 Sep);
+  - the 1,112-line feature specification (18 Sep);
+  - the splitting notes and ten design answers (20 Sep);
+  - the delivered-folder layout for clients (`artifactDesign.qmd`);
+  - two research notes (`recentResearch.qmd`, `responses.md`).
+- **Planned for several users:**
+  - you as author on the Mac;
+  - you as overnight operator on the VM;
+  - downstream data scientists receiving parquet files with a contents file
+    and a loader for R or Python (roadmap);
+  - collaborators who send patient lists (uploaded PK, D54) or CSVs (D54);
+  - several pulls running at once (D50, D57, D67).
+- **Set product principles that recur across decisions:**
+  - Loud errors that suggest a fix, never silent inference (D28, D45, D49; a
+    test enforces that no error lacks a fix).
+  - The author makes the choice (D45).
+  - Bird in hand: save what you have before fetching more (D55).
+  - The copy is the source (D54).
+  - No partial result survives a Cosmos refresh (D51).
+- **Scoped hard:**
+  - Features are refused with an explanation rather than half-supported
+    (`values: all`, split levels on an uploaded PK, partial resume).
+  - Authoring stays on the Mac (D44, D49).
+  - A later list holds a transfer queue, deeper control matching, and parquet
+    export.
+- **Prioritized explicitly.** Every build batch had a numbered "Fixes, In
+  Order" list with the reason for each place. For example, D68 went last
+  because it was least certain to work on the VM, and fix 2 is its fallback.
+- **Talked to stakeholders.** Conversations with Epic informed the research
+  note. The refresh query answered the questions you had queued for the
+  Cosmos developers (D51).
+- **Released in versions.** Pullmanager 0.3.0 (`bc35dae`) merged a long-lived
+  branch.
+
+### 6.2 UX And Interaction Design
+
+- **Web Builder, evolved from use.** A static dashboard (18 Sep), then
+  builder inputs, a live cohort-connection graph with stable colours, and a
+  dictionary-driven custom table builder (21 Sep). Then eight changes from
+  your own click-through notes (`40bfcd8`):
+  - a PK checkbox with single-PK enforcement that names the existing PK;
+  - a Multipliers section;
+  - section subtitles pulled from your template comments;
+  - join-type explanations;
+  - buttons moved and renamed ("Add Custom Table", since "this isn't a whole
+    cohort");
+  - Save as Recipe replacing copy and download;
+  - a read-only multiplier and batching summary.
+  Then Save & Refresh, which never overwrites the template.
+- **VM launcher, designed around the operator:**
+  - no arguments opens it (D63);
+  - one command and one `y` installs an update (D64);
+  - execute a pull by project name, with a list of pulls when none is given
+    (D66);
+  - greyed buttons and "Executing since 14:03, last heartbeat 20s ago" while
+    a pull runs (D67);
+  - a console that closes only on `exit`, so a stray Enter cannot lose a
+    night's output (D68, your request).
+- **Error messages as interface.**
+  - Every error names the field and the fix (D49).
+  - An unbound table input lists the tables that fit and the exact line to
+    add (D45).
+  - A mis-nested ordering shows the line to write (`859b2e7`).
+  - A refused connection is one readable line (`d8d806b`).
+  - Validate says what it checked (D62).
+  - The preview ends with the exact next command (D66, D71).
+- **Fixed confusing names.** You took "Dry run" for a required step, so it
+  became "Preview SQL", and the tabs became "Validation Output" and "Pull
+  Log" (D71). Warnings were separated from notes so real warnings stand out
+  (D70).
+
+### 6.3 Software Architecture
+
+- **Two programs joined by files.** YAML Manager plans; Pullmanager executes
+  and writes status into the same manifest; neither imports the other.
+- **A session model derived from one physical fact:** global temp tables die
+  with the connection (your 20 Sep notes; D36). Every session follows the same
+  routine: setup, uploads, PK, then runs.
+- **The manifest is both the plan and the status record.**
+  - Writes are atomic, and fields this version does not know survive (D9,
+    D10).
+  - Session status is derived from its parts (D11).
+  - Phase names are a closed set (D13).
+  - Epochs record which connection a result belongs to (D14).
+- **The batching model.**
+  - Batches are logical at plan time and materialized at run time (D17).
+  - Dimensions cross-multiply (D15), and the bucket is the unit (D16).
+  - A batch narrows the PK by refilling its temp table, so the cohort SQL
+    never knows about batching (D18).
+  - Batches are selected from the durable Projects copy, so a fresh run and a
+    resume share one code path (D19).
+- **The transfer YAML** (D49). One place for recipes, self-describing, with a
+  hash of the recipes that made it.
+- **The launcher is a front end over the command line, not a second
+  implementation** (D44).
+- **Determinism throughout:**
+  - bundle identity (D5, D64);
+  - batch membership (D52);
+  - hash-ordered samples (D60);
+  - transfer YAMLs with no timestamp (D49).
+- **Named and refused anti-patterns:** choosing SQL by searching its text
+  (D31), and reading telemetry from column names (D32).
+
+### 6.4 Data And Database Engineering
+
+- **Cosmos to Projects.** An `OPENQUERY` transfer through local staging, with
+  the linked-server name captured per connection (D36, D37).
+- **SQL rendering.**
+  - A WHERE builder that keeps multi-line parenthesized code lists intact.
+  - Schema qualification that can never double up (D30).
+  - Deduplication with `ROW_NUMBER` over source columns, and deterministic
+    ordering (D58).
+- **Uploads.**
+  - Parameter binding with `fast_executemany`, chunked, which removes the
+    1,000-row limit and SQL injection by construction (D38).
+  - Typed parquet through `pyarrow`, and CSV converted with declared types.
+  - Each upload lands once per pull (D54, D61).
+- **Transactions and idempotency.**
+  - Commit per cohort; the final insert runs in a transaction (D22, D55).
+  - A `_batch` column with delete-before-run makes a retry land its rows
+    exactly once (D52).
+  - Chunks are ordered by a key verified unique (D20, D53).
+- **Consistency across refreshes** (D51). A Cosmos rebuild is detected from
+  the database's creation date, which you found. A PK is rebuilt from its
+  Projects copy, never by re-querying (D25, D52).
+- **Concurrency.**
+  - Per-project temp prefixes, with a number added on a clash (D50).
+  - A lock with a heartbeat, written because `os.kill(pid, 0)` on Windows ends
+    the process it was meant to check (D67).
+- **Performance reasoning.**
+  - Measured column widths are reported, not applied, because batching
+    creates the table before the widest value arrives (D34).
+  - A blanket wide type is not free: memory grants and upload buffers scale
+    with declared width.
+  - A full-scan row count was dropped because the cheap metadata is not
+    readable (D33).
+- **Schema knowledge.**
+  - A 17-table data dictionary, with type-family checks and alias resolution
+    (D26, D27).
+  - Key research: `-1` sentinel keys, `DiagnosisTerminologyDim` holding
+    several rows per diagnosis (so joins need `Type`), and `PatientDim`
+    history rows needing `IsCurrent = 1` (design.md, roadmap).
+
+### 6.5 Clinical Informatics And Research Methods
+
+- **Cohort design as data.** A PK (the index population) plus fact cohorts,
+  built from reusable clinical recipes: `PatientWithDx`, `IndexDiagnosis`,
+  `OtherDiagnoses`, `OtherHospitalizations`.
+- **Two kinds of stratification.**
+  - `during_build` changes the disease definition: ICD-10 `K50.%` for Crohn's
+    disease, `K51.%` for ulcerative colitis.
+  - `split_after_build` stratifies a built population, here by ancestry
+    (D59).
+- **Case-control sampling.** Controls are drawn at `row_mult` times the cases
+  (4:1 in IBD Ancestry), per batch, so they are matched on the batching
+  columns (sex) (D59). Deeper matching, on age and more, is deferred. The
+  VM's R library includes `MatchIt` for propensity matching downstream.
+- **Reproducibility.**
+  - Samples are ordered by `HASHBYTES`, not `NEWID()`, so a result can be
+    looked at again (D60).
+  - Row limits apply only to the root population, so chained cohorts are not
+    compounded into an unrepresentative sample (D29).
+- **Clinical definitions made precise.**
+  - The index date is the earliest diagnosis event.
+  - Diagnoses are deduplicated by patient, then code, keeping each code's
+    first date (`17f7f96`, `859b2e7`).
+  - A catch-all bucket keeps NULLs explicitly, because `NOT IN` drops them
+    silently (D16).
+- **Population integrity.** One table is never stitched from two versions of
+  the cohort, whether across a refresh, a resume or a changed upload file
+  (D24, D25, D51, D52, D54).
+- **Terminology.**
+  - ICD-10-CM, AM and CA, and ICD-9 coding systems.
+  - Why joining terminology without `Type` duplicates diagnoses.
+  - De-identification details in the dictionary, such as shifted birth dates.
+- **SneakPeek as a pilot.** Every phase runs first on the smaller database,
+  so problems show before the long Cosmos run (D65).
+- **Downstream consumers.** Parquet exports with a plain-language contents
+  file listing each table's columns, types and descriptions, which works as
+  a data dictionary for analysts (roadmap).
+
+### 6.6 QA And Test Engineering
+
+- **545 automated tests** across four suites. The runtime suite grew from 47
+  to 346 in three days.
+- **Outcome testing** is written into the project rules: a bug fix gets a test
+  of *what data ends up where*, confirmed to fail with the bug reintroduced.
+  The origin story is D46, where a test passed while completed batches were
+  being deleted.
+- **Fakes that model the dangerous cases.** A fake Projects database keeps
+  rows per batch across executions, fails at a chosen statement after
+  landing rows, and has a transactional mode where only committed work
+  survives.
+- **Contract testing against reality** (D1). Real exported output exposed six
+  errors in the design prose, each pinned by a test.
+- **Tests ship inside the bundle** (D8), so the VM proves a delivery with no
+  network: `python pullmanager.py --tdd`.
+- **Skepticism about evidence.**
+  - The OCR retraction withdrew ten findings, and the retraction table is
+    kept.
+  - The VM AI's answer "reports no counts, rows or results anywhere... it
+    explained the queries rather than running them."
+- **You ran the integration testing.** Every VM build, dry run and execute,
+  reported by screenshot. Your live-run checklist includes checks such as:
+  - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about 4 times the
+    Black PK's count;
+  - no duplicate patient-code pairs;
+  - each patient's index date is their earliest event;
+  - each `_batch` is present exactly once.
+- **User acceptance testing on the Mac.** Your click-through notes drove the
+  Builder changes.
+- 35 defects caught before touching data: Section 8.
+
+### 6.7 Release Engineering And DevOps
+
+- **A bundle format designed for the channel** (Section 3.2).
+- **One command on each side** (D64). `python3 makebundle.py` on the Mac
+  prints the id; `python bundle.py` on the VM verifies, shows the same id and
+  asks before extracting.
+- **Updates that never destroy work** (D42). Local edits survive as `.local`,
+  including in files a new bundle stops shipping.
+- **A repair loop.** Read a file out of the bundle on the VM, bring the text
+  back, fix it on the Mac, rebuild.
+- **Environment parity.**
+  - A Mac Python matched to the VM's version and packages, pinned in
+    `requirements-vm.txt`.
+  - A Linux dev box with Xvfb, for a real Tk test without a display.
+- **Infrastructure.** A self-hosted Gitea server on a Tailscale network.
+- **Reuse.** The same hashed-text transfer method shipped an R package to the
+  offline VM (PheWAS).
+
+### 6.8 Security, Privacy And Compliance
+
+- **The air gap was respected.** Only code goes in. Only screenshots, package
+  names and versions come out. `[confirm]` the policy and approvals.
+- **No credentials anywhere.** Windows-integrated authentication, and settings
+  hold host and database names only (D35).
+- **Parameter binding**, not string-built SQL, for every upload (D38).
+- **Hostile-input handling on extraction.** Absolute paths, `..`, drive
+  letters and backslashes are refused, and the bundle's own code is
+  hash-verified (D6, D64).
+- **Designed within least privilege.** Nothing depends on metadata the login
+  cannot see (D33, keys research).
+- **Only approved software.** No installs; the approved package list is a hard
+  gate.
+- **Data integrity.** Atomic manifest writes, locks, refresh detection, and no
+  mixed populations.
+
+### 6.9 Documentation And Knowledge Management
+
+- **An architecture decision record**: 39 entries on the first night, 71 now.
+  Reversed decisions keep their reasoning (D28, D24, D25, D41, D46).
+- **Three documents, one job each** (D47). The design says what exists, the
+  decisions say why, the roadmap holds status, and "a fact lives in one
+  place."
+- **`CLAUDE.md`, a written operating procedure** for the AI collaborators
+  (Section 6.10).
+- **Temporary briefs for the VM's AI**, deleted once folded in. Raw VM
+  answers are committed before being folded, "kept in history" (`ec4fed4`).
+- **The retraction table** in `yamlprocessing.md`: errors corrected in the
+  open, not quietly.
+
+### 6.10 Directing AI Development
+
+- **Several AI systems.**
+  - Claude on the Mac (Opus 5, then Opus 5.5, per the commit trailers from
+    22 Sep).
+  - The VM's GPT-5 in Kilo Code, for the Gen1 analysis and the keys research.
+  - Earlier tools on 18 to 21 Sep `[confirm]`: those commits carry no AI
+    trailer, and phases 1 to 9 were committed about two minutes apart.
+- **A working method you set** (`CLAUDE.md`):
+  1. The AI reads the code behind each topic, says what it does today, and
+     recommends.
+  2. It ends with "For you to decide" and a numbered Suggested order.
+  3. Decisions are documented before any code, and committed as a clean slate
+     to revert to.
+  4. Items are built in order, one commit each, with outcome tests.
+  5. The AI reports; you discuss; only then are the docs updated.
+- **Decisions that were yours, visible in the record:**
+  - the session-per-multiplier model (20 Sep notes);
+  - the prefix scheme and the refresh query (D50, D51);
+  - the parquet pivot and the `upload_` name (D54);
+  - bird-in-hand commits (D55);
+  - asking whether batches rebuild deterministically before agreeing to drop
+    partial resume (D52);
+  - correcting the project-database assumption (`2badf85`);
+  - Execute's console behaviour (D68);
+  - the tab names (D71).
+- **Checking the AIs' work.**
+  - Retracting the OCR-based findings.
+  - Noticing that the VM AI had not run its queries, and that its dictionary
+    answers were "paraphrased based on Epic's conventions, not exact text".
+    You planned around both (roadmap: gather relationships from the real
+    dictionary pages).
+- **Briefing an AI you cannot talk to directly**: `keys_research_for_vm.md`,
+  and now `vm_gen1_history_prompt.md`.
+
+### 6.11 Delivery And Project Management
+
+- **Phased plans with exit criteria**: phases 1 to 9 for YAML Manager, 0 to 10
+  for Pullmanager, each closed and recorded.
+- **Numbered fix lists**, each built in order and reported.
+- **A branch policy.** Work moved from a long-lived branch to `main` at
+  release 0.3.0.
+- **Pace.** 130 commits in eight days, from a blank repository to a live
+  multi-session pull on production data. `[confirm]` whether this ran
+  alongside clinical duties.
+
+### 6.12 Hands-On Technical Work
+
+`[confirm]` and expand. The record shows:
+
+- Gen1 itself, which you built on the VM (with the VM's AI `[confirm]`).
+- Hand-authored templates and recipes, including the first diagnosis recipe
+  in the initial commit.
+- The data dictionary work.
+- SQL probes on the VM (`sys.databases`, global-temp visibility) and
+  PowerShell probes (`$PSVersionTable`, `ipconfig`).
+- The PheWAS R build.
+- Hand edits to transfer YAMLs on the VM.
+
+---
+
+## 7. What Was Tried, Changed Or Dropped
+
+Most of this is no longer visible in the current documents.
+
+| Was | Became | Why | Ref |
+| --- | --- | --- | --- |
+| Gen1: one giant `Cosmos.sql` and `Projects.sql`, one supervisor script | Per-session, per-block SQL addressed by manifest id | Fragile text matching; mixed responsibilities | D31, Section 4 |
+| YAML Manager's target: one finished `_Full.yaml` for Gen1 | Pre-YAML, then a split folder, then a manifest | Temp tables die per connection; batching needs a session | 20 Sep notes |
+| Static HTML dashboard (`UI/manager_dashboard.html`) | Served UI; `telescope.py` renamed `yamlmanager.py` | Live refresh; one backend | 18 to 21 Sep |
+| A bespoke embedded `--tdd` harness | stdlib `unittest` (104 fewer lines, same tests) | Real failure diffs; portability | D7 |
+| Pullmanager to call Gen1's `makeServer` and `makeLocal` | Pullmanager renders its own SQL | Those scripts existed only in the analysis documents | `c8da986` |
+| Legacy `dedup_key` as a hard error | Accepted with a warning | The real danger was silent data loss | D28 |
+| A required `.env` with eight blanks | Optional, then no example shipped | Hosts are DNS aliases; nothing to configure | D35, D43 |
+| Template seeded "write only if absent" | Shipped as `template.yaml.example`, then not shipped | Nothing you author is bundled | `c24832c`, D49 |
+| Bundle carrying recipes, the web UI and a template | Removed; the VM gets transfer YAMLs | Two copies of recipes drift apart | D41, D49 |
+| `--resume-partial` | Disabled, then removed; single-batch retry instead | It lost completed batches | D24, D46, D52 |
+| `##JVM_` temp prefix (your initials) | Per-project prefix, numbered on a clash | Concurrent pulls collided | D50 |
+| Batch labels like `LA-Female`, with a duplicate-name error | `b1of4-LA-Female` | Unique by construction; shows progress | D53 |
+| CSV uploads as literal `INSERT ... VALUES` text | Bound parameters; then CSV converted to typed parquet landing in Projects | 1,000-row cap; text joins to BIGINT | D38, D54 |
+| The unfiltered `source_raw` row count | Dropped | A full scan for an approximate number | D33 |
+| VARCHAR sized from `MAX(LEN)+50` | Measured and reported only | Batches arrive after the table exists | D34 |
+| `NEWID()` random sampling | `HASHBYTES` ordering | Reproducible | D60 |
+| `stop_at_for_non_pk_tables`, `print_md`, `printout_md` | Retired with a warning | Dead options | D62 |
+| Shared `split/` and `sql/` folders | `runs/<project>/` | Two projects overwrote each other | D57 |
+| `pullmanager_bundle.py`, `--verify-bundle` then `--extract`, `--gui` | `bundle.py`; `python bundle.py` then `y`; no-args launcher | Fewer steps on the VM | D63, D64 |
+| Execute piped inside the launcher | Its own console window, plus a log file | DLL initialization failure on the VM | D68 |
+| "Output" tab, "Dry run" button | "Validation Output", "Pull Log", "Preview SQL" | Read as a required step | D71 (drafted) |
+| Copy and Download Custom Recipe buttons | Save as Recipe | Pasting could break indentation | D56 |
+| Seven overlapping design documents | Three | Facts had drifted between them | D47 |
+| PheWAS side project in the repository | Removed the same day | Out of scope | `840d996` |
+| Your folder sketch for delivered projects | Partly built (`runs/<project>/`); the rest planned | | roadmap |
+| A YAML Manager hand-off button | Not built | Hand-off stays file-based | roadmap |
+| Key and relationship validation | Researched, not built | Needs the real dictionary pages | roadmap |
+
+---
+
+## 8. Defects Caught Before They Cost Data
+
+"Surfaced by" is how each came to light. Your VM runs are marked **you**.
+
+| # | Defect | What it would have done | Surfaced by | Ref |
+| --- | --- | --- | --- | --- |
+| 1 | Batch axes not multiplied | Pulled the full cohort three times | Building against real output | D15, `a129b74` |
+| 2 | Catch-all used `NOT IN` | Rows with NULL silently vanished | Phase 7 build | D16 |
+| 3 | Double schema qualification | `dbo.dbo.` invalid SQL | Writing the test | D30 |
+| 4 | Gen1 chose SQL by text search | `PKTable2` dropped and refilled every run | Gen1 analysis | D31 |
+| 5 | Stale server name kept | `OPENQUERY` aimed at a server that was no longer ours | Review | D37 |
+| 6 | Gen1 ignored `dedup_key` | No deduplication, no error | Your OCR fixtures, verified | D28 |
+| 7 | Nothing read `.env` | A correct config ignored | "What does the file need?" | D35 |
+| 8 | `Dual` passed as a database name | SneakPeek cohorts read Cosmos and were labelled SneakPeek | Review | D39 |
+| 9 | `finish()` never called | Every unit stayed "running"; resume redid finished work | Tests | `98470d1` |
+| 10 | Fixture read a column from an un-joined table | SQL that could not bind | First dictionary run | D26 |
+| 11 | Upload paths anchored differently on each side | Every upload failed after the handoff | End-to-end pathway run | D40 |
+| 12 | Update replaced the extracted folder wholesale | VM edits deleted | Design review | D42 |
+| 13 | `--resume-partial` | Deleted the batches it claimed to keep; its test passed anyway | Docs-to-code reconciliation | D46 |
+| 14 | Multiplied cohorts in every session | 1,120 SQL files; the wrong population could land | Splitting the real template | `61befa4` |
+| 15 | Chunked runs pulled only the first chunk | Most of each batch missing, silently | Docs review | `57e3c50` |
+| 16 | Concurrent pulls shared temp names | One pull dropped another's tables mid-run | Raised in planning; you designed the fix | D50 |
+| 17 | A failed run left partial rows; per-batch counts wrong | Duplicates on retry; false warnings | Planning D52 | D52 |
+| 18 | `COUNT(DISTINCT a, b)` | Invalid T-SQL for any two-column PK | Code reading | `bb96132` |
+| 19 | One commit per run | A failure on cohort 2 lost cohort 1 | Your transaction question | D55 |
+| 20 | Uploaded CSV PK had no Projects copy; columns as text | Could not run; every join converted types | Code reading | D54 |
+| 21 | Dedup partitioned on an output alias | Every OtherDiagnoses run would fail | **Your VM dry run** | D58 |
+| 22 | `dedup_order_by` never read | "First diagnosis" was any diagnosis | **Your VM dry run** | D58 |
+| 23 | Race level never applied | Black and White cohorts were the same patients | **Your VM dry run** | D59 |
+| 24 | `random_pk_sample` ignored | A clustered, non-random test sample | **Your VM dry run** | D60 |
+| 25 | Upload landed in every session | Eight copies of one upload | **Your VM dry run** | D61 |
+| 26 | Recipe wrote into the wrong table and excluded the index event | Wrong index diagnoses | **Your VM dry run** review | `17f7f96` |
+| 27 | Placeholder project database from the Builder | First Execute failed to connect | **Your first Execute** | `d8d806b` |
+| 28 | Duplicated settings in the transfer YAML | Hand edits on the VM silently ignored | **Your first Execute** | `d8d806b` |
+| 29 | `smallset` at the top level ignored | Test limit silently dropped | Same session | `51c7069` |
+| 30 | Fix text derived the database name from the folder | Wrong advice | **You** | `2badf85` |
+| 31 | Two projects shared folders | One export replaced another's live manifest | Planning for concurrency | D57 |
+| 32 | PK key read two ways | Uniqueness never checked; chunking would fail | **Your live run** | D69 (drafted) |
+| 33 | Gen1 limited every PK-typed cohort | Compounded, unrepresentative samples | Gen1 analysis | D29 |
+| 34 | `--port 0` wrote a static file | The opposite of what was asked | Use | `d4c760b` |
+| 35 | Builder wrote `vars:` with an empty body | Invalid YAML | Save & Refresh work | `39c6490` |
+
+---
+
+## 9. Decision Index (D1 To D71)
+
+One line each; the reasoning is in `decisions.md`.
+
+| D | Decision |
+| --- | --- |
+| 1 | Build contracts against real generator output, not design prose |
+| 2 | Old code is a reference quarry, not a porting source |
+| 3 | Ship one self-extracting file |
+| 4 | Comment-prefix the payload rather than base64 it (readable, unforgeable markers) |
+| 5 | Deterministic bundles, with no timestamp |
+| 6 | Extraction refuses by default and stages before swapping |
+| 7 | stdlib `unittest` |
+| 8 | Ship the tests inside the bundle |
+| 9 | Mutate the loaded manifest in place, so unknown keys survive |
+| 10 | Write the manifest atomically |
+| 11 | Derive session status from its children |
+| 12 | Skip and block reasons go in `note`, not `error` |
+| 13 | Phase names are a closed set |
+| 14 | Session epochs, added before they were needed |
+| 15 | Batch dimensions cross-multiply |
+| 16 | The unit of multiplication is the bucket; the catch-all includes NULL |
+| 17 | Expand at plan time only what is knowable then |
+| 18 | Batches narrow the PK by replacing the temp table's contents |
+| 19 | Select batches from the Projects copy, on one code path |
+| 20 | Verify PK uniqueness before any batch |
+| 21 | Drop and create once per session; runs append |
+| 22 | Only the final insert is in a transaction |
+| 23 | A failed run does not stop its siblings; a failed phase does |
+| 24 | Default resume replays the whole session (amended by D46) |
+| 25 | Restore the PK by re-uploading it (amended by D46) |
+| 26 | The data dictionary is the source of truth for types |
+| 27 | An unknown table is a hard error |
+| 28 | Accept legacy `dedup_key`, with a warning (reversed from a hard error) |
+| 29 | Row limits apply to the root PK only |
+| 30 | Qualify `from` and `join` alike, never twice |
+| 31 | Never select SQL by searching its text |
+| 32 | Telemetry has a declared shape |
+| 33 | Drop the unfiltered raw count |
+| 34 | Measure column widths, but only report them |
+| 35 | No credentials, and no `.env` required |
+| 36 | Hold the Cosmos connection open for the session |
+| 37 | Capture the server name per connection; never cache it |
+| 38 | Upload by parameter binding, not a literal VALUES list |
+| 39 | `cosmos_db` is chosen in the template and resolved carefully |
+| 40 | The split folder is the self-contained handoff unit |
+| 41 | The bundle carries YAML Manager (amended) |
+| 42 | Re-extraction never destroys VM-side work |
+| 43 | No `.env` example |
+| 44 | A tkinter launcher on the VM, over the command line |
+| 45 | An unbound table input is an error that suggests, never picks |
+| 46 | `--resume-partial` disabled |
+| 47 | Three design documents, one job each |
+| 48 | Typed paths resolve from the working directory |
+| 49 | Recipes stay on the Mac; the VM gets a transfer YAML |
+| 50 | Per-project temp prefix; a clash adds a number |
+| 51 | Detect a Cosmos refresh from `create_date`, and re-pull everything |
+| 52 | Retry a failed batch alone, using a `_batch` column |
+| 53 | Numbered batch labels; chunks run inside their batch |
+| 54 | Every upload lands typed in Projects, and that copy is the source |
+| 55 | Commit each cohort before pulling the next |
+| 56 | The Builder's one write: Save as Recipe |
+| 57 | Each project gets `runs/<project>/` |
+| 58 | Dedup names the cohort's columns; the SQL uses their sources |
+| 59 | A split level filters its own PK; a control is sampled against its case |
+| 60 | `random_pk_sample` orders by a hash of the key |
+| 61 | A non-PK upload lands once per pull |
+| 62 | Retired options removed; Validate says what it checked |
+| 63 | The VM folder: `bundle.py` and a root `pullmanager.py` |
+| 64 | One command on each side to build and to install |
+| 65 | Under `Dual`, SneakPeek sessions run first |
+| 66 | `--execute` takes a project name; the preview ends with the command |
+| 67 | A running Execute holds a lock with a heartbeat |
+| 68 | Execute runs in its own console window and writes a log |
+| 69 | The PK's key is one rule everywhere (drafted 25 Sep) |
+| 70 | The pull readout: a plain-text log, with widths once per session as notes (drafted) |
+| 71 | The launcher names: Validation Output, Pull Log, Preview SQL (drafted) |
+
+---
+
+## 10. Document Archaeology
+
+Every planning document that ever existed, and what became of it.
+
+| Document | Written | What it was | Fate |
+| --- | --- | --- | --- |
+| `next.qmd` | 17 Sep | Your first feature list | Superseded; deleted 23 Sep |
+| `DSVM Plugins.md` / `.yaml` | 18 Sep | The VM's software inventory | Kept as `YAMLs/DSVM Plugins.yaml` |
+| `managerplan.qmd` | 18 Sep | The 1,112-line YAML Manager specification | Became a pointer; deleted 23 Sep |
+| `productionplan.qmd` | 18 Sep | Product context, constraints, build phases | Deleted 23 Sep |
+| `buildprogress.qmd` | 18 Sep | Phase-by-phase build log with lessons | Deleted 23 Sep |
+| `testingguide.qmd` | 18 Sep | How the tests and fixtures worked | Deleted 23 Sep |
+| `UI/manager_dashboard.html` | 18 Sep | The static UI prototype | Deleted 21 Sep |
+| `splittingVMtasks.qmd` | 20 Sep | Your split and manifest brainstorm, and ten answers | Deleted 23 Sep |
+| `yamlmanagerDesign.qmd` | 20 Sep | YAML Manager to Pullmanager flow, phases 0 to 9 | Deleted 23 Sep |
+| `progress.md` | 20 Sep | Phase tracker | Deleted 23 Sep |
+| `old_Generator_analysis.qmd` | 21 Sep | The VM AI's Gen1 analysis, OCR'd | Deleted 23 Sep (git) |
+| `generator_understanding.md` | 21 Sep | First digest of Gen1 | Deleted 23 Sep |
+| `yamlprocessing.md` | 21 Sep | Example-pull analysis, retracted 22 Sep | Deleted 23 Sep |
+| `inputSimple.yaml`, `examplecos.sql`, `exampleproj.sql` | 21 Sep | Gen1 input and output, corrected | Deleted 23 Sep |
+| `pullmanager_refactor_plan.md` | 22 Sep | Pullmanager phases 0 to 10 | Deleted 23 Sep |
+| `pullmanager_contracts.md` | 22 Sep | Verified contracts | Folded into design.md |
+| `decisions.md` | 22 Sep | The decision record, 39 entries | Current, 71 entries |
+| `artifactDesign.qmd` | 22 Sep | Your delivered-project folder sketch | Into the roadmap |
+| `todo.qmd` | 23 Sep | AI notes on routing and temp collisions | Into the roadmap |
+| `design.md`, `roadmap.md` | 23 Sep | Current documentation | Current |
+| `CLAUDE.md`, `Readme.MD` | 23 Sep | Working method; "Peer through the Cosmos" | Current |
+| `sideproject-phewas/` | 23 Sep | Offline R package install | Removed the same day |
+| `recentResearch.qmd` | 23 Sep | Your research: prefixes, refresh, uploads, resume | Folded into D50 to D53 |
+| `keys_research_for_vm.md` | 23 Sep | Brief for the VM's AI on keys | Moved to `keys_research/` |
+| `responses.md` | 24 Sep | Your answers and UI test notes | Folded into D54 to D56 |
+| `keys_research/vm_ai_answer.md` | 24 Sep | The VM AI's answer, transcribed | Current, pending |
+| `response/responses.md` | 25 Sep | Your responses to D65 to D68, readout request | Being folded (D69 to D71) |
+| `commemorating/` | 25 Sep | This task | Current |
+
+---
+
+## 11. Open Questions For You
+
+Answer these before anything here becomes a resume line.
+
+1. **The pain point**, in your words. How were Cosmos pulls done before Gen1,
+   and how long did one take before and after?
+2. **Gen1.** When did it start, how long did it take, how many pulls or
+   projects did it serve, and who used its outputs? (The VM brief asks the
+   VM's AI for the dates and history.)
+3. **Learning.** When did you start SQL, Python and R, and how did you learn
+   them?
+4. **Tools on 18 to 21 Sep.** Which AI assistant built that work? Those
+   commits carry no AI trailer.
+5. **The data dictionary.** How were its 2,792 lines built: transcribed from
+   the interactive dictionary, with the VM's AI, or by hand?
+6. **Transfer mechanics.** How exactly does text get onto the VM, and how do
+   screenshots get off it? This is part of the story.
+7. **Hand-written work.** Which code or SQL did you write yourself? Be
+   precise: interviewers will ask.
+8. **Outcomes.** The first live run's results (runtime, whether counts
+   matched), time saved per pull, and anyone else who uses or will use
+   Telescope.
+9. **What can be named.** Your institution, your title, your approvals, and
+   whether conversations with Epic can be mentioned.
+10. **Git identities.** Are `jungleJM` and `gitea_admin` both you, on
+    different machines?
+11. **Clinical context.** The research question behind IBD Ancestry, and
+    whether it can be described publicly.
+
+**On attribution.** The record shows you made the product, design and
+architecture decisions and did all testing on the VM. It also shows that from
+22 September most implementation was typed by an AI assistant under your
+direction. For a Chief Medical Informatics Officer or Head of Medical
+Informatics role, "specified, supervised, tested and shipped, using AI coding
+agents" is accurate and is the modern form of managing a development team.
+Say it plainly rather than implying you hand-wrote 18,000 lines.
+
+---
+
+## 12. Recovering The Sources
+
+Deleted documents are all in git. For example:
+
+```bash
+git show 721ed36^:QMDs/old_generator/old_Generator_analysis.qmd   # Gen1 analysis
+git show 721ed36^:QMDs/old_generator/yamlprocessing.md            # the OCR retraction
+git show 6a16bd8^:QMDs/yamlmanager/completed/splittingVMtasks.qmd # your split notes
+git show 6b9f903:managerplan.qmd                                  # original 1,112-line spec
+git show 6a16bd8^:QMDs/pullmanager/pullmanager_refactor_plan.md
+git show 6a16bd8^:QMDs/pullmanager/pullmanager_contracts.md
+git show f7a3400^:QMDs/recentResearch.qmd                         # your research note
+git show b328879^:responses.md                                    # your UI test notes
+git show 840d996^:QMDs/sideproject-phewas/sideproject-phewas.qmd
+git log --reverse --format='%h %ad %s%n%b' --date=iso              # every commit with its reasoning
+```
