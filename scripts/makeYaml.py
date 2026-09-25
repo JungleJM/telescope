@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from dataclasses import dataclass, field
 from itertools import product
 from pathlib import Path
@@ -32,8 +33,9 @@ PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 TRANSFER_SUFFIX = "_transfer"
 WILDCARD_CHARS = ("%", "_", "[", "]")
-DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
-DEFAULT_SPLIT_DIR = Path("split")
+RUNS_DIR = Path("runs")
+# Dropped from a template's file name to name its run folder (D57).
+RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_temp")
 
 
 # =============================================================================
@@ -328,6 +330,27 @@ def script_root() -> Path:
 
 def project_root() -> Path:
     return script_root().parent
+
+
+def run_folder_name(template_path: str | Path) -> str:
+    """`<project>` in `runs/<project>/` (D57): the template's file name without
+    `.yaml` and without `_transfer` or `_temp`.
+
+    The file name rather than `project_folder`, so two transfer files never
+    share a run folder. The launcher keeps a copy of this rule
+    (`launcher.run_folder_name`); a runtime test holds the two together.
+    """
+    stem = Path(template_path).stem
+    for suffix in RUN_NAME_SUFFIXES:
+        if stem.endswith(suffix) and stem != suffix:
+            stem = stem[: -len(suffix)]
+            break
+    return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
+
+
+def default_split_dir(template_path: str | Path) -> Path:
+    """Where a split goes without `--out-dir`: `runs/<project>/split` (D57)."""
+    return project_root() / RUNS_DIR / run_folder_name(template_path) / "split"
 
 
 def default_template_path() -> Path:
@@ -2347,7 +2370,11 @@ def build_pullmanifest(
         return result
     manifest = result.analysis.get("split_plan", {})
     result.finished_yaml = manifest
-    out_path = Path(output_path) if output_path else project_root() / DEFAULT_MANIFEST_PATH
+    out_path = (
+        Path(output_path)
+        if output_path
+        else default_split_dir(template_path or default_template_path()) / "pullmanifest.yaml"
+    )
     result.output_path = str(out_path)
     if write and result.ok:
         dump_yaml(manifest, out_path)
@@ -2501,7 +2528,11 @@ def write_split_artifacts(
             "derived from the project folder's number.",
         )
         return result
-    out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
+    out_dir = (
+        Path(output_dir)
+        if output_dir
+        else default_split_dir(template_path or default_template_path())
+    )
     finished_yaml = copy.deepcopy(result.finished_yaml)
     out_dir.mkdir(parents=True, exist_ok=True)
     stage_upload_files(
@@ -4163,6 +4194,37 @@ cohorts:
         self.assertEqual(setup["vars"]["min_date_key"], 20200101)
 
 
+class RunFolderTests(MakeYamlTest):
+    """Each project's split in its own folder, so projects run side by side (D57)."""
+
+    def test_the_name_is_the_file_name_without_our_suffixes(self):
+        for name, expected in (
+            ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry"),
+            ("IBD_Ancestry_temp.yaml", "IBD_Ancestry"),
+            ("template.yaml", "template"),
+            ("My Pull (v2).yaml", "My_Pull_v2"),
+            ("_transfer.yaml", "transfer"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(run_folder_name(Path("/Z/Project D139081") / name), expected)
+
+    def test_two_projects_split_without_out_dir_do_not_overwrite_each_other(self):
+        first = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        second = write_temp_yaml(
+            self.tmp, "Celiac_transfer.yaml", tiny_template().replace("Test Run", "Celiac")
+        )
+        recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+        with mock.patch(f"{__name__}.project_root", return_value=self.tmp / "repo"):
+            for template in (first, second):
+                self.assertCompiles(write_split_artifacts(template, recipes))
+        runs = self.tmp / "repo" / "runs"
+        self.assertEqual(sorted(p.name for p in runs.iterdir()), ["Celiac", "IBD_Ancestry"])
+        for project, folder in (("IBD_Ancestry", "Test Run"), ("Celiac", "Celiac")):
+            manifest = load_yaml(runs / project / "split" / "pullmanifest.yaml")
+            setup = load_yaml(runs / project / "split" / manifest["sessions"][0]["phases"]["setup"]["yaml"])
+            self.assertEqual(setup["project_folder"], folder)
+
+
 class ProjectDbTests(MakeYamlTest):
     def test_missing_warns_while_writing_and_stops_the_split(self):
         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -4241,6 +4303,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
+    "run_folders": RunFolderTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
 }
@@ -4312,7 +4375,11 @@ def main(argv: list[str] | None = None) -> int:
         metavar="NAME=TYPE",
         help="With --csv-to-parquet: a column's type, e.g. PatientDurableKey=BIGINT.",
     )
-    parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help="Directory for split export artifacts; default runs/<project>/split (D57).",
+    )
     parser.add_argument("--report", action="store_true")
     parser.add_argument("--report-out", default=None)
     parser.add_argument("--tdd", nargs="?", const="all", default=None)

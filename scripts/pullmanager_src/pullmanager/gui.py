@@ -32,8 +32,8 @@ FIELDS = (
     # attribute, label, kind, hint
     ("template", "Transfer YAML", "file", "from the Mac: makeYaml --export-transfer"),
     ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
-    ("split_dir", "Split folder", "dir", "written by Export split"),
-    ("sql_dir", "SQL folder", "dir", "written by Dry run"),
+    ("split_dir", "Split folder", "dir", "blank = runs\\<project>\\split"),
+    ("sql_dir", "SQL folder", "dir", "blank = runs\\<project>\\sql"),
 )
 
 
@@ -247,8 +247,12 @@ class LauncherApp:
         self.output.configure(state="disabled")
 
     def refresh_status(self) -> None:
-        manifest = self.workdir / self.paths().manifest()
-        rows, message = launcher.try_manifest_rows(manifest)
+        try:
+            manifest = self.workdir / self.paths().manifest()
+        except LauncherError as exc:
+            manifest, rows, message = None, [], str(exc)
+        else:
+            rows, message = launcher.try_manifest_rows(manifest)
         self.tree.delete(*self.tree.get_children())
         parents: dict[str, str] = {}
         for row in rows:

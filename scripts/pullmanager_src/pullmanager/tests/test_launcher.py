@@ -135,6 +135,56 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
 
 
+class RunFolderTests(unittest.TestCase):
+    """Each project's split and SQL in its own folder (D57)."""
+
+    SHARE = "Z:\\Project D139081\\"
+
+    def test_blank_folders_are_the_projects_own(self):
+        paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+        split = str(Path("runs") / "IBD_Ancestry" / "split")
+        self.assertEqual(command_export_split(TOOLS, paths)[-1], split)
+        dry_run = command_dry_run(TOOLS, paths, Options())
+        self.assertIn(str(Path(split) / "pullmanifest.yaml"), dry_run)
+        self.assertEqual(dry_run[dry_run.index("--out-dir") + 1], str(Path("runs") / "IBD_Ancestry" / "sql"))
+        self.assertIn(str(Path(split) / "pullmanifest.yaml"), command_execute(TOOLS, paths, Options()))
+
+    def test_the_share_folder_name_plays_no_part(self):
+        # The repo sits in "Project D139081"; the project is named by its file.
+        paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+        self.assertNotIn("139081", str(paths.manifest()))
+        out_dir = command_export_split(TOOLS, paths)[-1]
+        self.assertEqual(out_dir, str(Path("runs") / "IBD_Ancestry" / "split"))
+
+    def test_two_projects_never_share_a_manifest(self):
+        first = Paths(template="IBD_Ancestry_transfer.yaml").manifest()
+        second = Paths(template="IBD_Ancestry_v2_transfer.yaml").manifest()
+        self.assertNotEqual(first, second)
+
+    def test_a_typed_folder_still_wins(self):
+        paths = Paths(template="IBD_Ancestry_transfer.yaml", split_dir="elsewhere", sql_dir="q")
+        self.assertEqual(paths.manifest(), Path("elsewhere") / "pullmanifest.yaml")
+        self.assertEqual(paths.sql_folder(), Path("q"))
+
+    def test_no_transfer_yaml_and_no_folder_asks_for_one(self):
+        with self.assertRaisesRegex(LauncherError, "transfer YAML"):
+            command_dry_run(TOOLS, Paths(), Options())
+
+    def test_the_rule_matches_makeyaml(self):
+        # The launcher cannot import makeYaml, so it keeps a copy of the rule.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("makeyaml_for_rule", locate_tools().make_yaml)
+        make_yaml = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = make_yaml  # its dataclasses look themselves up there
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(make_yaml)
+        for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
+                     "My Pull (v2).yaml", "_transfer.yaml"):
+            with self.subTest(name=name):
+                self.assertEqual(launcher.run_folder_name(name), make_yaml.run_folder_name(name))
+
+
 class CommandRunnerTests(TempDirTestCase):
     def run_to_end(self, runner, code, timeout=15):
         runner.start([sys.executable, "-c", code], cwd=self.tmp)
@@ -259,6 +309,16 @@ class SettingsTests(TempDirTestCase):
         self.assertEqual(load_settings(self.tmp), Paths())
         (self.tmp / launcher.SETTINGS_FILENAME).write_text("{not json", encoding="utf-8")
         self.assertEqual(load_settings(self.tmp), Paths())
+
+    def test_an_older_launchers_saved_defaults_become_the_projects_own(self):
+        # It saved "split" and "sql" whether or not they were chosen (D57).
+        (self.tmp / launcher.SETTINGS_FILENAME).write_text(
+            '{"template": "IBD_Ancestry_transfer.yaml", "split_dir": "split", "sql_dir": "sql"}',
+            encoding="utf-8",
+        )
+        loaded = load_settings(self.tmp)
+        self.assertEqual((loaded.split_dir, loaded.sql_dir), ("", ""))
+        self.assertEqual(loaded.manifest(), Path("runs") / "IBD_Ancestry" / "split" / "pullmanifest.yaml")
 
     def test_settings_from_before_d49_still_load(self):
         # Older launchers remembered a recipes file; that choice no longer exists.

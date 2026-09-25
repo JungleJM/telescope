@@ -11,7 +11,7 @@ On the VM:
 
     python pullmanager_bundle.py --verify-bundle
     python pullmanager_bundle.py --extract ./pullmanager_runtime
-    python ./pullmanager_runtime/pullmanager.py split/pullmanifest.yaml
+    python ./pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
 
 Bundles are deterministic: the same sources always produce byte-identical
 output, so a rebuild with no source changes leaves git clean.

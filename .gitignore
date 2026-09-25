@@ -8,3 +8,5 @@ cleanup/
 .env.*
 !.env.example
 .DS_Store
+# Splits and dry-run SQL, one folder per project (D57).
+/runs/

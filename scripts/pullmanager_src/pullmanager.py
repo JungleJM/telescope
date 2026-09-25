@@ -3,7 +3,7 @@
 
 Sits beside the `pullmanager/` package so the VM can run:
 
-    python pullmanager_runtime/pullmanager.py split/pullmanifest.yaml
+    python pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
 """
 
 import sys

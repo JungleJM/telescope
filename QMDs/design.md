@@ -1000,9 +1000,9 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 ### Command Line
 
 ```bash
-pullmanager.py split/pullmanifest.yaml                      # summarize
-pullmanager.py --dry-run split/pullmanifest.yaml [--out-dir sql] [-v] [--all] [--retry-failed] [--repull]
-pullmanager.py --execute split/pullmanifest.yaml [--retry-failed] [--repull] [--env FILE]
+pullmanager.py runs/<project>/split/pullmanifest.yaml              # summarize
+pullmanager.py --dry-run runs/<project>/split/pullmanifest.yaml [--out-dir runs/<project>/sql] [-v] [--all] [--retry-failed] [--repull]
+pullmanager.py --execute runs/<project>/split/pullmanifest.yaml [--retry-failed] [--repull] [--env FILE]
 pullmanager.py --gui
 pullmanager.py --tdd [module]
 ```
@@ -1037,8 +1037,8 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (114)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (317)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (116)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (325)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (46)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

@@ -115,8 +115,9 @@ class ConstructionTests(GuiTestCase):
         )
 
     def test_starts_from_the_defaults(self):
-        self.assertEqual(self.app.paths().split_dir, "split")
-        self.assertEqual(self.app.paths().sql_dir, "sql")
+        # Blank: the project's own runs/<project>/ folders (D57).
+        self.assertEqual(self.app.paths().split_dir, "")
+        self.assertEqual(self.app.paths().sql_dir, "")
 
     def test_restores_remembered_choices(self):
         from ..launcher import Paths, save_settings
@@ -169,14 +170,19 @@ class ActionTests(GuiTestCase):
 
 
 class StatusTests(GuiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+
     def test_shows_one_row_per_session_phase_and_run(self):
-        dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
         self.app.tree.insert.reset_mock()
         self.app.refresh_status()
         self.assertEqual(self.app.tree.insert.call_count, 11)
 
     def test_runs_nest_under_their_session(self):
-        dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
         self.app.tree.insert.reset_mock()
         self.app.refresh_status()
         parents = [call.args[0] for call in self.app.tree.insert.call_args_list]
@@ -186,3 +192,9 @@ class StatusTests(GuiTestCase):
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]
         self.assertIn("Export a split", message)
+
+    def test_no_transfer_yaml_yet_says_so_instead_of_failing(self):
+        self.app.vars["template"].set("")
+        self.app.refresh_status()
+        message = self.app.status_message.configure.call_args.kwargs["text"]
+        self.assertIn("transfer YAML", message)

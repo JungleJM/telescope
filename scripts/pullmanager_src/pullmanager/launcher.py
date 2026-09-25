@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -24,6 +25,11 @@ from .manifest import Manifest, ManifestError
 
 SETTINGS_FILENAME = ".pullmanager-gui.json"
 MANIFEST_FILENAME = "pullmanifest.yaml"
+RUNS_DIR = "runs"
+# Dropped from a transfer YAML's file name to name its run folder (D57).
+RUN_NAME_SUFFIXES = ("_transfer", "_temp")
+# What an older launcher saved as if chosen: it meant "the default" (D57).
+OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 
 
 class LauncherError(RuntimeError):
@@ -59,6 +65,21 @@ def locate_tools(package_dir: Path | None = None) -> Tools:
     )
 
 
+def run_folder_name(template: str | Path) -> str:
+    """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
+    without `.yaml` and without `_transfer` or `_temp`.
+
+    Only the file name: the folders above it (the project share) play no part.
+    The same rule as `makeYaml.run_folder_name`; a test holds the two together.
+    """
+    stem = Path(str(template).replace("\\", "/")).stem
+    for suffix in RUN_NAME_SUFFIXES:
+        if stem.endswith(suffix) and stem != suffix:
+            stem = stem[: -len(suffix)]
+            break
+    return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
+
+
 @dataclass
 class Paths:
     """What the user has chosen. Blank optional fields fall back to defaults.
@@ -66,15 +87,29 @@ class Paths:
     `template` is a transfer YAML (D49): recipes already written out, so there
     is no recipes file to choose. Settings saved by an older launcher may still
     name one; unknown keys are ignored on load.
+
+    A blank split or SQL folder is the project's own, `runs/<project>/split`
+    and `runs/<project>/sql`, so two projects never share one (D57).
     """
 
     template: str = ""
     datadictionary: str = ""
-    split_dir: str = "split"
-    sql_dir: str = "sql"
+    split_dir: str = ""
+    sql_dir: str = ""
+
+    def run_dir(self) -> Path:
+        return Path(RUNS_DIR) / run_folder_name(_require(self.template, "transfer YAML"))
+
+    def split_folder(self) -> Path:
+        chosen = self.split_dir.strip()
+        return Path(chosen) if chosen else self.run_dir() / "split"
+
+    def sql_folder(self) -> Path:
+        chosen = self.sql_dir.strip()
+        return Path(chosen) if chosen else self.run_dir() / "sql"
 
     def manifest(self) -> Path:
-        return Path(self.split_dir) / MANIFEST_FILENAME
+        return self.split_folder() / MANIFEST_FILENAME
 
 
 @dataclass
@@ -113,14 +148,14 @@ def command_validate(tools: Tools, paths: Paths) -> list[str]:
 def command_export_split(tools: Tools, paths: Paths) -> list[str]:
     return [
         sys.executable, str(tools.make_yaml), *_yaml_inputs(paths),
-        "--export-split", "--out-dir", _require(paths.split_dir, "split folder"),
+        "--export-split", "--out-dir", str(paths.split_folder()),
     ]
 
 
 def command_dry_run(tools: Tools, paths: Paths, options: Options) -> list[str]:
     return [
         sys.executable, str(tools.pullmanager), "--dry-run", str(paths.manifest()),
-        "--out-dir", _require(paths.sql_dir, "SQL folder"), *_resume_flags(options),
+        "--out-dir", str(paths.sql_folder()), *_resume_flags(options),
     ]
 
 
@@ -285,7 +320,11 @@ def load_settings(directory: Path | None = None) -> Paths:
     except (OSError, ValueError):
         return Paths()
     known = {f for f in Paths.__dataclass_fields__}
-    return Paths(**{k: str(v) for k, v in data.items() if k in known})
+    chosen = {k: str(v) for k, v in data.items() if k in known}
+    for key, old_default in OLD_DEFAULT_FOLDERS.items():
+        if chosen.get(key, "").strip() == old_default:
+            chosen[key] = ""
+    return Paths(**chosen)
 
 
 def save_settings(paths: Paths, directory: Path | None = None) -> Path:

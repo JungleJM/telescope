@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "124dc09016283612b93e2a9f3d7058de783baf3aee13c522b3cdfe2c627c177c",
+  "content_id": "d1b67c6b1b8de7763c375b5e861b5e4bce7562ea7dd7b6780ace64c0be2cc8c2",
   "file_count": 37,
   "files": [
     {
@@ -375,8 +375,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager.py",
       "policy": "replace",
-      "sha256": "ebdc02f9ba0685fc16b3aaea58c6563e0b91f3e69bcbce40bf953e414f787add",
-      "size": 408
+      "sha256": "36b9c407e6c6357d518b3e35456fad60c0f2585ca1f85404c33cb39807838c4f",
+      "size": 423
     },
     {
       "path": "pullmanager/__init__.py",
@@ -417,14 +417,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "af9cced1114290e03e22afda40723748295944f3b9d12c0d27c072508055211c",
-      "size": 11235
+      "sha256": "b58f04059b3ae8d194c27fdf5f14283470fa5001754953889151ca7ed0e6a8ba",
+      "size": 11381
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "c097da675a6ee8b38e86a5155d9ebeeb34300cbd10abff68d52e7286c2b41f80",
-      "size": 9939
+      "sha256": "d9096aa1e62651608fb69e004a5a91bbde2dd8c1b882c5adcf785574b9484f61",
+      "size": 11523
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -465,8 +465,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "fbdce7b3187a06d30ad4cff683c15d6c77abffaa6e0e7b1155d1be91f11f7877",
-      "size": 8810
+      "sha256": "ecbba4ce269ba8707574e2dad7344838433a9cf91f9b7b4ec8a435b41b72646a",
+      "size": 9207
     },
     {
       "path": "pullmanager/session.py",
@@ -513,14 +513,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "d6a43781765be821c2b50279109eb3a88f2da94c59011d3273502b712a8acc9f",
-      "size": 7012
+      "sha256": "ddb9cbe91ea1dff7d8c7c404712ebd0e9cb4664c1bcec66e93876cde9bce3a48",
+      "size": 7490
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "c979f45c050c810f71cb75606604278f6de3f75e580d435369b535f7f10a8f14",
-      "size": 11349
+      "sha256": "b3db54e5931bc2600768abdbfcf06869eb1ad75ee65923d10671c27d695e1143",
+      "size": 14598
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_render.py",
       "policy": "replace",
-      "sha256": "c511efa559627ccb99236c09be15db8ded9170b17476ee822932a40bcb3078ee",
-      "size": 11300
+      "sha256": "21df1b4827e993a915b4b6ec698e95c4848fedf76f90ea3c2f11fdf870597e46",
+      "size": 11696
     },
     {
       "path": "pullmanager/tests/test_session.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "cc7f00cb4e68ae3eb93843f81ebb2b8cd02ed202b875b7beba008ab4c6a37167",
-      "size": 177671
+      "sha256": "b38ee604f8a4bbce1701cf7783e78b26b251118d10efb58d6b87ab582b8691e0",
+      "size": 182261
     }
   ]
 }'''
@@ -3434,13 +3434,13 @@ if __name__ == "__main__":
 #           TerminologyConceptSetDim.
 #
 # === END FILE: YAMLs/datadictionary.yaml ===
-# === BEGIN FILE: pullmanager.py SHA256: ebdc02f9ba0685fc16b3aaea58c6563e0b91f3e69bcbce40bf953e414f787add SIZE: 408 ===
+# === BEGIN FILE: pullmanager.py SHA256: 36b9c407e6c6357d518b3e35456fad60c0f2585ca1f85404c33cb39807838c4f SIZE: 423 ===
 # #!/usr/bin/env python3
 # """Launcher for the extracted Pullmanager runtime.
 #
 # Sits beside the `pullmanager/` package so the VM can run:
 #
-#     python pullmanager_runtime/pullmanager.py split/pullmanifest.yaml
+#     python pullmanager_runtime/pullmanager.py runs/<project>/split/pullmanifest.yaml
 # """
 #
 # import sys
@@ -4610,7 +4610,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: af9cced1114290e03e22afda40723748295944f3b9d12c0d27c072508055211c SIZE: 11235 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: b58f04059b3ae8d194c27fdf5f14283470fa5001754953889151ca7ed0e6a8ba SIZE: 11381 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -4645,8 +4645,8 @@ if __name__ == "__main__":
 #     # attribute, label, kind, hint
 #     ("template", "Transfer YAML", "file", "from the Mac: makeYaml --export-transfer"),
 #     ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
-#     ("split_dir", "Split folder", "dir", "written by Export split"),
-#     ("sql_dir", "SQL folder", "dir", "written by Dry run"),
+#     ("split_dir", "Split folder", "dir", "blank = runs\\<project>\\split"),
+#     ("sql_dir", "SQL folder", "dir", "blank = runs\\<project>\\sql"),
 # )
 #
 #
@@ -4860,8 +4860,12 @@ if __name__ == "__main__":
 #         self.output.configure(state="disabled")
 #
 #     def refresh_status(self) -> None:
-#         manifest = self.workdir / self.paths().manifest()
-#         rows, message = launcher.try_manifest_rows(manifest)
+#         try:
+#             manifest = self.workdir / self.paths().manifest()
+#         except LauncherError as exc:
+#             manifest, rows, message = None, [], str(exc)
+#         else:
+#             rows, message = launcher.try_manifest_rows(manifest)
 #         self.tree.delete(*self.tree.get_children())
 #         parents: dict[str, str] = {}
 #         for row in rows:
@@ -4901,7 +4905,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: c097da675a6ee8b38e86a5155d9ebeeb34300cbd10abff68d52e7286c2b41f80 SIZE: 9939 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: d9096aa1e62651608fb69e004a5a91bbde2dd8c1b882c5adcf785574b9484f61 SIZE: 11523 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -4918,6 +4922,7 @@ if __name__ == "__main__":
 # import json
 # import os
 # import queue
+# import re
 # import subprocess
 # import sys
 # import threading
@@ -4928,6 +4933,11 @@ if __name__ == "__main__":
 #
 # SETTINGS_FILENAME = ".pullmanager-gui.json"
 # MANIFEST_FILENAME = "pullmanifest.yaml"
+# RUNS_DIR = "runs"
+# # Dropped from a transfer YAML's file name to name its run folder (D57).
+# RUN_NAME_SUFFIXES = ("_transfer", "_temp")
+# # What an older launcher saved as if chosen: it meant "the default" (D57).
+# OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 #
 #
 # class LauncherError(RuntimeError):
@@ -4963,6 +4973,21 @@ if __name__ == "__main__":
 #     )
 #
 #
+# def run_folder_name(template: str | Path) -> str:
+#     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
+#     without `.yaml` and without `_transfer` or `_temp`.
+#
+#     Only the file name: the folders above it (the project share) play no part.
+#     The same rule as `makeYaml.run_folder_name`; a test holds the two together.
+#     """
+#     stem = Path(str(template).replace("\\", "/")).stem
+#     for suffix in RUN_NAME_SUFFIXES:
+#         if stem.endswith(suffix) and stem != suffix:
+#             stem = stem[: -len(suffix)]
+#             break
+#     return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
+#
+#
 # @dataclass
 # class Paths:
 #     """What the user has chosen. Blank optional fields fall back to defaults.
@@ -4970,15 +4995,29 @@ if __name__ == "__main__":
 #     `template` is a transfer YAML (D49): recipes already written out, so there
 #     is no recipes file to choose. Settings saved by an older launcher may still
 #     name one; unknown keys are ignored on load.
+#
+#     A blank split or SQL folder is the project's own, `runs/<project>/split`
+#     and `runs/<project>/sql`, so two projects never share one (D57).
 #     """
 #
 #     template: str = ""
 #     datadictionary: str = ""
-#     split_dir: str = "split"
-#     sql_dir: str = "sql"
+#     split_dir: str = ""
+#     sql_dir: str = ""
+#
+#     def run_dir(self) -> Path:
+#         return Path(RUNS_DIR) / run_folder_name(_require(self.template, "transfer YAML"))
+#
+#     def split_folder(self) -> Path:
+#         chosen = self.split_dir.strip()
+#         return Path(chosen) if chosen else self.run_dir() / "split"
+#
+#     def sql_folder(self) -> Path:
+#         chosen = self.sql_dir.strip()
+#         return Path(chosen) if chosen else self.run_dir() / "sql"
 #
 #     def manifest(self) -> Path:
-#         return Path(self.split_dir) / MANIFEST_FILENAME
+#         return self.split_folder() / MANIFEST_FILENAME
 #
 #
 # @dataclass
@@ -5017,14 +5056,14 @@ if __name__ == "__main__":
 # def command_export_split(tools: Tools, paths: Paths) -> list[str]:
 #     return [
 #         sys.executable, str(tools.make_yaml), *_yaml_inputs(paths),
-#         "--export-split", "--out-dir", _require(paths.split_dir, "split folder"),
+#         "--export-split", "--out-dir", str(paths.split_folder()),
 #     ]
 #
 #
 # def command_dry_run(tools: Tools, paths: Paths, options: Options) -> list[str]:
 #     return [
 #         sys.executable, str(tools.pullmanager), "--dry-run", str(paths.manifest()),
-#         "--out-dir", _require(paths.sql_dir, "SQL folder"), *_resume_flags(options),
+#         "--out-dir", str(paths.sql_folder()), *_resume_flags(options),
 #     ]
 #
 #
@@ -5189,7 +5228,11 @@ if __name__ == "__main__":
 #     except (OSError, ValueError):
 #         return Paths()
 #     known = {f for f in Paths.__dataclass_fields__}
-#     return Paths(**{k: str(v) for k, v in data.items() if k in known})
+#     chosen = {k: str(v) for k, v in data.items() if k in known}
+#     for key, old_default in OLD_DEFAULT_FOLDERS.items():
+#         if chosen.get(key, "").strip() == old_default:
+#             chosen[key] = ""
+#     return Paths(**chosen)
 #
 #
 # def save_settings(paths: Paths, directory: Path | None = None) -> Path:
@@ -6376,7 +6419,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: fbdce7b3187a06d30ad4cff683c15d6c77abffaa6e0e7b1155d1be91f11f7877 SIZE: 8810 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: ecbba4ce269ba8707574e2dad7344838433a9cf91f9b7b4ec8a435b41b72646a SIZE: 9207 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6431,17 +6474,28 @@ if __name__ == "__main__":
 #     database. Those are parallel chains, not competing ones, so each has its
 #     own root and each is limited.
 #     """
-#     options = doc.get("test_options") or {}
-#     if not normalize_bool(options.get("smallset") or options.get("smallest")):
+#     if not normalize_bool(test_option(doc, "smallset") or test_option(doc, "smallest")):
 #         return ""
 #     if not any(cohort is root for root in roots):
 #         return ""
-#     limit = options.get("stop_at_for_pk_table")
+#     limit = test_option(doc, "stop_at_for_pk_table")
 #     try:
 #         limit = int(limit)
 #     except (TypeError, ValueError):
 #         return ""
 #     return f"TOP ({limit}) " if limit > 0 else ""
+#
+#
+# def test_option(doc: dict[str, Any], key: str) -> Any:
+#     """A test option: at the split document's top level, where YAML Manager
+#     writes it, else in a `test_options` group (splits made before that).
+#
+#     Reading only the group meant a template that wrote `smallset` at the top
+#     level silently lost its row limit.
+#     """
+#     if key in doc:
+#         return doc[key]
+#     return (doc.get("test_options") or {}).get(key)
 #
 #
 # def cohort_predicates(cohort: dict[str, Any]) -> list[str]:
@@ -8349,7 +8403,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: d6a43781765be821c2b50279109eb3a88f2da94c59011d3273502b712a8acc9f SIZE: 7012 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ddb9cbe91ea1dff7d8c7c404712ebd0e9cb4664c1bcec66e93876cde9bce3a48 SIZE: 7490 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -8467,8 +8521,9 @@ if __name__ == "__main__":
 #         )
 #
 #     def test_starts_from_the_defaults(self):
-#         self.assertEqual(self.app.paths().split_dir, "split")
-#         self.assertEqual(self.app.paths().sql_dir, "sql")
+#         # Blank: the project's own runs/<project>/ folders (D57).
+#         self.assertEqual(self.app.paths().split_dir, "")
+#         self.assertEqual(self.app.paths().sql_dir, "")
 #
 #     def test_restores_remembered_choices(self):
 #         from ..launcher import Paths, save_settings
@@ -8521,14 +8576,19 @@ if __name__ == "__main__":
 #
 #
 # class StatusTests(GuiTestCase):
+#     def setUp(self):
+#         super().setUp()
+#         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+#         self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+#
 #     def test_shows_one_row_per_session_phase_and_run(self):
-#         dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+#         dump_yaml(SAMPLE_MANIFEST, self.manifest)
 #         self.app.tree.insert.reset_mock()
 #         self.app.refresh_status()
 #         self.assertEqual(self.app.tree.insert.call_count, 11)
 #
 #     def test_runs_nest_under_their_session(self):
-#         dump_yaml(SAMPLE_MANIFEST, self.work / "split" / "pullmanifest.yaml")
+#         dump_yaml(SAMPLE_MANIFEST, self.manifest)
 #         self.app.tree.insert.reset_mock()
 #         self.app.refresh_status()
 #         parents = [call.args[0] for call in self.app.tree.insert.call_args_list]
@@ -8539,8 +8599,14 @@ if __name__ == "__main__":
 #         message = self.app.status_message.configure.call_args.kwargs["text"]
 #         self.assertIn("Export a split", message)
 #
+#     def test_no_transfer_yaml_yet_says_so_instead_of_failing(self):
+#         self.app.vars["template"].set("")
+#         self.app.refresh_status()
+#         message = self.app.status_message.configure.call_args.kwargs["text"]
+#         self.assertIn("transfer YAML", message)
+#
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: c979f45c050c810f71cb75606604278f6de3f75e580d435369b535f7f10a8f14 SIZE: 11349 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: b3db54e5931bc2600768abdbfcf06869eb1ad75ee65923d10671c27d695e1143 SIZE: 14598 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -8678,6 +8744,56 @@ if __name__ == "__main__":
 #         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
 #
 #
+# class RunFolderTests(unittest.TestCase):
+#     """Each project's split and SQL in its own folder (D57)."""
+#
+#     SHARE = "Z:\\Project D139081\\"
+#
+#     def test_blank_folders_are_the_projects_own(self):
+#         paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+#         split = str(Path("runs") / "IBD_Ancestry" / "split")
+#         self.assertEqual(command_export_split(TOOLS, paths)[-1], split)
+#         dry_run = command_dry_run(TOOLS, paths, Options())
+#         self.assertIn(str(Path(split) / "pullmanifest.yaml"), dry_run)
+#         self.assertEqual(dry_run[dry_run.index("--out-dir") + 1], str(Path("runs") / "IBD_Ancestry" / "sql"))
+#         self.assertIn(str(Path(split) / "pullmanifest.yaml"), command_execute(TOOLS, paths, Options()))
+#
+#     def test_the_share_folder_name_plays_no_part(self):
+#         # The repo sits in "Project D139081"; the project is named by its file.
+#         paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+#         self.assertNotIn("139081", str(paths.manifest()))
+#         out_dir = command_export_split(TOOLS, paths)[-1]
+#         self.assertEqual(out_dir, str(Path("runs") / "IBD_Ancestry" / "split"))
+#
+#     def test_two_projects_never_share_a_manifest(self):
+#         first = Paths(template="IBD_Ancestry_transfer.yaml").manifest()
+#         second = Paths(template="IBD_Ancestry_v2_transfer.yaml").manifest()
+#         self.assertNotEqual(first, second)
+#
+#     def test_a_typed_folder_still_wins(self):
+#         paths = Paths(template="IBD_Ancestry_transfer.yaml", split_dir="elsewhere", sql_dir="q")
+#         self.assertEqual(paths.manifest(), Path("elsewhere") / "pullmanifest.yaml")
+#         self.assertEqual(paths.sql_folder(), Path("q"))
+#
+#     def test_no_transfer_yaml_and_no_folder_asks_for_one(self):
+#         with self.assertRaisesRegex(LauncherError, "transfer YAML"):
+#             command_dry_run(TOOLS, Paths(), Options())
+#
+#     def test_the_rule_matches_makeyaml(self):
+#         # The launcher cannot import makeYaml, so it keeps a copy of the rule.
+#         import importlib.util
+#
+#         spec = importlib.util.spec_from_file_location("makeyaml_for_rule", locate_tools().make_yaml)
+#         make_yaml = importlib.util.module_from_spec(spec)
+#         sys.modules[spec.name] = make_yaml  # its dataclasses look themselves up there
+#         self.addCleanup(sys.modules.pop, spec.name, None)
+#         spec.loader.exec_module(make_yaml)
+#         for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
+#                      "My Pull (v2).yaml", "_transfer.yaml"):
+#             with self.subTest(name=name):
+#                 self.assertEqual(launcher.run_folder_name(name), make_yaml.run_folder_name(name))
+#
+#
 # class CommandRunnerTests(TempDirTestCase):
 #     def run_to_end(self, runner, code, timeout=15):
 #         runner.start([sys.executable, "-c", code], cwd=self.tmp)
@@ -8802,6 +8918,16 @@ if __name__ == "__main__":
 #         self.assertEqual(load_settings(self.tmp), Paths())
 #         (self.tmp / launcher.SETTINGS_FILENAME).write_text("{not json", encoding="utf-8")
 #         self.assertEqual(load_settings(self.tmp), Paths())
+#
+#     def test_an_older_launchers_saved_defaults_become_the_projects_own(self):
+#         # It saved "split" and "sql" whether or not they were chosen (D57).
+#         (self.tmp / launcher.SETTINGS_FILENAME).write_text(
+#             '{"template": "IBD_Ancestry_transfer.yaml", "split_dir": "split", "sql_dir": "sql"}',
+#             encoding="utf-8",
+#         )
+#         loaded = load_settings(self.tmp)
+#         self.assertEqual((loaded.split_dir, loaded.sql_dir), ("", ""))
+#         self.assertEqual(loaded.manifest(), Path("runs") / "IBD_Ancestry" / "split" / "pullmanifest.yaml")
 #
 #     def test_settings_from_before_d49_still_load(self):
 #         # Older launchers remembered a recipes file; that choice no longer exists.
@@ -9653,7 +9779,7 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
-# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: c511efa559627ccb99236c09be15db8ded9170b17476ee822932a40bcb3078ee SIZE: 11300 ===
+# === BEGIN FILE: pullmanager/tests/test_render.py SHA256: 21df1b4827e993a915b4b6ec698e95c4848fedf76f90ea3c2f11fdf870597e46 SIZE: 11696 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #
 # from __future__ import annotations
@@ -9719,6 +9845,14 @@ if __name__ == "__main__":
 #         by_dest = {b.dest_table: b.sql for b in blocks}
 #         self.assertIn("TOP (500)", by_dest["PKTable2"])
 #         self.assertNotIn("TOP (", by_dest["PKTable"])
+#
+#     def test_top_level_test_options_limit_the_pk(self):
+#         # Where YAML Manager writes them. Reading only a test_options group
+#         # silently dropped this limit.
+#         doc = doc_with(pk_cohort())
+#         doc.update({"smallset": True, "stop_at_for_pk_table": 25})
+#         sql, _ = server_sql.render_cohort(doc["cohorts"][0], doc, doc["cohorts"])
+#         self.assertIn("TOP (25)", sql)
 #
 #     def test_no_top_without_smallset(self):
 #         doc = doc_with(pk_cohort(), test_options={"stop_at_for_pk_table": 500})
@@ -11278,7 +11412,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: cc7f00cb4e68ae3eb93843f81ebb2b8cd02ed202b875b7beba008ab4c6a37167 SIZE: 177671 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: b38ee604f8a4bbce1701cf7783e78b26b251118d10efb58d6b87ab582b8691e0 SIZE: 182261 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -11302,6 +11436,7 @@ if __name__ == "__main__":
 # import sys
 # import tempfile
 # import unittest
+# from unittest import mock
 # from dataclasses import dataclass, field
 # from itertools import product
 # from pathlib import Path
@@ -11313,8 +11448,9 @@ if __name__ == "__main__":
 # EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 # TRANSFER_SUFFIX = "_transfer"
 # WILDCARD_CHARS = ("%", "_", "[", "]")
-# DEFAULT_MANIFEST_PATH = Path("split") / "pullmanifest.yaml"
-# DEFAULT_SPLIT_DIR = Path("split")
+# RUNS_DIR = Path("runs")
+# # Dropped from a template's file name to name its run folder (D57).
+# RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_temp")
 #
 #
 # # =============================================================================
@@ -11611,6 +11747,27 @@ if __name__ == "__main__":
 #     return script_root().parent
 #
 #
+# def run_folder_name(template_path: str | Path) -> str:
+#     """`<project>` in `runs/<project>/` (D57): the template's file name without
+#     `.yaml` and without `_transfer` or `_temp`.
+#
+#     The file name rather than `project_folder`, so two transfer files never
+#     share a run folder. The launcher keeps a copy of this rule
+#     (`launcher.run_folder_name`); a runtime test holds the two together.
+#     """
+#     stem = Path(template_path).stem
+#     for suffix in RUN_NAME_SUFFIXES:
+#         if stem.endswith(suffix) and stem != suffix:
+#             stem = stem[: -len(suffix)]
+#             break
+#     return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
+#
+#
+# def default_split_dir(template_path: str | Path) -> Path:
+#     """Where a split goes without `--out-dir`: `runs/<project>/split` (D57)."""
+#     return project_root() / RUNS_DIR / run_folder_name(template_path) / "split"
+#
+#
 # def default_template_path() -> Path:
 #     return project_root() / "YAMLs" / "template.yaml"
 #
@@ -11636,6 +11793,11 @@ if __name__ == "__main__":
 #     if path.is_file():
 #         return None
 #     return f"No template at {path}."
+#
+#
+# # Groups a template may use to organise settings; normalizing lifts their
+# # contents to the top level, which is the one copy a split carries.
+# GROUPED_SECTIONS = ("cosmos_vars", "run_vars", "project_vars", "test_options")
 #
 #
 # def normalize_template(template: dict[str, Any], result: CompileResult) -> dict[str, Any]:
@@ -13309,6 +13471,11 @@ if __name__ == "__main__":
 #         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 #
 #     finished = copy.deepcopy(template)
+#     # Normalizing lifted every grouped setting to the top level (run_vars into
+#     # vars). Keeping the groups too left two copies of each in every split
+#     # document, and readers disagreed about which to read.
+#     for section in GROUPED_SECTIONS:
+#         finished.pop(section, None)
 #     finished["temp_prefix"] = temp_prefix(template)
 #     finished["cohorts"] = [public_cohort(c) for c in rendered_cohorts]
 #     finished.pop("example_cohorts", None)
@@ -13618,7 +13785,11 @@ if __name__ == "__main__":
 #         return result
 #     manifest = result.analysis.get("split_plan", {})
 #     result.finished_yaml = manifest
-#     out_path = Path(output_path) if output_path else project_root() / DEFAULT_MANIFEST_PATH
+#     out_path = (
+#         Path(output_path)
+#         if output_path
+#         else default_split_dir(template_path or default_template_path()) / "pullmanifest.yaml"
+#     )
 #     result.output_path = str(out_path)
 #     if write and result.ok:
 #         dump_yaml(manifest, out_path)
@@ -13772,7 +13943,11 @@ if __name__ == "__main__":
 #             "derived from the project folder's number.",
 #         )
 #         return result
-#     out_dir = Path(output_dir) if output_dir else project_root() / DEFAULT_SPLIT_DIR
+#     out_dir = (
+#         Path(output_dir)
+#         if output_dir
+#         else default_split_dir(template_path or default_template_path())
+#     )
 #     finished_yaml = copy.deepcopy(result.finished_yaml)
 #     out_dir.mkdir(parents=True, exist_ok=True)
 #     stage_upload_files(
@@ -15397,6 +15572,74 @@ if __name__ == "__main__":
 #         self.assertIn("chunk: <rows>", res.errors[0].fix)
 #
 #
+# class OneCopyTests(MakeYamlTest):
+#     """Each setting once in a split: no group beside its lifted copy."""
+#
+#     GROUPED = """
+# cosmos_vars:
+#   project_db: PROJECTD1
+#   cosmos_db: COSMOS
+# run_vars:
+#   min_date_key: 20200101
+#   max_date_key: 20240101
+# test_options:
+#   smallset: true
+#   stop_at_for_pk_table: 10
+# project_vars:
+#   project_folder: Test Run
+# vars:
+#   ICD_Value: [K50]
+# cohorts:
+#   - recipe: PatientWithDx
+#     name: Patients
+# """
+#
+#     def test_a_split_document_carries_each_setting_once(self):
+#         out = self.tmp / "split"
+#         res = write_split_artifacts(*self.write_pair(self.GROUPED), output_dir=out)
+#         self.assertCompiles(res)
+#         setup = load_yaml(out / load_yaml(out / "pullmanifest.yaml")["sessions"][0]["phases"]["setup"]["yaml"])
+#         for group in GROUPED_SECTIONS:
+#             self.assertNotIn(group, setup)
+#         self.assertEqual(
+#             {k: setup.get(k) for k in ("project_db", "smallset", "stop_at_for_pk_table", "project_folder")},
+#             {"project_db": "PROJECTD1", "smallset": True, "stop_at_for_pk_table": 10,
+#              "project_folder": "Test Run"},
+#         )
+#         self.assertEqual(setup["vars"]["min_date_key"], 20200101)
+#
+#
+# class RunFolderTests(MakeYamlTest):
+#     """Each project's split in its own folder, so projects run side by side (D57)."""
+#
+#     def test_the_name_is_the_file_name_without_our_suffixes(self):
+#         for name, expected in (
+#             ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry"),
+#             ("IBD_Ancestry_temp.yaml", "IBD_Ancestry"),
+#             ("template.yaml", "template"),
+#             ("My Pull (v2).yaml", "My_Pull_v2"),
+#             ("_transfer.yaml", "transfer"),
+#         ):
+#             with self.subTest(name=name):
+#                 self.assertEqual(run_folder_name(Path("/Z/Project D139081") / name), expected)
+#
+#     def test_two_projects_split_without_out_dir_do_not_overwrite_each_other(self):
+#         first = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+#         second = write_temp_yaml(
+#             self.tmp, "Celiac_transfer.yaml", tiny_template().replace("Test Run", "Celiac")
+#         )
+#         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+#         with mock.patch(f"{__name__}.project_root", return_value=self.tmp / "repo"):
+#             for template in (first, second):
+#                 self.assertCompiles(write_split_artifacts(template, recipes))
+#         runs = self.tmp / "repo" / "runs"
+#         self.assertEqual(sorted(p.name for p in runs.iterdir()), ["Celiac", "IBD_Ancestry"])
+#         for project, folder in (("IBD_Ancestry", "Test Run"), ("Celiac", "Celiac")):
+#             manifest = load_yaml(runs / project / "split" / "pullmanifest.yaml")
+#             setup = load_yaml(runs / project / "split" / manifest["sessions"][0]["phases"]["setup"]["yaml"])
+#             self.assertEqual(setup["project_folder"], folder)
+#
+#
 # class ProjectDbTests(MakeYamlTest):
 #     def test_missing_warns_while_writing_and_stops_the_split(self):
 #         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -15474,6 +15717,8 @@ if __name__ == "__main__":
 #     "uploaded_pk_batching": UploadedPkBatchingTests,
 #     "transfer": TransferTests,
 #     "batching_definitions": BatchingDefinitionTests,
+#     "one_copy": OneCopyTests,
+#     "run_folders": RunFolderTests,
 #     "project_db": ProjectDbTests,
 #     "fixes": FixTests,
 # }
@@ -15545,7 +15790,11 @@ if __name__ == "__main__":
 #         metavar="NAME=TYPE",
 #         help="With --csv-to-parquet: a column's type, e.g. PatientDurableKey=BIGINT.",
 #     )
-#     parser.add_argument("--out-dir", default=None, help="Directory for split export artifacts.")
+#     parser.add_argument(
+#         "--out-dir",
+#         default=None,
+#         help="Directory for split export artifacts; default runs/<project>/split (D57).",
+#     )
 #     parser.add_argument("--report", action="store_true")
 #     parser.add_argument("--report-out", default=None)
 #     parser.add_argument("--tdd", nargs="?", const="all", default=None)
