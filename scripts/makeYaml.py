@@ -2154,6 +2154,11 @@ def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], resul
     return cohorts
 
 
+def is_sneakpeek(cohort: dict[str, Any]) -> bool:
+    """Whether the cohort is pulled from COSMOS_SneakPeek (its `_sp` copy)."""
+    return str(cohort.get("cosmos_db") or "").lower() == "cosmos_sneakpeek"
+
+
 def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
     value = str(template.get("cosmos_db", "COSMOS")).lower()
     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
@@ -2559,10 +2564,13 @@ def build_split_plan_from_finished(
             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
             pk_cohorts = [{"name": session_id, "dest_table": None}]
 
+    # Under Dual, every SneakPeek session runs first (D65): the smaller
+    # database gives a quick round through every phase before the long one.
     # A sampled control is drawn against its case's PK in Projects (D59), so
-    # every case session comes first.
-    pk_cohorts = sorted(pk_cohorts, key=lambda c: any(
-        is_sampled_control(item) for item in c.get("split_after_build") or []
+    # within each database every case session comes first.
+    pk_cohorts = sorted(pk_cohorts, key=lambda c: (
+        not is_sneakpeek(c),
+        any(is_sampled_control(item) for item in c.get("split_after_build") or []),
     ))
 
     sessions: list[SplitSession] = []
@@ -3391,6 +3399,16 @@ multipliers:
         self.assertCompiles(res)
         order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
         self.assertEqual(order, ["blackPatients", "whitePatients"])
+
+    def test_under_dual_every_sneakpeek_session_runs_first(self):
+        # D65: SneakPeek is the quick round; each Cosmos session used to run
+        # before its SneakPeek twin. Cases still precede controls in each.
+        res = self.plan_split(self.race(self.WHITE_CONTROL + self.BLACK, "Dual"))
+        self.assertCompiles(res)
+        order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
+        self.assertEqual(
+            order, ["blackPatients_sp", "whitePatients_sp", "blackPatients", "whitePatients"]
+        )
 
     def test_roles_and_row_mult_are_checked(self):
         cases = {

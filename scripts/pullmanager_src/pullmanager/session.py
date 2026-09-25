@@ -32,7 +32,7 @@ from .executor import (
 from .manifest import Manifest, Phase, Session
 from .models import now_iso
 from .naming import destination, global_temp, temp_prefix
-from .normalize import cosmos_database, normalize_dedup_keys
+from .normalize import cosmos_database
 from .uploads import UploadError
 from .yaml_io import load_yaml
 
@@ -488,8 +488,7 @@ class SessionRunner:
                 f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
                 f"{self.project_db}. Its session comes earlier in the manifest: run it first."
             )
-        key_sets, _ = normalize_dedup_keys(cohort)
-        keys = server_sql.sample_keys(cohort, key_sets)
+        keys = server_sql.pk_key(cohort)
         row_mult = float(item["row_mult"])
         kept_total = 0
         per_batch: dict[str, dict[str, int]] = {}
@@ -543,7 +542,9 @@ class SessionRunner:
         keys = self._pk_key_columns(doc)
         if not keys:
             self.report.warnings.append(
-                "PK declares no key_column, so chunk ordering cannot be verified as stable."
+                f"PK {self.session.pk_table} declares no key, so its uniqueness cannot be "
+                "checked and a chunk: cannot order it. Give the PK cohort dedup_keys "
+                "or key_column."
             )
             return None
         table = destination(self.project_db, self._pk_copy())
@@ -573,14 +574,10 @@ class SessionRunner:
         return total
 
     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
-        for cohort in doc.get("cohorts") or []:
-            if not isinstance(cohort, dict):
-                continue
-            key = cohort.get("key_column") or cohort.get("key_columns")
-            if isinstance(key, str):
-                return [key]
-            if isinstance(key, list) and key:
-                return [str(k) for k in key]
+        """The PK's key, by the one rule (D69); an uploaded PK's from its source."""
+        keys = server_sql.pk_key(self._pk_cohort(doc))
+        if keys:
+            return keys
         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
         if pk_source and pk_source.get("key_columns"):
             return [str(k) for k in pk_source["key_columns"]]

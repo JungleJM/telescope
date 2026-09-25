@@ -247,8 +247,16 @@ class SessionTestCase(unittest.TestCase):
         )
         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
 
+    def remove_pk_key(self):
+        """The fixture's PK is keyed by its dedup_keys (D69); take them away."""
+        path = self.root / "sessions" / "Patients" / "pk.yaml"
+        doc = load_yaml(path)
+        for key in ("dedup_keys", "dedup_order_by", "key_column", "key_columns"):
+            doc["cohorts"][0].pop(key, None)
+        dump_yaml(doc, path)
+
     def declare_pk_key(self, column="PatientDurableKey"):
-        """The fixture's PK declares no key_column; some checks need one."""
+        """Give the fixture's PK a key_column as well as its dedup_keys."""
         from ..yaml_io import dump_yaml, load_yaml
 
         path = self.root / "sessions" / "Patients" / "pk.yaml"
@@ -362,11 +370,15 @@ class FailureTests(SessionTestCase):
         phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[0]
         self.assertIn("disk full", phase.error["message"])
 
-    def test_a_pk_without_a_key_column_warns_instead_of_checking(self):
-        # Nothing to order by means chunk stability cannot be verified.
+    def test_a_pk_without_a_key_warns_instead_of_checking(self):
+        # Nothing to order by means chunk stability cannot be verified. The
+        # warning names both ways to declare a key (D69).
+        self.remove_pk_key()
         with self.runner() as runner:
             report = runner.execute()
-        self.assertTrue(any("key_column" in w for w in report.warnings))
+        warning = next(w for w in report.warnings if "declares no key" in w)
+        self.assertIn("dedup_keys", warning)
+        self.assertIn("key_column", warning)
 
     def test_a_non_unique_pk_is_refused(self):
         # Chunking orders by the key; duplicates make a chunk mean different
@@ -644,6 +656,7 @@ class CommitTests(SessionTestCase):
         # SQL Server has no COUNT(DISTINCT a, b).
         from ..yaml_io import dump_yaml as dump, load_yaml as load
 
+        self.remove_pk_key()
         path = self.root / "sessions" / "Patients" / "pk.yaml"
         doc = load(path)
         doc["cohorts"][0]["key_columns"] = ["PatientDurableKey", "DiagnosisEventKey"]
@@ -824,6 +837,41 @@ class ControlSampleTests(SessionTestCase):
         self.assertIn("CasePatients", message)
         self.assertIn("run it first", message)
         self.assertEqual(self.deletes(), [])
+
+
+class PkKeyTests(SessionTestCase):
+    """D69: a PK keyed only by dedup_keys, as the fixture's is, is still keyed.
+
+    The IBD Ancestry PK named its key only in dedup_keys, so every session
+    warned "PK declares no key_column" and its uniqueness was never checked.
+    """
+
+    CHUNK = ChunkTests.CHUNK
+
+    def execute(self, tables=None, **projects):
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        settings = {"tables": {} if tables is None else tables, **projects}
+        with self.runner(projects=settings) as runner:
+            return runner.execute()
+
+    def test_a_duplicated_key_stops_the_pk(self):
+        # Unchecked, duplicates would have gone on to every run.
+        report = self.execute(rows=10, distinct=9)
+        self.assertIn("Patients/pk", dict(report.failed))
+        self.assertIn("distinct PatientDurableKey", dict(report.failed)["Patients/pk"])
+
+    def test_a_unique_key_passes_without_a_warning(self):
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertFalse(any("declares no key" in w for w in report.warnings), report.warnings)
+
+    def test_every_chunk_is_pulled_on_such_a_pk(self):
+        # It failed its runs before: "Row chunking needs the PK key columns".
+        self.make_batched(runtime=[self.CHUNK])
+        tables: dict[str, Counter] = {}
+        report = self.execute(tables, pk_rows=4500)
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(tables[DEST], Counter({"Female": 30, "Male": 30}))
 
 
 class UploadedPkTests(SessionTestCase):

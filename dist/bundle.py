@@ -459,7 +459,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "1af88f77f27306e2975e4ed03420660e6d6392eeccb3b73d6b302f614834fe8a",
+  "content_id": "a3880ef2177dc9ca3b88829167faa96ff40c23e7dc703889b79210faa6debecf",
   "file_count": 37,
   "files": [
     {
@@ -513,8 +513,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "b58f04059b3ae8d194c27fdf5f14283470fa5001754953889151ca7ed0e6a8ba",
-      "size": 11381
+      "sha256": "76eece749a93126b9631c930851536e9c7d75331765da0f731980ce7bddec6a6",
+      "size": 11465
     },
     {
       "path": "pullmanager/launcher.py",
@@ -561,14 +561,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/server_sql.py",
       "policy": "replace",
-      "sha256": "5039f7ed99f5cc95227c7c91b17b6ff0a1cc0c6d5d4f07077a7e0982390d963b",
-      "size": 13446
+      "sha256": "7e64754b9265096582c47c7952842c16916f3238348e7c5271c5b0c42fc3e6f2",
+      "size": 13872
     },
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "af39c813474f309ec71460ccc1f0e742292891f729efc0899f7b5aa237506f6a",
-      "size": 34041
+      "sha256": "35ac23e011ae0de065dfe7898475dd10c57effb3bd09c1c56106a7ff5769c0a4",
+      "size": 33906
     },
     {
       "path": "pullmanager/sql.py",
@@ -651,8 +651,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "62ed2d28b489a28bef739cc73525052808569afbc5798797bbb85084c9eaf052",
-      "size": 39575
+      "sha256": "162132439541244a42489187044c2ce7a6557d75567a0026fe07f6d71731e241",
+      "size": 41686
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -681,8 +681,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "15920a17b176fb6cfcf29bbd43cc6a4dd2c3b7122c5c23d878262869d49cdad2",
-      "size": 206199
+      "sha256": "bd04c108a73dd84972c7dec76b0aa5cd38183a3417b6431b65fb2fd5cefd50f8",
+      "size": 207153
     }
   ],
   "prelude_sha256": "d4fd95cd569e014d924c6817fc03bc99aa6a4f333c25241923cd8e35fe7c8dd2"
@@ -4794,7 +4794,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: b58f04059b3ae8d194c27fdf5f14283470fa5001754953889151ca7ed0e6a8ba SIZE: 11381 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: 76eece749a93126b9631c930851536e9c7d75331765da0f731980ce7bddec6a6 SIZE: 11465 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -4907,6 +4907,13 @@ if __name__ == "__main__":
 #         notebook.add(output_tab, text="Output")
 #
 #         status_tab = ttk.Frame(notebook)
+#         # Refresh and the manifest it reads, above the tree they describe.
+#         bar = ttk.Frame(status_tab)
+#         bar.pack(side="top", fill="x")
+#         ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="left", pady=4)
+#         self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
+#         self.status_message.pack(side="left", padx=(8, 0), pady=4)
+#
 #         columns = ("kind", "name", "status", "rows", "duration", "detail")
 #         self.tree = ttk.Treeview(status_tab, columns=columns, show="tree headings")
 #         self.tree.heading("#0", text="Session")
@@ -4921,12 +4928,6 @@ if __name__ == "__main__":
 #         self.tree.configure(yscrollcommand=scroll.set)
 #         self.tree.pack(side="left", fill="both", expand=True)
 #         scroll.pack(side="right", fill="y")
-#
-#         bar = ttk.Frame(status_tab)
-#         bar.pack(side="bottom", fill="x")
-#         ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="right", pady=4)
-#         self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
-#         self.status_message.pack(side="left", pady=4)
 #         notebook.add(status_tab, text="Status")
 #
 #     def _build_status_bar(self) -> None:
@@ -6593,7 +6594,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/server_sql.py SHA256: 5039f7ed99f5cc95227c7c91b17b6ff0a1cc0c6d5d4f07077a7e0982390d963b SIZE: 13446 ===
+# === BEGIN FILE: pullmanager/server_sql.py SHA256: 7e64754b9265096582c47c7952842c16916f3238348e7c5271c5b0c42fc3e6f2 SIZE: 13872 ===
 # """Cosmos-side SQL.
 #
 # Renders one block per cohort, addressed by manifest id. Nothing downstream
@@ -6665,6 +6666,18 @@ if __name__ == "__main__":
 #         if isinstance(item, dict) and item.get("role") == "control" and item.get("row_mult"):
 #             limit = int(limit * float(item["row_mult"]))
 #     return f"TOP ({limit}) " if limit > 0 else ""
+#
+#
+# def pk_key(cohort: dict[str, Any] | None) -> list[str]:
+#     """The PK's key (D69): its first dedup key set, else its `key_column(s)`.
+#
+#     One rule wherever the key is used: the hash sample, the control sample,
+#     the uniqueness check, chunk ordering and batch selection.
+#     """
+#     if not isinstance(cohort, dict):
+#         return []
+#     key_sets, _ = normalize_dedup_keys(cohort)
+#     return sample_keys(cohort, key_sets)
 #
 #
 # def sample_keys(cohort: dict[str, Any], key_sets: list[list[str]]) -> list[str]:
@@ -6959,7 +6972,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: af39c813474f309ec71460ccc1f0e742292891f729efc0899f7b5aa237506f6a SIZE: 34041 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 35ac23e011ae0de065dfe7898475dd10c57effb3bd09c1c56106a7ff5769c0a4 SIZE: 33906 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6994,7 +7007,7 @@ if __name__ == "__main__":
 # from .manifest import Manifest, Phase, Session
 # from .models import now_iso
 # from .naming import destination, global_temp, temp_prefix
-# from .normalize import cosmos_database, normalize_dedup_keys
+# from .normalize import cosmos_database
 # from .uploads import UploadError
 # from .yaml_io import load_yaml
 #
@@ -7450,8 +7463,7 @@ if __name__ == "__main__":
 #                 f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
 #                 f"{self.project_db}. Its session comes earlier in the manifest: run it first."
 #             )
-#         key_sets, _ = normalize_dedup_keys(cohort)
-#         keys = server_sql.sample_keys(cohort, key_sets)
+#         keys = server_sql.pk_key(cohort)
 #         row_mult = float(item["row_mult"])
 #         kept_total = 0
 #         per_batch: dict[str, dict[str, int]] = {}
@@ -7505,7 +7517,9 @@ if __name__ == "__main__":
 #         keys = self._pk_key_columns(doc)
 #         if not keys:
 #             self.report.warnings.append(
-#                 "PK declares no key_column, so chunk ordering cannot be verified as stable."
+#                 f"PK {self.session.pk_table} declares no key, so its uniqueness cannot be "
+#                 "checked and a chunk: cannot order it. Give the PK cohort dedup_keys "
+#                 "or key_column."
 #             )
 #             return None
 #         table = destination(self.project_db, self._pk_copy())
@@ -7535,14 +7549,10 @@ if __name__ == "__main__":
 #         return total
 #
 #     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
-#         for cohort in doc.get("cohorts") or []:
-#             if not isinstance(cohort, dict):
-#                 continue
-#             key = cohort.get("key_column") or cohort.get("key_columns")
-#             if isinstance(key, str):
-#                 return [key]
-#             if isinstance(key, list) and key:
-#                 return [str(k) for k in key]
+#         """The PK's key, by the one rule (D69); an uploaded PK's from its source."""
+#         keys = server_sql.pk_key(self._pk_cohort(doc))
+#         if keys:
+#             return keys
 #         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
 #         if pk_source and pk_source.get("key_columns"):
 #             return [str(k) for k in pk_source["key_columns"]]
@@ -10610,7 +10620,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 62ed2d28b489a28bef739cc73525052808569afbc5798797bbb85084c9eaf052 SIZE: 39575 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 162132439541244a42489187044c2ce7a6557d75567a0026fe07f6d71731e241 SIZE: 41686 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -10860,8 +10870,16 @@ if __name__ == "__main__":
 #         )
 #         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
 #
+#     def remove_pk_key(self):
+#         """The fixture's PK is keyed by its dedup_keys (D69); take them away."""
+#         path = self.root / "sessions" / "Patients" / "pk.yaml"
+#         doc = load_yaml(path)
+#         for key in ("dedup_keys", "dedup_order_by", "key_column", "key_columns"):
+#             doc["cohorts"][0].pop(key, None)
+#         dump_yaml(doc, path)
+#
 #     def declare_pk_key(self, column="PatientDurableKey"):
-#         """The fixture's PK declares no key_column; some checks need one."""
+#         """Give the fixture's PK a key_column as well as its dedup_keys."""
 #         from ..yaml_io import dump_yaml, load_yaml
 #
 #         path = self.root / "sessions" / "Patients" / "pk.yaml"
@@ -10975,11 +10993,15 @@ if __name__ == "__main__":
 #         phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[0]
 #         self.assertIn("disk full", phase.error["message"])
 #
-#     def test_a_pk_without_a_key_column_warns_instead_of_checking(self):
-#         # Nothing to order by means chunk stability cannot be verified.
+#     def test_a_pk_without_a_key_warns_instead_of_checking(self):
+#         # Nothing to order by means chunk stability cannot be verified. The
+#         # warning names both ways to declare a key (D69).
+#         self.remove_pk_key()
 #         with self.runner() as runner:
 #             report = runner.execute()
-#         self.assertTrue(any("key_column" in w for w in report.warnings))
+#         warning = next(w for w in report.warnings if "declares no key" in w)
+#         self.assertIn("dedup_keys", warning)
+#         self.assertIn("key_column", warning)
 #
 #     def test_a_non_unique_pk_is_refused(self):
 #         # Chunking orders by the key; duplicates make a chunk mean different
@@ -11257,6 +11279,7 @@ if __name__ == "__main__":
 #         # SQL Server has no COUNT(DISTINCT a, b).
 #         from ..yaml_io import dump_yaml as dump, load_yaml as load
 #
+#         self.remove_pk_key()
 #         path = self.root / "sessions" / "Patients" / "pk.yaml"
 #         doc = load(path)
 #         doc["cohorts"][0]["key_columns"] = ["PatientDurableKey", "DiagnosisEventKey"]
@@ -11437,6 +11460,41 @@ if __name__ == "__main__":
 #         self.assertIn("CasePatients", message)
 #         self.assertIn("run it first", message)
 #         self.assertEqual(self.deletes(), [])
+#
+#
+# class PkKeyTests(SessionTestCase):
+#     """D69: a PK keyed only by dedup_keys, as the fixture's is, is still keyed.
+#
+#     The IBD Ancestry PK named its key only in dedup_keys, so every session
+#     warned "PK declares no key_column" and its uniqueness was never checked.
+#     """
+#
+#     CHUNK = ChunkTests.CHUNK
+#
+#     def execute(self, tables=None, **projects):
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         settings = {"tables": {} if tables is None else tables, **projects}
+#         with self.runner(projects=settings) as runner:
+#             return runner.execute()
+#
+#     def test_a_duplicated_key_stops_the_pk(self):
+#         # Unchecked, duplicates would have gone on to every run.
+#         report = self.execute(rows=10, distinct=9)
+#         self.assertIn("Patients/pk", dict(report.failed))
+#         self.assertIn("distinct PatientDurableKey", dict(report.failed)["Patients/pk"])
+#
+#     def test_a_unique_key_passes_without_a_warning(self):
+#         report = self.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertFalse(any("declares no key" in w for w in report.warnings), report.warnings)
+#
+#     def test_every_chunk_is_pulled_on_such_a_pk(self):
+#         # It failed its runs before: "Row chunking needs the PK key columns".
+#         self.make_batched(runtime=[self.CHUNK])
+#         tables: dict[str, Counter] = {}
+#         report = self.execute(tables, pk_rows=4500)
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(tables[DEST], Counter({"Female": 30, "Male": 30}))
 #
 #
 # class UploadedPkTests(SessionTestCase):
@@ -12114,7 +12172,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 15920a17b176fb6cfcf29bbd43cc6a4dd2c3b7122c5c23d878262869d49cdad2 SIZE: 206199 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: bd04c108a73dd84972c7dec76b0aa5cd38183a3417b6431b65fb2fd5cefd50f8 SIZE: 207153 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -14271,6 +14329,11 @@ if __name__ == "__main__":
 #     return cohorts
 #
 #
+# def is_sneakpeek(cohort: dict[str, Any]) -> bool:
+#     """Whether the cohort is pulled from COSMOS_SneakPeek (its `_sp` copy)."""
+#     return str(cohort.get("cosmos_db") or "").lower() == "cosmos_sneakpeek"
+#
+#
 # def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
 #     value = str(template.get("cosmos_db", "COSMOS")).lower()
 #     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
@@ -14676,10 +14739,13 @@ if __name__ == "__main__":
 #             session_id = safe_id(finished_yaml.get("project_folder") or finished_yaml.get("project_db"), "default")
 #             pk_cohorts = [{"name": session_id, "dest_table": None}]
 #
+#     # Under Dual, every SneakPeek session runs first (D65): the smaller
+#     # database gives a quick round through every phase before the long one.
 #     # A sampled control is drawn against its case's PK in Projects (D59), so
-#     # every case session comes first.
-#     pk_cohorts = sorted(pk_cohorts, key=lambda c: any(
-#         is_sampled_control(item) for item in c.get("split_after_build") or []
+#     # within each database every case session comes first.
+#     pk_cohorts = sorted(pk_cohorts, key=lambda c: (
+#         not is_sneakpeek(c),
+#         any(is_sampled_control(item) for item in c.get("split_after_build") or []),
 #     ))
 #
 #     sessions: list[SplitSession] = []
@@ -15508,6 +15574,16 @@ if __name__ == "__main__":
 #         self.assertCompiles(res)
 #         order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
 #         self.assertEqual(order, ["blackPatients", "whitePatients"])
+#
+#     def test_under_dual_every_sneakpeek_session_runs_first(self):
+#         # D65: SneakPeek is the quick round; each Cosmos session used to run
+#         # before its SneakPeek twin. Cases still precede controls in each.
+#         res = self.plan_split(self.race(self.WHITE_CONTROL + self.BLACK, "Dual"))
+#         self.assertCompiles(res)
+#         order = [s["session_id"] for s in res.analysis["split_plan"]["sessions"]]
+#         self.assertEqual(
+#             order, ["blackPatients_sp", "whitePatients_sp", "blackPatients", "whitePatients"]
+#         )
 #
 #     def test_roles_and_row_mult_are_checked(self):
 #         cases = {

@@ -110,6 +110,13 @@ class LauncherApp:
         notebook.add(output_tab, text="Output")
 
         status_tab = ttk.Frame(notebook)
+        # Refresh and the manifest it reads, above the tree they describe.
+        bar = ttk.Frame(status_tab)
+        bar.pack(side="top", fill="x")
+        ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="left", pady=4)
+        self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
+        self.status_message.pack(side="left", padx=(8, 0), pady=4)
+
         columns = ("kind", "name", "status", "rows", "duration", "detail")
         self.tree = ttk.Treeview(status_tab, columns=columns, show="tree headings")
         self.tree.heading("#0", text="Session")
@@ -124,12 +131,6 @@ class LauncherApp:
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-
-        bar = ttk.Frame(status_tab)
-        bar.pack(side="bottom", fill="x")
-        ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="right", pady=4)
-        self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
-        self.status_message.pack(side="left", pady=4)
         notebook.add(status_tab, text="Status")
 
     def _build_status_bar(self) -> None:

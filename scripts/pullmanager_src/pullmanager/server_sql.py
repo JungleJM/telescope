@@ -71,6 +71,18 @@ def top_clause(
     return f"TOP ({limit}) " if limit > 0 else ""
 
 
+def pk_key(cohort: dict[str, Any] | None) -> list[str]:
+    """The PK's key (D69): its first dedup key set, else its `key_column(s)`.
+
+    One rule wherever the key is used: the hash sample, the control sample,
+    the uniqueness check, chunk ordering and batch selection.
+    """
+    if not isinstance(cohort, dict):
+        return []
+    key_sets, _ = normalize_dedup_keys(cohort)
+    return sample_keys(cohort, key_sets)
+
+
 def sample_keys(cohort: dict[str, Any], key_sets: list[list[str]]) -> list[str]:
     """The PK's key: its first dedup key set, else its `key_column(s)` (D60)."""
     if key_sets:
