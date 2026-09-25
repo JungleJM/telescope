@@ -7,6 +7,7 @@ plans, so the ordering is testable on its own.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -14,6 +15,7 @@ from typing import Any, Iterator
 from . import local_sql, server_sql
 from .manifest import Manifest, Node, Phase, Run, Session
 from .models import BLOCKED, DONE, FAILED, RUNNING, SKIPPED
+from .naming import global_temp, temp_prefix
 from .normalize import normalize_bool
 from .sql import SqlBlock
 from .yaml_io import load_yaml
@@ -161,6 +163,42 @@ def session_cohorts(manifest: Manifest, session: Session) -> list[dict[str, Any]
     return list(seen.values())
 
 
+def session_reads(manifest: Manifest, session: Session, dest: str, prefix: str) -> bool:
+    """Whether any cohort the session builds names this upload's temp (D61)."""
+    temp = global_temp(dest, prefix).lower()
+    for kind, _, path in iter_units(manifest, session):
+        if kind not in ("pk", "run") or not path.is_file():
+            continue
+        for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+            if temp in json.dumps(cohort, default=str).lower():
+                return True
+    return False
+
+
+def upload_note(
+    manifest: Manifest, session: Session, upload: dict[str, Any], prefix: str, resuming: bool
+) -> str:
+    """What the upload phase will do with one upload: D54 as narrowed by D61."""
+    dest = str(upload.get("dest_table") or upload.get("name"))
+    is_pk = str(upload.get("type", "")).lower() == "pk"
+    if resuming:
+        projects = f"upload_{dest} is kept in Projects, not re-read from the file"
+    elif not is_pk and dest in manifest.uploads_landed:
+        projects = f"upload_{dest} was landed earlier in this pull; this session uses it"
+    elif is_pk:
+        projects = f"lands in Projects as upload_{dest}, typed"
+    else:
+        projects = (
+            f"lands in Projects as upload_{dest}, typed, once for the pull; later "
+            "sessions use that copy"
+        )
+    if is_pk or session_reads(manifest, session, dest, prefix):
+        cosmos = "then goes up to Cosmos from that copy"
+    else:
+        cosmos = "not sent to Cosmos: no cohort in this session reads it"
+    return f"upload {dest}: {projects}; {cosmos} (D54, D61)"
+
+
 def control_samples(cohort: Any) -> list[dict[str, Any]]:
     """The PK's `split_after_build` levels that sample it as a control (D59)."""
     if not isinstance(cohort, dict):
@@ -212,16 +250,8 @@ def plan_unit(
         ]
         if not enabled:
             unit.notes.append("no upload cohorts")
-        elif resuming:
-            unit.notes.append(
-                f"{len(enabled)} upload(s): their Projects copies (upload_<dest>) are kept, "
-                "not re-read from the files, and loaded into Cosmos again (D54)"
-            )
-        else:
-            unit.notes.append(
-                f"{len(enabled)} upload(s): each lands in Projects as upload_<dest>, typed, "
-                "then goes up to Cosmos from that copy through the client (D54)"
-            )
+        for upload in enabled:
+            unit.notes.append(upload_note(manifest, session, upload, temp_prefix(doc), resuming))
         return unit
 
     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)

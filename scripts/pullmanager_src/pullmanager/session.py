@@ -25,6 +25,7 @@ from .executor import (
     run_destinations,
     session_cohorts,
     session_has_work,
+    session_reads,
     session_resumes,
     should_execute,
 )
@@ -371,15 +372,7 @@ class SessionRunner:
         return uploaded
 
     def _session_reads(self, dest: str) -> bool:
-        """Whether any cohort this session builds names the upload's temp."""
-        temp = global_temp(dest, self.planned_prefix or self.prefix).lower()
-        for kind, _, path in iter_units(self.manifest, self.session):
-            if kind not in ("pk", "run") or not path.is_file():
-                continue
-            for cohort in (load_yaml(path) or {}).get("cohorts") or []:
-                if temp in json.dumps(cohort, default=str).lower():
-                    return True
-        return False
+        return session_reads(self.manifest, self.session, dest, self.planned_prefix or self.prefix)
 
     def _land_upload(self, cohort: dict[str, Any], copy: str) -> int | None:
         """The file (or dbtable) into its typed Projects copy, committed.

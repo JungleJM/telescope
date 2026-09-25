@@ -188,6 +188,25 @@ class PlanningTests(unittest.TestCase):
         self.assertIn("IF OBJECT_ID", units[0].local_blocks[0].sql)
         self.assertIn("DELETE FROM", units[-1].local_blocks[0].sql)
 
+    def test_the_upload_note_says_what_will_happen(self):
+        # D61: it said every upload goes up to Cosmos, in every session.
+        from ..yaml_io import dump_yaml, load_yaml
+
+        path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+        doc = load_yaml(path)
+        doc["upload_cohorts"].append(dict(doc["upload_cohorts"][0], name="Unused", dest_table="Unused"))
+        dump_yaml(doc, path)
+        notes = [u for u in plan(self.manifest) if u.kind == "upload_cohorts"][0].notes
+        read, unused = notes
+        self.assertIn("upload HospitalICDCodes: lands in Projects", read)
+        self.assertIn("once for the pull", read)
+        self.assertIn("then goes up to Cosmos", read)
+        self.assertIn("upload Unused:", unused)
+        self.assertIn("not sent to Cosmos", unused)
+        self.manifest.uploads_landed["HospitalICDCodes"] = {"table": "x"}
+        again = [u for u in plan(self.manifest) if u.kind == "upload_cohorts"][0].notes
+        self.assertIn("landed earlier in this pull", again[0])
+
     def test_missing_phase_yaml_is_refused(self):
         (self.root / "sessions" / "Patients" / "pk.yaml").unlink()
         with self.assertRaises(PlanError):

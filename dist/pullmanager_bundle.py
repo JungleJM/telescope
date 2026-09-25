@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "f0143279faf958e57f743904c36f80a163b6df0b1e7c007930e4b59bf1442609",
+  "content_id": "9be34d20e5130d4138603183121cab60f9d989562ffbca9ef58fb5f538b85b24",
   "file_count": 37,
   "files": [
     {
@@ -411,8 +411,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/executor.py",
       "policy": "replace",
-      "sha256": "d1df8b22ea0d3815d6b38b188e9c58c2ad2c720fc7c3d9b580f77cb5704f9871",
-      "size": 11839
+      "sha256": "76a3349b2fb765b5a433d524bcaf1b59a39ecdfef7379343b8b2411d56a87d52",
+      "size": 13155
     },
     {
       "path": "pullmanager/gui.py",
@@ -471,8 +471,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "166b32989162e0b028f5130d1b3f41a1844c61fc076bf300836660501f65aeda",
-      "size": 34429
+      "sha256": "af39c813474f309ec71460ccc1f0e742292891f729efc0899f7b5aa237506f6a",
+      "size": 34041
     },
     {
       "path": "pullmanager/sql.py",
@@ -507,8 +507,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_executor.py",
       "policy": "replace",
-      "sha256": "6f18db04156bba30226574531903f205b8af7a646aa1453767756fd5c57e0b68",
-      "size": 8587
+      "sha256": "b6a6557cd41d00e2c4d5113bf190b99ed4b2495fe961bf5a438efa3ecfbbc5ac",
+      "size": 9629
     },
     {
       "path": "pullmanager/tests/test_gui.py",
@@ -4337,7 +4337,7 @@ if __name__ == "__main__":
 #     return f"Could not connect to {server}, database {database}: {detail} {hint}"
 #
 # === END FILE: pullmanager/db.py ===
-# === BEGIN FILE: pullmanager/executor.py SHA256: d1df8b22ea0d3815d6b38b188e9c58c2ad2c720fc7c3d9b580f77cb5704f9871 SIZE: 11839 ===
+# === BEGIN FILE: pullmanager/executor.py SHA256: 76a3349b2fb765b5a433d524bcaf1b59a39ecdfef7379343b8b2411d56a87d52 SIZE: 13155 ===
 # """Traversal and planning.
 #
 # Walks a manifest in order and produces the work a session implies. Nothing
@@ -4347,6 +4347,7 @@ if __name__ == "__main__":
 #
 # from __future__ import annotations
 #
+# import json
 # from dataclasses import dataclass, field
 # from pathlib import Path
 # from typing import Any, Iterator
@@ -4354,6 +4355,7 @@ if __name__ == "__main__":
 # from . import local_sql, server_sql
 # from .manifest import Manifest, Node, Phase, Run, Session
 # from .models import BLOCKED, DONE, FAILED, RUNNING, SKIPPED
+# from .naming import global_temp, temp_prefix
 # from .normalize import normalize_bool
 # from .sql import SqlBlock
 # from .yaml_io import load_yaml
@@ -4501,6 +4503,42 @@ if __name__ == "__main__":
 #     return list(seen.values())
 #
 #
+# def session_reads(manifest: Manifest, session: Session, dest: str, prefix: str) -> bool:
+#     """Whether any cohort the session builds names this upload's temp (D61)."""
+#     temp = global_temp(dest, prefix).lower()
+#     for kind, _, path in iter_units(manifest, session):
+#         if kind not in ("pk", "run") or not path.is_file():
+#             continue
+#         for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+#             if temp in json.dumps(cohort, default=str).lower():
+#                 return True
+#     return False
+#
+#
+# def upload_note(
+#     manifest: Manifest, session: Session, upload: dict[str, Any], prefix: str, resuming: bool
+# ) -> str:
+#     """What the upload phase will do with one upload: D54 as narrowed by D61."""
+#     dest = str(upload.get("dest_table") or upload.get("name"))
+#     is_pk = str(upload.get("type", "")).lower() == "pk"
+#     if resuming:
+#         projects = f"upload_{dest} is kept in Projects, not re-read from the file"
+#     elif not is_pk and dest in manifest.uploads_landed:
+#         projects = f"upload_{dest} was landed earlier in this pull; this session uses it"
+#     elif is_pk:
+#         projects = f"lands in Projects as upload_{dest}, typed"
+#     else:
+#         projects = (
+#             f"lands in Projects as upload_{dest}, typed, once for the pull; later "
+#             "sessions use that copy"
+#         )
+#     if is_pk or session_reads(manifest, session, dest, prefix):
+#         cosmos = "then goes up to Cosmos from that copy"
+#     else:
+#         cosmos = "not sent to Cosmos: no cohort in this session reads it"
+#     return f"upload {dest}: {projects}; {cosmos} (D54, D61)"
+#
+#
 # def control_samples(cohort: Any) -> list[dict[str, Any]]:
 #     """The PK's `split_after_build` levels that sample it as a control (D59)."""
 #     if not isinstance(cohort, dict):
@@ -4552,16 +4590,8 @@ if __name__ == "__main__":
 #         ]
 #         if not enabled:
 #             unit.notes.append("no upload cohorts")
-#         elif resuming:
-#             unit.notes.append(
-#                 f"{len(enabled)} upload(s): their Projects copies (upload_<dest>) are kept, "
-#                 "not re-read from the files, and loaded into Cosmos again (D54)"
-#             )
-#         else:
-#             unit.notes.append(
-#                 f"{len(enabled)} upload(s): each lands in Projects as upload_<dest>, typed, "
-#                 "then goes up to Cosmos from that copy through the client (D54)"
-#             )
+#         for upload in enabled:
+#             unit.notes.append(upload_note(manifest, session, upload, temp_prefix(doc), resuming))
 #         return unit
 #
 #     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
@@ -6825,7 +6855,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: 166b32989162e0b028f5130d1b3f41a1844c61fc076bf300836660501f65aeda SIZE: 34429 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: af39c813474f309ec71460ccc1f0e742292891f729efc0899f7b5aa237506f6a SIZE: 34041 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -6853,6 +6883,7 @@ if __name__ == "__main__":
 #     run_destinations,
 #     session_cohorts,
 #     session_has_work,
+#     session_reads,
 #     session_resumes,
 #     should_execute,
 # )
@@ -7199,15 +7230,7 @@ if __name__ == "__main__":
 #         return uploaded
 #
 #     def _session_reads(self, dest: str) -> bool:
-#         """Whether any cohort this session builds names the upload's temp."""
-#         temp = global_temp(dest, self.planned_prefix or self.prefix).lower()
-#         for kind, _, path in iter_units(self.manifest, self.session):
-#             if kind not in ("pk", "run") or not path.is_file():
-#                 continue
-#             for cohort in (load_yaml(path) or {}).get("cohorts") or []:
-#                 if temp in json.dumps(cohort, default=str).lower():
-#                     return True
-#         return False
+#         return session_reads(self.manifest, self.session, dest, self.planned_prefix or self.prefix)
 #
 #     def _land_upload(self, cohort: dict[str, Any], copy: str) -> int | None:
 #         """The file (or dbtable) into its typed Projects copy, committed.
@@ -8518,7 +8541,7 @@ if __name__ == "__main__":
 #         self.assertIn("project_db", message)
 #
 # === END FILE: pullmanager/tests/test_db.py ===
-# === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: 6f18db04156bba30226574531903f205b8af7a646aa1453767756fd5c57e0b68 SIZE: 8587 ===
+# === BEGIN FILE: pullmanager/tests/test_executor.py SHA256: b6a6557cd41d00e2c4d5113bf190b99ed4b2495fe961bf5a438efa3ecfbbc5ac SIZE: 9629 ===
 # """Traversal order and resume policy."""
 #
 # from __future__ import annotations
@@ -8708,6 +8731,25 @@ if __name__ == "__main__":
 #         self.assertEqual([u.kind for u in units], ["setup", "upload_cohorts", "run"])
 #         self.assertIn("IF OBJECT_ID", units[0].local_blocks[0].sql)
 #         self.assertIn("DELETE FROM", units[-1].local_blocks[0].sql)
+#
+#     def test_the_upload_note_says_what_will_happen(self):
+#         # D61: it said every upload goes up to Cosmos, in every session.
+#         from ..yaml_io import dump_yaml, load_yaml
+#
+#         path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+#         doc = load_yaml(path)
+#         doc["upload_cohorts"].append(dict(doc["upload_cohorts"][0], name="Unused", dest_table="Unused"))
+#         dump_yaml(doc, path)
+#         notes = [u for u in plan(self.manifest) if u.kind == "upload_cohorts"][0].notes
+#         read, unused = notes
+#         self.assertIn("upload HospitalICDCodes: lands in Projects", read)
+#         self.assertIn("once for the pull", read)
+#         self.assertIn("then goes up to Cosmos", read)
+#         self.assertIn("upload Unused:", unused)
+#         self.assertIn("not sent to Cosmos", unused)
+#         self.manifest.uploads_landed["HospitalICDCodes"] = {"table": "x"}
+#         again = [u for u in plan(self.manifest) if u.kind == "upload_cohorts"][0].notes
+#         self.assertIn("landed earlier in this pull", again[0])
 #
 #     def test_missing_phase_yaml_is_refused(self):
 #         (self.root / "sessions" / "Patients" / "pk.yaml").unlink()
