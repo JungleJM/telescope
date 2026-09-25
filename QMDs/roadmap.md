@@ -239,16 +239,28 @@ expects two or three queued at a time, with one `--execute` starting them all
 ### Primary And Foreign Keys In The Data Dictionary
 
 What is known so far, and how sure, is in design.md (Keys And Relationships In
-Cosmos). SQL cannot supply relationships; the interactive data dictionary
-shows them, one table at a time. What is left:
+Cosmos), with how to read a dictionary page. SQL cannot supply relationships;
+the interactive data dictionary shows them, one table at a time.
+
+**How sure a fact is, and what may use it.** Every relationship carries one of
+three grades:
+
+| Grade | Means | May be used |
+| --- | --- | --- |
+| Seen | Read off a dictionary page (a screenshot, or its text transcribed) | In `datadictionary.yaml`, and by validation |
+| Counted | A query below was run and its result recorded | In `datadictionary.yaml`, and by validation |
+| Said | The VM's AI, or Epic convention, with neither of the above | Only as a question to check; never by validation |
+
+The VM's AI answered without running anything and paraphrased the dictionary,
+so all it said is *Said* until a page or a count backs it. Asked again, it is
+to transcribe a page's text, write "not shown" rather than guess, and report
+query results, not what they would mean.
+
+What is left:
 
 1. **Gather them** for the tables in `datadictionary.yaml` (the ones recipes
-   use), from each table's dictionary page, read as design.md describes. By
-   hand, or by screenshot. The VM's AI said outright that its dictionary
-   answers were "paraphrased based on Epic's conventions, not exact text": it
-   has not seen the pages, so asked to fill in relationships it would guess.
-   It could transcribe a page's text if given it, told to write "not shown"
-   rather than guess, and checked.
+   use), from each table's dictionary page, read as design.md describes: by
+   hand, by screenshot, or by the AI transcribing a page it is given.
 2. **Decide the shape.** A structured entry beside the prose, for example:
 
    ```yaml
@@ -273,11 +285,37 @@ shows them, one table at a time. What is left:
    ```
 
    Open: these names; whether to replace or keep the prose annotation; how to
-   write annotations that name a table and no column, or two alternatives.
-3. **Confirm with data** on the VM, using the brief's queries: the permission
-   probe; `PatientDim.DurableKey` unique with and without `IsCurrent = 1`;
-   how many `DiagnosisKey`s repeat in `DiagnosisTerminologyDim`; how many `-1`
-   keys the fact tables hold. Run on `COSMOS_SneakPeek` first.
+   write annotations that name a table and no column, or two alternatives; and
+   where each entry records its grade.
+3. **Confirm with data** on the VM, `COSMOS_SneakPeek` first, then `COSMOS`
+   if cheap; a date window on a large fact table. Four query shapes:
+
+   ```sql
+   -- Can this login see keys at all? 0 means an empty sys.foreign_keys is
+   -- "cannot see", not "none declared".
+   SELECT HAS_PERMS_BY_NAME('dbo.PatientDim', 'OBJECT', 'VIEW DEFINITION');
+
+   -- A parent key is one row per key (under its filter, if it keeps history).
+   SELECT COUNT_BIG(*) AS rows_total, COUNT_BIG(DISTINCT DurableKey) AS keys
+   FROM dbo.PatientDim WHERE IsCurrent = 1;       -- and again without the filter
+
+   -- Child rows with no parent, sentinels aside.
+   SELECT COUNT_BIG(*) AS orphans
+   FROM dbo.LabComponentResultFact AS c
+   LEFT JOIN dbo.LabComponentDim AS p ON p.LabComponentKey = c.LabComponentKey
+   WHERE c.LabComponentKey IS NOT NULL AND c.LabComponentKey <> -1
+     AND p.LabComponentKey IS NULL;
+
+   -- A one-to-many dimension: how many rows per key, and of which Type.
+   SELECT TOP (20) DiagnosisKey, COUNT(*) AS n, STRING_AGG(Type, ', ') AS types
+   FROM dbo.DiagnosisTerminologyDim
+   GROUP BY DiagnosisKey HAVING COUNT(*) > 1 ORDER BY n DESC;
+   ```
+
+   Run the parent check for each parent a `foreign key to ...` annotation
+   names, and the orphan check for each child column; how many `-1` (and
+   negative) keys each fact table holds is the sentinel count. Record the
+   results with their date and database.
 4. **Decide what validation flags**, and whether as an error or a warning:
    a join on columns that are not a declared relationship (deliberate non-key
    joins exist); a join to a table with several rows per key and no filter
@@ -289,5 +327,5 @@ One correction is already known: our dictionary has `DiagnosisEventFact.Diagnosi
 pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the interactive dictionary
 says `DiagnosisDim.DiagnosisKey`.
 
-`QMDs/keys_research/` (the brief, the AI's answer and the example page) stays
-until step 3 is done and folded in, then goes.
+`QMDs/keys_research/` keeps only the example page, which design.md reads. The
+brief and the AI's answer are summarized above and in design.md.

@@ -488,10 +488,13 @@ join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is
 wrong; a correct join can still multiply rows, if it meets a table with several
 rows per key and no filter. Knowing each table's keys, and what each foreign
 key points at, would let validation check joins. Three questions were put to
-the VM's AI (`QMDs/keys_research/`: the brief, and its answer transcribed): are
-keys declared where SQL can read them, do they hold in the data, and what does
-the interactive data dictionary show. It explained its queries rather than
-running them, so nothing below has been counted yet.
+the VM's AI: are keys declared where SQL can read them, do they hold in the
+data, and what does the interactive data dictionary show. It explained its
+queries rather than running them, and said its dictionary answers were
+"paraphrased based on Epic's conventions, not exact text", so nothing below has
+been counted, and what it alone said is unverified. The brief and its answer
+are summarized here and in the roadmap (Needs Research); the one page seen is
+`QMDs/keys_research/DataDictionary DiagnosisEventFact example.png`.
 
 | Finding | Source | How sure |
 | --- | --- | --- |
