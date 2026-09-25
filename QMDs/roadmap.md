@@ -14,35 +14,75 @@ When an item here is built, delete it from this file and describe the result in
 | --- | --- |
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
 | YAML Manager browser UI | Built; Mac only. The Builder changes from testing (PK marking, Multipliers, section notes, Save as Recipe) are tested in code but not yet clicked through |
-| Bundle: build, verify, extract, `.local` preservation | Built and tested. The D49 bundle (no recipes or UI) is not yet on the VM |
+| Bundle: build, verify, extract, `.local` preservation | Built and tested. On the VM (D64, content_id `1af88f77`) |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; dry run proven end to end from one copied bundle |
-| Pullmanager: connections, session execution, uploads, transfer | Written and tested against a fake cursor. **Never run against a database** |
-| Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Not yet on the VM |
-| Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Not yet on the VM |
-| Dedup through sources, split levels filtering their PK, control sampling, hash samples, uploads once per pull (D58–D62) | Built and tested against fakes on the Mac; dry-run on the VM. Not yet executed |
-| Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested on the Mac. Not yet used on the VM |
-| Launcher (`--gui`) | Built; tested with a fake tkinter, built for real on Tk 9 and on Tk 8.6 (Mac `python3.13`). Not yet opened on the VM |
+| Pullmanager: connections, session execution, uploads, transfer | Tested against a fake cursor. **First live run under way** (IBD Ancestry, below): both connections, setup and uploads have run against the databases; nothing after that is confirmed |
+| Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Executing for the first time in that run |
+| Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Executing for the first time in that run |
+| Dedup through sources, split levels filtering their PK, control sampling, hash samples, uploads once per pull (D58–D62) | Built and tested against fakes on the Mac; dry-run on the VM. Executing for the first time in that run |
+| Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested; used on the VM (IBD Ancestry) |
+| Launcher (`pullmanager.py`) | Opened on the VM. Validate, Export split and Dry run work from it; Execute does not (Known Bugs) |
 | Artifact handoff (parquets) | Not built |
 
 ## Known Bugs
 
-Found in the first dry run on the VM (IBD Ancestry, September 2026), all in
-the fixes below: dedup names aliases the server cannot see, so every
-OtherDiagnoses run would fail (1); `dedup_order_by` is ignored (2);
-`split_after_build` levels are not applied, so black and white pull the same
-patients (3); two recipes dedup by code instead of patient (4);
-`random_pk_sample` is ignored (5); retired options do not warn (8).
+Found in the first live run (IBD Ancestry, September 2026), all in the fixes
+below:
+
+- Under `Dual`, each Cosmos session runs before its SneakPeek twin, so the
+  quick round comes last (1).
+- The status tab's Refresh button sits alone at the bottom right (1).
+- Execute started from the launcher ends at once with exit code 3221225794
+  (`0xC0000142`), before printing anything. The same command typed into
+  VSCodium's terminal runs (4).
+
+---
+
+## Next: Fixes, In Order
+
+From the first live run. The IBD Ancestry run in progress keeps its split and
+its order; these apply from the next one.
+
+1. **SneakPeek first (D65), and the Refresh button** moved to the top left of
+   the status tab, beside the manifest path. Both are small, and the order
+   matters from the next split.
+2. **`--execute <project>` and the dry run's closing lines (D66).** They make
+   the terminal route easy at once, even if the launcher's Execute never works
+   on the VM.
+3. **The running-pull lock (D67):** `--execute` and `--export-split` refuse to
+   clash, the launcher greys Export split and Execute and follows the pull,
+   and `--running`. Needed before two pulls run at once, and fix 4 relies on it.
+4. **Execute in its own console window, with its log (D68).** The least
+   certain to work on the VM, so last; if it cannot start, it falls back to
+   fix 2's command.
+
+Then rebuild the bundle.
 
 ---
 
 ## Next: The First Live Run
 
-Everything below the dry run is unproven until it meets Cosmos. On the VM:
+Where it stands: the D64 bundle is extracted on the VM and the launcher opens
+there (its Tk is fine, bar the Refresh button). The IBD Ancestry pull was
+validated, split and dry-run from the launcher, and is executing from
+VSCodium's terminal (`python pullmanager.py --execute
+runs\IBD_Ancestry\split\pullmanifest.yaml`). Its first session,
+`CrohnsblackPatients` on Cosmos, finished setup and uploads and was building
+its PK. Nothing after that is confirmed. The checks, on the VM:
 
-1. Copy `bundle.py`, run `python bundle.py`, check the content_id against the
-   Mac's and answer `y`, then `python pullmanager.py --tdd`.
-2. `python pullmanager.py` opens the launcher. Checked on Tk 8.6 on the Mac,
-   but the VM's exact Tk is unconfirmed, so watch for option or layout errors.
+1. `python pullmanager.py --tdd`: not yet reported from the VM.
+2. The IBD Ancestry pull, once it finishes (D58–D61):
+   - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult`
+     times the same on the black PK, and the PK phase's `control_sample`
+     output agrees.
+   - `SELECT PatientDurableKey, BillingCodeValue FROM <OtherDiagnoses> GROUP BY
+     PatientDurableKey, BillingCodeValue HAVING COUNT(*) > 1` returns nothing.
+   - A patient's `IndexDate` is the earliest `StartDateKey` among their
+     disease-code events.
+   - `upload_IBD_Meds` lands once, in the first session, and no session loads
+     it into Cosmos (the upload phase's `uploads` output says so).
+   - Cosmos and Projects row counts agree, with no false warnings, and the
+     status tab reads the finished manifest correctly.
 3. On the Mac, export a small template with `--export-transfer`: a generated
    PK, a parquet upload with a declared `BIGINT` column, and a batched run
    (explicit `values:`, and a `chunk:`). Copy it and its listed uploads over,
@@ -73,16 +113,6 @@ Everything below the dry run is unproven until it meets Cosmos. On the VM:
    others, open the Projects connection with autocommit on.
 8. An uploaded PK: a parquet list marked `type: pk`, batched by a column it
    carries. Its uniqueness check and batches should read `upload_<dest>`.
-9. The IBD Ancestry pull (D58–D61):
-   - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult`
-     times the same on the black PK, and the PK phase's `control_sample`
-     output agrees.
-   - `SELECT PatientDurableKey, BillingCodeValue FROM <OtherDiagnoses> GROUP BY
-     PatientDurableKey, BillingCodeValue HAVING COUNT(*) > 1` returns nothing.
-   - A patient's `IndexDate` is the earliest `StartDateKey` among their
-     disease-code events.
-   - `upload_IBD_Meds` lands once, in the first session, and no session loads
-     it into Cosmos (the upload phase's `uploads` output says so).
 
 ---
 
@@ -159,7 +189,9 @@ added gets its transfer version (recipes written out; multipliers and
 batching still in their own sections, D49), and the queue is carried to the
 VM and run. Open: whether the tab lives in YAML Manager (building the queue on
 the Mac), in the launcher (running it on the VM), or both; and whether queued
-pulls run one after another or side by side (D57 allows either).
+pulls run one after another or side by side (D57 allows either). The user
+expects two or three queued at a time, with one `--execute` starting them all
+(today it takes one project, D66).
 
 ### Smaller Open Items
 

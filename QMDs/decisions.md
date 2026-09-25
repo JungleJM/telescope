@@ -1120,3 +1120,134 @@ extract code, so a change there kept the same number.
 **Consequences.** Every bundle built from now on has a different id from the
 ones before, even where the carried files are the same.
 
+### D65. Under `Dual`, every SneakPeek session runs before any Cosmos session
+
+**Context.** `Dual` pulls every cohort from `COSMOS_SneakPeek` and from
+`COSMOS`. SneakPeek is the smaller database, so pulling it too is meant to give
+a quick first round through every phase before the long one. The split ordered
+sessions by D59's rule alone, cases before controls, and otherwise listed each
+Cosmos session before its SneakPeek twin. So the first live run (IBD
+Ancestry) started on Cosmos.
+
+**Decision.** The manifest runs every `COSMOS_SneakPeek` session first, then
+every `COSMOS` session. Within each, cases come before controls (D59), and
+otherwise the template's order holds. A control's case is in the control's own
+database, so it still runs first.
+
+**Consequences.** A problem in any phase shows up on SneakPeek, before a Cosmos
+session starts. It applies from the next split; a manifest already made keeps
+its order.
+
+### D66. `--execute` takes a project name; the dry run ends with that command
+
+**Context.** Execute runs from a terminal on the VM (D68), and typing
+`runs\IBD_Ancestry\split\pullmanifest.yaml` is slow and easy to get wrong. The
+dry run ended with "Nothing was executed and the manifest was not modified",
+leaving the next step to memory.
+
+**Decision.**
+
+- `--execute` takes the project's name as well as a manifest path:
+  `IBD_Ancestry`, `"IBD Ancestry"` (a space for an underscore) or the transfer
+  file's name (`IBD_Ancestry_transfer.yaml`) all mean
+  `runs/IBD_Ancestry/split/pullmanifest.yaml` (D57). It looks under the working
+  directory, then beside `pullmanager.py`, so it works from another folder
+  too. A name with no pull says so and lists the pulls there are.
+- `--execute` with nothing after it runs nothing. It lists each pull under
+  `runs/`: its state from the manifest (not started, sessions done of the
+  total, failed), whether it is executing (D67), and the command that runs
+  it. The user picks; it never guesses the newest.
+- The dry run ends with its counts and the exact command:
+
+  ```text
+  Dry run finished: 48 unit(s), 112 SQL block(s), 0 errors, 3 note(s). Nothing was pulled.
+  To pull it: press Execute, or in a terminal in <working folder> run:
+      python pullmanager.py --execute IBD_Ancestry
+  ```
+
+  It counts notes, not warnings: a dry run produces no warnings, and anything
+  wrong stops it as an error.
+
+**Consequences.** Queueing several pulls for one `--execute` is for later
+(roadmap).
+
+### D67. A running Execute holds a lock, and the commands and the launcher respect it
+
+**Context.**
+
+- Pulls from two transfer YAMLs cannot overwrite each other. Each has its own
+  run folder and manifest (D57), temp prefix (D50) and destinations. The
+  exception is two pulls landing the same table in the same `project_db`
+  (D57).
+- One project can overwrite itself. Export split replaces the manifest a
+  running Execute writes to, and a second Execute pulls the same sessions at
+  the same time. Nothing stops either, because nothing knows a pull is
+  running. `running` in the manifest cannot tell, since a pull that crashed
+  or was stopped leaves it too (Status).
+- The launcher reads the status only while a command it started is running,
+  so a pull started from a terminal shows no progress there.
+- On Windows the standard library cannot safely ask whether a process is
+  alive: `os.kill(pid, 0)` ends it.
+
+**Decision.**
+
+- `--execute` writes `pullmanifest.lock` beside the manifest. The lock holds
+  the process id, the machine, the start time and a heartbeat. A background
+  thread rewrites the heartbeat every 30 seconds, so a long query does not
+  stop it. The lock is removed when the pull ends. One whose heartbeat is more
+  than 2 minutes old is stale: its process stopped without cleaning up, so it
+  is ignored and replaced.
+- `--execute` refuses to start on a manifest with a live lock, and
+  `--export-split` refuses to replace one. Each says who holds the lock, since
+  when, and when it would count as stopped. The check is in the commands, so
+  it protects a pull started from a terminal as much as one started from the
+  launcher.
+- The launcher checks the loaded transfer YAML's lock every few seconds,
+  whoever started the pull. While it is live:
+  - Export split and Execute are greyed out. Pressing Execute greys them at
+    once.
+  - The status tab says "Executing since 14:03, last heartbeat 20s ago" and
+    keeps refreshing.
+  - Validate and Dry run stay available. They write nothing a pull reads.
+- `python pullmanager.py --running` lists every pull under `runs/` and whether
+  it is executing. It is the same list `--execute` alone prints (D66).
+
+**Consequences.** A pull killed without cleanup (its window closed, the
+machine restarted) holds its project for up to 2 minutes. The lock says only
+whether a process is alive; the manifest still says what it has done.
+
+### D68. Execute from the launcher runs in its own console window, and writes a log
+
+**Context.** On the VM, Execute started from the launcher ended at once with
+exit code 3221225794 (`0xC0000142`: a DLL failed to initialize). It stopped
+before printing its first line, so before any of Pullmanager's own work.
+Validate, Export split and Dry run, started the same way, work. The same
+command typed into VSCodium's terminal runs. The launcher starts `python.exe`
+directly, with its output piped into the window. The cause is unknown. Some
+programs are blocked on the VM (design.md, Where It Runs), so a fix cannot
+count on starting `cmd.exe` or `powershell.exe`.
+
+**Decision.**
+
+- The launcher's Execute opens a new console window (`CREATE_NEW_CONSOLE`) in
+  the working folder. It runs `python pullmanager.py --execute <project>`
+  with the same Python and no shell in between, the situation that works from
+  a terminal. The window's title and first line name the pull.
+- When the pull ends, the console stays open, saying
+  `Safe to close: the pull has finished (exit code 0). Type exit and press Enter to close this window.`
+  Only `exit` closes it, so an Enter pressed by accident does not lose the
+  output. The lock (D67) is released when the pull ends, not when the window
+  closes.
+- Execute also writes everything it prints to
+  `runs/<project>/logs/execute-<date>-<time>.log`, however it was started.
+  The launcher's Output tab follows the newest log of the loaded pull while
+  its lock is live, so a pull started from a terminal shows there too.
+- If the console cannot be started, or its process ends before writing its
+  log, the launcher says so, with the exit code, and prints the terminal
+  command to run instead (D66).
+- Stop ends a pull the launcher started. A pull started from a terminal is
+  stopped there, with Ctrl+C.
+
+**Consequences.** A pull's output shows in its console and in the Output tab,
+and the log keeps it after both are closed. Validate, Export split and Dry run
+still run inside the launcher.

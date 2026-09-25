@@ -58,7 +58,9 @@ Two machines, one codebase, updated one way.
   Runs pulls. Cannot pull from git. Cannot load a page served by Python on
   localhost, or a static HTML file opened from disk, and has no in-editor
   browser. Has tkinter, but no other Python desktop toolkit (the `shiny` and
-  `tcltk` entries in its package list are R).
+  `tcltk` entries in its package list are R). Some programs are blocked:
+  `ipconfig` in Windows PowerShell 5.1 fails with "Access is denied". Python
+  runs, from VSCodium's terminal (PowerShell 7.6.5) and from the launcher.
 
 ### Environments
 
@@ -1102,8 +1104,9 @@ file name, D57); then Validate, Export split, Dry
 run, Execute, Stop, with "Retry failed" and "Re-pull everything" options
 (`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is
 ever passed (D49); settings saved by an older launcher that named one still
-load. Output streams into a log tab; a status tab reads the manifest every
-three seconds.
+load. Output streams into a log tab. A status tab reads the manifest when the
+window opens, on Refresh, and every three seconds while a command the launcher
+started is running; a pull started from a terminal shows only on Refresh.
 
 It is a front end, not a second implementation. Each button runs the same
 command a person would type, as a subprocess, so a long pull cannot freeze the
