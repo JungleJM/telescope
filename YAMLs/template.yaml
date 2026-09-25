@@ -13,9 +13,7 @@ run_vars:
 test_options:
   smallset: false              # If true, will just make a table up to 'stop_at' number of rows for the PKTable
   stop_at_for_pk_table: 10     # limits to SELECT TOP(value)
-  stop_at_for_non_pk_tables: 0 # 0 or blank means 'don't stop_at'
-  random_pk_sample: false      # For controls in multiplier will always be random
-  printout_md: true            # Can print out a Markdown of the run and its results (rows, time, etc). in the r_dump root
+  random_pk_sample: false      # With smallset: the PK's rows chosen by a hash of its key, the same every run
 
 # Data Science Variables.
 # Generates R scripts to run in R Studio to make Parquet files of what you just pulled

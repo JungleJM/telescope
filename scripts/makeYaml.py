@@ -2279,6 +2279,7 @@ def compile_yaml(
         )
         return result
     template = normalize_template(raw, result)
+    warn_retired_options(raw or {}, result)
     recipes_doc = load_recipes(recipes_path, template, result)
     if recipes_doc is None:
         return result
@@ -4645,6 +4646,40 @@ class DedupTests(MakeYamlTest):
         self.assertHasError(res, "old_dedup_order")
 
 
+class RetiredAndValidateTests(MakeYamlTest):
+    """D62: retired options are named; Validate says what it checked."""
+
+    def test_a_retired_option_is_named(self):
+        text = tiny_template("test_options:\n  smallset: false\n  printout_md: true\n")
+        res = self.compile_template(text)
+        self.assertCompiles(res)
+        found = [m for m in res.warnings if m.code == "retired_option"]
+        self.assertEqual([m.context for m in found], ["test_options.printout_md"])
+
+    def run_cli(self, *argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(list(argv))
+        return code, out.getvalue()
+
+    def test_validate_reports_what_it_checked_and_writes_nothing(self):
+        template, recipes = self.write_pair()
+        code, out = self.run_cli("--template", str(template), "--recipes", str(recipes), "--validate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("OK: template.yaml is valid: 2 cohort(s) in 1 session(s), 1 run(s)", out)
+        self.assertIn("Checked: recipes from", out)
+        self.assertIn("Nothing was written", out)
+        self.assertNotIn("ready at", out)
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), ["recipes.yaml", "template.yaml"])
+
+    def test_validate_fails_a_broken_file(self):
+        template, recipes = self.write_pair(tiny_template().replace("ICD_Value:", "Unused:"))
+        code, out = self.run_cli("--template", str(template), "--recipes", str(recipes), "--validate")
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR [missing_variable]", out)
+        self.assertIn("FAILED", out)
+
+
 class ProjectDbTests(MakeYamlTest):
     def test_missing_warns_while_writing_and_stops_the_split(self):
         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -4724,6 +4759,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
     "dedup": DedupTests,
+    "retired_and_validate": RetiredAndValidateTests,
     "run_folders": RunFolderTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
@@ -4749,6 +4785,56 @@ def run_tdd(group: str | None = None, verbosity: int = 2) -> int:
 # =============================================================================
 # CLI
 # =============================================================================
+
+
+def validation_summary(
+    result: CompileResult,
+    template_path: str | Path,
+    recipes_path: str | Path,
+    datadictionary_path: str | Path | None,
+) -> list[str]:
+    """What a passing validation found and checked (D62).
+
+    It used to say "finished YAML ready at" a path, though nothing was
+    written and the path was inside the extracted bundle.
+    """
+    template_path = Path(template_path)
+    plan = plan_split_runs(template_path, recipes_path, datadictionary_path).analysis.get("split_plan") or {}
+    sessions = plan.get("sessions") or []
+    runs = sum(len(s.get("runs") or []) for s in sessions)
+    cohorts = len(result.finished_yaml.get("cohorts") or [])
+    uploads = len(result.finished_yaml.get("upload_cohorts") or [])
+    dictionary = Path(datadictionary_path) if datadictionary_path else default_datadictionary_path()
+    recipes = "recipes written out in it" if not recipe_references(load_yaml(template_path) or {}) else f"recipes from {recipes_path}"
+    return [
+        f"OK: {template_path.name} is valid: {cohorts} cohort(s) in {len(sessions)} session(s), "
+        f"{runs} run(s); {len(result.warnings)} warning(s) above.",
+        f"Checked: {recipes}; every variable and table binding; each column against the data "
+        f"dictionary ({dictionary}); {uploads} upload file(s) present, with their declared "
+        "columns; multipliers and their levels; batching; dedup columns.",
+        "Nothing was written. Export split writes the pull.",
+    ]
+
+
+RETIRED_OPTIONS = {
+    "stop_at_for_non_pk_tables": "row limits apply to the root PK only",
+    "print_md": "the manifest is the run's record",
+    "printout_md": "the manifest is the run's record",
+}
+
+
+def warn_retired_options(raw: dict[str, Any], result: CompileResult) -> None:
+    """Options that no longer do anything, named so they can be removed (D62)."""
+    grouped = raw.get("test_options") if isinstance(raw.get("test_options"), dict) else {}
+    for key, why in RETIRED_OPTIONS.items():
+        where = f"test_options.{key}" if key in grouped else key if key in raw else None
+        if where:
+            result.warn(
+                "retired_option",
+                f"`{key}` does nothing: {why}.",
+                where,
+                fix=f"Remove `{key}`.",
+            )
 
 
 def print_messages(result: CompileResult) -> None:
@@ -4901,13 +4987,15 @@ def main(argv: list[str] | None = None) -> int:
         datadictionary_path=args.datadictionary,
     )
     print_messages(result)
-    if result.ok:
-        print(f"OK: finished YAML ready at {result.output_path}")
-        if args.write and not args.validate:
-            print(f"Wrote {result.output_path}")
-    else:
+    if not result.ok:
         print("FAILED: errors block YAML generation")
-    return 0 if result.ok else 1
+        return 1
+    if args.write and not args.validate:
+        print(f"Wrote {result.output_path}")
+        return 0
+    for line in validation_summary(result, args.template, args.recipes, args.datadictionary):
+        print(line)
+    return 0
 
 
 if __name__ == "__main__":

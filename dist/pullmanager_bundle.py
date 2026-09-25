@@ -363,7 +363,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "93c2b363b2b25db340735981ff8c212a2dfe189b8ae78df76bedebbeea412983",
+  "content_id": "f0143279faf958e57f743904c36f80a163b6df0b1e7c007930e4b59bf1442609",
   "file_count": 37,
   "files": [
     {
@@ -453,8 +453,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/normalize.py",
       "policy": "replace",
-      "sha256": "47fbbcd86942a050e6d04f3ae1b17c5b8aa26ee4118cbc27d56f09edaa0c3b3b",
-      "size": 8431
+      "sha256": "b05101e05af0c186f98a250f6064beb2523a0bffc4d771307f8cda35a4c98673",
+      "size": 7780
     },
     {
       "path": "pullmanager/refresh.py",
@@ -543,8 +543,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_normalize.py",
       "policy": "replace",
-      "sha256": "ef96d8aa43b696e7049d26ae521c39ca82da55331bb9d54c58aa4d6c90d063e0",
-      "size": 7268
+      "sha256": "4ceebf87f70c64d55f7a47fee8c1be9b62bfb355f35aedc30f682e5a3ecc0beb",
+      "size": 6824
     },
     {
       "path": "pullmanager/tests/test_render.py",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "f116bdb81a674da2ea7c5db1abb0f9e79988060c816f8dfef14425cb728aa0eb",
-      "size": 201180
+      "sha256": "b2d721d24b8a24fc4f5b6b2145adeeffa1f0016017c9ea3d7f97e258c1d6ae82",
+      "size": 205255
     }
   ]
 }'''
@@ -6147,7 +6147,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/naming.py ===
-# === BEGIN FILE: pullmanager/normalize.py SHA256: 47fbbcd86942a050e6d04f3ae1b17c5b8aa26ee4118cbc27d56f09edaa0c3b3b SIZE: 8431 ===
+# === BEGIN FILE: pullmanager/normalize.py SHA256: b05101e05af0c186f98a250f6064beb2523a0bffc4d771307f8cda35a4c98673 SIZE: 7780 ===
 # """Compatibility rules for hand-authored cohort YAML.
 #
 # Each function returns its result alongside any notes worth surfacing, because
@@ -6175,14 +6175,6 @@ if __name__ == "__main__":
 #     "cosmos_sneakpeek": "COSMOS_SneakPeek",
 #     "sneakpeek": "COSMOS_SneakPeek",
 #     "sp": "COSMOS_SneakPeek",
-# }
-#
-# DEAD_TEST_OPTIONS = {
-#     "stop_at_for_non_pk_tables": (
-#         "no longer used; row limits now apply only to the root PK cohort"
-#     ),
-#     "print_md": "reporting is the manifest's job; no markdown run report is written",
-#     "printout_md": "reporting is the manifest's job; no markdown run report is written",
 # }
 #
 #
@@ -6276,17 +6268,6 @@ if __name__ == "__main__":
 #                 f"{cohort.get('dest_table') or cohort.get('name')!r}"
 #             )
 #     return problems
-#
-#
-# def dead_options(test_options: dict[str, Any] | None) -> list[str]:
-#     """Notes for retired `test_options` keys that are still present."""
-#     if not test_options:
-#         return []
-#     return [
-#         f"`test_options.{key}` is ignored: {why}"
-#         for key, why in DEAD_TEST_OPTIONS.items()
-#         if key in test_options
-#     ]
 #
 #
 # def cosmos_database(value: Any, default: str = "COSMOS") -> str:
@@ -9926,7 +9907,7 @@ if __name__ == "__main__":
 #         self.assertEqual(global_temp("Patients"), "##JVM_Patients")
 #
 # === END FILE: pullmanager/tests/test_naming.py ===
-# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: ef96d8aa43b696e7049d26ae521c39ca82da55331bb9d54c58aa4d6c90d063e0 SIZE: 7268 ===
+# === BEGIN FILE: pullmanager/tests/test_normalize.py SHA256: 4ceebf87f70c64d55f7a47fee8c1be9b62bfb355f35aedc30f682e5a3ecc0beb SIZE: 6824 ===
 # """Compatibility rules for hand-authored cohort YAML."""
 #
 # from __future__ import annotations
@@ -9937,7 +9918,6 @@ if __name__ == "__main__":
 #     NormalizationError,
 #     cosmos_database,
 #     is_dual,
-#     dead_options,
 #     joined_generated_tables,
 #     normalize_bool,
 #     normalize_dedup_keys,
@@ -10077,17 +10057,6 @@ if __name__ == "__main__":
 #         problems = validate_dedup_columns([["Nope"]], EVENTS)
 #         self.assertEqual(len(problems), 1)
 #         self.assertIn("Nope", problems[0])
-#
-#
-# class DeadOptionTests(unittest.TestCase):
-#     def test_retired_options_are_named(self):
-#         notes = dead_options({"printout_md": True, "stop_at_for_pk_table": 500})
-#         self.assertEqual(len(notes), 1)
-#         self.assertIn("printout_md", notes[0])
-#
-#     def test_live_options_are_silent(self):
-#         self.assertEqual(dead_options({"stop_at_for_pk_table": 500}), [])
-#         self.assertEqual(dead_options(None), [])
 #
 #
 # class DependencyTests(unittest.TestCase):
@@ -11973,7 +11942,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: f116bdb81a674da2ea7c5db1abb0f9e79988060c816f8dfef14425cb728aa0eb SIZE: 201180 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: b2d721d24b8a24fc4f5b6b2145adeeffa1f0016017c9ea3d7f97e258c1d6ae82 SIZE: 205255 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -14255,6 +14224,7 @@ if __name__ == "__main__":
 #         )
 #         return result
 #     template = normalize_template(raw, result)
+#     warn_retired_options(raw or {}, result)
 #     recipes_doc = load_recipes(recipes_path, template, result)
 #     if recipes_doc is None:
 #         return result
@@ -16621,6 +16591,40 @@ if __name__ == "__main__":
 #         self.assertHasError(res, "old_dedup_order")
 #
 #
+# class RetiredAndValidateTests(MakeYamlTest):
+#     """D62: retired options are named; Validate says what it checked."""
+#
+#     def test_a_retired_option_is_named(self):
+#         text = tiny_template("test_options:\n  smallset: false\n  printout_md: true\n")
+#         res = self.compile_template(text)
+#         self.assertCompiles(res)
+#         found = [m for m in res.warnings if m.code == "retired_option"]
+#         self.assertEqual([m.context for m in found], ["test_options.printout_md"])
+#
+#     def run_cli(self, *argv):
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out):
+#             code = main(list(argv))
+#         return code, out.getvalue()
+#
+#     def test_validate_reports_what_it_checked_and_writes_nothing(self):
+#         template, recipes = self.write_pair()
+#         code, out = self.run_cli("--template", str(template), "--recipes", str(recipes), "--validate")
+#         self.assertEqual(code, 0, out)
+#         self.assertIn("OK: template.yaml is valid: 2 cohort(s) in 1 session(s), 1 run(s)", out)
+#         self.assertIn("Checked: recipes from", out)
+#         self.assertIn("Nothing was written", out)
+#         self.assertNotIn("ready at", out)
+#         self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), ["recipes.yaml", "template.yaml"])
+#
+#     def test_validate_fails_a_broken_file(self):
+#         template, recipes = self.write_pair(tiny_template().replace("ICD_Value:", "Unused:"))
+#         code, out = self.run_cli("--template", str(template), "--recipes", str(recipes), "--validate")
+#         self.assertEqual(code, 1)
+#         self.assertIn("ERROR [missing_variable]", out)
+#         self.assertIn("FAILED", out)
+#
+#
 # class ProjectDbTests(MakeYamlTest):
 #     def test_missing_warns_while_writing_and_stops_the_split(self):
 #         text = tiny_template().replace("project_db: PROJECTD1\n", "")
@@ -16700,6 +16704,7 @@ if __name__ == "__main__":
 #     "batching_definitions": BatchingDefinitionTests,
 #     "one_copy": OneCopyTests,
 #     "dedup": DedupTests,
+#     "retired_and_validate": RetiredAndValidateTests,
 #     "run_folders": RunFolderTests,
 #     "project_db": ProjectDbTests,
 #     "fixes": FixTests,
@@ -16725,6 +16730,56 @@ if __name__ == "__main__":
 # # =============================================================================
 # # CLI
 # # =============================================================================
+#
+#
+# def validation_summary(
+#     result: CompileResult,
+#     template_path: str | Path,
+#     recipes_path: str | Path,
+#     datadictionary_path: str | Path | None,
+# ) -> list[str]:
+#     """What a passing validation found and checked (D62).
+#
+#     It used to say "finished YAML ready at" a path, though nothing was
+#     written and the path was inside the extracted bundle.
+#     """
+#     template_path = Path(template_path)
+#     plan = plan_split_runs(template_path, recipes_path, datadictionary_path).analysis.get("split_plan") or {}
+#     sessions = plan.get("sessions") or []
+#     runs = sum(len(s.get("runs") or []) for s in sessions)
+#     cohorts = len(result.finished_yaml.get("cohorts") or [])
+#     uploads = len(result.finished_yaml.get("upload_cohorts") or [])
+#     dictionary = Path(datadictionary_path) if datadictionary_path else default_datadictionary_path()
+#     recipes = "recipes written out in it" if not recipe_references(load_yaml(template_path) or {}) else f"recipes from {recipes_path}"
+#     return [
+#         f"OK: {template_path.name} is valid: {cohorts} cohort(s) in {len(sessions)} session(s), "
+#         f"{runs} run(s); {len(result.warnings)} warning(s) above.",
+#         f"Checked: {recipes}; every variable and table binding; each column against the data "
+#         f"dictionary ({dictionary}); {uploads} upload file(s) present, with their declared "
+#         "columns; multipliers and their levels; batching; dedup columns.",
+#         "Nothing was written. Export split writes the pull.",
+#     ]
+#
+#
+# RETIRED_OPTIONS = {
+#     "stop_at_for_non_pk_tables": "row limits apply to the root PK only",
+#     "print_md": "the manifest is the run's record",
+#     "printout_md": "the manifest is the run's record",
+# }
+#
+#
+# def warn_retired_options(raw: dict[str, Any], result: CompileResult) -> None:
+#     """Options that no longer do anything, named so they can be removed (D62)."""
+#     grouped = raw.get("test_options") if isinstance(raw.get("test_options"), dict) else {}
+#     for key, why in RETIRED_OPTIONS.items():
+#         where = f"test_options.{key}" if key in grouped else key if key in raw else None
+#         if where:
+#             result.warn(
+#                 "retired_option",
+#                 f"`{key}` does nothing: {why}.",
+#                 where,
+#                 fix=f"Remove `{key}`.",
+#             )
 #
 #
 # def print_messages(result: CompileResult) -> None:
@@ -16877,13 +16932,15 @@ if __name__ == "__main__":
 #         datadictionary_path=args.datadictionary,
 #     )
 #     print_messages(result)
-#     if result.ok:
-#         print(f"OK: finished YAML ready at {result.output_path}")
-#         if args.write and not args.validate:
-#             print(f"Wrote {result.output_path}")
-#     else:
+#     if not result.ok:
 #         print("FAILED: errors block YAML generation")
-#     return 0 if result.ok else 1
+#         return 1
+#     if args.write and not args.validate:
+#         print(f"Wrote {result.output_path}")
+#         return 0
+#     for line in validation_summary(result, args.template, args.recipes, args.datadictionary):
+#         print(line)
+#     return 0
 #
 #
 # if __name__ == "__main__":

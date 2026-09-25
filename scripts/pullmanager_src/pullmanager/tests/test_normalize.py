@@ -8,7 +8,6 @@ from ..normalize import (
     NormalizationError,
     cosmos_database,
     is_dual,
-    dead_options,
     joined_generated_tables,
     normalize_bool,
     normalize_dedup_keys,
@@ -148,17 +147,6 @@ class DedupColumnTests(unittest.TestCase):
         problems = validate_dedup_columns([["Nope"]], EVENTS)
         self.assertEqual(len(problems), 1)
         self.assertIn("Nope", problems[0])
-
-
-class DeadOptionTests(unittest.TestCase):
-    def test_retired_options_are_named(self):
-        notes = dead_options({"printout_md": True, "stop_at_for_pk_table": 500})
-        self.assertEqual(len(notes), 1)
-        self.assertIn("printout_md", notes[0])
-
-    def test_live_options_are_silent(self):
-        self.assertEqual(dead_options({"stop_at_for_pk_table": 500}), [])
-        self.assertEqual(dead_options(None), [])
 
 
 class DependencyTests(unittest.TestCase):

@@ -898,9 +898,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
             <div class="form-grid">
               <label class="checkbox-label"><input id="builderSmallset" type="checkbox"> Small set</label>
               <label>PK Row Limit<input id="builderStopAtPk" type="number" min="0"></label>
-              <label>Fact Row Limit<input id="builderStopAtNonPk" type="number" min="0"></label>
               <label class="checkbox-label"><input id="builderRandomPkSample" type="checkbox"> Random PK sample</label>
-              <label class="checkbox-label"><input id="builderPrintoutMd" type="checkbox"> Print markdown</label>
             </div>
             <div class="toolbar compact">
               <button id="builderNewTemplate">New Blank Template</button>
@@ -1408,9 +1406,7 @@ function blankTemplate() {
     test_options: {
       smallset: false,
       stop_at_for_pk_table: 10,
-      stop_at_for_non_pk_tables: 0,
-      random_pk_sample: false,
-      printout_md: true
+      random_pk_sample: false
     },
     project_vars: {
       project_folder: 'New Project'
@@ -1432,9 +1428,7 @@ function hydrateBuilder() {
   setValue('builderMaxDate', draftTemplate.run_vars.max_date_key || draftTemplate.vars.max_date_key || '');
   setChecked('builderSmallset', Boolean(draftTemplate.test_options.smallset));
   setValue('builderStopAtPk', draftTemplate.test_options.stop_at_for_pk_table ?? '');
-  setValue('builderStopAtNonPk', draftTemplate.test_options.stop_at_for_non_pk_tables ?? '');
   setChecked('builderRandomPkSample', Boolean(draftTemplate.test_options.random_pk_sample));
-  setChecked('builderPrintoutMd', draftTemplate.test_options.printout_md !== false);
   renderRecipeOptions();
   renderBatchingOptions();
   renderDictionaryTableOptions();
@@ -1482,13 +1476,13 @@ function syncProjectFields() {
   draftTemplate.run_vars.max_date_key = getValue('builderMaxDate');
   draftTemplate.test_options.smallset = getChecked('builderSmallset');
   draftTemplate.test_options.stop_at_for_pk_table = numericOrZero(getValue('builderStopAtPk'));
-  draftTemplate.test_options.stop_at_for_non_pk_tables = numericOrZero(getValue('builderStopAtNonPk'));
   draftTemplate.test_options.random_pk_sample = getChecked('builderRandomPkSample');
-  draftTemplate.test_options.printout_md = getChecked('builderPrintoutMd');
+  // Retired (D62): dropped from a loaded draft when it is saved.
+  ['stop_at_for_non_pk_tables', 'print_md', 'printout_md'].forEach(key => delete draftTemplate.test_options[key]);
   updateDraftYaml();
 }
 
-['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderSmallset', 'builderStopAtPk', 'builderStopAtNonPk', 'builderRandomPkSample', 'builderPrintoutMd'].forEach(id => {
+['builderProjectFolder', 'builderProjectDb', 'builderCosmosDb', 'builderMinDate', 'builderMaxDate', 'builderSmallset', 'builderStopAtPk', 'builderRandomPkSample'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('input', syncProjectFields);
   if (el) el.addEventListener('change', syncProjectFields);

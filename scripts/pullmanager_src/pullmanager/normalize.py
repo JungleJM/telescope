@@ -27,14 +27,6 @@ COSMOS_DATABASES = {
     "sp": "COSMOS_SneakPeek",
 }
 
-DEAD_TEST_OPTIONS = {
-    "stop_at_for_non_pk_tables": (
-        "no longer used; row limits now apply only to the root PK cohort"
-    ),
-    "print_md": "reporting is the manifest's job; no markdown run report is written",
-    "printout_md": "reporting is the manifest's job; no markdown run report is written",
-}
-
 
 class NormalizationError(ValueError):
     """Raised when a value cannot be interpreted."""
@@ -126,17 +118,6 @@ def validate_dedup_columns(
                 f"{cohort.get('dest_table') or cohort.get('name')!r}"
             )
     return problems
-
-
-def dead_options(test_options: dict[str, Any] | None) -> list[str]:
-    """Notes for retired `test_options` keys that are still present."""
-    if not test_options:
-        return []
-    return [
-        f"`test_options.{key}` is ignored: {why}"
-        for key, why in DEAD_TEST_OPTIONS.items()
-        if key in test_options
-    ]
 
 
 def cosmos_database(value: Any, default: str = "COSMOS") -> str:
