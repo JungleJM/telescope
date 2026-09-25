@@ -43,7 +43,8 @@ class FreshWidgets(types.ModuleType):
     def __getattr__(self, name):
         if name.startswith("__"):
             raise AttributeError(name)
-        return lambda *args, **kwargs: mock.MagicMock(name=name)
+        # `options` keeps what the widget was made with (its text, say).
+        return lambda *args, **kwargs: mock.MagicMock(name=name, options=kwargs)
 
 
 def fake_tkinter():
@@ -167,6 +168,28 @@ class ActionTests(GuiTestCase):
         self.app.on_execute()
         self.assertFalse(self.app.runner.running)
         self.messagebox.askokcancel.assert_called_once()
+
+
+class NameTests(GuiTestCase):
+    """D71: the tab and the button say what they are for."""
+
+    def test_the_buttons(self):
+        self.assertEqual(
+            [button.options["text"] for button in self.app.action_buttons],
+            ["Validate", "Export split", "Preview SQL", "Execute"],
+        )
+
+    def test_the_tabs(self):
+        tabs = [call.kwargs["text"] for call in self.app.notebook.add.call_args_list]
+        self.assertEqual(tabs[0], "Validation Output")
+        self.assertIn("Status", tabs)
+
+    def test_the_preview_runs_the_dry_run(self):
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        with mock.patch.object(self.app.runner, "start") as start:
+            self.app.on_dry_run()
+        self.assertIn("--dry-run", start.call_args.args[0])
+        self.assertIn("=== Preview SQL ===", self.written())
 
 
 class DefaultTests(GuiTestCase):

@@ -459,8 +459,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "a3880ef2177dc9ca3b88829167faa96ff40c23e7dc703889b79210faa6debecf",
-  "file_count": 37,
+  "content_id": "42ef359e93c4208997a8462eb0f96e4dd7594f1cba0be228c8369fde119c120b",
+  "file_count": 39,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -495,8 +495,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "6683bd6206f581fe7fa371b643adcc506ed540f8cbaea1219ffaf149bca7e67a",
-      "size": 11805
+      "sha256": "e742b8e6f446fa7ec9b05d29a0dd8186aa9ea0e84fbb758fe89c6b4b5f267476",
+      "size": 13218
     },
     {
       "path": "pullmanager/db.py",
@@ -513,14 +513,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "76eece749a93126b9631c930851536e9c7d75331765da0f731980ce7bddec6a6",
-      "size": 11465
+      "sha256": "a028395cd8eb62a9cfb42105423f20cb0aa653c4248863ab5a4f53650daa4f11",
+      "size": 11596
     },
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "d9096aa1e62651608fb69e004a5a91bbde2dd8c1b882c5adcf785574b9484f61",
-      "size": 11523
+      "sha256": "ba95adbbec3e65d8bfd115a37ea5aac0efab8c98f545b211ef44572057c3709b",
+      "size": 10776
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -551,6 +551,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "b05101e05af0c186f98a250f6064beb2523a0bffc4d771307f8cda35a4c98673",
       "size": 7780
+    },
+    {
+      "path": "pullmanager/pulls.py",
+      "policy": "replace",
+      "sha256": "3a3c2495b5911cbea5503fe8f5c475232ac90b0191102a6c9ed9f59488a640f8",
+      "size": 8639
     },
     {
       "path": "pullmanager/refresh.py",
@@ -609,8 +615,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "ecbc789156a9ce86e49e72b23a5d473e638e1bdf7cb0d4496bff331dd9fc513f",
-      "size": 8363
+      "sha256": "91b1d1f4abd2a0a28af3b291d49514a53dff0ad4ef501c37b3aa963146b0705c",
+      "size": 9307
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
@@ -641,6 +647,12 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "4ceebf87f70c64d55f7a47fee8c1be9b62bfb355f35aedc30f682e5a3ecc0beb",
       "size": 6824
+    },
+    {
+      "path": "pullmanager/tests/test_pulls.py",
+      "policy": "replace",
+      "sha256": "08e12d326b481a80aeb6eb25d7ab5a40da339c605b3914c88f17ae140986e395",
+      "size": 9972
     },
     {
       "path": "pullmanager/tests/test_render.py",
@@ -3748,12 +3760,8 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 6683bd6206f581fe7fa371b643adcc506ed540f8cbaea1219ffaf149bca7e67a SIZE: 11805 ===
-# """Command line entry point.
-#
-# Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
-# arrives in Phase 6.
-# """
+# === BEGIN FILE: pullmanager/cli.py SHA256: e742b8e6f446fa7ec9b05d29a0dd8186aa9ea0e84fbb758fe89c6b4b5f267476 SIZE: 13218 ===
+# """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
 #
@@ -3775,6 +3783,7 @@ if __name__ == "__main__":
 # from .models import FAILED
 # from .naming import NamingError
 # from .normalize import NormalizationError
+# from .pulls import PullNotFound, execute_command, listing, resolve, shown
 #
 #
 # def summarize(manifest: Manifest) -> None:
@@ -3834,9 +3843,11 @@ if __name__ == "__main__":
 #         return 0
 #
 #     total_blocks = 0
+#     total_notes = 0
 #     for unit in units:
 #         server, local = len(unit.server_blocks), len(unit.local_blocks)
 #         total_blocks += server + local
+#         total_notes += len(unit.notes)
 #         print(f"{unit.unit_id}  [{unit.node.status}]  server={server} local={local}")
 #         print(f"    why:  {unit.reason}")
 #         for note in unit.notes:
@@ -3845,17 +3856,37 @@ if __name__ == "__main__":
 #             for block in unit.blocks:
 #                 print(f"    {block.side:<6} {block.block_id}")
 #
-#     print(f"\n{len(units)} unit(s), {total_blocks} SQL block(s).")
+#     print()
 #     for session in manifest.sessions:
 #         print(f"{session.session_id}: {next_step(manifest, session, args.retry_failed)}")
 #     print(f"Linked server placeholder: {args.linked_server}")
-#     print("Nothing was executed and the manifest was not modified.")
 #     _report_exclusions(left_out, failures)
 #
 #     if args.out_dir:
-#         written = write_sql(units, Path(args.out_dir))
-#         print(f"\nWrote {len(written)} file(s) to {Path(args.out_dir).resolve()}")
+#         write_sql(units, Path(args.out_dir))
+#     print()
+#     for line in preview_statement(manifest, units, total_blocks, total_notes, args.out_dir):
+#         print(line)
 #     return 0
+#
+#
+# def preview_statement(manifest, units, blocks, notes, out_dir) -> list[str]:
+#     """Everything needed next, as the preview's last words (D71)."""
+#     lines = [
+#         f"Preview finished: {len(units)} unit(s), {blocks} SQL block(s), 0 errors, "
+#         f"{notes} note(s). Nothing was pulled."
+#     ]
+#     if out_dir:
+#         lines.append(f"SQL written to {shown(Path(out_dir))} for reading; Execute does not need it.")
+#     else:
+#         lines.append(
+#             "No SQL was written; add --out-dir <folder> to write it for reading. "
+#             "Execute does not need it."
+#         )
+#     command, folder = execute_command(manifest.path)
+#     lines.append(f"To pull it: press Execute, or in a terminal in {folder} run:")
+#     lines.append(f"    {command}")
+#     return lines
 #
 #
 # def _report_exclusions(left_out, failures) -> None:
@@ -3965,7 +3996,12 @@ if __name__ == "__main__":
 #         prog="pullmanager",
 #         description="Manifest-driven executor for YAML Manager split pull folders.",
 #     )
-#     parser.add_argument("manifest", nargs="?", help="Path to pullmanifest.yaml")
+#     parser.add_argument(
+#         "manifest",
+#         nargs="?",
+#         help="Path to pullmanifest.yaml. With --execute, a project's name will do: "
+#              "IBD_Ancestry means runs/IBD_Ancestry/split/pullmanifest.yaml.",
+#     )
 #     parser.add_argument("--version", action="version", version=f"pullmanager {__version__}")
 #     parser.add_argument(
 #         "--dry-run",
@@ -3975,7 +4011,8 @@ if __name__ == "__main__":
 #     parser.add_argument(
 #         "--execute",
 #         action="store_true",
-#         help="Run the manifest against live connections, updating it as it goes.",
+#         help="Run the manifest against live connections, updating it as it goes. "
+#              "Takes a project's name or a manifest; with neither, lists the pulls.",
 #     )
 #     parser.add_argument(
 #         "--gui",
@@ -4039,6 +4076,18 @@ if __name__ == "__main__":
 #             )
 #             return 1
 #         return gui_main()
+#
+#     if args.execute and not args.dry_run:
+#         # D66: a project's name finds its manifest; no name lists the pulls.
+#         if not args.manifest:
+#             for line in listing():
+#                 print(line)
+#             return 1
+#         try:
+#             args.manifest = str(resolve(args.manifest))
+#         except PullNotFound as exc:
+#             print(f"ERROR {exc}", file=sys.stderr)
+#             return 1
 #
 #     if not args.manifest:
 #         parser.print_help()
@@ -4794,7 +4843,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: 76eece749a93126b9631c930851536e9c7d75331765da0f731980ce7bddec6a6 SIZE: 11465 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: a028395cd8eb62a9cfb42105423f20cb0aa653c4248863ab5a4f53650daa4f11 SIZE: 11596 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -4886,7 +4935,7 @@ if __name__ == "__main__":
 #         for text, handler in (
 #             ("Validate", self.on_validate),
 #             ("Export split", self.on_export_split),
-#             ("Dry run", self.on_dry_run),
+#             ("Preview SQL", self.on_dry_run),
 #             ("Execute", self.on_execute),
 #         ):
 #             button = ttk.Button(actions, text=text, command=handler)
@@ -4898,13 +4947,15 @@ if __name__ == "__main__":
 #     def _build_tabs(self) -> None:
 #         notebook = ttk.Notebook(self.root)
 #         notebook.pack(fill="both", expand=True, padx=10, pady=4)
+#         self.notebook = notebook
 #
 #         output_tab = ttk.Frame(notebook)
 #         self.output = scrolledtext.ScrolledText(
 #             output_tab, wrap="none", font=("Consolas", 10), state="disabled"
 #         )
 #         self.output.pack(fill="both", expand=True)
-#         notebook.add(output_tab, text="Output")
+#         # Validate, Export split and Preview SQL, which run inside the window.
+#         notebook.add(output_tab, text="Validation Output")
 #
 #         status_tab = ttk.Frame(notebook)
 #         # Refresh and the manifest it reads, above the tree they describe.
@@ -4975,7 +5026,7 @@ if __name__ == "__main__":
 #
 #     def on_dry_run(self) -> None:
 #         self.run(
-#             "Dry run",
+#             "Preview SQL",
 #             lambda: launcher.command_dry_run(self.tools, self.paths(), self.options()),
 #         )
 #
@@ -5090,7 +5141,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: d9096aa1e62651608fb69e004a5a91bbde2dd8c1b882c5adcf785574b9484f61 SIZE: 11523 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: ba95adbbec3e65d8bfd115a37ea5aac0efab8c98f545b211ef44572057c3709b SIZE: 10776 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -5107,7 +5158,6 @@ if __name__ == "__main__":
 # import json
 # import os
 # import queue
-# import re
 # import subprocess
 # import sys
 # import threading
@@ -5115,12 +5165,9 @@ if __name__ == "__main__":
 # from pathlib import Path
 #
 # from .manifest import Manifest, ManifestError
+# from .pulls import MANIFEST_FILENAME, RUNS_DIR, run_folder_name
 #
 # SETTINGS_FILENAME = ".pullmanager-gui.json"
-# MANIFEST_FILENAME = "pullmanifest.yaml"
-# RUNS_DIR = "runs"
-# # Dropped from a transfer YAML's file name to name its run folder (D57).
-# RUN_NAME_SUFFIXES = ("_transfer", "_temp")
 # # What an older launcher saved as if chosen: it meant "the default" (D57).
 # OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 #
@@ -5156,21 +5203,6 @@ if __name__ == "__main__":
 #         "Could not find pullmanager.py and makeYaml.py next to the launcher. "
 #         "Run it from an extracted bundle."
 #     )
-#
-#
-# def run_folder_name(template: str | Path) -> str:
-#     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
-#     without `.yaml` and without `_transfer` or `_temp`.
-#
-#     Only the file name: the folders above it (the project share) play no part.
-#     The same rule as `makeYaml.run_folder_name`; a test holds the two together.
-#     """
-#     stem = Path(str(template).replace("\\", "/")).stem
-#     for suffix in RUN_NAME_SUFFIXES:
-#         if stem.endswith(suffix) and stem != suffix:
-#             stem = stem[: -len(suffix)]
-#             break
-#     return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
 #
 #
 # @dataclass
@@ -6499,6 +6531,235 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
+# === BEGIN FILE: pullmanager/pulls.py SHA256: 3a3c2495b5911cbea5503fe8f5c475232ac90b0191102a6c9ed9f59488a640f8 SIZE: 8639 ===
+# """Finding a pull by its project's name, and listing the pulls there are (D66).
+#
+# A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
+# named from the transfer YAML's file name. So `--execute IBD_Ancestry`,
+# `--execute "IBD Ancestry"` and `--execute IBD_Ancestry_transfer.yaml` all mean
+# `runs/IBD_Ancestry/split/pullmanifest.yaml`, and a manifest path still works.
+# """
+#
+# from __future__ import annotations
+#
+# import os
+# import re
+# from dataclasses import dataclass
+# from pathlib import Path
+#
+# from .manifest import Manifest, ManifestError
+# from .models import DONE, FAILED, PENDING, SKIPPED
+# from .yaml_io import load_yaml
+#
+# RUNS_DIR = "runs"
+# SPLIT_DIR = "split"
+# MANIFEST_FILENAME = "pullmanifest.yaml"
+# # Dropped from a transfer YAML's file name to name its run folder (D57).
+# RUN_NAME_SUFFIXES = ("_transfer", "_temp")
+# YAML_SUFFIXES = (".yaml", ".yml")
+#
+#
+# class PullNotFound(RuntimeError):
+#     """Raised when a name matches no pull; the message lists the ones there are."""
+#
+#
+# def run_folder_name(template: str | Path) -> str:
+#     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
+#     without `.yaml` and without `_transfer` or `_temp`.
+#
+#     Only the file name: the folders above it (the project share) play no part.
+#     The same rule as `makeYaml.run_folder_name`; a test holds the two together.
+#     """
+#     stem = Path(str(template).replace("\\", "/")).stem
+#     for suffix in RUN_NAME_SUFFIXES:
+#         if stem.endswith(suffix) and stem != suffix:
+#             stem = stem[: -len(suffix)]
+#             break
+#     return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
+#
+#
+# def project_name(text: str) -> str:
+#     """A typed name as its run folder: `IBD Ancestry` is `IBD_Ancestry`.
+#
+#     A transfer file's name loses `.yaml` and `_transfer` as the split's does.
+#     Anything else is only cleaned: a dot becomes an underscore rather than
+#     ending the name.
+#     """
+#     text = str(text).strip()
+#     if text.lower().endswith(YAML_SUFFIXES):
+#         return run_folder_name(text)
+#     name = Path(text.replace("\\", "/")).name
+#     return run_folder_name(name + ".yaml")
+#
+#
+# def home_folders(cwd: Path | None = None) -> list[Path]:
+#     """Where `runs/` is looked for: the working directory, then the folder
+#     holding `pullmanager.py`, which the extracted runtime sits in (D63)."""
+#     here = Path(cwd or Path.cwd()).resolve()
+#     beside = Path(__file__).resolve().parents[2]
+#     return [here] if beside == here else [here, beside]
+#
+#
+# def is_manifest_file(path: Path) -> bool:
+#     """A split's manifest, rather than a transfer YAML: it lists sessions."""
+#     if path.name.lower() == MANIFEST_FILENAME:
+#         return True
+#     try:
+#         data = load_yaml(path)
+#     except Exception:
+#         return False
+#     return isinstance(data, dict) and "sessions" in data
+#
+#
+# def manifest_in(home: Path, name: str) -> Path | None:
+#     """`<home>/runs/<name>/split/pullmanifest.yaml`, matching the name in any case."""
+#     runs = home / RUNS_DIR
+#     if not runs.is_dir():
+#         return None
+#     # Listed rather than looked up, so the folder's own spelling comes back.
+#     matches = [
+#         folder for folder in sorted(runs.iterdir())
+#         if folder.name.lower() == name.lower()
+#         and (folder / SPLIT_DIR / MANIFEST_FILENAME).is_file()
+#     ]
+#     exact = [folder for folder in matches if folder.name == name]
+#     chosen = (exact or matches or [None])[0]
+#     return chosen / SPLIT_DIR / MANIFEST_FILENAME if chosen else None
+#
+#
+# def resolve(argument: str, cwd: Path | None = None) -> Path:
+#     """The manifest a name or path means. Raises PullNotFound, listing pulls."""
+#     here = Path(cwd or Path.cwd())
+#     given = Path(argument) if Path(argument).is_absolute() else here / argument
+#     if given.is_file() and is_manifest_file(given):
+#         return given
+#     if given.is_dir():
+#         for candidate in (given / MANIFEST_FILENAME, given / SPLIT_DIR / MANIFEST_FILENAME):
+#             if candidate.is_file():
+#                 return candidate
+#     # A path that is not there is a mistyped path, not a project's name.
+#     written_as_path = bool(re.search(r"[\\/]", argument)) or (
+#         Path(argument).name.lower() == MANIFEST_FILENAME
+#     )
+#     if written_as_path and not given.is_file():
+#         others = not_found_message(argument, "", here).splitlines()[1:]
+#         raise PullNotFound("\n".join([f"Manifest not found: {given}", *others]))
+#     name = project_name(argument)
+#     for home in home_folders(here):
+#         found = manifest_in(home, name)
+#         if found:
+#             return found
+#     raise PullNotFound(not_found_message(argument, name, here))
+#
+#
+# def not_found_message(argument: str, name: str, cwd: Path) -> str:
+#     looked = " and ".join(str(home) for home in home_folders(cwd))
+#     lines = [
+#         f"No pull named {argument!r}: looked for "
+#         f"{Path(RUNS_DIR) / name / SPLIT_DIR / MANIFEST_FILENAME} in {looked}."
+#     ]
+#     pulls = find_pulls(cwd)
+#     if pulls:
+#         lines.append("The pulls there are: " + ", ".join(p.name for p in pulls) + ".")
+#     else:
+#         lines.append("There are no pulls yet. Export the transfer YAML's split first.")
+#     return "\n".join(lines)
+#
+#
+# @dataclass
+# class Pull:
+#     name: str
+#     manifest: Path
+#     home: Path
+#     state: str
+#
+#
+# def manifest_state(path: Path) -> str:
+#     """What the manifest says of its sessions, in a few words."""
+#     try:
+#         manifest = Manifest.load(path)
+#     except (ManifestError, OSError, ValueError) as exc:
+#         return f"unreadable ({exc})"
+#     for session in manifest.sessions:
+#         session.recompute_status()  # in memory only, from its phases and runs
+#     statuses = [session.status for session in manifest.sessions]
+#     total = len(statuses)
+#     if not total:
+#         return "no sessions"
+#     settled = sum(1 for status in statuses if status in (DONE, SKIPPED))
+#     failed = sum(1 for status in statuses if status == FAILED)
+#     if all(status == PENDING for status in statuses):
+#         return "not started"
+#     if settled == total:
+#         return "finished"
+#     words = f"{settled} of {total} sessions done"
+#     return f"{words}, {failed} failed" if failed else words
+#
+#
+# def find_pulls(cwd: Path | None = None) -> list[Pull]:
+#     """Every pull under `runs/` in the home folders, the working directory's first."""
+#     pulls: list[Pull] = []
+#     seen: set[Path] = set()
+#     for home in home_folders(cwd):
+#         runs = home / RUNS_DIR
+#         if not runs.is_dir():
+#             continue
+#         for folder in sorted(runs.iterdir(), key=lambda p: p.name.lower()):
+#             manifest = folder / SPLIT_DIR / MANIFEST_FILENAME
+#             if not manifest.is_file() or manifest.resolve() in seen:
+#                 continue
+#             seen.add(manifest.resolve())
+#             pulls.append(Pull(folder.name, manifest, home, manifest_state(manifest)))
+#     return pulls
+#
+#
+# def execute_command(manifest: Path, cwd: Path | None = None) -> tuple[str, Path]:
+#     """The command that pulls this manifest, and the folder to type it in.
+#
+#     By its project's name when it sits where names find it
+#     (`runs/<name>/split/`); by its path otherwise.
+#     """
+#     manifest = Path(manifest).resolve()
+#     split, run_dir = manifest.parent, manifest.parent.parent
+#     if (
+#         manifest.name == MANIFEST_FILENAME
+#         and split.name == SPLIT_DIR
+#         and run_dir.parent.name == RUNS_DIR
+#     ):
+#         return f"python pullmanager.py --execute {run_dir.name}", run_dir.parent.parent
+#     here = Path(cwd or Path.cwd()).resolve()
+#     return f'python pullmanager.py --execute "{shown(manifest, here)}"', here
+#
+#
+# def shown(path: Path, cwd: Path | None = None) -> str:
+#     """A path as short as it can be written: relative when inside the folder."""
+#     path = Path(path).resolve()
+#     here = Path(cwd or Path.cwd()).resolve()
+#     try:
+#         return str(path.relative_to(here))
+#     except ValueError:
+#         return str(path)
+#
+#
+# def listing(cwd: Path | None = None) -> list[str]:
+#     """What `--execute` alone prints: every pull, its state and its command."""
+#     here = Path(cwd or Path.cwd()).resolve()
+#     pulls = find_pulls(here)
+#     if not pulls:
+#         return [
+#             f"No pulls under {Path(RUNS_DIR)}{os.sep} yet. Export a transfer YAML's split "
+#             "first (Export split in the launcher).",
+#         ]
+#     width = max(len(p.name) for p in pulls)
+#     state_width = max(len(p.state) for p in pulls)
+#     lines = ["Which pull? Name one:", ""]
+#     for pull in pulls:
+#         command, folder = execute_command(pull.manifest, here)
+#         where = "" if folder.resolve() == here else f"   (in {folder})"
+#         lines.append(f"  {pull.name:<{width}}  {pull.state:<{state_width}}  {command}{where}")
+#     return lines
+#
+# === END FILE: pullmanager/pulls.py ===
 # === BEGIN FILE: pullmanager/refresh.py SHA256: cba6481d9b483b324e84d673ebba7810aa54ceb9322ab9c2efc0badfdb864898 SIZE: 3632 ===
 # """Noticing that Cosmos was refreshed (D51).
 #
@@ -8885,7 +9146,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: ecbc789156a9ce86e49e72b23a5d473e638e1bdf7cb0d4496bff331dd9fc513f SIZE: 8363 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: 91b1d1f4abd2a0a28af3b291d49514a53dff0ad4ef501c37b3aa963146b0705c SIZE: 9307 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -8931,7 +9192,8 @@ if __name__ == "__main__":
 #     def __getattr__(self, name):
 #         if name.startswith("__"):
 #             raise AttributeError(name)
-#         return lambda *args, **kwargs: mock.MagicMock(name=name)
+#         # `options` keeps what the widget was made with (its text, say).
+#         return lambda *args, **kwargs: mock.MagicMock(name=name, options=kwargs)
 #
 #
 # def fake_tkinter():
@@ -9055,6 +9317,28 @@ if __name__ == "__main__":
 #         self.app.on_execute()
 #         self.assertFalse(self.app.runner.running)
 #         self.messagebox.askokcancel.assert_called_once()
+#
+#
+# class NameTests(GuiTestCase):
+#     """D71: the tab and the button say what they are for."""
+#
+#     def test_the_buttons(self):
+#         self.assertEqual(
+#             [button.options["text"] for button in self.app.action_buttons],
+#             ["Validate", "Export split", "Preview SQL", "Execute"],
+#         )
+#
+#     def test_the_tabs(self):
+#         tabs = [call.kwargs["text"] for call in self.app.notebook.add.call_args_list]
+#         self.assertEqual(tabs[0], "Validation Output")
+#         self.assertIn("Status", tabs)
+#
+#     def test_the_preview_runs_the_dry_run(self):
+#         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+#         with mock.patch.object(self.app.runner, "start") as start:
+#             self.app.on_dry_run()
+#         self.assertIn("--dry-run", start.call_args.args[0])
+#         self.assertIn("=== Preview SQL ===", self.written())
 #
 #
 # class DefaultTests(GuiTestCase):
@@ -10275,6 +10559,234 @@ if __name__ == "__main__":
 #             root_pk_cohort([PATIENTS, other])
 #
 # === END FILE: pullmanager/tests/test_normalize.py ===
+# === BEGIN FILE: pullmanager/tests/test_pulls.py SHA256: 08e12d326b481a80aeb6eb25d7ab5a40da339c605b3914c88f17ae140986e395 SIZE: 9972 ===
+# """Finding a pull by its project's name, and listing the pulls (D66)."""
+#
+# from __future__ import annotations
+#
+# import contextlib
+# import copy
+# import io
+# import shutil
+# import tempfile
+# import unittest
+# from pathlib import Path
+# from unittest import mock
+#
+# from .. import cli, pulls
+# from ..pulls import PullNotFound, execute_command, find_pulls, listing, resolve
+# from ..yaml_io import dump_yaml
+# from .support import SAMPLE_MANIFEST
+#
+# FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
+#
+#
+# def manifest_with(*statuses: str) -> dict:
+#     """SAMPLE_MANIFEST with its sessions' phases and runs all set to a status."""
+#     data = copy.deepcopy(SAMPLE_MANIFEST)
+#     for session, status in zip(data["sessions"], statuses):
+#         for node in [*session["phases"].values(), *session["runs"]]:
+#             node["status"] = status
+#     return data
+#
+#
+# class PullsTestCase(unittest.TestCase):
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.work = Path(self._tmp.name).resolve()
+#         # Nothing beside the runtime: only the working directory is searched.
+#         patcher = mock.patch.object(pulls, "home_folders", lambda cwd=None: [Path(cwd or self.work)])
+#         patcher.start()
+#         self.addCleanup(patcher.stop)
+#
+#     def make_pull(self, name: str, data: dict | None = None, home: Path | None = None) -> Path:
+#         path = (home or self.work) / "runs" / name / "split" / "pullmanifest.yaml"
+#         path.parent.mkdir(parents=True, exist_ok=True)
+#         dump_yaml(data or SAMPLE_MANIFEST, path)
+#         return path
+#
+#
+# class ResolveTests(PullsTestCase):
+#     def test_every_way_of_naming_a_pull_finds_its_manifest(self):
+#         manifest = self.make_pull("IBD_Ancestry")
+#         (self.work / "IBD_Ancestry_transfer.yaml").write_text("project_folder: IBD Ancestry\n")
+#         for name in (
+#             "IBD_Ancestry",
+#             "IBD Ancestry",
+#             "ibd_ancestry",
+#             "IBD_Ancestry_transfer.yaml",
+#             str(self.work / "IBD_Ancestry_transfer.yaml"),
+#             "runs/IBD_Ancestry/split/pullmanifest.yaml",
+#             "runs/IBD_Ancestry",
+#         ):
+#             with self.subTest(name=name):
+#                 self.assertEqual(resolve(name, self.work).resolve(), manifest.resolve())
+#
+#     def test_a_transfer_yaml_is_not_taken_for_a_manifest(self):
+#         # It exists and is YAML, but it lists no sessions: its pull is meant.
+#         manifest = self.make_pull("Test_Run")
+#         (self.work / "Test_Run_transfer.yaml").write_text("cohorts: []\n")
+#         self.assertEqual(resolve("Test_Run_transfer.yaml", self.work).resolve(), manifest.resolve())
+#
+#     def test_a_manifest_anywhere_still_works_by_its_path(self):
+#         path = self.work / "elsewhere" / "custom.yaml"
+#         path.parent.mkdir()
+#         dump_yaml(SAMPLE_MANIFEST, path)
+#         self.assertEqual(resolve(str(path), self.work), path)
+#
+#     def test_an_unknown_name_lists_the_pulls_there_are(self):
+#         self.make_pull("IBD_Ancestry")
+#         self.make_pull("Test_Run")
+#         with self.assertRaises(PullNotFound) as caught:
+#             resolve("IBD_Ancestory", self.work)
+#         message = str(caught.exception)
+#         self.assertIn("No pull named 'IBD_Ancestory'", message)
+#         self.assertIn("IBD_Ancestry, Test_Run", message)
+#
+#     def test_a_mistyped_path_says_the_manifest_is_missing(self):
+#         self.make_pull("IBD_Ancestry")
+#         with self.assertRaises(PullNotFound) as caught:
+#             resolve("runs/IBD_Ancestory/split/pullmanifest.yaml", self.work)
+#         self.assertIn("Manifest not found", str(caught.exception))
+#         self.assertIn("IBD_Ancestry", str(caught.exception))
+#
+#     def test_no_pulls_at_all_says_to_export_a_split(self):
+#         with self.assertRaises(PullNotFound) as caught:
+#             resolve("IBD_Ancestry", self.work)
+#         self.assertIn("Export the transfer YAML's split first", str(caught.exception))
+#
+#     def test_the_folder_beside_the_runtime_is_searched_second(self):
+#         beside = self.work / "share"
+#         here = self.work / "somewhere"
+#         here.mkdir()
+#         manifest = self.make_pull("IBD_Ancestry", home=beside)
+#         with mock.patch.object(pulls, "home_folders", lambda cwd=None: [here, beside]):
+#             self.assertEqual(resolve("IBD_Ancestry", here).resolve(), manifest.resolve())
+#
+#
+# class HomeFolderTests(unittest.TestCase):
+#     def test_the_working_directory_first_then_the_runtimes_folder(self):
+#         with tempfile.TemporaryDirectory() as tmp:
+#             homes = pulls.home_folders(Path(tmp))
+#         self.assertEqual(homes[0], Path(tmp).resolve())
+#         # pullmanager/pulls.py -> the extracted folder -> the folder it sits in.
+#         self.assertEqual(homes[-1], Path(pulls.__file__).resolve().parents[2])
+#
+#
+# class ListingTests(PullsTestCase):
+#     def test_each_pull_shows_its_state_and_its_command(self):
+#         self.make_pull("A_Fresh", manifest_with("pending", "pending"))
+#         self.make_pull("B_Halfway", manifest_with("done", "pending"))
+#         self.make_pull("C_Failed", manifest_with("done", "failed"))
+#         self.make_pull("D_Finished", manifest_with("done", "done"))
+#         states = {p.name: p.state for p in find_pulls(self.work)}
+#         self.assertEqual(states, {
+#             "A_Fresh": "not started",
+#             "B_Halfway": "1 of 2 sessions done",
+#             "C_Failed": "1 of 2 sessions done, 1 failed",
+#             "D_Finished": "finished",
+#         })
+#         lines = listing(self.work)
+#         self.assertEqual(lines[0], "Which pull? Name one:")
+#         row = next(line for line in lines if "B_Halfway" in line)
+#         self.assertIn("python pullmanager.py --execute B_Halfway", row)
+#
+#     def test_no_pulls_says_to_export_a_split(self):
+#         self.assertIn("Export split", listing(self.work)[0])
+#
+#
+# class ExecuteCommandTests(PullsTestCase):
+#     def test_a_pull_in_runs_is_named(self):
+#         manifest = self.make_pull("IBD_Ancestry")
+#         command, folder = execute_command(manifest, self.work)
+#         self.assertEqual(command, "python pullmanager.py --execute IBD_Ancestry")
+#         self.assertEqual(folder, self.work)
+#
+#     def test_a_manifest_elsewhere_is_given_by_its_path(self):
+#         path = self.work / "my split" / "pullmanifest.yaml"
+#         path.parent.mkdir()
+#         dump_yaml(SAMPLE_MANIFEST, path)
+#         command, folder = execute_command(path, self.work)
+#         self.assertEqual(command, f'python pullmanager.py --execute "{Path("my split") / "pullmanifest.yaml"}"')
+#         self.assertEqual(folder, self.work)
+#
+#
+# class ExecuteByNameTests(PullsTestCase):
+#     """The command itself: which manifest `--execute <name>` pulls."""
+#
+#     def run_cli(self, *argv):
+#         executed = []
+#         out, err = io.StringIO(), io.StringIO()
+#         with mock.patch.object(cli, "execute", lambda manifest, args: executed.append(manifest.path) or 0), \
+#                 contextlib.chdir(self.work), \
+#                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+#             code = cli.main(list(argv))
+#         return code, executed, out.getvalue(), err.getvalue()
+#
+#     def test_a_name_pulls_that_projects_manifest(self):
+#         manifest = self.make_pull("IBD_Ancestry")
+#         self.make_pull("Test_Run")
+#         code, executed, _, _ = self.run_cli("--execute", "IBD Ancestry")
+#         self.assertEqual(code, 0)
+#         self.assertEqual([p.resolve() for p in executed], [manifest.resolve()])
+#
+#     def test_no_name_pulls_nothing_and_lists_the_choices(self):
+#         self.make_pull("IBD_Ancestry")
+#         code, executed, out, _ = self.run_cli("--execute")
+#         self.assertEqual(executed, [])
+#         self.assertEqual(code, 1)
+#         self.assertIn("Which pull?", out)
+#         self.assertIn("python pullmanager.py --execute IBD_Ancestry", out)
+#
+#     def test_an_unknown_name_pulls_nothing(self):
+#         self.make_pull("IBD_Ancestry")
+#         code, executed, _, err = self.run_cli("--execute", "Nope")
+#         self.assertEqual((code, executed), (1, []))
+#         self.assertIn("No pull named 'Nope'", err)
+#
+#
+# class PreviewStatementTests(PullsTestCase):
+#     """D71: the preview ends with one statement holding everything needed next."""
+#
+#     def setUp(self):
+#         super().setUp()
+#         if not FIXTURES.is_dir():
+#             self.skipTest(f"fixtures not found at {FIXTURES}")
+#         self.split = self.work / "runs" / "IBD_Ancestry" / "split"
+#         shutil.copytree(FIXTURES, self.split)
+#
+#     def preview(self, *extra):
+#         out = io.StringIO()
+#         with contextlib.chdir(self.work), contextlib.redirect_stdout(out):
+#             code = cli.main(["--dry-run", str(Path("runs/IBD_Ancestry/split/pullmanifest.yaml")), *extra])
+#         self.assertEqual(code, 0)
+#         return out.getvalue().rstrip("\n").splitlines()
+#
+#     def test_the_last_lines_say_what_was_written_and_how_to_pull_it(self):
+#         lines = self.preview("--out-dir", str(Path("runs/IBD_Ancestry/sql")))
+#         self.assertRegex(
+#             lines[-4],
+#             r"^Preview finished: \d+ unit\(s\), \d+ SQL block\(s\), 0 errors, \d+ note\(s\)\. "
+#             r"Nothing was pulled\.$",
+#         )
+#         sql = Path("runs") / "IBD_Ancestry" / "sql"
+#         self.assertEqual(lines[-3], f"SQL written to {sql} for reading; Execute does not need it.")
+#         self.assertEqual(lines[-2], f"To pull it: press Execute, or in a terminal in {self.work} run:")
+#         self.assertEqual(lines[-1], "    python pullmanager.py --execute IBD_Ancestry")
+#         self.assertTrue(any((self.work / sql).iterdir()))
+#
+#     def test_without_an_sql_folder_it_says_none_was_written(self):
+#         lines = self.preview()
+#         self.assertIn("No SQL was written; add --out-dir", lines[-3])
+#
+#     def test_the_named_command_pulls_the_previewed_manifest(self):
+#         # What the statement says to type must find the same manifest.
+#         lines = self.preview()
+#         name = lines[-1].split("--execute ")[1]
+#         self.assertEqual(resolve(name, self.work).resolve(), (self.split / "pullmanifest.yaml").resolve())
+#
+# === END FILE: pullmanager/tests/test_pulls.py ===
 # === BEGIN FILE: pullmanager/tests/test_render.py SHA256: a95b11698908d7df4848ddb92842f2d97dc536773d7ae4b8f556bc0dd01ad8f4 SIZE: 16425 ===
 # """Server and local SQL rendering, checked against the real fixtures."""
 #

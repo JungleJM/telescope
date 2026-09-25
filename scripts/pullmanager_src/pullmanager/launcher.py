@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import os
 import queue
-import re
 import subprocess
 import sys
 import threading
@@ -22,12 +21,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .manifest import Manifest, ManifestError
+from .pulls import MANIFEST_FILENAME, RUNS_DIR, run_folder_name
 
 SETTINGS_FILENAME = ".pullmanager-gui.json"
-MANIFEST_FILENAME = "pullmanifest.yaml"
-RUNS_DIR = "runs"
-# Dropped from a transfer YAML's file name to name its run folder (D57).
-RUN_NAME_SUFFIXES = ("_transfer", "_temp")
 # What an older launcher saved as if chosen: it meant "the default" (D57).
 OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 
@@ -63,21 +59,6 @@ def locate_tools(package_dir: Path | None = None) -> Tools:
         "Could not find pullmanager.py and makeYaml.py next to the launcher. "
         "Run it from an extracted bundle."
     )
-
-
-def run_folder_name(template: str | Path) -> str:
-    """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
-    without `.yaml` and without `_transfer` or `_temp`.
-
-    Only the file name: the folders above it (the project share) play no part.
-    The same rule as `makeYaml.run_folder_name`; a test holds the two together.
-    """
-    stem = Path(str(template).replace("\\", "/")).stem
-    for suffix in RUN_NAME_SUFFIXES:
-        if stem.endswith(suffix) and stem != suffix:
-            stem = stem[: -len(suffix)]
-            break
-    return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_") or "project"
 
 
 @dataclass

@@ -89,7 +89,7 @@ class LauncherApp:
         for text, handler in (
             ("Validate", self.on_validate),
             ("Export split", self.on_export_split),
-            ("Dry run", self.on_dry_run),
+            ("Preview SQL", self.on_dry_run),
             ("Execute", self.on_execute),
         ):
             button = ttk.Button(actions, text=text, command=handler)
@@ -101,13 +101,15 @@ class LauncherApp:
     def _build_tabs(self) -> None:
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True, padx=10, pady=4)
+        self.notebook = notebook
 
         output_tab = ttk.Frame(notebook)
         self.output = scrolledtext.ScrolledText(
             output_tab, wrap="none", font=("Consolas", 10), state="disabled"
         )
         self.output.pack(fill="both", expand=True)
-        notebook.add(output_tab, text="Output")
+        # Validate, Export split and Preview SQL, which run inside the window.
+        notebook.add(output_tab, text="Validation Output")
 
         status_tab = ttk.Frame(notebook)
         # Refresh and the manifest it reads, above the tree they describe.
@@ -178,7 +180,7 @@ class LauncherApp:
 
     def on_dry_run(self) -> None:
         self.run(
-            "Dry run",
+            "Preview SQL",
             lambda: launcher.command_dry_run(self.tools, self.paths(), self.options()),
         )
 

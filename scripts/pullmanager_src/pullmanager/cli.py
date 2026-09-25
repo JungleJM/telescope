@@ -1,8 +1,4 @@
-"""Command line entry point.
-
-Phase 5 scope: inspect a manifest and render the SQL it implies. Execution
-arrives in Phase 6.
-"""
+"""Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 
 from __future__ import annotations
 
@@ -24,6 +20,7 @@ from .manifest import Manifest, ManifestError
 from .models import FAILED
 from .naming import NamingError
 from .normalize import NormalizationError
+from .pulls import PullNotFound, execute_command, listing, resolve, shown
 
 
 def summarize(manifest: Manifest) -> None:
@@ -83,9 +80,11 @@ def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
         return 0
 
     total_blocks = 0
+    total_notes = 0
     for unit in units:
         server, local = len(unit.server_blocks), len(unit.local_blocks)
         total_blocks += server + local
+        total_notes += len(unit.notes)
         print(f"{unit.unit_id}  [{unit.node.status}]  server={server} local={local}")
         print(f"    why:  {unit.reason}")
         for note in unit.notes:
@@ -94,17 +93,37 @@ def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
             for block in unit.blocks:
                 print(f"    {block.side:<6} {block.block_id}")
 
-    print(f"\n{len(units)} unit(s), {total_blocks} SQL block(s).")
+    print()
     for session in manifest.sessions:
         print(f"{session.session_id}: {next_step(manifest, session, args.retry_failed)}")
     print(f"Linked server placeholder: {args.linked_server}")
-    print("Nothing was executed and the manifest was not modified.")
     _report_exclusions(left_out, failures)
 
     if args.out_dir:
-        written = write_sql(units, Path(args.out_dir))
-        print(f"\nWrote {len(written)} file(s) to {Path(args.out_dir).resolve()}")
+        write_sql(units, Path(args.out_dir))
+    print()
+    for line in preview_statement(manifest, units, total_blocks, total_notes, args.out_dir):
+        print(line)
     return 0
+
+
+def preview_statement(manifest, units, blocks, notes, out_dir) -> list[str]:
+    """Everything needed next, as the preview's last words (D71)."""
+    lines = [
+        f"Preview finished: {len(units)} unit(s), {blocks} SQL block(s), 0 errors, "
+        f"{notes} note(s). Nothing was pulled."
+    ]
+    if out_dir:
+        lines.append(f"SQL written to {shown(Path(out_dir))} for reading; Execute does not need it.")
+    else:
+        lines.append(
+            "No SQL was written; add --out-dir <folder> to write it for reading. "
+            "Execute does not need it."
+        )
+    command, folder = execute_command(manifest.path)
+    lines.append(f"To pull it: press Execute, or in a terminal in {folder} run:")
+    lines.append(f"    {command}")
+    return lines
 
 
 def _report_exclusions(left_out, failures) -> None:
@@ -214,7 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="pullmanager",
         description="Manifest-driven executor for YAML Manager split pull folders.",
     )
-    parser.add_argument("manifest", nargs="?", help="Path to pullmanifest.yaml")
+    parser.add_argument(
+        "manifest",
+        nargs="?",
+        help="Path to pullmanifest.yaml. With --execute, a project's name will do: "
+             "IBD_Ancestry means runs/IBD_Ancestry/split/pullmanifest.yaml.",
+    )
     parser.add_argument("--version", action="version", version=f"pullmanager {__version__}")
     parser.add_argument(
         "--dry-run",
@@ -224,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="Run the manifest against live connections, updating it as it goes.",
+        help="Run the manifest against live connections, updating it as it goes. "
+             "Takes a project's name or a manifest; with neither, lists the pulls.",
     )
     parser.add_argument(
         "--gui",
@@ -288,6 +313,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         return gui_main()
+
+    if args.execute and not args.dry_run:
+        # D66: a project's name finds its manifest; no name lists the pulls.
+        if not args.manifest:
+            for line in listing():
+                print(line)
+            return 1
+        try:
+            args.manifest = str(resolve(args.manifest))
+        except PullNotFound as exc:
+            print(f"ERROR {exc}", file=sys.stderr)
+            return 1
 
     if not args.manifest:
         parser.print_help()
