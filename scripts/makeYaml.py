@@ -850,7 +850,21 @@ def validate_and_resolve(
         required = analysis["required_vars"].get(name, {})
         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
             auto_vars["PKTable"] = pk_table
-        vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+        # A table that does not set a variable takes its PK's (the PK of its
+        # multiplier group): IndexDiagnosis reads the ICD_Value its patients
+        # were chosen by, without it being written twice.
+        group_pks = [
+            c for c in cohorts
+            if str(c.get("type", "")).lower() == "pk"
+            and c.get("_group_key", "") == cohort.get("_group_key", "")
+        ]
+        from_pk = (
+            {k: v for k, v in (group_pks[0].get("vars") or {}).items() if k != "PKTable"}
+            if len(group_pks) == 1 and group_pks[0] is not cohort else {}
+        )
+        vars_for_cohort = merge_vars(
+            template.get("vars"), upload_vars(template), auto_vars, from_pk, cohort.get("vars")
+        )
         vars_for_cohort["prefix"] = auto_vars["prefix"]
         table_inputs = analysis["table_inputs"].get(name, {})
         for var, paths in required.items():
@@ -2464,7 +2478,9 @@ def batch_buckets(dim: dict[str, Any]) -> list[dict[str, Any]] | None:
     if not isinstance(values, list) or not values:
         return None
     buckets = [{"value": value, "is_other": False} for value in values]
-    if dim.get("include_other"):
+    # Unless turned off, rows whose value is not listed get a batch of their
+    # own, so none is dropped from the pull without being asked for.
+    if truthy(dim.get("include_other", True)):
         buckets.append({"value": None, "is_other": True})
     return buckets
 
@@ -3136,6 +3152,7 @@ batching_recipes:
     applies_to: PKTable
     column: Sex
     values: [Female, Male]
+    include_other: false
   - name: chunk
     kind: row_chunk
     applies_to: PKTable
@@ -3346,6 +3363,44 @@ class NormalizationTests(MakeYamlTest):
 
 
 class ValidationTests(MakeYamlTest):
+    INDEX_DX = """  - name: IndexDx
+    type: fact
+    columns:
+      - source: dxf.PatientDurableKey
+        name: PatientDurableKey
+    filter:
+      from:
+        - DiagnosisEventFact AS dxf
+      join:
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = dxf.PatientDurableKey"
+        - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+      where:
+        - "{{sql_condition('dt.Value', ICD_Value)}}"
+"""
+
+    def inherit_template(self, index_vars=""):
+        recipes = tiny_recipes().replace("  - name: OtherDx\n", self.INDEX_DX + "  - name: OtherDx\n")
+        template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "").replace(
+            "  - recipe: PatientWithDx\n    name: Patients\n",
+            "  - recipe: PatientWithDx\n    name: Patients\n    vars:\n      ICD_Value: [K90.0%]\n"
+            "  - recipe: IndexDx\n    name: IndexDx\n" + index_vars,
+        )
+        return compile_yaml(write_temp_yaml(self.tmp, "template.yaml", template),
+                            write_temp_yaml(self.tmp, "recipes.yaml", recipes))
+
+    def test_a_table_takes_a_variable_its_pk_sets(self):
+        res = self.inherit_template()
+        self.assertCompiles(res)
+        where = self.cohorts_by_name(res)["IndexDx"]["filter"]["where"]
+        self.assertIn("dt.Value LIKE 'K90.0%'", " ".join(where))
+
+    def test_its_own_value_wins_over_the_pks(self):
+        res = self.inherit_template("    vars:\n      ICD_Value: [K50.1]\n")
+        self.assertCompiles(res)
+        where = " ".join(self.cohorts_by_name(res)["IndexDx"]["filter"]["where"])
+        self.assertIn("K50.1", where)
+        self.assertNotIn("K90.0", where)
+
     def test_missing_variable_is_an_error(self):
         template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
         self.assertHasError(self.compile_template(template), "missing_variable")
@@ -3562,6 +3617,7 @@ batching:
 batching:
   - state:
       values: [LA, MS]
+      include_other: false
   - sex
 """)
         self.assertCompiles(res)
@@ -3569,6 +3625,17 @@ batching:
             [run["batch"]["name"] for run in runs],
             ["b1of4-LA-Female", "b2of4-LA-Male", "b3of4-MS-Female", "b4of4-MS-Male"],
         )
+
+    def test_values_not_listed_get_a_batch_unless_turned_off(self):
+        # Unset, include_other is on: no row is dropped without being asked for.
+        res, runs = self.runs_for("""
+batching:
+  - state:
+      values: [LA, MS]
+""")
+        self.assertCompiles(res)
+        self.assertEqual([run["batch"]["name"] for run in runs],
+                         ["b1of3-LA", "b2of3-MS", "b3of3-state-other"])
 
     def test_labels_that_would_collide_are_numbered_apart(self):
         # `A B` and `A-B` both clean to `A-B`; the number keeps them apart
@@ -3579,6 +3646,7 @@ batching:
     kind: column_values
     column: Sex
     values: ["A B", "A-B"]
+    include_other: false
 """)
         self.assertCompiles(res)
         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-A-B", "b2of2-A-B"])

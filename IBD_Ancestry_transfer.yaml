@@ -1,6 +1,6 @@
 transfer:
   from_template: IBD_Ancestry_temp.yaml
-  recipes_sha256: 0a9770121064
+  recipes_sha256: c64193205961
   recipes_used:
   - OtherDiagnoses
   - PatientWithDx
@@ -59,7 +59,6 @@ batching:
   values:
   - Female
   - Male
-  separate_parquets: true
 cohorts:
 - name: Patients
   description: First DiagnosisEvent of disease X for patient, with patient info (sex,

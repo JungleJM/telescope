@@ -812,6 +812,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     }, indent=2), quote=False)
     recipe_defs = [recipe for recipe in recipes_doc.get("recipes", []) or [] if recipe.get("name")]
     recipe_names = [recipe.get("name") for recipe in recipe_defs]
+    recipe_vars = {
+        recipe["name"]: sorted(backend.recipe_required_vars(recipe).keys()) for recipe in recipe_defs
+    }
     batching_recipes = [recipe for recipe in recipes_doc.get("batching_recipes", []) or [] if recipe.get("name")]
     batching_names = [recipe.get("name") for recipe in batching_recipes]
     notes = template_section_notes()
@@ -1103,6 +1106,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
 
   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
   <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
+  <script id="recipeVarsData" type="application/json">{json_payload(recipe_vars)}</script>
   <script id="recipeNamesData" type="application/json">{json_payload(recipe_names)}</script>
   <script id="batchingNamesData" type="application/json">{json_payload(batching_names)}</script>
   <script id="batchingRecipesData" type="application/json">{json_payload(batching_recipes)}</script>
@@ -1241,6 +1245,9 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .pk-status strong { color: var(--ok); }
 .editor-row.custom-head { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto; }
 .editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto auto auto; }
+.cohort-vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: -2px 0 10px 18px; }
+.cohort-vars label.missing input { border-color: #cf222e; }
+.batch-flags .sub-flag { margin-left: 18px; }
 .editor-row.upload { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto auto; }
 .editor-row.upload .key-columns { grid-column: 1 / span 2; }
 .multiplier { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
@@ -1294,6 +1301,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 JS = r"""
 const initialTemplate = JSON.parse(document.getElementById('initialTemplateData').textContent);
 const recipeDefs = JSON.parse(document.getElementById('recipeDefsData').textContent);
+const recipeVars = JSON.parse(document.getElementById('recipeVarsData').textContent);
 const recipeNames = JSON.parse(document.getElementById('recipeNamesData').textContent);
 const batchingNames = JSON.parse(document.getElementById('batchingNamesData').textContent);
 const batchingRecipes = JSON.parse(document.getElementById('batchingRecipesData').textContent);
@@ -1657,8 +1665,8 @@ function renderBatchingRows() {
                <input data-batching-add-value="${index}" value="" placeholder="type value and press Enter">`}
         </label>
         ${isChunk ? '<span></span>' : `<span class="batch-flags">
-          <label class="checkbox-label" title="Values not listed get a batch of their own, so no rows are lost"><input type="checkbox" data-batching-flag="include_other" data-index="${index}" ${parsed.includeOther ? 'checked' : ''} ${parsed.values.length ? '' : 'disabled'}> Include others</label>
-          <label class="checkbox-label" title="--artifacts writes one parquet per value instead of one per table"><input type="checkbox" data-batching-flag="separate_parquets" data-index="${index}" ${parsed.separate ? 'checked' : ''}> Separate parquets</label>
+          <label class="checkbox-label" title="Artifacts writes one parquet per value instead of one per table. Off unless a pull needs it."><input type="checkbox" data-batching-flag="separate_parquets" data-index="${index}" ${parsed.separate ? 'checked' : ''}> Separate parquets</label>
+          <label class="checkbox-label sub-flag" title="Rows whose value is not listed get a batch of their own. Turned off, those rows are not pulled at all."><input type="checkbox" data-batching-flag="include_other" data-index="${index}" ${parsed.includeOther ? 'checked' : ''} ${parsed.separate ? '' : 'disabled'}> Include others</label>
         </span>`}
         <button class="danger" data-remove-batching="${index}">Remove</button>
       </div>
@@ -1676,7 +1684,7 @@ function renderCohortRows() {
       ${cohortIsPk(cohort) ? '<span class="badge pk">PK table</span>' : '<span></span>'}
       <span></span><span></span>
       <button class="danger" data-remove-cohort="${index}">Remove</button>
-    </div>` : `
+    </div>${renderCohortVars(cohort, index)}` : `
     <div class="editor-row cohort">
       <label>Custom table<input data-cohort-field="name" data-index="${index}" value="${escapeAttr(cohort.name || '')}"></label>
       <label>Destination<input data-cohort-field="dest_table" data-index="${index}" value="${escapeAttr(cohort.dest_table || '')}"></label>
@@ -1688,6 +1696,52 @@ function renderCohortRows() {
   `).join('') || '<div class="empty">No cohorts in draft.</div>';
   renderPkStatus();
   renderJoinBuilder();
+}
+
+// The variables a recipe's SQL uses that this template does not already
+// supply: the automatic ones (prefix, PKTable) and the Project dates are left out.
+function cohortVarNames(cohort) {
+  const supplied = new Set(['prefix', 'PKTable', ...Object.keys(draftTemplate.run_vars || {}), ...Object.keys(draftTemplate.vars || {})]);
+  return (recipeVars[cohort.recipe] || []).filter(name => !supplied.has(name));
+}
+
+function varText(value) {
+  return Array.isArray(value) ? value.join(', ') : (value == null ? '' : String(value));
+}
+
+// Where a variable comes from when this table does not set it: a multiplier
+// level, else its PK table's value (makeYaml takes the PK's when unset).
+function inheritedVar(cohort, name) {
+  const multiplier = (draftTemplate.multipliers || []).find(m => m.stage === 'during_build'
+    && (m.levels || []).some(level => level?.vars && name in level.vars));
+  if (multiplier) return `set by multiplier ${multiplier.name}`;
+  if (cohortIsPk(cohort)) return '';
+  const pk = draftTemplate.cohorts.find(other => other !== cohort && cohortIsPk(other));
+  const value = pk?.vars?.[name];
+  return value == null || value === '' ? '' : `from the PK: ${varText(value)}`;
+}
+
+function renderCohortVars(cohort, index) {
+  const names = cohortVarNames(cohort);
+  if (!names.length) return '';
+  return `<div class="cohort-vars">${names.map(name => {
+    const own = cohort.vars?.[name];
+    const inherited = inheritedVar(cohort, name);
+    const hint = inherited || 'required: a value, or several separated by commas';
+    const missing = (own == null || own === '') && !inherited;
+    return `<label${missing ? ' class="missing"' : ''}>${escapeHtml(name)}
+      <input data-cohort-var="${escapeAttr(name)}" data-index="${index}" value="${escapeAttr(varText(own))}" placeholder="${escapeAttr(hint)}"></label>`;
+  }).join('')}</div>`;
+}
+
+function setCohortVar(index, name, text) {
+  const cohort = draftTemplate.cohorts[index];
+  const parts = String(text).split(',').map(part => part.trim()).filter(Boolean);
+  cohort.vars = cohort.vars || {};
+  if (!parts.length) delete cohort.vars[name];
+  else cohort.vars[name] = parts.length > 1 ? parts : parts[0];
+  if (!Object.keys(cohort.vars).length) delete cohort.vars;
+  updateDraftYaml();
 }
 
 function blankCustomCohort() {
@@ -2174,10 +2228,11 @@ function batchingPreset(name) {
 }
 
 function batchingFlags(source) {
-  // As the split reads them (D72): unset means no catch-all batch, and one
-  // parquet per table.
+  // As the split reads them: batches stay in one parquet per table unless
+  // separate_parquets is on, and values not listed get a batch of their own
+  // unless include_other is turned off.
   return {
-    includeOther: source?.include_other === true,
+    includeOther: source?.include_other !== false,
     separate: source?.separate_parquets === true
   };
 }
@@ -2209,16 +2264,15 @@ function batchingFromFields(name, value, flags = null) {
     return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
   }
   const preset = batchingPreset(name);
-  // A new row: listed values catch the rest, and the recipe says whether batches separate.
-  flags = flags || { includeOther: true, separate: preset.separate_parquets === true };
+  // A new row takes the recipe's settings.
+  flags = flags || batchingFlags(preset);
   const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
   const options = {};
-  if (values.length) {
-    options.values = values;
-    options.include_other = flags.includeOther === true;
-  }
-  // Written only where it differs from the recipe, so `false` can override a recipe's `true`.
+  if (values.length) options.values = values;
+  // Each flag is written only where it differs from the recipe (or the
+  // default), so a row can turn a recipe's setting off.
   if (flags.separate !== (preset.separate_parquets === true)) options.separate_parquets = flags.separate;
+  if (flags.includeOther !== (preset.include_other !== false)) options.include_other = flags.includeOther;
   return Object.keys(options).length ? { [name]: options } : name;
 }
 
@@ -2612,8 +2666,17 @@ document.addEventListener('click', event => {
   }
 });
 
+document.addEventListener('input', event => {
+  const target = event.target;
+  if (target.dataset.cohortVar) setCohortVar(Number(target.dataset.index), target.dataset.cohortVar, target.value);
+});
+
 document.addEventListener('change', event => {
   const target = event.target;
+  if (target.dataset.cohortVar) {
+    renderCohortRows();  // a PK's value shows as inherited on the other tables
+    return;
+  }
   if (!target.dataset.batchingFlag) return;
   const index = Number(target.dataset.index);
   const parsed = describeBatching(draftTemplate.batching[index]);

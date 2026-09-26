@@ -5,7 +5,6 @@ batching_recipes:
     applies_to: PKTable
     column: StateOrProvinceAbbreviation
     values: all
-    separate_parquets: true
 
   - name: sex
     description: Split each expanded PK table by patient sex.
@@ -15,14 +14,12 @@ batching_recipes:
     values:
       - Female
       - Male
-    separate_parquets: true
 
   - name: chunk
     description: Split each expanded PK table into row-count chunks; downstream fact tables join to the matching PK chunk.
     kind: row_chunk
     applies_to: PKTable
     rows_per_batch: required
-    separate_parquets: true
 
 recipes:
   - name: PatientWithDx

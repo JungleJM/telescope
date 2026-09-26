@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "3d44f04d0b805e2379e30cf78df0bc9e64b508e7f788cf8a0e5c9f67b7f9a1a8",
+  "content_id": "6ea9723346998bf72ffe9db38bd338831dd2e10c933e80d93a3ada0b5c539fe2",
   "file_count": 47,
   "files": [
     {
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "25e81d639f64f3c7a357c7f6677fb08f9c2317c908b2303b11d4b62b3eae613a",
-      "size": 216840
+      "sha256": "4193818786beaa138c09b272543e58519ad0589e80a60a08df8fe05649bef4e2",
+      "size": 219819
     }
   ],
   "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
@@ -15562,7 +15562,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 25e81d639f64f3c7a357c7f6677fb08f9c2317c908b2303b11d4b62b3eae613a SIZE: 216840 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 4193818786beaa138c09b272543e58519ad0589e80a60a08df8fe05649bef4e2 SIZE: 219819 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -16415,7 +16415,21 @@ if __name__ == "__main__":
 #         required = analysis["required_vars"].get(name, {})
 #         if "PKTable" in required and "PKTable" not in (cohort.get("vars") or {}) and pk_table:
 #             auto_vars["PKTable"] = pk_table
-#         vars_for_cohort = merge_vars(template.get("vars"), upload_vars(template), auto_vars, cohort.get("vars"))
+#         # A table that does not set a variable takes its PK's (the PK of its
+#         # multiplier group): IndexDiagnosis reads the ICD_Value its patients
+#         # were chosen by, without it being written twice.
+#         group_pks = [
+#             c for c in cohorts
+#             if str(c.get("type", "")).lower() == "pk"
+#             and c.get("_group_key", "") == cohort.get("_group_key", "")
+#         ]
+#         from_pk = (
+#             {k: v for k, v in (group_pks[0].get("vars") or {}).items() if k != "PKTable"}
+#             if len(group_pks) == 1 and group_pks[0] is not cohort else {}
+#         )
+#         vars_for_cohort = merge_vars(
+#             template.get("vars"), upload_vars(template), auto_vars, from_pk, cohort.get("vars")
+#         )
 #         vars_for_cohort["prefix"] = auto_vars["prefix"]
 #         table_inputs = analysis["table_inputs"].get(name, {})
 #         for var, paths in required.items():
@@ -18029,7 +18043,9 @@ if __name__ == "__main__":
 #     if not isinstance(values, list) or not values:
 #         return None
 #     buckets = [{"value": value, "is_other": False} for value in values]
-#     if dim.get("include_other"):
+#     # Unless turned off, rows whose value is not listed get a batch of their
+#     # own, so none is dropped from the pull without being asked for.
+#     if truthy(dim.get("include_other", True)):
 #         buckets.append({"value": None, "is_other": True})
 #     return buckets
 #
@@ -18701,6 +18717,7 @@ if __name__ == "__main__":
 #     applies_to: PKTable
 #     column: Sex
 #     values: [Female, Male]
+#     include_other: false
 #   - name: chunk
 #     kind: row_chunk
 #     applies_to: PKTable
@@ -18911,6 +18928,44 @@ if __name__ == "__main__":
 #
 #
 # class ValidationTests(MakeYamlTest):
+#     INDEX_DX = """  - name: IndexDx
+#     type: fact
+#     columns:
+#       - source: dxf.PatientDurableKey
+#         name: PatientDurableKey
+#     filter:
+#       from:
+#         - DiagnosisEventFact AS dxf
+#       join:
+#         - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = dxf.PatientDurableKey"
+#         - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+#       where:
+#         - "{{sql_condition('dt.Value', ICD_Value)}}"
+# """
+#
+#     def inherit_template(self, index_vars=""):
+#         recipes = tiny_recipes().replace("  - name: OtherDx\n", self.INDEX_DX + "  - name: OtherDx\n")
+#         template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "").replace(
+#             "  - recipe: PatientWithDx\n    name: Patients\n",
+#             "  - recipe: PatientWithDx\n    name: Patients\n    vars:\n      ICD_Value: [K90.0%]\n"
+#             "  - recipe: IndexDx\n    name: IndexDx\n" + index_vars,
+#         )
+#         return compile_yaml(write_temp_yaml(self.tmp, "template.yaml", template),
+#                             write_temp_yaml(self.tmp, "recipes.yaml", recipes))
+#
+#     def test_a_table_takes_a_variable_its_pk_sets(self):
+#         res = self.inherit_template()
+#         self.assertCompiles(res)
+#         where = self.cohorts_by_name(res)["IndexDx"]["filter"]["where"]
+#         self.assertIn("dt.Value LIKE 'K90.0%'", " ".join(where))
+#
+#     def test_its_own_value_wins_over_the_pks(self):
+#         res = self.inherit_template("    vars:\n      ICD_Value: [K50.1]\n")
+#         self.assertCompiles(res)
+#         where = " ".join(self.cohorts_by_name(res)["IndexDx"]["filter"]["where"])
+#         self.assertIn("K50.1", where)
+#         self.assertNotIn("K90.0", where)
+#
 #     def test_missing_variable_is_an_error(self):
 #         template = tiny_template().replace("  ICD_Value:\n    - K50\n    - K51\n", "")
 #         self.assertHasError(self.compile_template(template), "missing_variable")
@@ -19127,6 +19182,7 @@ if __name__ == "__main__":
 # batching:
 #   - state:
 #       values: [LA, MS]
+#       include_other: false
 #   - sex
 # """)
 #         self.assertCompiles(res)
@@ -19134,6 +19190,17 @@ if __name__ == "__main__":
 #             [run["batch"]["name"] for run in runs],
 #             ["b1of4-LA-Female", "b2of4-LA-Male", "b3of4-MS-Female", "b4of4-MS-Male"],
 #         )
+#
+#     def test_values_not_listed_get_a_batch_unless_turned_off(self):
+#         # Unset, include_other is on: no row is dropped without being asked for.
+#         res, runs = self.runs_for("""
+# batching:
+#   - state:
+#       values: [LA, MS]
+# """)
+#         self.assertCompiles(res)
+#         self.assertEqual([run["batch"]["name"] for run in runs],
+#                          ["b1of3-LA", "b2of3-MS", "b3of3-state-other"])
 #
 #     def test_labels_that_would_collide_are_numbered_apart(self):
 #         # `A B` and `A-B` both clean to `A-B`; the number keeps them apart
@@ -19144,6 +19211,7 @@ if __name__ == "__main__":
 #     kind: column_values
 #     column: Sex
 #     values: ["A B", "A-B"]
+#     include_other: false
 # """)
 #         self.assertCompiles(res)
 #         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-A-B", "b2of2-A-B"])
