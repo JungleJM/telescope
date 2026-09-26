@@ -1986,21 +1986,24 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
                 f"has: {', '.join(pk_cols) or 'none known'}.",
             )
         values = item.get("values")
-        if values == "all":
-            result.warn(
-                "batching_values_all",
-                f"Batching `{item.get('name')}` uses `values: all`, which is not supported "
-                "yet: the pull stops when it reaches this batch.",
-                f"{where}.values",
-                fix="List the values: `values: [LA, MS, ...]`. Rows with any other value "
-                "get a batch of their own.",
-            )
-        elif not isinstance(values, list) or not values:
+        if values in (None, "all") or values == []:
+            # Every value the PK has, found when the run reaches it (D82).
+            if truthy(item.get("separate_parquets")):
+                result.error(
+                    "separate_values_all",
+                    f"Batching `{item.get('name')}` separates parquets by `{col}` but lists "
+                    "no values, and the tables other than the PK do not carry it to split by.",
+                    f"{where}.separate_parquets",
+                    fix="List the values to separate by (`values: [LA, MS]`; the rest get a "
+                    "batch of their own), or turn separate_parquets off.",
+                )
+        elif not isinstance(values, list):
             result.error(
-                "batching_missing_values",
-                f"Batching `{item.get('name')}` has no `values` to split `{col}` by.",
+                "batching_bad_values",
+                f"Batching `{item.get('name')}` has `values: {values}`, which is not a list.",
                 f"{where}.values",
-                fix="Add `values: [<value>, ...]`. Rows with any other value get a batch of their own.",
+                fix="List them (`values: [LA, MS]`), or leave `values` out to batch by every "
+                "value the PK has.",
             )
 
 
@@ -4793,9 +4796,19 @@ class BatchingDefinitionTests(MakeYamlTest):
         res = self.check("  - {name: sex, kind: column_values, required_column: Gender, values: [F]}\n")
         self.assertFlags(res, "missing_batch_column", ".required_column")
 
-    def test_missing_values_is_named(self):
+    def test_no_values_batches_by_every_value_found(self):
+        # D82: no longer refused; the run finds the PK's values.
         res = self.check("  - {name: sex, kind: column_values, required_column: Sex}\n")
-        self.assertFlags(res, "batching_missing_values", ".values")
+        self.assertCompiles(res)
+        self.assertFalse([m for m in res.warnings if "values" in m.code], summarize_result(res))
+
+    def test_values_must_be_a_list(self):
+        res = self.check("  - {name: sex, kind: column_values, required_column: Sex, values: Female}\n")
+        self.assertFlags(res, "batching_bad_values", ".values")
+
+    def test_separating_by_every_value_is_refused(self):
+        res = self.check("  - {name: sex, kind: column_values, required_column: Sex, separate_parquets: true}\n")
+        self.assertFlags(res, "separate_values_all", ".separate_parquets")
 
     def test_unknown_kind_is_named(self):
         res = self.check("  - {name: sex, kind: by_value, required_column: Sex, values: [F]}\n")
@@ -4810,10 +4823,10 @@ class BatchingDefinitionTests(MakeYamlTest):
         self.assertCompiles(res)
         self.assertFalse([m for m in res.warnings if "chunk" in m.code], summarize_result(res))
 
-    def test_values_all_warns_before_the_pull_does(self):
+    def test_values_all_compiles_and_is_left_to_the_run(self):
         res = self.check("  - state\n")
         self.assertCompiles(res)
-        self.assertFlags(res, "batching_values_all", ".values")
+        self.assertFalse([m for m in res.warnings if m.code == "batching_values_all"])
 
     def test_an_unknown_item_lists_the_forms(self):
         res = self.check("  - nosuch\n")

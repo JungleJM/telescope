@@ -88,6 +88,12 @@ class SelectionTests(unittest.TestCase):
                 [],
             )
 
+    def test_a_null_value_found_at_run_time_is_selected_with_is_null(self):
+        from ..batches import dimension_predicate
+
+        self.assertEqual(dimension_predicate({"name": "state", "column": "State", "is_null": True}),
+                         ("[State] IS NULL", []))
+
     def test_values_all_is_refused_with_an_explanation(self):
         with self.assertRaises(BatchError) as caught:
             select_batch_rows(

@@ -264,6 +264,15 @@ def plan_unit(
                 )
     unit.server_blocks = server_blocks
     unit.notes.extend(notes)
+    open_columns = [
+        str(d.get("column")) for d in ((getattr(node, "batch", None) or {}).get("runtime") or [])
+        if str(d.get("kind", "")).lower() == "column_values"
+    ]
+    if kind == "run" and open_columns:
+        unit.notes.append(
+            f"batches by every value of {', '.join(open_columns)} in the PK, found when it "
+            "runs (NULL included); each is pulled in turn into this run (D82)"
+        )
     unit.local_blocks = local_sql.render_phase(doc, unit.unit_id, linked_server)
     return unit
 

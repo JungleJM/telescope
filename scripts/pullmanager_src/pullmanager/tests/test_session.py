@@ -97,8 +97,10 @@ class FakeConnection:
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
-                 widths=None):
+                 widths=None, found_values=None):
         self.side = side
+        # What `SELECT DISTINCT [column]` finds in the PK copy, for values: all.
+        self.found_values = found_values
         # Column -> the widest value each measurement of it reports, in turn.
         self.widths = {column: list(values) for column, values in (widths or {}).items()}
         self.rows = rows
@@ -201,6 +203,8 @@ class FakeConnection:
         if "sys.databases" in sql:
             return [(["name", "create_date"],
                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
+        if sql.startswith("SELECT DISTINCT [") and self.found_values is not None:
+            return [(["value"], [(v,) for v in self.found_values])]
         if "SELECT DISTINCT" in sql:
             return [(["total", "distinct"], [(self.rows, self.distinct)])]
         if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
@@ -850,6 +854,63 @@ class ControlSampleTests(SessionTestCase):
         self.assertIn("CasePatients", message)
         self.assertIn("run it first", message)
         self.assertEqual(self.deletes(), [])
+
+
+class ValuesAllTests(SessionTestCase):
+    """D82: a batch without listed values pulls every value the PK has."""
+
+    STATE = {"name": "state", "kind": "column_values", "column": "StateOrProvinceAbbreviation",
+             "values": "all", "applies_to": "PKTable"}
+
+    def execute(self, runtime, **projects):
+        self.make_batched(runtime=runtime)
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.tables: dict[str, Counter] = {}
+        with self.runner(projects={"tables": self.tables, **projects}) as runner:
+            return runner.execute()
+
+    def narrowed(self):
+        return [(sql, params) for sql, params in self.projects.executed_params
+                if sql.startswith("SELECT * FROM PROJECTD33A929.dbo.Patients")]
+
+    def test_every_value_found_is_pulled_null_included(self):
+        # Refused before: "values: all ... Not yet supported".
+        report = self.execute([self.STATE], found_values=["LA", "MS", None])
+        self.assertTrue(report.ok, report.failed)
+        female = [(sql, params) for sql, params in self.narrowed() if params[:1] == ["Female"]]
+        self.assertEqual([params for _, params in female], [["Female", "LA"], ["Female", "MS"], ["Female"]])
+        self.assertIn("[StateOrProvinceAbbreviation] IS NULL", female[2][0])
+        # Each value lands in the run, under the run's own label.
+        self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+        run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+        self.assertEqual(run.outputs["values_found"], 3)
+        self.assertEqual(run.outputs["value"], "v3of3 (NULL)")
+        self.assertFalse(any("did not carry everything" in w for w in report.warnings), report.warnings)
+
+    def test_values_are_looked_for_within_the_batch(self):
+        self.execute([self.STATE], found_values=["LA"])
+        found = [(sql, params) for sql, params in self.projects.executed_params
+                 if sql.startswith("SELECT DISTINCT [StateOrProvinceAbbreviation]")]
+        self.assertEqual([params for _, params in found], [["Female"], ["Male"]])
+        self.assertIn("WHERE [Sex] = ?", found[0][0])
+
+    def test_each_value_is_chunked_in_turn(self):
+        self.declare_pk_key()
+        report = self.execute([self.STATE, ChunkTests.CHUNK], found_values=["LA", "MS"], pk_rows=4500)
+        self.assertTrue(report.ok, report.failed)
+        windows = [
+            (int(o), int(s)) for sql in self.projects.executed
+            for o, s in re.findall(r"OFFSET (\d+) ROWS FETCH NEXT (\d+) ROWS ONLY", sql)
+        ]
+        # Two values, three chunks each, for each of the two runs.
+        self.assertEqual(windows, [(0, 2000), (2000, 2000), (4000, 2000)] * 4)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 60, "Male": 60}))
+
+    def test_no_values_warns_and_pulls_nothing(self):
+        report = self.execute([self.STATE], found_values=[])
+        self.assertTrue(report.ok, report.failed)
+        self.assertTrue(any("no values of StateOrProvinceAbbreviation" in w for w in report.warnings))
+        self.assertEqual(self.tables.get(DEST, Counter()), Counter())
 
 
 class ReadoutTests(SessionTestCase):

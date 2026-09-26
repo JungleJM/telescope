@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "78293532a9f9d9f4f13c326c821eb2ffc78d9383bc8622d52609db6bb3130a49",
+  "content_id": "ccd551e0c20df4eeb937a7b7a54effc5fc3bf0ba6b9dcb7c80b4acb34e461e96",
   "file_count": 47,
   "files": [
     {
@@ -543,8 +543,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/batches.py",
       "policy": "replace",
-      "sha256": "3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2",
-      "size": 6547
+      "sha256": "19e20a4d9696dc7227a30483f01760fb3f758f1530e71124f59d6f7d52a70af9",
+      "size": 8275
     },
     {
       "path": "pullmanager/cli.py",
@@ -567,8 +567,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/executor.py",
       "policy": "replace",
-      "sha256": "76a3349b2fb765b5a433d524bcaf1b59a39ecdfef7379343b8b2411d56a87d52",
-      "size": 13155
+      "sha256": "e98524a492f783ef7cfbea7814b1ebb01c06fb7d100332d938df4e098a13f51b",
+      "size": 13589
     },
     {
       "path": "pullmanager/gui.py",
@@ -651,8 +651,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "bc78dea5c9581c6fb4b47bce80a95be64cefb8690c6fc42a35cd07be0022d3da",
-      "size": 34269
+      "sha256": "aaaf8e0c8f25a9de8aeac2fcc4d6e5fcd3ef8c83c2999567a335115dcfac0894",
+      "size": 36406
     },
     {
       "path": "pullmanager/sql.py",
@@ -681,8 +681,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_batches.py",
       "policy": "replace",
-      "sha256": "310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c",
-      "size": 6380
+      "sha256": "b93be85c72a274b2ac9e075a26fc5dce993314e9b79c34778c9572d74939df81",
+      "size": 6659
     },
     {
       "path": "pullmanager/tests/test_contents.py",
@@ -759,8 +759,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "ea278e53af49e3653cec18e9b0b8117f75c39b6a006688faf66400b8b44c0493",
-      "size": 44384
+      "sha256": "76af55b1a7658d7885d7f849dc6630ff0112009060b48727633827946d12f909",
+      "size": 47836
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "c8728f54931926aad7b0ce66ddb7548a13a24dbff92ba158b8ce7b5cc3c100f8",
-      "size": 222611
+      "sha256": "36c33be636c5f5d8857a6068f29c5dcd5a2ffa788350592459b9737b76d04688",
+      "size": 223501
     }
   ],
   "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
@@ -4014,7 +4014,7 @@ if __name__ == "__main__":
 #     return run_folder(manifest_path) / PARQUETS_DIR
 #
 # === END FILE: pullmanager/artifacts.py ===
-# === BEGIN FILE: pullmanager/batches.py SHA256: 3bf6c52a36909fde87c51a93b962efdee67eb21d745486f2c613cf48b802ccd2 SIZE: 6547 ===
+# === BEGIN FILE: pullmanager/batches.py SHA256: 19e20a4d9696dc7227a30483f01760fb3f758f1530e71124f59d6f7d52a70af9 SIZE: 8275 ===
 # """Turning a logical batch into the rows it selects.
 #
 # Batch membership is decided against the durable Projects copy of the PK table,
@@ -4060,9 +4060,47 @@ if __name__ == "__main__":
 #         # NULL is not 'not in' anything in SQL, so include it explicitly or the
 #         # catch-all silently drops rows with no value.
 #         return f"([{column}] NOT IN ({placeholders}) OR [{column}] IS NULL)", list(excludes)
+#     if dimension.get("is_null"):
+#         # A value found at run time can be NULL, which `= ?` never matches.
+#         return f"[{column}] IS NULL", []
 #     if "value" not in dimension:
 #         raise BatchError(f"Batch dimension {dimension.get('name')!r} has no value.")
 #     return f"[{column}] = ?", [dimension["value"]]
+#
+#
+# def open_dimensions(batch: dict[str, Any] | None) -> list[dict[str, Any]]:
+#     """The batch's `values: all` dimensions: their values are found at run time."""
+#     return [
+#         d for d in (batch or {}).get("runtime") or []
+#         if str(d.get("kind", "")).lower() == "column_values"
+#     ]
+#
+#
+# def distinct_values(project_db: str, pk_table: str, batch: dict[str, Any], dims: list[dict[str, Any]]) -> BatchSelection:
+#     """Each combination of the open dimensions' values among the batch's PK rows."""
+#     columns = ", ".join(f"[{d.get('column')}]" for d in dims)
+#     where, params = batch_where(batch)
+#     return BatchSelection(
+#         sql=f"SELECT DISTINCT {columns} FROM {destination(project_db, pk_table)}{where} ORDER BY {columns};",
+#         params=params,
+#         description="values of " + ", ".join(str(d.get("column")) for d in dims),
+#     )
+#
+#
+# def value_batch(batch: dict[str, Any], dims: list[dict[str, Any]], values: tuple) -> dict[str, Any]:
+#     """The batch narrowed to one found combination: those values as fixed
+#     dimensions, and the open dimensions no longer left to run time."""
+#     fixed = [
+#         {"name": d.get("name"), "kind": "column_values", "column": d.get("column"),
+#          **({"is_null": True} if value is None else {"value": value})}
+#         for d, value in zip(dims, values)
+#     ]
+#     open_names = {id(d) for d in dims}
+#     return {
+#         **batch,
+#         "dimensions": list(batch.get("dimensions") or []) + fixed,
+#         "runtime": [d for d in batch.get("runtime") or [] if id(d) not in open_names],
+#     }
 #
 #
 # def chunk_clause(batch: dict[str, Any], key_columns: list[str]) -> tuple[str, str]:
@@ -4084,9 +4122,9 @@ if __name__ == "__main__":
 #     if unresolved:
 #         names = ", ".join(str(d.get("name")) for d in unresolved)
 #         raise BatchError(
-#             f"Batch dimension(s) {names} use `values: all`, which has to be resolved "
-#             "against real data before the batch set is known. Not yet supported; "
-#             "list the values explicitly in the template."
+#             f"Batch dimension(s) {names} use `values: all`, so their values are found in "
+#             "the PK first and the batch narrowed to each (value_batch) before rows are "
+#             "selected."
 #         )
 #     if not key_columns:
 #         raise BatchError("Row chunking needs the PK key columns to order by.")
@@ -4127,7 +4165,8 @@ if __name__ == "__main__":
 #         params.extend(values)
 #         described.append(
 #             f"{dimension.get('column')}="
-#             + ("other" if dimension.get("is_other") else str(dimension.get("value")))
+#             + ("other" if dimension.get("is_other")
+#                else "NULL" if dimension.get("is_null") else str(dimension.get("value")))
 #         )
 #
 #     sql = f"SELECT * FROM {table}"
@@ -5375,7 +5414,7 @@ if __name__ == "__main__":
 #     return f"Could not connect to {server}, database {database}: {detail} {hint}"
 #
 # === END FILE: pullmanager/db.py ===
-# === BEGIN FILE: pullmanager/executor.py SHA256: 76a3349b2fb765b5a433d524bcaf1b59a39ecdfef7379343b8b2411d56a87d52 SIZE: 13155 ===
+# === BEGIN FILE: pullmanager/executor.py SHA256: e98524a492f783ef7cfbea7814b1ebb01c06fb7d100332d938df4e098a13f51b SIZE: 13589 ===
 # """Traversal and planning.
 #
 # Walks a manifest in order and produces the work a session implies. Nothing
@@ -5642,6 +5681,15 @@ if __name__ == "__main__":
 #                 )
 #     unit.server_blocks = server_blocks
 #     unit.notes.extend(notes)
+#     open_columns = [
+#         str(d.get("column")) for d in ((getattr(node, "batch", None) or {}).get("runtime") or [])
+#         if str(d.get("kind", "")).lower() == "column_values"
+#     ]
+#     if kind == "run" and open_columns:
+#         unit.notes.append(
+#             f"batches by every value of {', '.join(open_columns)} in the PK, found when it "
+#             "runs (NULL included); each is pulled in turn into this run (D82)"
+#         )
 #     unit.local_blocks = local_sql.render_phase(doc, unit.unit_id, linked_server)
 #     return unit
 #
@@ -8985,7 +9033,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: bc78dea5c9581c6fb4b47bce80a95be64cefb8690c6fc42a35cd07be0022d3da SIZE: 34269 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: aaaf8e0c8f25a9de8aeac2fcc4d6e5fcd3ef8c83c2999567a335115dcfac0894 SIZE: 36406 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -9003,7 +9051,16 @@ if __name__ == "__main__":
 # from typing import Any, Callable
 #
 # from . import local_sql, refresh, server_sql, uploads
-# from .batches import BatchError, chunk_clause, count_batch_rows, sample_down, select_batch_rows
+# from .batches import (
+#     BatchError,
+#     chunk_clause,
+#     count_batch_rows,
+#     distinct_values,
+#     open_dimensions,
+#     sample_down,
+#     select_batch_rows,
+#     value_batch,
+# )
 # from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 # from .executor import (
 #     control_samples,
@@ -9586,45 +9643,77 @@ if __name__ == "__main__":
 #             self.manifest, self.session, "run", node, path, self.report.linked_server,
 #             resuming=self.resuming,
 #         )
+#         open_dims = open_dimensions(node.batch)
 #         size = self._chunk_size(node)
-#         if size is None:
+#         if size is None and not open_dims:
 #             self._materialize_batch(node)
 #             return self._run_pair(unit)
 #
-#         # Chunks run inside their batch (D53): clear the batch's rows once,
-#         # then refill the PK temp and land each chunk in turn. A failure fails
-#         # the run, and a retry clears and redoes all of it.
-#         total = self._count_batch(node)
-#         chunks = max(1, math.ceil(total / size))
-#         node.outputs["batch_pk_rows_total"] = total
+#         # Chunks run inside their batch (D53), and so do the values of a
+#         # `values: all` dimension, found now that the PK is in Projects (D82):
+#         # clear the batch's rows once, then refill the PK temp and land each
+#         # value, and each chunk of it, in turn. All land under the run's own
+#         # label. A failure fails the run, and a retry clears and redoes it all.
+#         slices = self._value_slices(node, open_dims) if open_dims else [(None, node.batch)]
 #         self._run_blocks([b for b in unit.local_blocks if b.meta.get("clears")], self.projects)
 #         server_total: dict[str, int] = {}
 #         local_rows: dict[str, int] = {}
-#         for index in range(chunks):
-#             node.outputs["chunk"] = f"c{index + 1}of{chunks}"
-#             self.manifest.save()
-#             self._materialize_batch(node, chunk_index=index)
-#             server_rows, local_rows = self._execute_unit(unit, clear=False)
-#             for dest, count in server_rows.items():
-#                 server_total[dest] = server_total.get(dest, 0) + count
+#         for position, (value_label, batch) in enumerate(slices, start=1):
+#             if value_label is not None:
+#                 node.outputs["value"] = f"v{position}of{len(slices)} ({value_label})"
+#             chunks = 1
+#             if size is not None:
+#                 total = self._count_batch(node, batch)
+#                 chunks = max(1, math.ceil(total / size))
+#                 node.outputs["batch_pk_rows_total"] = total
+#             for index in range(chunks):
+#                 if size is not None:
+#                     node.outputs["chunk"] = f"c{index + 1}of{chunks}"
+#                 self.manifest.save()
+#                 self._materialize_batch(node, chunk_index=index, batch=batch)
+#                 server_rows, local_rows = self._execute_unit(unit, clear=False)
+#                 for dest, count in server_rows.items():
+#                     server_total[dest] = server_total.get(dest, 0) + count
 #         self._check_counts(server_total, local_rows)
 #         return next(iter(server_total.values()), None)
+#
+#     def _value_slices(self, node: Any, dims: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+#         """One batch per combination of values the open dimensions take in
+#         this batch's PK rows, NULL included: nothing is left out (D82)."""
+#         selection = distinct_values(self.project_db, self._pk_copy(), node.batch, dims)
+#         cursor = self.projects.cursor()
+#         cursor.execute(selection.sql, selection.params)
+#         found = [tuple(row) for row in cursor.fetchall()]
+#         node.outputs["values_found"] = len(found)
+#         if not found:
+#             self.report.warnings.append(
+#                 f"{node.label}: no PK rows, so no values of "
+#                 f"{', '.join(str(d.get('column')) for d in dims)} to pull."
+#             )
+#         return [
+#             ("-".join("NULL" if v is None else str(v) for v in values), value_batch(node.batch, dims, values))
+#             for values in found
+#         ]
 #
 #     def _chunk_size(self, node: Any) -> int | None:
 #         """Rows per chunk, or None for a run that is not chunked."""
 #         if not node.batch:
 #             return None
+#         # The open dimensions are resolved per value; only the chunk matters here.
+#         batch = {**node.batch, "runtime": [
+#             d for d in node.batch.get("runtime") or [] if d not in open_dimensions(node.batch)
+#         ]}
 #         try:
-#             _, size = chunk_clause(node.batch, self._pk_key_columns(self._phase_doc("pk")))
+#             _, size = chunk_clause(batch, self._pk_key_columns(self._phase_doc("pk")))
 #         except BatchError as exc:
 #             raise SessionError(f"{node.label}: {exc}") from exc
 #         return int(size) if size else None
 #
-#     def _count_batch(self, node: Any) -> int:
+#     def _count_batch(self, node: Any, batch: dict[str, Any] | None = None) -> int:
 #         pk_table = self.session.pk_table
 #         if not pk_table:
 #             raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
-#         selection = count_batch_rows(self.project_db, self._pk_copy(), node.batch)
+#         selection = count_batch_rows(self.project_db, self._pk_copy(), batch or node.batch)
 #         cursor = self.projects.cursor()
 #         cursor.execute(selection.sql, selection.params)
 #         row = cursor.fetchone()
@@ -9634,13 +9723,15 @@ if __name__ == "__main__":
 #         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
 #         return not pk_source or pk_source.get("kind") == "generated"
 #
-#     def _materialize_batch(self, node: Any, chunk_index: int = 0) -> None:
+#     def _materialize_batch(self, node: Any, chunk_index: int = 0,
+#                            batch: dict[str, Any] | None = None) -> None:
 #         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
 #
 #         The run YAML joins the PK temp by name, so replacing its contents is
 #         enough; nothing in the rendered SQL needs to know about batching.
+#         `batch` narrows further, to one value of a `values: all` dimension.
 #         """
-#         batch = node.batch
+#         batch = batch or node.batch
 #         if not batch:
 #             # Resuming, the PK query did not run, so its temp does not exist:
 #             # rebuild it whole from the Projects copy. A sampled control's
@@ -10501,7 +10592,7 @@ if __name__ == "__main__":
 #
 #
 # === END FILE: pullmanager/tests/test_artifacts.py ===
-# === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: 310d6ec1cae0d1c0780b2d34033ecf3eb908efb21289e9c5396137f53999bd5c SIZE: 6380 ===
+# === BEGIN FILE: pullmanager/tests/test_batches.py SHA256: b93be85c72a274b2ac9e075a26fc5dce993314e9b79c34778c9572d74939df81 SIZE: 6659 ===
 # """Turning a logical batch into a selection over the local PK table."""
 #
 # from __future__ import annotations
@@ -10591,6 +10682,12 @@ if __name__ == "__main__":
 #                 batch(runtime=[{"name": "chunk", "kind": "row_chunk", "rows_per_batch": 10}]),
 #                 [],
 #             )
+#
+#     def test_a_null_value_found_at_run_time_is_selected_with_is_null(self):
+#         from ..batches import dimension_predicate
+#
+#         self.assertEqual(dimension_predicate({"name": "state", "column": "State", "is_null": True}),
+#                          ("[State] IS NULL", []))
 #
 #     def test_values_all_is_refused_with_an_explanation(self):
 #         with self.assertRaises(BatchError) as caught:
@@ -13958,7 +14055,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: ea278e53af49e3653cec18e9b0b8117f75c39b6a006688faf66400b8b44c0493 SIZE: 44384 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 76af55b1a7658d7885d7f849dc6630ff0112009060b48727633827946d12f909 SIZE: 47836 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -14058,8 +14155,10 @@ if __name__ == "__main__":
 #     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
 #                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
 #                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
-#                  widths=None):
+#                  widths=None, found_values=None):
 #         self.side = side
+#         # What `SELECT DISTINCT [column]` finds in the PK copy, for values: all.
+#         self.found_values = found_values
 #         # Column -> the widest value each measurement of it reports, in turn.
 #         self.widths = {column: list(values) for column, values in (widths or {}).items()}
 #         self.rows = rows
@@ -14162,6 +14261,8 @@ if __name__ == "__main__":
 #         if "sys.databases" in sql:
 #             return [(["name", "create_date"],
 #                      [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
+#         if sql.startswith("SELECT DISTINCT [") and self.found_values is not None:
+#             return [(["value"], [(v,) for v in self.found_values])]
 #         if "SELECT DISTINCT" in sql:
 #             return [(["total", "distinct"], [(self.rows, self.distinct)])]
 #         if sql.startswith("SELECT COUNT_BIG(1) FROM PROJECTD"):
@@ -14811,6 +14912,63 @@ if __name__ == "__main__":
 #         self.assertIn("CasePatients", message)
 #         self.assertIn("run it first", message)
 #         self.assertEqual(self.deletes(), [])
+#
+#
+# class ValuesAllTests(SessionTestCase):
+#     """D82: a batch without listed values pulls every value the PK has."""
+#
+#     STATE = {"name": "state", "kind": "column_values", "column": "StateOrProvinceAbbreviation",
+#              "values": "all", "applies_to": "PKTable"}
+#
+#     def execute(self, runtime, **projects):
+#         self.make_batched(runtime=runtime)
+#         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+#         self.tables: dict[str, Counter] = {}
+#         with self.runner(projects={"tables": self.tables, **projects}) as runner:
+#             return runner.execute()
+#
+#     def narrowed(self):
+#         return [(sql, params) for sql, params in self.projects.executed_params
+#                 if sql.startswith("SELECT * FROM PROJECTD33A929.dbo.Patients")]
+#
+#     def test_every_value_found_is_pulled_null_included(self):
+#         # Refused before: "values: all ... Not yet supported".
+#         report = self.execute([self.STATE], found_values=["LA", "MS", None])
+#         self.assertTrue(report.ok, report.failed)
+#         female = [(sql, params) for sql, params in self.narrowed() if params[:1] == ["Female"]]
+#         self.assertEqual([params for _, params in female], [["Female", "LA"], ["Female", "MS"], ["Female"]])
+#         self.assertIn("[StateOrProvinceAbbreviation] IS NULL", female[2][0])
+#         # Each value lands in the run, under the run's own label.
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
+#         run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+#         self.assertEqual(run.outputs["values_found"], 3)
+#         self.assertEqual(run.outputs["value"], "v3of3 (NULL)")
+#         self.assertFalse(any("did not carry everything" in w for w in report.warnings), report.warnings)
+#
+#     def test_values_are_looked_for_within_the_batch(self):
+#         self.execute([self.STATE], found_values=["LA"])
+#         found = [(sql, params) for sql, params in self.projects.executed_params
+#                  if sql.startswith("SELECT DISTINCT [StateOrProvinceAbbreviation]")]
+#         self.assertEqual([params for _, params in found], [["Female"], ["Male"]])
+#         self.assertIn("WHERE [Sex] = ?", found[0][0])
+#
+#     def test_each_value_is_chunked_in_turn(self):
+#         self.declare_pk_key()
+#         report = self.execute([self.STATE, ChunkTests.CHUNK], found_values=["LA", "MS"], pk_rows=4500)
+#         self.assertTrue(report.ok, report.failed)
+#         windows = [
+#             (int(o), int(s)) for sql in self.projects.executed
+#             for o, s in re.findall(r"OFFSET (\d+) ROWS FETCH NEXT (\d+) ROWS ONLY", sql)
+#         ]
+#         # Two values, three chunks each, for each of the two runs.
+#         self.assertEqual(windows, [(0, 2000), (2000, 2000), (4000, 2000)] * 4)
+#         self.assertEqual(self.tables[DEST], Counter({"Female": 60, "Male": 60}))
+#
+#     def test_no_values_warns_and_pulls_nothing(self):
+#         report = self.execute([self.STATE], found_values=[])
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertTrue(any("no values of StateOrProvinceAbbreviation" in w for w in report.warnings))
+#         self.assertEqual(self.tables.get(DEST, Counter()), Counter())
 #
 #
 # class ReadoutTests(SessionTestCase):
@@ -15562,7 +15720,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: c8728f54931926aad7b0ce66ddb7548a13a24dbff92ba158b8ce7b5cc3c100f8 SIZE: 222611 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 36c33be636c5f5d8857a6068f29c5dcd5a2ffa788350592459b9737b76d04688 SIZE: 223501 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -17551,21 +17709,24 @@ if __name__ == "__main__":
 #                 f"has: {', '.join(pk_cols) or 'none known'}.",
 #             )
 #         values = item.get("values")
-#         if values == "all":
-#             result.warn(
-#                 "batching_values_all",
-#                 f"Batching `{item.get('name')}` uses `values: all`, which is not supported "
-#                 "yet: the pull stops when it reaches this batch.",
-#                 f"{where}.values",
-#                 fix="List the values: `values: [LA, MS, ...]`. Rows with any other value "
-#                 "get a batch of their own.",
-#             )
-#         elif not isinstance(values, list) or not values:
+#         if values in (None, "all") or values == []:
+#             # Every value the PK has, found when the run reaches it (D82).
+#             if truthy(item.get("separate_parquets")):
+#                 result.error(
+#                     "separate_values_all",
+#                     f"Batching `{item.get('name')}` separates parquets by `{col}` but lists "
+#                     "no values, and the tables other than the PK do not carry it to split by.",
+#                     f"{where}.separate_parquets",
+#                     fix="List the values to separate by (`values: [LA, MS]`; the rest get a "
+#                     "batch of their own), or turn separate_parquets off.",
+#                 )
+#         elif not isinstance(values, list):
 #             result.error(
-#                 "batching_missing_values",
-#                 f"Batching `{item.get('name')}` has no `values` to split `{col}` by.",
+#                 "batching_bad_values",
+#                 f"Batching `{item.get('name')}` has `values: {values}`, which is not a list.",
 #                 f"{where}.values",
-#                 fix="Add `values: [<value>, ...]`. Rows with any other value get a batch of their own.",
+#                 fix="List them (`values: [LA, MS]`), or leave `values` out to batch by every "
+#                 "value the PK has.",
 #             )
 #
 #
@@ -20358,9 +20519,19 @@ if __name__ == "__main__":
 #         res = self.check("  - {name: sex, kind: column_values, required_column: Gender, values: [F]}\n")
 #         self.assertFlags(res, "missing_batch_column", ".required_column")
 #
-#     def test_missing_values_is_named(self):
+#     def test_no_values_batches_by_every_value_found(self):
+#         # D82: no longer refused; the run finds the PK's values.
 #         res = self.check("  - {name: sex, kind: column_values, required_column: Sex}\n")
-#         self.assertFlags(res, "batching_missing_values", ".values")
+#         self.assertCompiles(res)
+#         self.assertFalse([m for m in res.warnings if "values" in m.code], summarize_result(res))
+#
+#     def test_values_must_be_a_list(self):
+#         res = self.check("  - {name: sex, kind: column_values, required_column: Sex, values: Female}\n")
+#         self.assertFlags(res, "batching_bad_values", ".values")
+#
+#     def test_separating_by_every_value_is_refused(self):
+#         res = self.check("  - {name: sex, kind: column_values, required_column: Sex, separate_parquets: true}\n")
+#         self.assertFlags(res, "separate_values_all", ".separate_parquets")
 #
 #     def test_unknown_kind_is_named(self):
 #         res = self.check("  - {name: sex, kind: by_value, required_column: Sex, values: [F]}\n")
@@ -20375,10 +20546,10 @@ if __name__ == "__main__":
 #         self.assertCompiles(res)
 #         self.assertFalse([m for m in res.warnings if "chunk" in m.code], summarize_result(res))
 #
-#     def test_values_all_warns_before_the_pull_does(self):
+#     def test_values_all_compiles_and_is_left_to_the_run(self):
 #         res = self.check("  - state\n")
 #         self.assertCompiles(res)
-#         self.assertFlags(res, "batching_values_all", ".values")
+#         self.assertFalse([m for m in res.warnings if m.code == "batching_values_all"])
 #
 #     def test_an_unknown_item_lists_the_forms(self):
 #         res = self.check("  - nosuch\n")

@@ -43,9 +43,47 @@ def dimension_predicate(dimension: dict[str, Any]) -> tuple[str, list[Any]]:
         # NULL is not 'not in' anything in SQL, so include it explicitly or the
         # catch-all silently drops rows with no value.
         return f"([{column}] NOT IN ({placeholders}) OR [{column}] IS NULL)", list(excludes)
+    if dimension.get("is_null"):
+        # A value found at run time can be NULL, which `= ?` never matches.
+        return f"[{column}] IS NULL", []
     if "value" not in dimension:
         raise BatchError(f"Batch dimension {dimension.get('name')!r} has no value.")
     return f"[{column}] = ?", [dimension["value"]]
+
+
+def open_dimensions(batch: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The batch's `values: all` dimensions: their values are found at run time."""
+    return [
+        d for d in (batch or {}).get("runtime") or []
+        if str(d.get("kind", "")).lower() == "column_values"
+    ]
+
+
+def distinct_values(project_db: str, pk_table: str, batch: dict[str, Any], dims: list[dict[str, Any]]) -> BatchSelection:
+    """Each combination of the open dimensions' values among the batch's PK rows."""
+    columns = ", ".join(f"[{d.get('column')}]" for d in dims)
+    where, params = batch_where(batch)
+    return BatchSelection(
+        sql=f"SELECT DISTINCT {columns} FROM {destination(project_db, pk_table)}{where} ORDER BY {columns};",
+        params=params,
+        description="values of " + ", ".join(str(d.get("column")) for d in dims),
+    )
+
+
+def value_batch(batch: dict[str, Any], dims: list[dict[str, Any]], values: tuple) -> dict[str, Any]:
+    """The batch narrowed to one found combination: those values as fixed
+    dimensions, and the open dimensions no longer left to run time."""
+    fixed = [
+        {"name": d.get("name"), "kind": "column_values", "column": d.get("column"),
+         **({"is_null": True} if value is None else {"value": value})}
+        for d, value in zip(dims, values)
+    ]
+    open_names = {id(d) for d in dims}
+    return {
+        **batch,
+        "dimensions": list(batch.get("dimensions") or []) + fixed,
+        "runtime": [d for d in batch.get("runtime") or [] if id(d) not in open_names],
+    }
 
 
 def chunk_clause(batch: dict[str, Any], key_columns: list[str]) -> tuple[str, str]:
@@ -67,9 +105,9 @@ def chunk_clause(batch: dict[str, Any], key_columns: list[str]) -> tuple[str, st
     if unresolved:
         names = ", ".join(str(d.get("name")) for d in unresolved)
         raise BatchError(
-            f"Batch dimension(s) {names} use `values: all`, which has to be resolved "
-            "against real data before the batch set is known. Not yet supported; "
-            "list the values explicitly in the template."
+            f"Batch dimension(s) {names} use `values: all`, so their values are found in "
+            "the PK first and the batch narrowed to each (value_batch) before rows are "
+            "selected."
         )
     if not key_columns:
         raise BatchError("Row chunking needs the PK key columns to order by.")
@@ -110,7 +148,8 @@ def select_batch_rows(
         params.extend(values)
         described.append(
             f"{dimension.get('column')}="
-            + ("other" if dimension.get("is_other") else str(dimension.get("value")))
+            + ("other" if dimension.get("is_other")
+               else "NULL" if dimension.get("is_null") else str(dimension.get("value")))
         )
 
     sql = f"SELECT * FROM {table}"

@@ -900,7 +900,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
             <div class="section-title"><h2>Project</h2>{section_note(notes, "cosmos_vars", "run_vars")}</div>
             <div class="form-grid">
               <label>Project Folder<input id="builderProjectFolder" type="text"></label>
-              <label>Project DB<input id="builderProjectDb" type="text"></label>
+              <label>Project DB<input id="builderProjectDb" type="text" placeholder="PROJECTD93A5E7"></label>
               <label>Cosmos DB
                 <select id="builderCosmosDb">
                   <option value="COSMOS">COSMOS</option>
@@ -908,8 +908,8 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
                   <option value="Dual">Dual</option>
                 </select>
               </label>
-              <label>Min Date Key<input id="builderMinDate" type="text"></label>
-              <label>Max Date Key<input id="builderMaxDate" type="text"></label>
+              <label>Min Date Key<input id="builderMinDate" type="text" placeholder="19900101"></label>
+              <label>Max Date Key<input id="builderMaxDate" type="text" placeholder="20260601"></label>
             </div>
             <div class="section-title"><h3>Test Options</h3>{section_note(notes, "test_options")}</div>
             <div class="form-grid">
@@ -1412,15 +1412,30 @@ function ensureDraftShape() {
   draftTemplate.cohorts = Array.isArray(draftTemplate.cohorts) ? draftTemplate.cohorts : [];
 }
 
+// The usual project and date range, filled in wherever a template has none,
+// so a mistyped database or a missing date is less often the error.
+const PROJECT_DEFAULTS = {
+  project_db: 'PROJECTD93A5E7',
+  min_date_key: '19900101',
+  max_date_key: '20260601'
+};
+
+function applyProjectDefaults() {
+  const cosmos = draftTemplate.cosmos_vars, run = draftTemplate.run_vars, vars = draftTemplate.vars;
+  if (!cosmos.project_db && !draftTemplate.project_db) cosmos.project_db = PROJECT_DEFAULTS.project_db;
+  if (!run.min_date_key && !vars.min_date_key) run.min_date_key = PROJECT_DEFAULTS.min_date_key;
+  if (!run.max_date_key && !vars.max_date_key) run.max_date_key = PROJECT_DEFAULTS.max_date_key;
+}
+
 function blankTemplate() {
   return {
     cosmos_vars: {
-      project_db: '',
+      project_db: PROJECT_DEFAULTS.project_db,
       cosmos_db: 'COSMOS'
     },
     run_vars: {
-      min_date_key: '',
-      max_date_key: ''
+      min_date_key: PROJECT_DEFAULTS.min_date_key,
+      max_date_key: PROJECT_DEFAULTS.max_date_key
     },
     test_options: {
       smallset: false,
@@ -1440,6 +1455,7 @@ function blankTemplate() {
 
 function hydrateBuilder() {
   ensureDraftShape();
+  applyProjectDefaults();
   setValue('builderProjectFolder', draftTemplate.project_vars.project_folder || draftTemplate.project_folder || '');
   setValue('builderProjectDb', draftTemplate.cosmos_vars.project_db || draftTemplate.project_db || '');
   setValue('builderCosmosDb', draftTemplate.cosmos_vars.cosmos_db || draftTemplate.cosmos_db || 'COSMOS');
@@ -1730,8 +1746,12 @@ function renderCohortVars(cohort, index) {
   return `<div class="cohort-vars">${names.map(name => {
     const own = cohort.vars?.[name];
     const inherited = inheritedVar(cohort, name);
-    const hint = inherited || 'required: a value, or several separated by commas';
-    const missing = (own == null || own === '') && !inherited;
+    // A table with a PK takes the PK's value when it sets none (D78), so it
+    // is not flagged: only the PK itself, or a table with no PK, needs one.
+    const takesFromPk = !cohortIsPk(cohort) && draftTemplate.cohorts.some(other => other !== cohort && cohortIsPk(other));
+    const hint = inherited
+      || (takesFromPk ? "taken from the PK's value, or type one to override" : 'required: a value, or several separated by commas');
+    const missing = (own == null || own === '') && !inherited && !takesFromPk;
     return `<label${missing ? ' class="missing"' : ''}>${escapeHtml(name)}
       <input data-cohort-var="${escapeAttr(name)}" data-index="${index}" value="${escapeAttr(varText(own))}" placeholder="${escapeAttr(hint)}"></label>`;
   }).join('')}</div>`;

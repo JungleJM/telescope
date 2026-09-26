@@ -15,7 +15,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import local_sql, refresh, server_sql, uploads
-from .batches import BatchError, chunk_clause, count_batch_rows, sample_down, select_batch_rows
+from .batches import (
+    BatchError,
+    chunk_clause,
+    count_batch_rows,
+    distinct_values,
+    open_dimensions,
+    sample_down,
+    select_batch_rows,
+    value_batch,
+)
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 from .executor import (
     control_samples,
@@ -598,45 +607,77 @@ class SessionRunner:
             self.manifest, self.session, "run", node, path, self.report.linked_server,
             resuming=self.resuming,
         )
+        open_dims = open_dimensions(node.batch)
         size = self._chunk_size(node)
-        if size is None:
+        if size is None and not open_dims:
             self._materialize_batch(node)
             return self._run_pair(unit)
 
-        # Chunks run inside their batch (D53): clear the batch's rows once,
-        # then refill the PK temp and land each chunk in turn. A failure fails
-        # the run, and a retry clears and redoes all of it.
-        total = self._count_batch(node)
-        chunks = max(1, math.ceil(total / size))
-        node.outputs["batch_pk_rows_total"] = total
+        # Chunks run inside their batch (D53), and so do the values of a
+        # `values: all` dimension, found now that the PK is in Projects (D82):
+        # clear the batch's rows once, then refill the PK temp and land each
+        # value, and each chunk of it, in turn. All land under the run's own
+        # label. A failure fails the run, and a retry clears and redoes it all.
+        slices = self._value_slices(node, open_dims) if open_dims else [(None, node.batch)]
         self._run_blocks([b for b in unit.local_blocks if b.meta.get("clears")], self.projects)
         server_total: dict[str, int] = {}
         local_rows: dict[str, int] = {}
-        for index in range(chunks):
-            node.outputs["chunk"] = f"c{index + 1}of{chunks}"
-            self.manifest.save()
-            self._materialize_batch(node, chunk_index=index)
-            server_rows, local_rows = self._execute_unit(unit, clear=False)
-            for dest, count in server_rows.items():
-                server_total[dest] = server_total.get(dest, 0) + count
+        for position, (value_label, batch) in enumerate(slices, start=1):
+            if value_label is not None:
+                node.outputs["value"] = f"v{position}of{len(slices)} ({value_label})"
+            chunks = 1
+            if size is not None:
+                total = self._count_batch(node, batch)
+                chunks = max(1, math.ceil(total / size))
+                node.outputs["batch_pk_rows_total"] = total
+            for index in range(chunks):
+                if size is not None:
+                    node.outputs["chunk"] = f"c{index + 1}of{chunks}"
+                self.manifest.save()
+                self._materialize_batch(node, chunk_index=index, batch=batch)
+                server_rows, local_rows = self._execute_unit(unit, clear=False)
+                for dest, count in server_rows.items():
+                    server_total[dest] = server_total.get(dest, 0) + count
         self._check_counts(server_total, local_rows)
         return next(iter(server_total.values()), None)
+
+    def _value_slices(self, node: Any, dims: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+        """One batch per combination of values the open dimensions take in
+        this batch's PK rows, NULL included: nothing is left out (D82)."""
+        selection = distinct_values(self.project_db, self._pk_copy(), node.batch, dims)
+        cursor = self.projects.cursor()
+        cursor.execute(selection.sql, selection.params)
+        found = [tuple(row) for row in cursor.fetchall()]
+        node.outputs["values_found"] = len(found)
+        if not found:
+            self.report.warnings.append(
+                f"{node.label}: no PK rows, so no values of "
+                f"{', '.join(str(d.get('column')) for d in dims)} to pull."
+            )
+        return [
+            ("-".join("NULL" if v is None else str(v) for v in values), value_batch(node.batch, dims, values))
+            for values in found
+        ]
 
     def _chunk_size(self, node: Any) -> int | None:
         """Rows per chunk, or None for a run that is not chunked."""
         if not node.batch:
             return None
+        # The open dimensions are resolved per value; only the chunk matters here.
+        batch = {**node.batch, "runtime": [
+            d for d in node.batch.get("runtime") or [] if d not in open_dimensions(node.batch)
+        ]}
         try:
-            _, size = chunk_clause(node.batch, self._pk_key_columns(self._phase_doc("pk")))
+            _, size = chunk_clause(batch, self._pk_key_columns(self._phase_doc("pk")))
         except BatchError as exc:
             raise SessionError(f"{node.label}: {exc}") from exc
         return int(size) if size else None
 
-    def _count_batch(self, node: Any) -> int:
+    def _count_batch(self, node: Any, batch: dict[str, Any] | None = None) -> int:
         pk_table = self.session.pk_table
         if not pk_table:
             raise SessionError(f"{node.label}: the session has no pk_table to chunk.")
-        selection = count_batch_rows(self.project_db, self._pk_copy(), node.batch)
+        selection = count_batch_rows(self.project_db, self._pk_copy(), batch or node.batch)
         cursor = self.projects.cursor()
         cursor.execute(selection.sql, selection.params)
         row = cursor.fetchone()
@@ -646,13 +687,15 @@ class SessionRunner:
         pk_source = next((p.pk_source for p in self.session.phases if p.pk_source), None)
         return not pk_source or pk_source.get("kind") == "generated"
 
-    def _materialize_batch(self, node: Any, chunk_index: int = 0) -> None:
+    def _materialize_batch(self, node: Any, chunk_index: int = 0,
+                           batch: dict[str, Any] | None = None) -> None:
         """Narrow the PK temp to just this batch, leaving cohort SQL untouched.
 
         The run YAML joins the PK temp by name, so replacing its contents is
         enough; nothing in the rendered SQL needs to know about batching.
+        `batch` narrows further, to one value of a `values: all` dimension.
         """
-        batch = node.batch
+        batch = batch or node.batch
         if not batch:
             # Resuming, the PK query did not run, so its temp does not exist:
             # rebuild it whole from the Projects copy. A sampled control's
