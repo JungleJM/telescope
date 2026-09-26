@@ -48,7 +48,7 @@ multipliers: # for each multiplier, makes a copy of the cohort tables and prefix
         row_mult: 4
 batching:  # splits by value in PK Tables, or by number. Suffixes title with splits (eg Patients_LA if louisiana pts)
   - name: state
-    column: StateOrProvinceAbbreviation
+    required_column: StateOrProvinceAbbreviation
     values:
       - LA
       - MS
@@ -56,7 +56,7 @@ batching:  # splits by value in PK Tables, or by number. Suffixes title with spl
       - NC
     separate_parquets: true
   - name: sex
-    column: Sex
+    required_column: Sex
     values:
       - Female
       - Male

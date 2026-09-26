@@ -1618,7 +1618,11 @@ def validate_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]]
 
 
 def expand_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
-    normalized = public_batching(normalize_batching(template.get("batching", []) or [], recipes_doc, CompileResult()))
+    # The split's own copy: internal names (`column`), which the runs read.
+    normalized = [
+        {k: v for k, v in item.items() if not k.startswith("_")}
+        for item in normalize_batching(template.get("batching", []) or [], recipes_doc, CompileResult())
+    ]
     for cohort in cohorts:
         cohort["batching"] = normalized
     return cohorts
@@ -1627,7 +1631,7 @@ def expand_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohor
 BATCHING_FORMS = (
     "Write each batching item as a batching recipe name (`sex`, Mac only), "
     "`chunk: <rows>`, or a full definition: `{name: sex, kind: column_values, "
-    "applies_to: PKTable, column: Sex, values: [Female, Male]}`."
+    "applies_to: PKTable, required_column: Sex, values: [Female, Male]}`."
 )
 
 
@@ -1662,6 +1666,18 @@ def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], resu
                 fix=BATCHING_FORMS + known,
             )
             continue
+        if "column" in entry and str(entry.get("kind") or "column_values") != "row_chunk":
+            # Renamed, so a batch says the PK must have it: refused, not guessed at.
+            result.error(
+                "batching_column_renamed",
+                f"Batching `{entry.get('name')}` uses `column`, which is now `required_column`.",
+                f"{where}.column",
+                fix=f"Write `required_column: {entry['column']}` (in the template, or its "
+                "batching recipe). The PK must have that column.",
+            )
+            continue
+        if "required_column" in entry:
+            entry["column"] = entry.pop("required_column")  # the name the split carries
         if "include_other" in entry:
             # Retired: turned off, it dropped the unlisted rows from the pull
             # entirely, which read as lumping them together. Unlisted values
@@ -1680,7 +1696,11 @@ def normalize_batching(batch_items: list[Any], recipes_doc: dict[str, Any], resu
 
 
 def public_batching(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{k: v for k, v in item.items() if not k.startswith("_")} for item in items]
+    """Batching as a template writes it: `required_column`, no internal keys."""
+    return [
+        {("required_column" if k == "column" else k): v for k, v in item.items() if not k.startswith("_")}
+        for item in items
+    ]
 
 
 # =============================================================================
@@ -1953,17 +1973,17 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
             result.error(
                 "batching_missing_column",
                 f"Batching `{item.get('name')}` does not say which PK column to split on.",
-                f"{where}.column",
-                fix="Add `column: <PK column>`, e.g. `column: Sex`.",
+                f"{where}.required_column",
+                fix="Add `required_column: <PK column>`, e.g. `required_column: Sex`.",
             )
             continue
         if not unseen and col not in pk_cols:
             result.error(
                 "missing_batch_column",
-                f"Batching `{item.get('name')}` requires missing PK column `{col}`.",
-                f"{where}.column",
-                fix=f"Output `{col}` from the PK cohort, or correct `column` to one it has: "
-                f"{', '.join(pk_cols) or 'none known'}.",
+                f"Batching `{item.get('name')}` requires PK column `{col}`, which the PK does not have.",
+                f"{where}.required_column",
+                fix=f"Output `{col}` from the PK cohort, or correct `required_column` to one it "
+                f"has: {', '.join(pk_cols) or 'none known'}.",
             )
         values = item.get("values")
         if values == "all":
@@ -3156,12 +3176,12 @@ batching_recipes:
   - name: state
     kind: column_values
     applies_to: PKTable
-    column: StateOrProvinceAbbreviation
+    required_column: StateOrProvinceAbbreviation
     values: all
   - name: sex
     kind: column_values
     applies_to: PKTable
-    column: Sex
+    required_column: Sex
     values: [Female, Male]
   - name: chunk
     kind: row_chunk
@@ -3663,7 +3683,7 @@ batching:
 batching:
   - name: code
     kind: column_values
-    column: Sex
+    required_column: Sex
     values: ["A B", "A-B"]
 """)
         self.assertCompiles(res)
@@ -4484,8 +4504,8 @@ class DescriptionFieldTests(MakeYamlTest):
     def test_a_template_can_turn_off_a_recipes_separate_parquets(self):
         # What the Builder writes when Separate parquets is unticked on a recipe that sets it.
         recipes = tiny_recipes().replace(
-            "    column: Sex\n    values: [Female, Male]\n",
-            "    column: Sex\n    values: [Female, Male]\n    separate_parquets: true\n",
+            "    required_column: Sex\n    values: [Female, Male]\n",
+            "    required_column: Sex\n    values: [Female, Male]\n    separate_parquets: true\n",
         )
         write_temp_yaml(self.tmp, "recipes.yaml", recipes)
         for override, expected in (("  - sex\n", True), ("  - sex:\n      separate_parquets: false\n", False)):
@@ -4608,7 +4628,7 @@ batching:
     def test_refers_to_no_recipes(self):
         transfer = load_yaml(self.export().output_path)
         self.assertEqual(recipe_references(transfer), [])
-        self.assertEqual(transfer["batching"][0]["column"], "Sex")
+        self.assertEqual(transfer["batching"][0]["required_column"], "Sex")
         self.assertEqual(transfer["batching"][1]["values"], ["LA", "MS"])
         self.assertNotIn("include_other", transfer["batching"][1])
 
@@ -4757,19 +4777,28 @@ class BatchingDefinitionTests(MakeYamlTest):
 
     def test_a_full_definition_compiles(self):
         self.assertCompiles(self.check(
-            "  - {name: sex, kind: column_values, applies_to: PKTable, column: Sex, values: [Female]}\n"
+            "  - {name: sex, kind: column_values, applies_to: PKTable, required_column: Sex, values: [Female]}\n"
         ))
 
     def test_missing_column_is_named(self):
         res = self.check("  - {name: sex, kind: column_values, values: [Female]}\n")
-        self.assertFlags(res, "batching_missing_column", "batching[0] (sex).column")
+        self.assertFlags(res, "batching_missing_column", "batching[0] (sex).required_column")
+
+    def test_the_old_column_key_is_refused_with_its_new_name(self):
+        res = self.check("  - {name: sex, kind: column_values, column: Sex, values: [Female]}\n")
+        self.assertFlags(res, "batching_column_renamed", ".column")
+        self.assertIn("required_column: Sex", next(m for m in res.errors if m.code == "batching_column_renamed").fix)
+
+    def test_a_column_the_pk_lacks_fails(self):
+        res = self.check("  - {name: sex, kind: column_values, required_column: Gender, values: [F]}\n")
+        self.assertFlags(res, "missing_batch_column", ".required_column")
 
     def test_missing_values_is_named(self):
-        res = self.check("  - {name: sex, kind: column_values, column: Sex}\n")
+        res = self.check("  - {name: sex, kind: column_values, required_column: Sex}\n")
         self.assertFlags(res, "batching_missing_values", ".values")
 
     def test_unknown_kind_is_named(self):
-        res = self.check("  - {name: sex, kind: by_value, column: Sex, values: [F]}\n")
+        res = self.check("  - {name: sex, kind: by_value, required_column: Sex, values: [F]}\n")
         self.assertFlags(res, "bad_batching_kind", ".kind")
 
     def test_a_chunk_without_a_size_is_refused(self):

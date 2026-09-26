@@ -31,7 +31,7 @@ multipliers:
 
 batching:
   - name: bad_batch_column
-    column: MissingBatchColumn
+    required_column: MissingBatchColumn
     values:
       - A
 

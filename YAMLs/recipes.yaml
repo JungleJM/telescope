@@ -3,14 +3,14 @@ batching_recipes:
     description: Split each expanded PK table by patient state abbreviation.
     kind: column_values
     applies_to: PKTable
-    column: StateOrProvinceAbbreviation
+    required_column: StateOrProvinceAbbreviation
     values: all
 
   - name: sex
     description: Split each expanded PK table by patient sex.
     kind: column_values
     applies_to: PKTable
-    column: Sex
+    required_column: Sex
     values:
       - Female
       - Male

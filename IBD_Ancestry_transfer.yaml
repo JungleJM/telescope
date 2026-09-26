@@ -1,6 +1,6 @@
 transfer:
   from_template: IBD_Ancestry_temp.yaml
-  recipes_sha256: c64193205961
+  recipes_sha256: 010b8de7a2d3
   recipes_used:
   - OtherDiagnoses
   - PatientWithDx
@@ -55,10 +55,10 @@ batching:
   description: Split each expanded PK table by patient sex.
   kind: column_values
   applies_to: PKTable
-  column: Sex
   values:
   - Female
   - Male
+  required_column: Sex
 cohorts:
 - name: Patients
   description: First DiagnosisEvent of disease X for patient, with patient info (sex,

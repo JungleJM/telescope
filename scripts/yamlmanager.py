@@ -759,21 +759,33 @@ def export_preview_block(title: str, artifact_id: str, filename: str, result: An
     """
 
 
-def exports_panel(template_path: Path, recipes_path: Path) -> str:
+def export_results(template_path: Path, recipes_path: Path) -> tuple[Any, Any, Any]:
+    """The saved template's pre-YAML, transfer YAML and manifest, built once per page."""
     symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
     transfer = backend.build_transfer(
         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
     )
-    transfer_name = Path(transfer.output_path).name if transfer.output_path else "transfer.yaml"
     manifest = backend.build_pullmanifest(
         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
     )
+    return symbolic, transfer, manifest
+
+
+def export_blocks(results: tuple[Any, Any, Any], id_prefix: str = "export") -> str:
+    """The three exports, each with Copy and Download; ids prefixed per place shown."""
+    symbolic, transfer, manifest = results
+    transfer_name = Path(transfer.output_path).name if transfer.output_path else "transfer.yaml"
     return f"""
       <div class="grid three">
-        {export_preview_block("pre-YAML", "exportPreyamlSymbolic", "preyaml.yaml", symbolic)}
-        {export_preview_block("Transfer YAML (for the VM)", "exportTransfer", transfer_name, transfer)}
-        {export_preview_block("pullmanifest.yaml", "exportPullmanifest", "pullmanifest.yaml", manifest)}
-      </div>
+        {export_preview_block("pre-YAML", f"{id_prefix}PreyamlSymbolic", "preyaml.yaml", symbolic)}
+        {export_preview_block("Transfer YAML (for the VM)", f"{id_prefix}Transfer", transfer_name, transfer)}
+        {export_preview_block("pullmanifest.yaml", f"{id_prefix}Pullmanifest", "pullmanifest.yaml", manifest)}
+      </div>"""
+
+
+def exports_panel(template_path: Path, recipes_path: Path, results: tuple[Any, Any, Any] | None = None) -> str:
+    results = results or export_results(template_path, recipes_path)
+    return f"""{export_blocks(results)}
       <section class="block">
         <h2>Handoff</h2>
         <p>Export the transfer YAML to the repository root, then carry it in the bundle: on the VM, <code>python bundle.py</code> puts it beside <code>pullmanager.py</code>, ready to run. Upload files it reads travel separately, at the same paths relative to it. Recipes stay here; the transfer YAML carries them written out. On the VM, <code>python pullmanager.py</code> opens the launcher: choose the transfer YAML, then Validate, Export split, Preview SQL and Execute.</p>
@@ -805,6 +817,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
     refresh_meta = f'<meta http-equiv="refresh" content="{auto_refresh}">' if auto_refresh > 0 else ""
+    exports = export_results(template_path, recipes_path)
     data_json = html.escape(json.dumps({
         "errors": [m.to_dict() for m in result.errors],
         "warnings": [m.to_dict() for m in result.warnings],
@@ -880,7 +893,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
           <button class="builder-link" data-builder-section="builderMultipliers">Multipliers</button>
           <button class="builder-link" data-builder-section="builderBatching">Batching</button>
           <button class="builder-link" data-builder-section="builderCohorts">Cohorts</button>
-          <button class="builder-link" data-builder-section="builderDraft">Draft YAML</button>
+          <button class="builder-link" data-builder-section="builderExports">Exports</button>
         </aside>
         <div class="builder-main">
           <section id="builderProject" class="builder-section active block">
@@ -1036,16 +1049,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
             </div>
           </section>
 
-          <section id="builderDraft" class="builder-section block">
-            <div class="section-title"><h2>Draft YAML</h2>{section_note(notes, "draft")}</div>
-            <div class="form-grid single">
-              <label>Download Name<input id="builderDraftFilename" type="text" placeholder="Test_Run_Full.yaml"></label>
-            </div>
-            <div class="toolbar compact">
-              <button id="copyDraftYaml">Copy Draft</button>
-              <button id="downloadDraftYaml">Download Draft</button>
-            </div>
-            <pre id="draftYaml"></pre>
+          <section id="builderExports" class="builder-section">
+            <div class="section-title"><h2>Exports</h2><span class="section-note">The saved template's exports, as on the Exports tab. Save &amp; Refresh to see changes made here.</span></div>
+            {export_blocks(exports, "builderExport")}
           </section>
         </div>
       </div>
@@ -1083,7 +1089,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
     </section>
 
     <section id="exports" class="panel">
-      {exports_panel(template_path, recipes_path)}
+      {exports_panel(template_path, recipes_path, exports)}
     </section>
 
     <section id="yaml" class="panel">
@@ -1526,7 +1532,6 @@ function syncProjectFields() {
   });
 });
 
-document.getElementById('builderDraftFilename')?.addEventListener('input', updateDraftYaml);
 document.getElementById('newBatchingRecipe')?.addEventListener('change', updateBatchingHelp);
 
 function renderRecipeOptions() {
@@ -2711,29 +2716,6 @@ document.getElementById('builderUseCurrent')?.addEventListener('click', () => {
   hydrateBuilder();
 });
 
-document.getElementById('copyDraftYaml')?.addEventListener('click', async () => {
-  const text = document.getElementById('draftYaml')?.innerText || '';
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (err) {
-    window.prompt('Copy draft YAML:', text);
-  }
-});
-
-document.getElementById('downloadDraftYaml')?.addEventListener('click', () => {
-  const text = document.getElementById('draftYaml')?.innerText || '';
-  const blob = new Blob([text], { type: 'text/yaml' });
-  const a = document.createElement('a');
-  const projectName = draftTemplate.project_vars?.project_folder || draftTemplate.project_folder || 'draft';
-  const project = projectName.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'draft';
-  const requested = getValue('builderDraftFilename');
-  const filename = cleanDownloadName(requested || `${project}_Full.yaml`);
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
 function cleanDownloadName(value) {
   const cleaned = String(value || 'draft.yaml')
     .replace(/[\\/:*?"<>|]+/g, '_')
@@ -2742,7 +2724,9 @@ function cleanDownloadName(value) {
 }
 
 function updateDraftYaml() {
-  document.getElementById('draftYaml').textContent = toYaml(draftDocument());
+  // Kept as the editors' change hook; the draft is saved with Save & Refresh.
+  const shown = document.getElementById('draftYaml');
+  if (shown) shown.textContent = toYaml(draftDocument());
 }
 
 function draftDocument() {
@@ -2764,7 +2748,7 @@ document.getElementById('saveRefresh')?.addEventListener('click', async () => {
   const templatePath = document.getElementById('templatePathInput')?.value || '';
   const recipesPath = document.querySelector('input[name="recipes"]')?.value || '';
   if (window.location.protocol === 'file:') {
-    showMessage('saveRefreshMessage', 'This page was opened as a file, so it cannot save. Serve it (python3.13 scripts/yamlmanager.py) to use Save & Refresh; Builder > Draft YAML > Download works meanwhile.', 'warn');
+    showMessage('saveRefreshMessage', 'This page was opened as a file, so it cannot save. Serve it (python3 yamlmgr.py) to use Save & Refresh.', 'warn');
     return;
   }
   try {
