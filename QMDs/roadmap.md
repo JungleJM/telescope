@@ -13,94 +13,46 @@ When an item here is built, delete it from this file and describe the result in
 | Part | State |
 | --- | --- |
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
-| YAML Manager browser UI | Built; Mac only. The Builder changes from testing (PK marking, Multipliers, section notes, Save as Recipe) are tested in code but not yet clicked through |
-| Bundle: build, verify, extract, `.local` preservation | Built and tested. On the VM (D64, content_id `1af88f77`) |
-| Pullmanager: manifest, naming, rendering, dry run | Built and tested; dry run proven end to end from one copied bundle |
-| Pullmanager: connections, session execution, uploads, transfer | Tested against a fake cursor. **First live run under way** (IBD Ancestry, below): its first session ran every phase against the databases |
-| Session membership, refresh detection, single-batch retry, chunking, temp prefixes (D50–D53) | Built and tested against fakes on the Mac. Executing for the first time in that run |
-| Uploads through Projects, typed; CSV to parquet at split; commit per cohort (D54, D55) | Built and tested against fakes, with real `pyarrow`, on the Mac. Executing for the first time in that run |
-| Dedup through sources, split levels filtering their PK, control sampling, hash samples, uploads once per pull (D58–D62) | Built and tested against fakes on the Mac; dry-run on the VM. Executing for the first time in that run |
-| Transfer YAML (D49): export, split with no recipes, fixes on every error | Built and tested; used on the VM (IBD Ancestry) |
-| Launcher (`pullmanager.py`) | Opened on the VM. Validate, Export split and Dry run work from it; Execute does not (Known Bugs) |
-| Artifact handoff (parquets) | Not built |
+| YAML Manager browser UI | Built; Mac only. Clicked through by the user. The newest Builder changes (variable inputs, Separate parquets, Exports) are checked by running their functions under node, not yet clicked through |
+| Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79) | Built and tested. Carrying transfer YAMLs is not yet used on the VM |
+| Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
+| Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
+| `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
+| Launcher (`pullmanager.py`) | Opened on the VM; Validate, Export split and Preview work. Execute in its own console window (D68) is not yet tried there |
+| Artifacts: parquets, `contents.md`, load scripts (D72–D75) | Built and tested against a fake Projects connection; the Python scripts run and the R ones run under R `arrow` 25. Not yet run on the VM |
 
 ## Known Bugs
 
-Found in the first live run (IBD Ancestry, September 2026), all in the fixes
-below:
-
-- Under `Dual`, each Cosmos session runs before its SneakPeek twin, so the
-  quick round comes last (1).
-- The status tab's Refresh button sits alone at the bottom right (1).
-- A PK that names its key only in `dedup_keys` is never checked for
-  uniqueness: every session warns "PK declares no key_column", and a `chunk:`
-  on it would fail its run (1).
-- Execute started from the launcher ends at once with exit code 3221225794
-  (`0xC0000142`), before printing anything. The same command typed into
-  VSCodium's terminal runs (4).
-
----
-
-## Next: Fixes, In Order
-
-From the first live run. The IBD Ancestry run in progress keeps its split and
-its order; these apply from the next one.
-
-1. **SneakPeek first (D65), the Refresh button and the PK's key (D69).** The
-   Refresh button moves to the top left of the status tab, beside the manifest
-   path. All three are small, and the order and the uniqueness check matter
-   from the next split.
-2. **`--execute <project>` (D66), the new names and the preview's closing
-   statement (D71; the Pull Log tab waits for fix 4).** They make the terminal
-   route easy at once, even if the launcher's Execute never works on the VM,
-   and say what the preview is for.
-3. **The running-pull lock (D67):** `--execute` and `--export-split` refuse to
-   clash, the launcher greys Export split and Execute and follows the pull,
-   and `--running`. Needed before two pulls run at once, and fix 4 relies on it.
-4. **Execute in its own console window, its log and the Pull Log tab (D68,
-   D71).** The least certain to work on the VM, so late; if it cannot start,
-   it falls back to fix 2's command.
-5. **The session readout (D70):** warnings first, then one table of column
-   widths per session, as notes. Polish, and it reads best once the log
-   exists.
-
-Then rebuild the bundle.
-
----
-
-## Next: Artifacts, In Order
-
-From `artifact.md` (D72 to D75). The IBD Ancestry pull is to be run again on
-the next bundle, so errors can be traced to this code.
-
-1. **Description fields (D74):** `granularity` and column `description`
-   through makeYaml, the split and the Builder, and `separate_parquets` kept
-   on each batch dimension. The user then writes the recipes' descriptions.
-2. **Parquet export (D72):** finished tables only, SneakPeek, Cosmos and
-   uploads folders, `_batch` dropped, separate batches, the lock respected,
-   the command and the launcher button.
-3. **`contents.md` (D73).**
-4. **`load_parquets`, `examine_parquets` and `HOW_TO.md` (D75).**
-
-Then rebuild the bundle.
+None known. The four found in the first live run (Cosmos before SneakPeek,
+the Refresh button, a PK keyed only by `dedup_keys`, Execute from the
+launcher) are fixed or worked around (D65, D69, D68); D68's fix is still to be
+seen working on the VM (below).
 
 ---
 
 ## Next: The First Live Run
 
-Where it stands: the D64 bundle is extracted on the VM and the launcher opens
-there (its Tk is fine, bar the Refresh button). The IBD Ancestry pull was
-validated, split and dry-run from the launcher, and is executing from
-VSCodium's terminal (`python pullmanager.py --execute
-runs\IBD_Ancestry\split\pullmanifest.yaml`). Its first session,
-`CrohnsblackPatients` on Cosmos, finished every phase on instance
-`et4003vpdsql032`: setup, uploads, the PK, and all three Sex batches
-(`sex-other` matched no PK rows, as a catch-all should), with no warning that
-Cosmos and Projects counts disagreed. The next session had started. The checks,
-on the VM:
+Where it stands: the first IBD Ancestry pull, split on the D64 bundle,
+finished from VSCodium's terminal (September 2026). A second run of it, on
+the bundle with artifacts, is under way. Then: package it with Artifacts, and
+run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
 
 1. `python pullmanager.py --tdd`: not yet reported from the VM.
-2. The IBD Ancestry pull, once it finishes (D58–D61):
+2. On the new bundle (D65–D81):
+   - The launcher's Execute opens a console window, the Pull Log tab follows
+     it, and the window stays until `exit` is typed. If it does not open, the
+     message and its terminal command.
+   - While it runs, Export split, Execute and Artifacts are grey, and
+     `python pullmanager.py --running` says it is executing.
+   - Each session ends with its warnings, then one column-width table.
+   - `--artifacts IBD_Ancestry` once it finishes: the parquets open with
+     `load_parquets.R` and `.py`; `PatientDurableKey` is `integer64` in R
+     `arrow` 11 (checked only on 25); `contents.md` reads right.
+3. Two pulls at once: Celiac and an IBD template, exported from the Mac,
+   validated, split, previewed and executed side by side. Each keeps its own
+   run folder, lock, log and temp prefix; the launcher greys only the loaded
+   one's buttons; `--running` lists both.
+4. The IBD Ancestry pull, once it finishes (D58–D61):
    - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult`
      times the same on the black PK, and the PK phase's `control_sample`
      output agrees.
@@ -112,10 +64,10 @@ on the VM:
      it into Cosmos (the upload phase's `uploads` output says so).
    - Cosmos and Projects row counts agree, with no false warnings, and the
      status tab reads the finished manifest correctly.
-3. On the Mac, export a small template with `--export-transfer`: a generated
+5. On the Mac, export a small template with `--export-transfer`: a generated
    PK, a parquet upload with a declared `BIGINT` column, and a batched run
    (explicit `values:`, and a `chunk:`). Copy it and its listed uploads over,
-   then Validate, Export split, Dry run and Execute. Check:
+   then Validate, Export split, Preview SQL and Execute. Check:
    - `upload_<dest>` exists in the project database with the file's types,
      and the Cosmos temp has the same types (`BIGINT`, not `NVARCHAR`).
    - `@@SERVERNAME` is captured and `OPENQUERY` reaches that instance.
@@ -127,20 +79,20 @@ on the VM:
      `--retry-failed` pulls only that run, and its `_batch` count is right.
    - A second `--execute` says "nothing left to pull".
    - The manifest reads correctly afterwards, in the launcher's status tab too.
-4. Run two pulls with the same prefix at the same time: the second should
+6. Run two pulls with the same prefix at the same time: the second should
    report a numbered prefix (`tesrun2`) and both should finish.
-5. Check what D50 and D51 rely on: `SELECT OBJECT_ID('tempdb..##<a temp that
+7. Check what D50 and D51 rely on: `SELECT OBJECT_ID('tempdb..##<a temp that
    exists>')` returns a number from our login, and `manifest.cosmos_refresh`
    is filled in. Note `create_date` either side of the next refresh to confirm
    a refresh changes it.
-6. An upload of around 250,000 rows, timed: it now travels twice, file to
+8. An upload of around 250,000 rows, timed: it now travels twice, file to
    Projects, then Projects to Cosmos.
-7. During a large transfer, check whether other work on the Projects database
+9. During a large transfer, check whether other work on the Projects database
    waits on it. Pullmanager commits after every cohort (D55), but the driver
    runs with autocommit off, so one cohort's `OPENQUERY` into staging still
    sits inside an open transaction until that cohort commits. If it blocks
    others, open the Projects connection with autocommit on.
-8. An uploaded PK: a parquet list marked `type: pk`, batched by a column it
+10. An uploaded PK: a parquet list marked `type: pk`, batched by a column it
    carries. Its uniqueness check and batches should read `upload_<dest>`.
 
 ---
@@ -167,27 +119,23 @@ Pulls will run several at a time, so each should get its own folder, named by
     Cosmos/
 ```
 
-First step taken (D57): each project's split and SQL now go to
-`runs/<project>/split` and `runs/<project>/sql`, `<project>` from the transfer
-YAML's file name (itself from `project_folder`), so projects already run side by
-side. The rest of the sketch below would grow inside that folder.
+Most of it is built inside `runs/<project>/` (D57, D72 to D75): `split/`,
+`sql/`, `logs/`, `parquets/SneakPeek|Cosmos|uploads/`, `contents.md` and the
+load scripts. What remains of the sketch:
 
-Observations for when it is built:
-
-- One root derived from `project_folder`, fixed shape, no routing table. Too
-  many path knobs is what made paths painful before.
-- The SneakPeek/Cosmos split needs no configuration: under `Dual` cohorts come
-  out as `X` and `X_sp`. Session status already says when a variant is done, so
-  SneakPeek parquets can export before the Cosmos cohorts run.
-- The renames (`Manifest.yaml`, `server/yamls/`) are cheap: manifest paths are
-  already relative to the manifest.
+- The renames (`server/`, `Manifest.yaml`, `server/yamls/`): cheap, since
+  manifest paths are already relative to the manifest. Worth doing only if
+  the flat layout gets in the way.
+- Packaging SneakPeek as soon as its sessions finish, before the Cosmos ones
+  run. Artifacts already packages only finished tables, so running it
+  mid-pull would do this, except that it refuses while the pull is executing
+  (D67). A `--artifacts` that waits on the lock, or runs from Execute when the
+  last SneakPeek session ends, would.
 - Big reference files live in a `data/` folder in the parent directory;
   templates reference them relative to the template.
 
 ### After Artifacts
 
-- **Keys and joins in `contents.md`** (D73) are a test: look at them once
-  built, and remove them if they are more than a reader needs.
 - **Descriptions without a new split.** `contents.md` reads descriptions from
   the split (D73), so improving one means splitting again, which resets the
   pull. Reading them from the transfer YAML instead would need a way to match
@@ -213,9 +161,32 @@ added gets its transfer version (recipes written out; multipliers and
 batching still in their own sections, D49), and the queue is carried to the
 VM and run. Open: whether the tab lives in YAML Manager (building the queue on
 the Mac), in the launcher (running it on the VM), or both; and whether queued
-pulls run one after another or side by side (D57 allows either). The user
+pulls run one after another or side by side (D57 allows either). Carrying
+several transfer YAMLs in one bundle (`makebundle.py yaml=A,B`, D79) is the
+first piece. The user
 expects two or three queued at a time, with one `--execute` starting them all
 (today it takes one project, D66).
+
+### Inherited And Optional Variables
+
+A table takes its PK's variables when it does not set them (D78), for every
+variable. The user's question: should a recipe be able to say which of its
+variables are inherited, or optional, rather than the rule applying to all?
+In the Builder today, IndexDiagnosis's `ICD_Value` shows red until the PK has
+a value, then "from the PK: K50.%", and a value typed there overrides it. The
+options:
+
+- **Keep the rule as it is**: the Builder already shows where a value comes
+  from and allows an override. The red box before the PK has one could say
+  "taken from the PK once it has one" instead.
+- **Declare it in the recipe**, for example `inherits: [ICD_Value]` (or
+  `optional_vars:`), so only the listed variables are taken from the PK and
+  every other one is still required on the table itself. Clearer to read in
+  the recipe, and it stops a variable being inherited by accident.
+
+The SQL (`{{sql_condition('dt.Value', ICD_Value)}}`) looks like the table's
+own filter either way; the recipe's `description` could say where the value
+comes from. Undecided.
 
 ### Smaller Open Items
 

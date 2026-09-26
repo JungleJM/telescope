@@ -26,8 +26,9 @@ VM    <project>_transfer.yaml + datadictionary   no recipes file
               │                          multipliers, batching)
               └─► runs/<project>/split/pullmanifest.yaml, sessions/...
                     └─► Pullmanager --execute ──► <project_db>.dbo.<dest>
-                                                  status back into the manifest
-                                                  (artifacts: not built)
+                          │                       status back into the manifest
+                          └─► Pullmanager --artifacts ──► runs/<project>/parquets,
+                                                          contents.md, load scripts
 ```
 
 **YAML Manager** (`scripts/makeYaml.py`, UI `scripts/yamlmanager.py`) owns
@@ -43,8 +44,9 @@ Cosmos to Projects, and writes progress back into the manifest.
 The boundary between them is files. YAML Manager writes a plan; Pullmanager
 writes status into the same document. Neither imports the other.
 
-**makeArtifacts** (parquet export plus a contents file describing what actually
-landed) is planned, not built. See the roadmap.
+**Artifacts** (`--artifacts`, D72 to D75) turn a finished pull into files in
+its run folder: a parquet per finished table, `contents.md` describing them,
+and scripts that load them in R and Python. See Artifacts, below.
 
 ---
 
@@ -71,6 +73,8 @@ Two machines, one codebase, updated one way.
 | tkinter | yes, likely Tk 8.6 | Tk 8.6, bundled with the python.org install | via `brew install python-tk@3.14`, Tk 9 |
 | numpy | 2.1.3 | 2.1.3, installed for all users | not installed |
 | pyarrow | 22.0.0 | 22.0.0 in `python3.13`; brew's `python3` has 25 | whatever is installed |
+| pandas | 2.2.3 | 2.2.3 in `python3.13`; brew's `python3` has 3.0 | not installed |
+| R | `arrow` 11.0.0.3, `dplyr`, `bit64`, `tibble` | R 4.6 with `arrow` 25.0.1, `dplyr`, `bit64`, `tibble` | not installed |
 | Database | `pyodbc` 5.3.0, ODBC Driver 17 for SQL Server | none reachable, no driver | none reachable, no driver |
 | YAML | `ruamel.yaml` 0.17.17, `pyyaml` 6.0.3 | the same in `python3.13`; brew's `python3` has both | whatever is installed; Ruby fallback |
 
@@ -79,8 +83,13 @@ runtime tests) so it meets the VM's Python, Tk and packages, not brew's. It
 has the VM's versions, installed for all users:
 
 ```bash
-sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3 pyarrow==22.0.0
+sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3 pyarrow==22.0.0 pandas==2.2.3
 ```
+
+The artifact tests run the generated load scripts: the Python ones under the
+running interpreter (the examine script needs pandas), the R ones through
+`Rscript` when R has `arrow` (they skip otherwise). The Mac's R `arrow` is
+newer than the VM's, so the R check is close, not exact.
 
 Without a YAML package the runtime cannot read YAML at all (`No YAML backend
 available`); `makeYaml` alone falls back to Ruby, and names the Python that
@@ -126,7 +135,10 @@ pullmanager_runtime/                # the extracted tree (any name; this is --ex
 ```
 
 Recipes, the browser UI and a template to start from are not shipped (D49):
-the VM works from transfer YAMLs, and cannot open the UI. Published paths
+the VM works from transfer YAMLs, and cannot open the UI. Transfer YAMLs
+named with `yaml=` travel too, under `root/` in the bundle: verified like
+every file and counted in the `content_id`, but written beside `pullmanager.py`
+rather than into the extracted tree (D79). Published paths
 reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its
 dictionary with no flags and no knowledge that it was bundled.
 
@@ -195,12 +207,22 @@ template setting. `PULLMANAGER_*` environment variables, or a `.env` passed with
 On the Mac:
 
 ```bash
-python3 makebundle.py            # writes dist/bundle.py and prints its content_id (D64)
+python3 scripts/makeYaml.py --template YAMLs/IBD_Ancestry_temp.yaml --export-transfer
+                                 # writes IBD_Ancestry_transfer.yaml at the repository root
+python3 makebundle.py yaml=IBD_Ancestry,Celiac
+                                 # dist/bundle.py, carrying those transfer YAMLs (D79)
+python3 makebundle.py            # or the runtime alone; prints its content_id (D64)
 python3 makebundle.py --tdd      # optional: the bundle's own tests
 ```
 
-Copy that one file to the VM. Nothing else travels. The same sources always
-produce the same `content_id`, so it tells you whether the VM has the latest.
+Copy that one file to the VM, with any upload files the transfer YAMLs read
+(the build names them, at the paths they need beside the transfer YAML). The
+same sources and transfer YAMLs always produce the same `content_id`, so it
+tells you whether the VM has the latest. The bundle committed in
+`dist/bundle.py` is built without transfer YAMLs; a build with `yaml=`
+overwrites it locally.
+
+`python3 yamlmgr.py`, at the root, opens YAML Manager (D79).
 
 ### Setting Up The VM Folder
 
@@ -214,12 +236,16 @@ beside it:
     bundle.py                 the copied file
     pullmanager.py            written by --extract: python pullmanager.py opens the launcher
     pullmanager_runtime\      extracted; managed; never put your own files in here
-    IBD_Ancestry_transfer.yaml  a transfer YAML, exported on the Mac, run from here
+    IBD_Ancestry_transfer.yaml  a transfer YAML, placed here by bundle.py (D79), run from here
     data\                     its upload files, at the paths the export listed
     runs\                     one folder per project (D57), so projects run side by side
       IBD_Ancestry\           from IBD_Ancestry_transfer.yaml
-        split\                written by Export split
-        sql\                  written by a dry run
+        split\                written by Export split; pullmanifest.lock while executing (D67)
+        sql\                  written by Preview SQL
+        logs\                 execute-<date>-<time>.log, one per Execute (D68)
+        parquets\             written by Artifacts: SneakPeek\, Cosmos\, uploads\ (D72)
+        contents.md           what each table and column is (D73)
+        load_parquets.R/.py, examine_parquets.R/.py, HOW_TO.md   (D75)
     .pullmanager-gui.json     the launcher's remembered paths
 ```
 
@@ -229,9 +255,11 @@ the transfer YAML, so its upload files keep the same places relative to it as
 on the Mac (the export lists them). `YAMLMANAGER_DATA_DICTIONARY` sets the
 dictionary once.
 
-Transfer YAMLs sit at the root, ready to run (D63); a run folder holds only
-what a pull makes. A change made on the VM is an edit to the transfer YAML by
-hand. A recipe change is made on the Mac and re-exported.
+Transfer YAMLs sit at the root, ready to run (D63). `bundle.py` writes the
+ones it carries there, keeping a different copy already there as
+`<name>.local`. A run folder holds only what a pull makes. A change made on
+the VM is an edit to the transfer YAML by hand. A recipe change is made on the
+Mac and re-exported.
 
 ### The Whole Pathway On The VM
 
@@ -244,7 +272,9 @@ python pullmanager.py                  # the desktop launcher
 # or the same steps by hand
 python pullmanager_runtime/scripts/makeYaml.py --template IBD_Ancestry_transfer.yaml --export-split --out-dir runs/IBD_Ancestry/split
 python pullmanager.py --dry-run runs/IBD_Ancestry/split/pullmanifest.yaml --out-dir runs/IBD_Ancestry/sql
-python pullmanager.py --execute runs/IBD_Ancestry/split/pullmanifest.yaml
+python pullmanager.py --execute IBD_Ancestry     # by the project's name (D66)
+python pullmanager.py --artifacts IBD_Ancestry   # once it has finished (D72)
+python pullmanager.py --running                  # every pull, and which are executing (D67)
 ```
 
 The repair loop for a VM-side bug: read the file out of the bundle or the
@@ -562,10 +592,12 @@ names.
   multipliers and batching are declared, not applied. Grouped settings stay in
   their groups (`cosmos_vars.project_db`), each once, so editing one by hand on
   the VM takes effect. Written only if the template passes full
-  validation. Named `<project_folder>_transfer.yaml`, beside the template by
-  default. `file_loc` is never rewritten, since it is what the VM resolves.
-  Written to another folder (`--out`), each upload is copied there at its
-  `file_loc`, so that folder is the unit to carry across; one outside the
+  validation. Named `<project_folder>_transfer.yaml`, written at the
+  repository root by the command (D79; in an extracted bundle, the working
+  folder beside it), or where `--out` says. `file_loc` is never rewritten,
+  since it is what the VM resolves. Written to another folder than the
+  template's, each upload is copied there at its `file_loc`, so that folder is
+  the unit to carry across; one outside the
   template's folder (`..` or absolute) is left as written, with the warning
   `upload_not_copied`. The export lists every upload path to carry.
   It opens with a `transfer:` block: `from_template` (file name), and, when
@@ -594,13 +626,17 @@ compiler only through `scripts/yamlmanager_backend.py`
 `--public`, `--browser-host`, `--no-open`) implies serving; `--static` writes a
 file instead. `--port 0` picks a free port.
 
+`python3 yamlmgr.py`, at the root, runs it from the repository root, so its
+default paths resolve wherever it is started from (D79).
+
 It is the Mac's authoring tool, and is not bundled. The VM cannot load it; the
 VM uses the launcher. Its Exports tab shows the pre-YAML, the transfer YAML
-(named for the project, with a Download button) and the pull manifest. Every
-message shows its fix beneath it.
+(named for the project, with a Download button) and the pull manifest, all
+of the saved template. Every message shows its fix beneath it.
 
 The **Builder** tab assembles a template section by section: Project,
-Uploads, Multipliers, Batching, Cohorts and the draft YAML. Each section's
+Uploads, Multipliers, Batching, Cohorts and Exports (the same three exports
+as the Exports tab, of the saved template: Save & Refresh to see changes). Each section's
 title carries a one-line explanation taken from the comments in
 `YAMLs/template.yaml` (the comment on the key's line, else the lines just above
 it), with built-in text where a key has none; editing those comments changes
@@ -613,6 +649,18 @@ the page.
 - **Multipliers.** `during_build` levels take variables
   (`ICD_Value: K51.%, K52.%`, `;` between variables); `split_after_build`
   levels take a PK column, values, and an optional role and row mult.
+- **Batching.** Each row is a batching recipe with optional values, and a
+  **Separate parquets** checkbox, off unless ticked (D77). The checkbox shows
+  what the split will do: a row naming a recipe shows the recipe's setting,
+  and unticking a recipe's `true` writes `separate_parquets: false`. Listing
+  values always adds a batch of the rest (D76).
+- **Variables.** Each recipe row has an input for every variable its SQL uses
+  that the template does not already supply (`ICD_Value`; not `prefix`,
+  `PKTable` or the Project dates). A value, or several separated by commas.
+  Left blank, it says where the value comes from: "set by multiplier
+  IBDType", or "from the PK: K50.%" (D78); nothing supplying it marks it red.
+- **Custom tables** also take a Description and Granularity, and a
+  description per column, for `contents.md` (D74).
 - **Custom tables** are built from the data dictionary: name, destination and
   PK checkbox, with "Add Custom Table" (or "Save Changes" when editing a loaded
   one) ending that row; "Reset Form" sits by the heading. Under Joins, a note
@@ -649,13 +697,15 @@ split/
       pk.yaml
       runs/
         run.yaml               unbatched
-        b1of4-LA-Female.yaml   or one per batch combination
+        b1of9-LA-Female.yaml   or one per batch combination
 ```
 
 A **session** is the scope in which one Cosmos connection stays open, because
 global temps die with it: one PK, and everything pulled for it. A multiplier
 produces one session per multiplied PK, and under `Dual` each has an `_sp`
-twin; otherwise there is one.
+twin; otherwise there is one. Under `Dual` every SneakPeek session runs first,
+then every Cosmos one, cases before controls within each (D65), so the smaller
+database gives a quick round through every phase first.
 
 Each cohort records the session that builds it as `session_pk`: its multiplier
 group's PK (or the uploaded PK). A session's runs hold only its own cohorts, so
@@ -703,7 +753,15 @@ generated PK's do. Its session carries the template's batching.
 ### Multipliers
 
 A `during_build` level sets variables (`ICD_Value: [K50.%]`), so each level
-builds its own cohorts. A `split_after_build` level splits the PK by one of
+builds its own cohorts. Each multiplied table records its levels as
+`multiplier_levels` (multiplier, strat, stage, and a `during_build` level's
+vars), which `contents.md` reads (D73).
+
+**Variables.** A table's variables come from, last winning: the template's
+`vars`, the uploads, the automatic ones (`prefix`, `PKTable`), its PK's own
+`vars` (the PK of its multiplier group), then its own `vars`, which include
+its multiplier levels' (D78). So a table that does not set `ICD_Value` takes
+the one its patients were chosen by; one it sets itself wins. A `split_after_build` level splits the PK by one of
 its columns (D59): its condition joins that PK's `where`, written on the PK's
 own source for the column (`p.FirstRace LIKE 'Black%'`), so each level still
 builds its own PK in its own session. Levels multiply: IBDType × Race × `Dual`
@@ -732,15 +790,27 @@ batching:
   - chunk: 2000
 ```
 
-`state × sex` is four runs: `b1of4-LA-Female`, `b2of4-LA-Male`,
-`b3of4-MS-Female`, `b4of4-MS-Male` (D53). The number makes every label unique,
-so two combinations can never share one; `A B` and `A-B` both clean to `A-B`
-and are told apart by it. A run with only `chunk:` is `b1of1`.
+The unit of multiplication is the **bucket**. Listing values always adds a
+catch-all bucket for every other value (`<dimension>-other`), so the batches
+together are the whole PK and batching never drops a row (D76). The catch-all
+records the values it `excludes`, and its predicate includes `IS NULL`,
+because `NOT IN` never matches NULL. `include_other` is retired: it warns and
+does nothing.
 
-The unit of multiplication is the **bucket**. `include_other: true` adds a
-catch-all bucket (`<dimension>-other`), so `values: [Female]` plus
-`include_other` is two. The catch-all records the values it `excludes`, and its
-predicate includes `IS NULL`, because `NOT IN` never matches NULL.
+So `state × sex` is nine runs, `b1of9-LA-Female` through
+`b9of9-state-other-sex-other` (D53). The number makes every label unique, so
+two combinations can never share one; `A B` and `A-B` both clean to `A-B` and
+are told apart by it. A run with only `chunk:` is `b1of1`.
+
+A `column_values` batch names the PK column it splits on as
+`required_column` (D80): a PK without it is an error (`missing_batch_column`)
+naming the PK's columns, and the old `column` is refused with the fix. Inside
+the split, and in the manifest's `batch.dimensions`, it is still `column`.
+
+`separate_parquets: true` on a batch makes Artifacts write one parquet per
+value of it instead of one per table (D72). It is off unless set (D77): no
+batching recipe sets it. The split records it on each dimension as
+`separate: true`.
 
 | Dimension | Buckets known | Expanded by | Recorded as |
 | --- | --- | --- | --- |
@@ -756,7 +826,8 @@ showing progress as `c2of3` on the run.
 Batch membership is deterministic. A values bucket is a predicate, and a run's
 buckets combine with `AND`, so the order of the dimensions changes only the
 label (`LA-Female` or `Female-LA`), never the rows. A chunk is `ORDER BY` the
-PK's key columns, verified unique after the PK phase. Both read the Projects
+PK's key, verified unique after the PK phase; the PK's key is its first
+`dedup_keys` set, else its `key_column(s)`, everywhere it is used (D69). Both read the Projects
 copy of the PK (D19), which a Cosmos refresh does not move.
 
 ---
@@ -877,6 +948,16 @@ children on every save: any `failed` → `failed`; any `running` → `running`; 
 `blocked` → `blocked`; all `skipped` → `skipped`; all settled → `done`; some
 settled → `running`; otherwise `pending`.
 
+`running` cannot say whether a pull is running now. The lock can (D67): while
+`--execute` runs it holds `pullmanifest.lock` beside the manifest (process id,
+machine, start time, the log it writes, and a heartbeat a background thread
+rewrites every 30 seconds). It is removed when the pull ends; one with no
+heartbeat for 2 minutes is stale, and the next Execute takes it over, saying
+so. The process id is shown, never checked: on Windows `os.kill(pid, 0)`
+would end the process. While a lock is live, a second `--execute` of that
+pull, `--export-split` of its split, and `--artifacts` all refuse, before
+touching anything.
+
 ---
 
 ## Execution: Pullmanager
@@ -951,8 +1032,8 @@ the Cosmos refresh date (D51, Running Again), and choose the temp prefix
    `--repull`.
 3. **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK
    already has its `upload_` copy), then verify uniqueness against the copy
-   (`COUNT(*)` against a count of `SELECT DISTINCT keys`; a PK with no key
-   column warns instead). A sampled control is cut to its sample first
+   (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK
+   with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first
    (Multipliers). Not rerun on a resume.
 4. **Runs.** For a batched run, the PK temp is emptied and refilled with that
    batch's whole PK rows, selected from the **Projects copy** with a
@@ -975,8 +1056,10 @@ the Cosmos refresh date (D51, Running Again), and choose the temp prefix
 After each run the Cosmos and Projects row counts are compared, counting only
 this run's `_batch` rows on the Projects side (a chunked run compares totals),
 and a mismatch warns. Counts past 80,000,000 warn. The widest value of each
-staged column is measured and reported, not applied (D34). A unit that fails
-rolls both connections back. Nothing runs in parallel: sessions, runs, chunks
+staged column is measured and reported, not applied (D34): at the end of each
+session, after its warnings, one table of each text column's declared type and
+widest value across all the session's batches, as a note (D70). A unit that
+fails rolls both connections back. Nothing runs in parallel: sessions, runs, chunks
 and cohorts go one after another.
 
 ### Uploads
@@ -1087,36 +1170,157 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 ```bash
 pullmanager.py runs/<project>/split/pullmanifest.yaml              # summarize
 pullmanager.py --dry-run runs/<project>/split/pullmanifest.yaml [--out-dir runs/<project>/sql] [-v] [--all] [--retry-failed] [--repull]
-pullmanager.py --execute runs/<project>/split/pullmanifest.yaml [--retry-failed] [--repull] [--env FILE]
+pullmanager.py --execute <project> [--retry-failed] [--repull] [--env FILE] [--keep-open]
+pullmanager.py --execute                                           # lists the pulls; runs nothing
+pullmanager.py --artifacts <project>                               # package a finished pull (D72)
+pullmanager.py --running                                           # every pull, and which are executing (D67)
 pullmanager.py                                                     # the launcher (D63)
 pullmanager.py --gui                                               # the same
 pullmanager.py --tdd [module]
 ```
 
-A dry run renders every SQL block without touching a database or the manifest,
-listing why each unit is included and what was excluded, and what each session
-will do next.
+`--execute` and `--artifacts` take a project's name (D66): `IBD_Ancestry`,
+`"IBD Ancestry"` or `IBD_Ancestry_transfer.yaml` all mean
+`runs/IBD_Ancestry/split/pullmanifest.yaml`, looked for under the working
+directory, then beside `pullmanager.py`; the folder's own spelling is used
+whatever the case typed. A manifest path still works; one that is not there
+says so. A name with no pull lists the pulls there are. With no name, each
+lists every pull with its state (not started, sessions done of the total,
+failed, executing, or stopped mid-run) and the command for it, and runs
+nothing.
+
+A dry run (the launcher's **Preview SQL**) renders every SQL block without
+touching a database or the manifest, listing why each unit is included and
+what was excluded, and what each session will do next. It ends with one
+statement (D71):
+
+```text
+Preview finished: 48 unit(s), 112 SQL block(s), 0 errors, 3 note(s). Nothing was pulled.
+SQL written to runs\IBD_Ancestry\sql for reading; Execute does not need it.
+To pull it: press Execute, or in a terminal in <working folder> run:
+    python pullmanager.py --execute IBD_Ancestry
+```
+
+**Execute** writes everything it prints to
+`runs/<project>/logs/execute-<date>-<time>.log` as well, flushed line by line,
+however it is started (D68); a refused Execute writes one too, saying why.
+Ctrl+C stops it cleanly (exit 130), releasing its lock; what it was working on
+stays `running`, and the next Execute pulls it again. `--keep-open` holds the
+window at the end: "Safe to close: the pull has finished (exit code N). Type
+exit and press Enter to close this window." Only `exit` closes it.
 
 ### The Launcher
 
 `pullmanager.py` with no arguments, or `--gui`, opens a tkinter window for
-**running** pulls: choose the transfer YAML,
-data dictionary, split folder and SQL folder (blank means
-`runs/<project>/split` and `runs/<project>/sql`, named from the transfer YAML's
-file name, D57); then Validate, Export split, Dry
-run, Execute, Stop, with "Retry failed" and "Re-pull everything" options
-(`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is
-ever passed (D49); settings saved by an older launcher that named one still
-load. Output streams into a log tab. A status tab reads the manifest when the
-window opens, on Refresh, and every three seconds while a command the launcher
-started is running; a pull started from a terminal shows only on Refresh.
+**running** pulls: choose the transfer YAML, data dictionary, split folder and
+SQL folder (blank means `runs/<project>/split` and `runs/<project>/sql`, named
+from the transfer YAML's file name, D57); then Validate, Export split,
+Preview SQL, Execute, Artifacts and Stop, with "Retry failed" and "Re-pull
+everything" options (`--retry-failed`, `--repull`). There is no recipes field
+and no `--recipes` is ever passed (D49); settings saved by an older launcher
+that named one still load.
+
+Three tabs (D71):
+
+- **Validation Output**: what Validate, Export split, Preview SQL and
+  Artifacts print, which run inside the window.
+- **Pull Log**: the loaded pull's Execute log, followed every second: the
+  live Execute's (named in its lock), else the newest. A pull started from a
+  terminal shows there too.
+- **Status**: the manifest as a tree, with Refresh and the manifest's path at
+  the top left. Refreshed when the window opens, on Refresh, every three
+  seconds while the window's own command runs, and every three seconds while
+  the loaded pull's lock is live, when it says "Executing since 14:03, last
+  heartbeat 20s ago".
+
+**Execute** opens a console window of its own (`CREATE_NEW_CONSOLE`) in the
+working folder, running `python pullmanager.py --execute <project>
+--keep-open` with the same Python and no shell between (D68): started from
+the window with its output piped back, it died on the VM before printing a
+line (`0xC0000142`). If the console cannot be opened, or its process ends
+before writing its log, the window says so, with the exit code (in hex for a
+Windows failure), and gives the terminal command. Stop ends a pull the window
+started and removes the lock it could not remove itself; a pull started from
+a terminal is stopped there. Closing the window leaves a pull in its own
+console running. On the Mac, with no console to open, Execute runs unseen and
+is read from its log.
+
+While the loaded pull's lock is live (checked every second, whoever started
+it), Export split, Execute and Artifacts are greyed; pressing Execute greys
+them at once. Validate and Preview SQL stay available: they write nothing a
+pull reads (D67).
 
 It is a front end, not a second implementation. Each button runs the same
 command a person would type, as a subprocess, so a long pull cannot freeze the
-window and Stop has a real process to end. All logic lives in `launcher.py`,
-which has no tkinter in it; `gui.py` only wires widgets. Chosen paths are
-remembered in `.pullmanager-gui.json` in the working directory, not inside the
-extracted tree.
+window and Stop has a real process to end. All logic lives in `launcher.py`
+(finding pulls in `pulls.py`, the lock in `lock.py`), which has no tkinter in
+it; `gui.py` only wires widgets. Chosen paths are remembered in
+`.pullmanager-gui.json` in the working directory, not inside the extracted
+tree.
+
+---
+
+## Artifacts
+
+`python pullmanager.py --artifacts <project>`, or the launcher's Artifacts
+button, turns a pull into files for R and Python on the VM (the parquets
+cannot leave it). It refuses while the pull is executing (D67), and each run
+replaces what the last wrote.
+
+```text
+runs/<project>/
+  parquets/
+    SneakPeek/    tables from COSMOS_SneakPeek; names end in _sp
+    Cosmos/       tables from COSMOS
+    uploads/      the uploads, copied from the split's parquet
+  contents.md     every table and column (D73)
+  load_parquets.R, load_parquets.py, examine_parquets.R, examine_parquets.py
+  HOW_TO.md       which to use when (D75)
+```
+
+**Parquets** (`artifacts.py`, D72). The manifest decides what is finished,
+never what exists in Projects: a PK table once its PK phase is done, a run's
+table once every run that fills it is. The rest are listed as not packaged,
+with why. Each table is read from Projects in 50,000-row chunks and written
+with pyarrow, typed from its own `INFORMATION_SCHEMA` columns (BIGINT is
+`int64`, DATE `date32`, DATETIME2 `timestamp[us]`, text `string`; a type the
+driver cannot hand back, such as `DATETIMEOFFSET`, is read as text). `_batch`
+is dropped. A dimension with `separate_parquets` gives one file per value
+(`OtherDiagnoses_LA.parquet`, `OtherDiagnoses_LA_sp.parquet`): a run's table
+chosen by its `_batch` labels, the PK, which has no `_batch`, by the
+dimension's own predicate. An upload with no parquet in the split (a
+`dbtable`) is listed as not packaged; it is in Projects as `upload_<dest>`.
+
+**contents.md** (`contents.py`, D73) opens with the pull: its project
+database, which Cosmos databases, when it last finished, the Cosmos refresh
+dates, whether it was a test sample (`smallset`, its limit, and whether the
+sample was hashed), each file's rows, and what was left out. Then per table:
+
+- **Granularity:** its own `granularity`; else "One row per" its `dedup_keys`;
+  else "No granularity given".
+- **Specific to:** from its session PK's `multiplier_levels` and split
+  conditions, as the SQL says them, and a control's sampling: "Crohns
+  (IBDType): ICD_Value K50.%; white (Race): p.FirstRace LIKE 'White%', sampled
+  at 4 times CrohnsblackPatients_sp per batch"; a separated file adds its batch.
+- **Description**, then each column as
+  `` `PatientDurableKey`: BIGINT (py: int64, r: integer64): description ``. The
+  types are the SQL type as held and the type once loaded, for writing code
+  against the files. A column's description is its own; else the data
+  dictionary's for its source (`p.Sex` is `PatientDim.Sex`, the aliases read
+  from `from` and `join`); else "No description". Nothing is guessed.
+
+Descriptions are read from the split, so a changed description reaches
+`contents.md` through a new split.
+
+**Load scripts** (`loaders.py`, D75), at the run folder's root. `load_parquets`
+opens every parquet without reading it (`arrow::open_dataset()`,
+`pyarrow.dataset`); `examine_parquets` reads them into memory (R data frames;
+pandas with Arrow types, so an integer column with gaps stays integer). Each
+table becomes a variable named for its file. R sets
+`arrow.int64_downcast = FALSE`, so 64-bit keys are `integer64` in every table
+and joins match. Each script names the parquets folder in `PARQUETS`; moved,
+that line changes. `HOW_TO.md` says which to use when, how to run them in
+RStudio and VSCodium, and how tables join.
 
 ---
 
@@ -1125,9 +1329,9 @@ extracted tree.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (133)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (346)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (57)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (147)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (438)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (66)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```
 
@@ -1141,9 +1345,19 @@ upload is parquet).
   and ship in the bundle. After extraction, `--tdd` proves the delivery with no
   network and no repo. Tests needing repo fixtures skip cleanly there.
 - **Bundle** tests cover tampering, determinism, extraction safety, `.local`
-  preservation (including files a bundle stops shipping), and the VM pathway
-  from one copied file: export a transfer YAML on the Mac, extract, split it
-  with no recipes present, dry run.
+  preservation (including files a bundle stops shipping), transfer YAMLs
+  carried with `yaml=` (placed beside `pullmanager.py`, a different copy kept
+  as `.local`, verified, in the content_id), and the VM pathway from one
+  copied file: export a transfer YAML on the Mac, extract, split it with no
+  recipes present, dry run.
+- **Artifacts** tests package the runtime fixture against a fake Projects
+  connection and read the parquets back (types, `_batch` dropped, left-out
+  tables, separated files, SneakPeek folders), check `contents.md`, and run
+  the generated load scripts: Python for real, R through `Rscript` when R has
+  `arrow`.
+- **The Builder's JavaScript** is not run by the UI tests. Changes to it are
+  checked by extracting the page's scripts for `node --check`, and running the
+  changed functions under node.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no
   recipes file, gives byte-identical session YAMLs and uploads, and the same
   manifest (bar `source`), as the template split with recipes, for the tiny

@@ -1401,3 +1401,98 @@ as D73 says.
 - `HOW_TO.md` says which to use when. The client keeps whichever language it
   wants and deletes the rest. All use only what the VM has: R `arrow`, Python
   `pyarrow` and `pandas`.
+
+### D76. `include_other` is retired: listed batch values always get a batch of the rest
+
+**Context.** `include_other: true` added a catch-all batch for values a batch
+did not list. Turned off, it did not lump those rows together: it left them
+out of the pull entirely. The user read it as lumping, and a setting whose
+misreading silently loses data is dangerous. It was briefly made to default
+to on, then removed.
+
+**Decision.** Listing values always adds a catch-all batch (`sex-other`), so
+the batches together are always the whole PK and batching never drops a row.
+`include_other` in a template or batching recipe warns (`retired_option`) and
+is ignored. The Builder has no toggle for it.
+
+**Consequences.** `sex: [Female, Male]` is three batches, and batches
+cross-multiply with their catch-alls: `state [LA, MS] × sex` is nine. A pull
+that really wants only some values filters its PK instead.
+
+### D77. Batches stay in one parquet per table unless `separate_parquets` is set
+
+**Context.** The batching recipes set `separate_parquets: true`, so every
+batched pull packaged each table as a file per value. Separating is the
+unusual case.
+
+**Decision.** No batching recipe sets it; it is off unless a template turns it
+on for a batch. The Builder's checkbox is off by default and shows what the
+split will do, reading a recipe's own setting, and unticking a recipe's `true`
+writes `separate_parquets: false`.
+
+### D78. A table takes its PK's variables when it does not set them
+
+**Context.** IndexDiagnosis filters on the same `ICD_Value` as the PK that
+chose its patients. Without a multiplier setting it, the variable had to be
+written on both, and the Builder offered no field for either: a template
+failed with `missing_variable` and no way to fill it in.
+
+**Decision.**
+
+- A table's variables are, last winning: the template's `vars`, the
+  uploads, the automatic ones, its PK's own `vars` (the PK of its multiplier
+  group), then its own `vars`. So a table that does not set a variable takes
+  its PK's; one it sets itself wins. `PKTable` is not taken from the PK.
+- The Builder gives each recipe row an input per variable its SQL uses that
+  the template does not already supply, saying where a blank one comes from
+  ("set by multiplier IBDType", "from the PK: K50.%") and marking one nothing
+  supplies.
+- Rejected: joining IndexDiagnosis to the PK's own event (`DiagnosisEventKey`,
+  or the PK's code). It would return only the index event the PK already
+  holds, where IndexDiagnosis is each code's first date in the disease
+  family.
+
+**Consequences.** How a recipe should declare that a variable is inherited or
+optional, rather than the rule applying to every variable, is open (roadmap).
+
+### D79. Transfer YAMLs live at the repository root, and the bundle can carry them
+
+**Decision.**
+
+- `--export-transfer` writes `<project>_transfer.yaml` at the repository
+  root (in an extracted bundle, the working folder beside it, never inside
+  it), with its upload files copied under it at the same relative paths.
+- `python3 makebundle.py yaml=IBD_Ancestry,Celiac` carries those root
+  transfer YAMLs in the bundle. A name may be the project, the project with
+  `.yaml`, or the full file name, in any case; the space in `yaml=A, B.yaml`
+  is allowed; a name with no file is refused, listing those there are. They
+  are verified like every file and count in the `content_id`.
+  `python bundle.py` writes each beside `pullmanager.py`, not into the
+  extracted tree, keeping a different copy already there as `<name>.local`.
+  Upload files are not carried; the build names each one to copy.
+- `python3 yamlmgr.py` at the root opens YAML Manager.
+
+**Consequences.** The committed `dist/bundle.py` is built without transfer
+YAMLs; a build with `yaml=` overwrites it locally until the next plain build.
+
+### D80. A batch names its column `required_column`
+
+**Context.** A batch's `column` is the PK column it splits on, and the PK must
+have it; the name did not say so.
+
+**Decision.** Batching recipes and definitions write `required_column`. A PK
+without it is an error naming the PK's columns (`missing_batch_column`, as
+before). The old `column` is refused (`batching_column_renamed`) with the
+exact replacement, not accepted and guessed at. Inside the split and in the
+manifest it stays `column`, so manifests and the runtime are unchanged.
+Multiplier levels keep `column`.
+
+### D81. `contents.md` drops the key line; the Builder shows exports, not a draft
+
+**Decision.**
+
+- The "Key (testing)" line D73 tried is removed: nearly every table shares
+  `PatientDurableKey`, so it listed most of the pull for each table.
+- The Builder's Draft YAML section is removed; it did nothing a user needed.
+  In its place, Exports shows the saved template's pre-YAML, transfer YAML and
+  manifest, as the Exports tab does.
