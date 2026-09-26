@@ -25,7 +25,8 @@ below.
 ## What the history should show
 
 I was the only person on this project. I found the problem, designed the
-solution, learned SQL, Python and R in order to build it, tested it and ran it.
+solution, tested it and ran it, and I did not know SQL, Python or R when I
+started.
 I want the record to show that work under the roles of a software team:
 product management, UX, architecture, data and database engineering, clinical
 and research methods, QA and testing, release and delivery, security and
@@ -40,9 +41,12 @@ compliance, documentation, and working with AI assistants.
    it. Do not describe what a command "would show". A previous answer
    explained queries without running them; this time I need what you found,
    not what you would expect to find.
-3. No guessed dates or reasons. If the evidence does not give a date or a
-   reason, write "unknown" and add a question to the Gaps section. Mark
-   anything you infer with "(inferred)".
+3. Keep what you found apart from what you think. Every statement is one of:
+   - no label: found in a file, commit or command output, with the source;
+   - GUESS: your inference about a fact, with the reason;
+   - VIEW: your interpretation or opinion;
+   - ASK: not in the evidence; a question for me, repeated under GAPS.
+   Never guess a date, an author or a reason without the GUESS label.
 4. Nothing sensitive leaves the VM. Follow the internal best-practice and
    disallowed-practice documents you have access to. If a section would break
    them, leave it out and say so. In particular, do not include:
@@ -74,9 +78,9 @@ First find the Gen1 folder or folders and list what exists. Then, in order:
    Comparing them shows how the code grew.
 3. Notes, READMEs, markdown and QMD files, YAML templates and recipes, and the
    comments inside the scripts.
-4. The document you wrote earlier, "Generator stack - behavior & stability
-   notes", if it is still here. It describes where Gen1 ended up; this task is
-   about how it got there.
+4. An earlier document, "Generator stack - behavior & stability notes", if it
+   is still here (you or another assistant may have written it). It describes
+   where Gen1 ended up; this task is about how it got there.
 
 Before writing, list the sources you found and the commands you ran, so I can
 see what the history rests on.
