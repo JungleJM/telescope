@@ -658,7 +658,12 @@ the page.
   that the template does not already supply (`ICD_Value`; not `prefix`,
   `PKTable` or the Project dates). A value, or several separated by commas.
   Left blank, it says where the value comes from: "set by multiplier
-  IBDType", or "from the PK: K50.%" (D78); nothing supplying it marks it red.
+  IBDType", "from the PK: K50.%", or, before the PK has one, "taken from the
+  PK's value" (D78, D83). Only the PK, or a table with no PK, is marked red
+  when nothing supplies it.
+- **Project defaults.** A template with no project database or dates gets
+  `PROJECTD93A5E7`, `19900101` and `20260601` in the Builder (D83); a
+  template's own values are kept.
 - **Custom tables** also take a Description and Granularity, and a
   description per column, for `contents.md` (D74).
 - **Custom tables** are built from the data dictionary: name, destination and
@@ -815,13 +820,24 @@ batching recipe sets it. The split records it on each dimension as
 | Dimension | Buckets known | Expanded by | Recorded as |
 | --- | --- | --- | --- |
 | `column_values` with listed values | at plan time | YAML Manager | `batch.dimensions`, one run each, stable `run_id` |
-| `column_values` with `values: all` | at run time | refused (roadmap) | `batch.runtime` |
+| `column_values` with no values (or `values: all`) | at run time | Pullmanager | `batch.runtime` |
 | `row_chunk` | at run time | Pullmanager | `batch.runtime` |
 
 So `chunk: 2000` subdivides each combination rather than joining the product.
 The chunks run inside their run, not as manifest nodes (D53): Pullmanager
 counts the batch's PK rows and pulls `ceil(rows / 2000)` chunks in turn,
 showing progress as `c2of3` on the run.
+
+A batch that lists no values batches by every value the PK has (D82), found
+the same way, inside the run: once the PK is in Projects, the run selects the
+distinct values of the column among its own PK rows (`SELECT DISTINCT` under
+the run's other dimensions), NULL included as a value of its own (`IS NULL`),
+and pulls each in turn, chunked if the batch is, all under the run's own
+`_batch` label. Progress shows as `v3of51 (LA)`, and `values_found` on the
+run. As with chunks, a failure fails the run and a retry redoes all of it.
+The preview notes it. Separate parquets cannot apply to such a batch
+(`separate_values_all`): the tables other than the PK do not carry the column
+to split by.
 
 Batch membership is deterministic. A values bucket is a predicate, and a run's
 buckets combine with `AND`, so the order of the dimensions changes only the
@@ -1329,8 +1345,8 @@ RStudio and VSCodium, and how tables join.
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (147)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (438)
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (149)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (443)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (66)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

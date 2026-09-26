@@ -45,6 +45,9 @@ run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
    - While it runs, Export split, Execute and Artifacts are grey, and
      `python pullmanager.py --running` says it is executing.
    - Each session ends with its warnings, then one column-width table.
+   - A batch with no values (`state`, D82): each run shows `values_found` and
+     `v3of51 (LA)` as it goes, and `SELECT StateOrProvinceAbbreviation,
+     COUNT(*)` on a destination's PK matches the whole PK.
    - `--artifacts IBD_Ancestry` once it finishes: the parquets open with
      `load_parquets.R` and `.py`; `PatientDurableKey` is `integer64` in R
      `arrow` 11 (checked only on 25); `contents.md` reads right.
@@ -167,27 +170,6 @@ first piece. The user
 expects two or three queued at a time, with one `--execute` starting them all
 (today it takes one project, D66).
 
-### Inherited And Optional Variables
-
-A table takes its PK's variables when it does not set them (D78), for every
-variable. The user's question: should a recipe be able to say which of its
-variables are inherited, or optional, rather than the rule applying to all?
-In the Builder today, IndexDiagnosis's `ICD_Value` shows red until the PK has
-a value, then "from the PK: K50.%", and a value typed there overrides it. The
-options:
-
-- **Keep the rule as it is**: the Builder already shows where a value comes
-  from and allows an override. The red box before the PK has one could say
-  "taken from the PK once it has one" instead.
-- **Declare it in the recipe**, for example `inherits: [ICD_Value]` (or
-  `optional_vars:`), so only the listed variables are taken from the PK and
-  every other one is still required on the table itself. Clearer to read in
-  the recipe, and it stops a variable being inherited by accident.
-
-The SQL (`{{sql_condition('dt.Value', ICD_Value)}}`) looks like the table's
-own filter either way; the recipe's `description` could say where the value
-comes from. Undecided.
-
 ### Smaller Open Items
 
 - **Generated-table dependencies.** Cohorts reference other generated temps by
@@ -210,9 +192,6 @@ comes from. Undecided.
 - **Multi-step PK.** A PK built from a prior PK (a patient list, then diagnosis
   events for those patients: `PKTable` built by joining `PKTable2`). The `pk`
   phase is one YAML; ordered PK cohorts inside it need a representation.
-- **`values: all` batching.** Warned at validation, refused when the pull
-  reaches it. Resolving it at run time would change the manifest's run set
-  after planning.
 - **Tests still owed**: duplicate output column names and blank `source`
   expressions in a cohort.
 

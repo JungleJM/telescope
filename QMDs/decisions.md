@@ -1496,3 +1496,43 @@ Multiplier levels keep `column`.
 - The Builder's Draft YAML section is removed; it did nothing a user needed.
   In its place, Exports shows the saved template's pre-YAML, transfer YAML and
   manifest, as the Exports tab does.
+
+### D82. A batch that lists no values batches by every value the PK has
+
+**Context.** `values: all` was warned about and refused when a pull reached
+it: the values are not known until the PK exists, and resolving them then
+would change the manifest's runs after planning. The user wants a batch with
+no values, `state` say, to batch by every state there is.
+
+**Decision.**
+
+- A `column_values` batch with no `values` (or `values: all`) is resolved
+  inside its run, as chunks are (D53), so the manifest's runs do not change:
+  the run selects the column's distinct values among its own PK rows in the
+  Projects copy, NULL included, and pulls each in turn under its own label.
+- A failure fails the run; a retry redoes all its values. Progress and the
+  number found are recorded on the run.
+- Separate parquets on such a batch is refused (`separate_values_all`): the
+  tables other than the PK do not carry the column, so their rows cannot be
+  split by it.
+
+**Consequences.** Every value is one pass through the run's cohorts, so fifty
+states is fifty passes: slower than listing a few, and a failure late in the
+list redoes the early ones.
+
+### D83. Inherited variables stay a rule for all; the Builder defaults the project
+
+**Context.** The roadmap asked whether a recipe should declare which
+variables it inherits (D78). The user kept the rule as it is: the Builder
+already says where a value comes from and lets it be overridden.
+
+**Decision.**
+
+- No declaration. A table that sets no value takes its PK's, for every
+  variable. The Builder no longer marks such a table red before the PK has
+  a value; it says the value will come from the PK. Only the PK, or a table
+  with no PK, is marked.
+- The Builder fills in `PROJECTD93A5E7`, `19900101` and `20260601` where a
+  template has no project database or dates, so a mistyped or missing one is
+  less often the error. makeYaml has no such default: a template written by
+  hand still says what it means.
