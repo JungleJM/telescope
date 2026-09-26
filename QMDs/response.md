@@ -1,0 +1,2 @@
+when I hit 'new blank template' - it should actually make a new blank template. It should show on top, where 'tamplate yaml' is, a _temp.yaml, and name the new one that. Once I give it a Project Folder it should then update teh file name to (project_folder)_temp.yaml
+- in CosmosDB, 'dual' should be the standard, not COSMOS. 

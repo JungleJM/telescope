@@ -5,23 +5,35 @@ run_vars:
   min_date_key: 19900101
   max_date_key: 20260601
 test_options:
-  smallset: false
+  smallset: true
   stop_at_for_pk_table: 10
   random_pk_sample: false
 project_vars:
-  project_folder: Celiac
+  project_folder: AllCohort
 vars:
 
 upload_cohorts:
 
 multipliers:
-
+  - name: Disease
+    stage: during_build
+    levels:
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - "K50.%"
+      - strat: UC
+        vars:
+          ICD_Value:
+            - "K51.%"
+      - strat: AlcoholicCirrhosis
+        vars:
+          ICD_Value:
+            - "K70.3%"
 batching:
-  - chunk: 50000
+
 cohorts:
   - recipe: PatientWithDx
     name: Patients
-    vars:
-      ICD_Value: "K50.%"
   - recipe: IndexDiagnosis
     name: IndexDiagnosis
