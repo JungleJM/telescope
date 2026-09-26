@@ -333,6 +333,14 @@ def project_root() -> Path:
     return script_root().parent
 
 
+def transfer_home() -> Path:
+    """Where `--export-transfer` writes: the repository root, beside
+    makebundle.py, which carries transfer YAMLs from there (`yaml=`). In an
+    extracted bundle, the working folder beside it, never inside it."""
+    root = project_root()
+    return root.parent if (root / ".bundle-manifest.json").is_file() else root
+
+
 def run_folder_name(template_path: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the template's file name without
     `.yaml` and without `_transfer` or `_temp`.
@@ -3034,6 +3042,7 @@ def build_transfer(
     output_path: str | Path | None = None,
     write: bool = False,
     datadictionary_path: str | Path | None = None,
+    output_dir: str | Path | None = None,
 ) -> CompileResult:
     """The template with every recipe written out in full, for the VM (D49).
 
@@ -3085,6 +3094,8 @@ def build_transfer(
     transfer = {"transfer": provenance, **body}
 
     out_path = Path(output_path) if output_path else transfer_output_path(template, template_path)
+    if not output_path and output_dir:
+        out_path = Path(output_dir) / out_path.name
     if write:
         out_path.parent.mkdir(parents=True, exist_ok=True)
     result.analysis["transfer_uploads"] = place_uploads(
@@ -4385,6 +4396,21 @@ class DescriptionFieldTests(MakeYamlTest):
         sex = next(c for c in pk["columns"] if c["name"] == "Sex")
         self.assertEqual(sex["description"], "Sex at registration")
 
+    def test_a_template_can_turn_off_a_recipes_separate_parquets(self):
+        # What the Builder writes when Separate parquets is unticked on a recipe that sets it.
+        recipes = tiny_recipes().replace(
+            "    column: Sex\n    values: [Female, Male]\n",
+            "    column: Sex\n    values: [Female, Male]\n    separate_parquets: true\n",
+        )
+        write_temp_yaml(self.tmp, "recipes.yaml", recipes)
+        for override, expected in (("  - sex\n", True), ("  - sex:\n      separate_parquets: false\n", False)):
+            with self.subTest(override=override):
+                template = write_temp_yaml(self.tmp, "template.yaml", tiny_template("batching:\n" + override))
+                res = plan_split_runs(template, self.tmp / "recipes.yaml")
+                self.assertCompiles(res)
+                runs = res.analysis["split_plan"]["sessions"][0]["runs"]
+                self.assertEqual(runs[0]["batch"]["dimensions"][0].get("separate", False), expected)
+
     def test_each_table_records_its_multiplier_levels(self):
         res = self.compile_template(tiny_template("""
 multipliers:
@@ -4562,6 +4588,26 @@ batching:
         self.assertHasWarning(res, "missing_upload_file")
         self.assertTrue(Path(res.output_path).is_file())
         self.assertEqual(res.analysis["transfer_uploads_missing"], ["data/codes.csv"])
+
+    def test_the_command_writes_it_at_the_repository_root(self):
+        # Where makebundle.py yaml=<project> looks for it.
+        root = self.tmp / "repo"
+        root.mkdir()
+        out = io.StringIO()
+        with mock.patch(f"{__name__}.project_root", return_value=root), contextlib.redirect_stdout(out):
+            code = main(["--template", str(self.template), "--recipes", str(self.recipes),
+                         "--export-transfer"])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertTrue((root / "Test_Run_transfer.yaml").is_file())
+        # Its upload travels with it, at the same path relative to it.
+        self.assertTrue((root / "data" / "codes.csv").is_file())
+
+    def test_in_an_extracted_bundle_it_goes_beside_it_not_inside(self):
+        root = self.tmp / "work" / "pullmanager_runtime"
+        root.mkdir(parents=True)
+        (root / ".bundle-manifest.json").write_text("{}", encoding="utf-8")
+        with mock.patch(f"{__name__}.project_root", return_value=root):
+            self.assertEqual(transfer_home(), self.tmp / "work")
 
     def test_a_missing_upload_is_listed_not_copied_when_written_elsewhere(self):
         (self.tmp / "data" / "codes.csv").unlink()
@@ -5132,6 +5178,8 @@ def main(argv: list[str] | None = None) -> int:
             output_path=args.out,
             write=not args.validate,
             datadictionary_path=args.datadictionary,
+            # At the root, where makebundle.py yaml=<project> finds it.
+            output_dir=transfer_home(),
         )
         print_messages(result)
         if not result.ok:

@@ -53,6 +53,11 @@ runpy.run_path(str(ENTRY), run_name="__main__")
 # bundled is managed and gets updated; a locally modified copy is set aside
 # rather than overwritten.
 POLICY_REPLACE = "replace"
+# A transfer YAML carried with `makebundle.py yaml=...`: verified with the rest,
+# but written beside pullmanager.py, not into the extracted folder, ready to
+# run. A different copy already there is kept as <name>.local.
+ROOT_POLICY = "root"
+ROOT_PREFIX = "root/"
 
 
 class BundleError(Exception):
@@ -235,9 +240,22 @@ def previous_extraction_hashes(target: Path) -> dict[str, str]:
         return {}
 
 
+def root_paths(manifest: dict) -> set[str]:
+    """The published paths of the files that go beside pullmanager.py."""
+    return {
+        entry["path"] for entry in manifest.get("files", [])
+        if isinstance(entry, dict) and entry.get("policy") == ROOT_POLICY
+    }
+
+
 def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
-    """Verify a bundle fully, then swap its contents into `target`."""
+    """Verify a bundle fully, then swap its contents into `target`.
+
+    Files for the working folder (transfer YAMLs) are left to `place_root_files`.
+    """
     sections, manifest = read_bundle(bundle_path)
+    at_root = root_paths(manifest)
+    sections = [section for section in sections if section["path"] not in at_root]
 
     target = target.resolve()
     if target.exists():
@@ -356,6 +374,32 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     return [section["path"] for section in sections]
 
 
+def place_root_files(bundle_path: Path, target: Path) -> list[tuple[Path, bool]]:
+    """Write the bundle's transfer YAMLs beside the extracted folder.
+
+    Returns (path, whether an earlier different copy was kept as .local).
+    """
+    sections, manifest = read_bundle(bundle_path)
+    at_root = root_paths(manifest)
+    folder = Path(target).resolve().parent
+    placed: list[tuple[Path, bool]] = []
+    for section in sections:
+        if section["path"] not in at_root:
+            continue
+        destination = folder / Path(section["path"]).name
+        shipped = section["content"].encode("utf-8")
+        kept = False
+        if destination.is_file() and destination.read_bytes() != shipped:
+            aside = destination.with_name(destination.name + ".local")
+            aside.write_bytes(destination.read_bytes())
+            kept = True
+        destination.write_bytes(shipped)
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != section["sha256"]:
+            raise BundleError(f"Post-write verification failed for {destination}")
+        placed.append((destination, kept))
+    return placed
+
+
 def write_launcher(target: Path) -> Path:
     """Write `pullmanager.py` beside the extracted folder, pointing into it (D63).
 
@@ -377,6 +421,9 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     print(f"\nExtracted {len(written)} files to {target.resolve()}")
     launcher = write_launcher(target)
     print(f"Wrote {launcher}")
+    for path, kept in place_root_files(bundle_path, target):
+        note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
+        print(f"Wrote {path}{note}")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the launcher "
           f"(`python {LAUNCHER_NAME} --tdd` tests the delivery).")
 
@@ -391,8 +438,9 @@ def interactive(bundle_path: Path) -> int:
     target = bundle_path.parent / DEFAULT_TARGET
     print(f"OK  {len(sections)} files verified")
     print(f"content_id: {manifest['content_id']}")
+    beside = [LAUNCHER_NAME] + sorted(Path(path).name for path in root_paths(manifest))
     try:
-        answer = input(f"Extract into {target} and write {LAUNCHER_NAME} beside it? [y/N] ")
+        answer = input(f"Extract into {target} and write {', '.join(beside)} beside it? [y/N] ")
     except EOFError:
         answer = ""
     if answer.strip().lower() not in ("y", "yes"):
@@ -459,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "b8af16ae854453f15ec2e962654e97a8630630cc096ddfd570e55e10db1773bd",
+  "content_id": "3d44f04d0b805e2379e30cf78df0bc9e64b508e7f788cf8a0e5c9f67b7f9a1a8",
   "file_count": 47,
   "files": [
     {
@@ -741,11 +789,11 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "624059d947e33a1762a482d8ee8fd7f7101d249e0d12c21e2928d43c07dea5dc",
-      "size": 214168
+      "sha256": "25e81d639f64f3c7a357c7f6677fb08f9c2317c908b2303b11d4b62b3eae613a",
+      "size": 216840
     }
   ],
-  "prelude_sha256": "d4fd95cd569e014d924c6817fc03bc99aa6a4f333c25241923cd8e35fe7c8dd2"
+  "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
 }'''
 
 
@@ -15514,7 +15562,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 624059d947e33a1762a482d8ee8fd7f7101d249e0d12c21e2928d43c07dea5dc SIZE: 214168 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 25e81d639f64f3c7a357c7f6677fb08f9c2317c908b2303b11d4b62b3eae613a SIZE: 216840 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -15848,6 +15896,14 @@ if __name__ == "__main__":
 #
 # def project_root() -> Path:
 #     return script_root().parent
+#
+#
+# def transfer_home() -> Path:
+#     """Where `--export-transfer` writes: the repository root, beside
+#     makebundle.py, which carries transfer YAMLs from there (`yaml=`). In an
+#     extracted bundle, the working folder beside it, never inside it."""
+#     root = project_root()
+#     return root.parent if (root / ".bundle-manifest.json").is_file() else root
 #
 #
 # def run_folder_name(template_path: str | Path) -> str:
@@ -18551,6 +18607,7 @@ if __name__ == "__main__":
 #     output_path: str | Path | None = None,
 #     write: bool = False,
 #     datadictionary_path: str | Path | None = None,
+#     output_dir: str | Path | None = None,
 # ) -> CompileResult:
 #     """The template with every recipe written out in full, for the VM (D49).
 #
@@ -18602,6 +18659,8 @@ if __name__ == "__main__":
 #     transfer = {"transfer": provenance, **body}
 #
 #     out_path = Path(output_path) if output_path else transfer_output_path(template, template_path)
+#     if not output_path and output_dir:
+#         out_path = Path(output_dir) / out_path.name
 #     if write:
 #         out_path.parent.mkdir(parents=True, exist_ok=True)
 #     result.analysis["transfer_uploads"] = place_uploads(
@@ -19902,6 +19961,21 @@ if __name__ == "__main__":
 #         sex = next(c for c in pk["columns"] if c["name"] == "Sex")
 #         self.assertEqual(sex["description"], "Sex at registration")
 #
+#     def test_a_template_can_turn_off_a_recipes_separate_parquets(self):
+#         # What the Builder writes when Separate parquets is unticked on a recipe that sets it.
+#         recipes = tiny_recipes().replace(
+#             "    column: Sex\n    values: [Female, Male]\n",
+#             "    column: Sex\n    values: [Female, Male]\n    separate_parquets: true\n",
+#         )
+#         write_temp_yaml(self.tmp, "recipes.yaml", recipes)
+#         for override, expected in (("  - sex\n", True), ("  - sex:\n      separate_parquets: false\n", False)):
+#             with self.subTest(override=override):
+#                 template = write_temp_yaml(self.tmp, "template.yaml", tiny_template("batching:\n" + override))
+#                 res = plan_split_runs(template, self.tmp / "recipes.yaml")
+#                 self.assertCompiles(res)
+#                 runs = res.analysis["split_plan"]["sessions"][0]["runs"]
+#                 self.assertEqual(runs[0]["batch"]["dimensions"][0].get("separate", False), expected)
+#
 #     def test_each_table_records_its_multiplier_levels(self):
 #         res = self.compile_template(tiny_template("""
 # multipliers:
@@ -20079,6 +20153,26 @@ if __name__ == "__main__":
 #         self.assertHasWarning(res, "missing_upload_file")
 #         self.assertTrue(Path(res.output_path).is_file())
 #         self.assertEqual(res.analysis["transfer_uploads_missing"], ["data/codes.csv"])
+#
+#     def test_the_command_writes_it_at_the_repository_root(self):
+#         # Where makebundle.py yaml=<project> looks for it.
+#         root = self.tmp / "repo"
+#         root.mkdir()
+#         out = io.StringIO()
+#         with mock.patch(f"{__name__}.project_root", return_value=root), contextlib.redirect_stdout(out):
+#             code = main(["--template", str(self.template), "--recipes", str(self.recipes),
+#                          "--export-transfer"])
+#         self.assertEqual(code, 0, out.getvalue())
+#         self.assertTrue((root / "Test_Run_transfer.yaml").is_file())
+#         # Its upload travels with it, at the same path relative to it.
+#         self.assertTrue((root / "data" / "codes.csv").is_file())
+#
+#     def test_in_an_extracted_bundle_it_goes_beside_it_not_inside(self):
+#         root = self.tmp / "work" / "pullmanager_runtime"
+#         root.mkdir(parents=True)
+#         (root / ".bundle-manifest.json").write_text("{}", encoding="utf-8")
+#         with mock.patch(f"{__name__}.project_root", return_value=root):
+#             self.assertEqual(transfer_home(), self.tmp / "work")
 #
 #     def test_a_missing_upload_is_listed_not_copied_when_written_elsewhere(self):
 #         (self.tmp / "data" / "codes.csv").unlink()
@@ -20649,6 +20743,8 @@ if __name__ == "__main__":
 #             output_path=args.out,
 #             write=not args.validate,
 #             datadictionary_path=args.datadictionary,
+#             # At the root, where makebundle.py yaml=<project> finds it.
+#             output_dir=transfer_home(),
 #         )
 #         print_messages(result)
 #         if not result.ok:

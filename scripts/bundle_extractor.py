@@ -64,6 +64,11 @@ runpy.run_path(str(ENTRY), run_name="__main__")
 # bundled is managed and gets updated; a locally modified copy is set aside
 # rather than overwritten.
 POLICY_REPLACE = "replace"
+# A transfer YAML carried with `makebundle.py yaml=...`: verified with the rest,
+# but written beside pullmanager.py, not into the extracted folder, ready to
+# run. A different copy already there is kept as <name>.local.
+ROOT_POLICY = "root"
+ROOT_PREFIX = "root/"
 
 
 class BundleError(Exception):
@@ -246,9 +251,22 @@ def previous_extraction_hashes(target: Path) -> dict[str, str]:
         return {}
 
 
+def root_paths(manifest: dict) -> set[str]:
+    """The published paths of the files that go beside pullmanager.py."""
+    return {
+        entry["path"] for entry in manifest.get("files", [])
+        if isinstance(entry, dict) and entry.get("policy") == ROOT_POLICY
+    }
+
+
 def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
-    """Verify a bundle fully, then swap its contents into `target`."""
+    """Verify a bundle fully, then swap its contents into `target`.
+
+    Files for the working folder (transfer YAMLs) are left to `place_root_files`.
+    """
     sections, manifest = read_bundle(bundle_path)
+    at_root = root_paths(manifest)
+    sections = [section for section in sections if section["path"] not in at_root]
 
     target = target.resolve()
     if target.exists():
@@ -367,6 +385,32 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     return [section["path"] for section in sections]
 
 
+def place_root_files(bundle_path: Path, target: Path) -> list[tuple[Path, bool]]:
+    """Write the bundle's transfer YAMLs beside the extracted folder.
+
+    Returns (path, whether an earlier different copy was kept as .local).
+    """
+    sections, manifest = read_bundle(bundle_path)
+    at_root = root_paths(manifest)
+    folder = Path(target).resolve().parent
+    placed: list[tuple[Path, bool]] = []
+    for section in sections:
+        if section["path"] not in at_root:
+            continue
+        destination = folder / Path(section["path"]).name
+        shipped = section["content"].encode("utf-8")
+        kept = False
+        if destination.is_file() and destination.read_bytes() != shipped:
+            aside = destination.with_name(destination.name + ".local")
+            aside.write_bytes(destination.read_bytes())
+            kept = True
+        destination.write_bytes(shipped)
+        if hashlib.sha256(destination.read_bytes()).hexdigest() != section["sha256"]:
+            raise BundleError(f"Post-write verification failed for {destination}")
+        placed.append((destination, kept))
+    return placed
+
+
 def write_launcher(target: Path) -> Path:
     """Write `pullmanager.py` beside the extracted folder, pointing into it (D63).
 
@@ -388,6 +432,9 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     print(f"\nExtracted {len(written)} files to {target.resolve()}")
     launcher = write_launcher(target)
     print(f"Wrote {launcher}")
+    for path, kept in place_root_files(bundle_path, target):
+        note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
+        print(f"Wrote {path}{note}")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the launcher "
           f"(`python {LAUNCHER_NAME} --tdd` tests the delivery).")
 
@@ -402,8 +449,9 @@ def interactive(bundle_path: Path) -> int:
     target = bundle_path.parent / DEFAULT_TARGET
     print(f"OK  {len(sections)} files verified")
     print(f"content_id: {manifest['content_id']}")
+    beside = [LAUNCHER_NAME] + sorted(Path(path).name for path in root_paths(manifest))
     try:
-        answer = input(f"Extract into {target} and write {LAUNCHER_NAME} beside it? [y/N] ")
+        answer = input(f"Extract into {target} and write {', '.join(beside)} beside it? [y/N] ")
     except EOFError:
         answer = ""
     if answer.strip().lower() not in ("y", "yes"):

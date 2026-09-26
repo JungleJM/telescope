@@ -5,6 +5,7 @@ The VM cannot pull from git, so development happens as normal modules under
 `scripts/pullmanager_src/` and ships as one generated file:
 
     python3 scripts/bundle_pullmanager.py            # build dist/bundle.py
+    python3 makebundle.py yaml=IBD_Ancestry,Celiac   # and carry those transfer YAMLs
     python3 scripts/bundle_pullmanager.py --tdd      # run bundle/extractor tests
 
 On the VM:
@@ -21,12 +22,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bundle_extractor import (  # noqa: E402
+    ROOT_POLICY,
+    ROOT_PREFIX,
     BundleError,
     compute_content_id,
     read_bundle,
@@ -61,6 +65,11 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to
 # configure; shipping an example would only suggest otherwise.
+
+# Transfer YAMLs a bundle can carry (`yaml=`), from the repository root,
+# where `makeYaml --export-transfer` writes them. Each is extracted beside
+# pullmanager.py on the VM, ready to run.
+TRANSFER_SUFFIX = "_transfer.yaml"
 
 BUNDLE_FORMAT_VERSION = 1
 FUTURE_IMPORT = "from __future__ import annotations"
@@ -107,7 +116,55 @@ def encode_payload_lines(text: str) -> list[str]:
     return ["# " + line if line else "#" for line in text.split("\n")]
 
 
-def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str, str]]:
+def transfer_names(tokens: list[str]) -> list[str]:
+    """`yaml=IBD_Ancestry,Celiac.yaml` as the names it lists.
+
+    The shell splits `yaml=IBD_Ancestry, Celiac.yaml` at the space, so the
+    words after `yaml=` belong to it too, until the next option.
+    """
+    names: list[str] = []
+    collecting = False
+    for token in tokens:
+        if token.startswith("yaml=") or token.startswith("--yaml="):
+            collecting = True
+            token = token.split("=", 1)[1]
+        elif token.startswith("-"):
+            collecting = False
+            continue
+        elif not collecting:
+            raise BundleError(f"Unexpected argument {token!r}. Transfer YAMLs are given as yaml=NAME,NAME.")
+        names += [part.strip() for part in token.split(",") if part.strip()]
+    return names
+
+
+def find_transfer(name: str, folder: Path = REPO_ROOT) -> Path:
+    """`IBD_Ancestry`, `IBD_Ancestry.yaml` or the full file name, as
+    `<folder>/IBD_Ancestry_transfer.yaml`. Only transfer YAMLs are looked for."""
+    stem = name.strip()
+    for ending in (".yaml", ".yml"):
+        if stem.lower().endswith(ending):
+            stem = stem[: -len(ending)]
+    if stem.lower().endswith("_transfer"):
+        stem = stem[: -len("_transfer")]
+    wanted = f"{stem}{TRANSFER_SUFFIX}"
+    # Listed rather than looked up, so the file's own spelling comes back.
+    available = sorted(folder.glob(f"*{TRANSFER_SUFFIX}"))
+    for path in available:
+        if path.name == wanted:
+            return path
+    for path in available:
+        if path.name.lower() == wanted.lower():
+            return path
+    there = ", ".join(path.name for path in available) or "none"
+    raise BundleError(
+        f"No {wanted} in {folder}. Transfer YAMLs there: {there}. Export it first: "
+        f"python3 scripts/makeYaml.py --template <template> --export-transfer"
+    )
+
+
+def bundled_files(
+    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+) -> list[tuple[Path, str, str]]:
     """Every file the bundle carries, as (source, published path, policy)."""
     files = source_files(root)
     if not files:
@@ -117,6 +174,8 @@ def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str, str]]:
         if not source.is_file():
             raise BundleError(f"Companion file missing: {source}")
         triples.append((source, published, policy))
+    for source in transfers or []:
+        triples.append((source, f"{ROOT_PREFIX}{source.name}", ROOT_POLICY))
     seen: set[str] = set()
     for _, published, _policy in triples:
         if published in seen:
@@ -125,10 +184,12 @@ def bundled_files(root: Path = SOURCE_ROOT) -> list[tuple[Path, str, str]]:
     return sorted(triples, key=lambda item: item[1])
 
 
-def build_sections(root: Path = SOURCE_ROOT) -> tuple[list[dict], list[str]]:
+def build_sections(
+    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+) -> tuple[list[dict], list[str]]:
     entries: list[dict] = []
     lines: list[str] = []
-    for path, published, policy in bundled_files(root):
+    for path, published, policy in bundled_files(root, transfers):
         rel = safe_relpath(published)
         text = read_source(path)
         raw = text.encode("utf-8")
@@ -151,8 +212,8 @@ def extractor_prelude() -> str:
     return text[marker:]
 
 
-def render_bundle(root: Path = SOURCE_ROOT) -> str:
-    entries, payload_lines = build_sections(root)
+def render_bundle(root: Path = SOURCE_ROOT, transfers: list[Path] | None = None) -> str:
+    entries, payload_lines = build_sections(root, transfers)
     prelude = BUNDLE_HEADER + extractor_prelude().rstrip("\n") + "\n\n"
     prelude_sha256 = hashlib.sha256(prelude.encode("utf-8")).hexdigest()
     manifest = {
@@ -177,12 +238,20 @@ def render_bundle(root: Path = SOURCE_ROOT) -> str:
     return "".join(parts)
 
 
-def build(output: Path = DEFAULT_OUTPUT, root: Path = SOURCE_ROOT) -> tuple[Path, dict]:
-    text = render_bundle(root)
+def build(
+    output: Path = DEFAULT_OUTPUT, root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+) -> tuple[Path, dict]:
+    text = render_bundle(root, transfers)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(text.encode("utf-8"))
     _, manifest = read_bundle(output)
     return output, manifest
+
+
+def upload_locations(transfer: Path) -> list[str]:
+    """The `file_loc` of each upload a transfer YAML reads, which travel separately."""
+    text = transfer.read_text(encoding="utf-8")
+    return [value.strip().strip("'\"") for value in re.findall(r"^\s*file_loc:\s*(.+?)\s*$", text, re.M)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,6 +262,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(DEFAULT_OUTPUT), help="Bundle output path.")
     parser.add_argument("--src", default=str(SOURCE_ROOT), help="Source tree to bundle.")
     parser.add_argument("--verify", metavar="BUNDLE", help="Verify an existing bundle and exit.")
+    parser.add_argument(
+        "yaml",
+        nargs="*",
+        metavar="yaml=NAME,NAME",
+        help="Transfer YAMLs to carry, by project name: yaml=IBD_Ancestry,Celiac finds "
+             "IBD_Ancestry_transfer.yaml and Celiac_transfer.yaml at the repository "
+             "root. Each is extracted beside pullmanager.py on the VM.",
+    )
     parser.add_argument(
         "--tdd",
         nargs="?",
@@ -214,10 +291,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content_id: {manifest['content_id']}")
             return 0
 
-        output, manifest = build(Path(args.out), Path(args.src))
+        transfers = [find_transfer(name) for name in transfer_names(args.yaml)]
+        output, manifest = build(Path(args.out), Path(args.src), transfers)
         size_kb = output.stat().st_size / 1024
         print(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")
         print(f"content_id: {manifest['content_id']}")
+        for transfer in transfers:
+            print(f"Carries {transfer.name}: extracted beside pullmanager.py on the VM.")
+            for upload in upload_locations(transfer):
+                print(f"  It reads {upload}: copy that to the VM at the same path beside it.")
         print(f"Copy {output.name} to the VM and run `python {output.name}` there.")
     except BundleError as exc:
         print(f"BUNDLE ERROR: {exc}", file=sys.stderr)

@@ -776,8 +776,9 @@ def exports_panel(template_path: Path, recipes_path: Path) -> str:
       </div>
       <section class="block">
         <h2>Handoff</h2>
-        <p>Download the transfer YAML and copy it to the VM, beside the extracted <code>telescope</code> folder, with any upload files it reads, in the same places relative to it. Recipes stay here; the transfer YAML carries them written out. On the VM, open the launcher and choose it as the Transfer YAML, then Validate, Export split and Dry run.</p>
-        <pre>python telescope/pullmanager.py --gui</pre>
+        <p>Export the transfer YAML to the repository root, then carry it in the bundle: on the VM, <code>python bundle.py</code> puts it beside <code>pullmanager.py</code>, ready to run. Upload files it reads travel separately, at the same paths relative to it. Recipes stay here; the transfer YAML carries them written out. On the VM, <code>python pullmanager.py</code> opens the launcher: choose the transfer YAML, then Validate, Export split, Preview SQL and Execute.</p>
+        <pre>python3 scripts/makeYaml.py --template YAMLs/&lt;project&gt;_temp.yaml --export-transfer
+python3 makebundle.py yaml=&lt;project&gt;</pre>
       </section>
     """
 
@@ -2168,45 +2169,56 @@ async function saveCohortAsRecipe(index) {
   }
 }
 
+function batchingPreset(name) {
+  return batchingRecipes.find(recipe => recipe.name === name) || {};
+}
+
 function batchingFlags(source) {
-  // Unset means the defaults: a listed value set catches the rest, and
-  // batches stay in one parquet per table (D72).
+  // As the split reads them (D72): unset means no catch-all batch, and one
+  // parquet per table.
   return {
-    includeOther: source?.include_other === undefined ? true : source.include_other !== false,
+    includeOther: source?.include_other === true,
     separate: source?.separate_parquets === true
   };
 }
 
 function describeBatching(item) {
-  const plain = { includeOther: true, separate: false };
-  if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [], ...plain };
-  if (typeof item === 'string') return { name: item, chunk: '', values: [], ...plain };
+  // A recipe's settings apply unless the row overrides them, so the toggles
+  // show what the split will do, not only what the row writes.
+  const fromPreset = name => batchingFlags(batchingPreset(name));
+  if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [], ...batchingFlags({}) };
+  if (typeof item === 'string') return { name: item, chunk: '', values: [], ...fromPreset(item) };
   if (item && typeof item === 'object') {
-    if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [], ...plain };
+    if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [], ...batchingFlags({}) };
+    // Written out in full, a batch is its own definition: no recipe applies.
     if (item.name) return { name: item.name, chunk: String(item.rows_per_batch || ''), values: Array.isArray(item.values) ? item.values : [], ...batchingFlags(item) };
     const keys = Object.keys(item);
     if (keys.length === 1) {
       const name = keys[0];
       const value = item[name];
-      if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [], ...batchingFlags(value) };
-      return { name, chunk: '', values: value == null ? [] : [String(value)], ...plain };
+      if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [], ...batchingFlags({ ...batchingPreset(name), ...value }) };
+      return { name, chunk: '', values: value == null ? [] : [String(value)], ...fromPreset(name) };
     }
   }
-  return { name: '', chunk: '', values: [], ...plain };
+  return { name: '', chunk: '', values: [], ...batchingFlags({}) };
 }
 
-function batchingFromFields(name, value, flags = { includeOther: true, separate: false }) {
+function batchingFromFields(name, value, flags = null) {
   if (name === 'chunk') {
     const parsed = parseInt(value || '0', 10);
     return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
   }
+  const preset = batchingPreset(name);
+  // A new row: listed values catch the rest, and the recipe says whether batches separate.
+  flags = flags || { includeOther: true, separate: preset.separate_parquets === true };
   const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
   const options = {};
   if (values.length) {
     options.values = values;
-    options.include_other = flags.includeOther !== false;
+    options.include_other = flags.includeOther === true;
   }
-  if (flags.separate) options.separate_parquets = true;
+  // Written only where it differs from the recipe, so `false` can override a recipe's `true`.
+  if (flags.separate !== (preset.separate_parquets === true)) options.separate_parquets = flags.separate;
   return Object.keys(options).length ? { [name]: options } : name;
 }
 
@@ -2410,7 +2422,7 @@ document.addEventListener('input', event => {
   if (target.dataset.batchingField) {
     const parsed = describeBatching(draftTemplate.batching[index]);
     if (target.dataset.batchingField === 'name') {
-      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values, parsed);
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
       renderBatchingRows();
     } else {
       draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value, parsed);
@@ -2476,7 +2488,7 @@ document.addEventListener('change', event => {
   if (target.dataset.batchingField) {
     const parsed = describeBatching(draftTemplate.batching[index]);
     if (target.dataset.batchingField === 'name') {
-      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values, parsed);
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
       renderBatchingRows();
     } else {
       draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value, parsed);

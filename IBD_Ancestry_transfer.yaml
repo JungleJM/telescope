@@ -4,6 +4,7 @@ transfer:
   recipes_used:
   - OtherDiagnoses
   - PatientWithDx
+  - sex
 cosmos_vars:
   project_db: PROJECTD93A5E7
   cosmos_db: Dual
@@ -16,6 +17,7 @@ test_options:
   random_pk_sample: true
 project_vars:
   project_folder: IBD Ancestry
+vars:
 upload_cohorts:
 - name: IBD_Meds
   dest_table: IBD_Meds
@@ -55,10 +57,9 @@ batching:
   applies_to: PKTable
   column: Sex
   values:
-  - Male
   - Female
-  separate_parquets: false
-  include_other: true
+  - Male
+  separate_parquets: true
 cohorts:
 - name: Patients
   description: First DiagnosisEvent of disease X for patient, with patient info (sex,

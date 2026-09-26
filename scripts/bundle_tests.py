@@ -643,6 +643,114 @@ class EndToEndTests(BundleTestCase):
         self.assertIn("MS-Male", proc.stdout)
 
 
+class TransferYamlTests(unittest.TestCase):
+    """makebundle.py yaml=...: transfer YAMLs travel in the bundle and land
+    beside pullmanager.py on the VM, ready to run."""
+
+    TRANSFER = "transfer:\n  from_template: IBD_Ancestry_temp.yaml\nproject_folder: IBD Ancestry\n" \
+               "upload_cohorts:\n- name: Meds\n  file_loc: data/Meds/ibd/IBD_Meds.parquet\n"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        self.ibd = self.repo / "IBD_Ancestry_transfer.yaml"
+        self.ibd.write_text(self.TRANSFER, encoding="utf-8")
+        (self.repo / "Celiac_transfer.yaml").write_text("project_folder: Celiac\n", encoding="utf-8")
+        self.vm = self.tmp / "vm"
+        self.vm.mkdir()
+        self.bundle = self.vm / "bundle.py"
+
+    def build_with(self, *names):
+        from bundle_pullmanager import find_transfer
+
+        return build(self.bundle, SOURCE_ROOT, [find_transfer(n, self.repo) for n in names])[1]
+
+    def unpack_quietly(self):
+        import contextlib
+        import io
+
+        from bundle_extractor import unpack
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            unpack(self.bundle, self.vm / "pullmanager_runtime", quiet=True)
+        return out.getvalue()
+
+    def test_each_named_transfer_lands_beside_pullmanager_py(self):
+        self.build_with("IBD_Ancestry", "Celiac.yaml")
+        out = self.unpack_quietly()
+        self.assertEqual((self.vm / "IBD_Ancestry_transfer.yaml").read_bytes(), self.ibd.read_bytes())
+        self.assertTrue((self.vm / "Celiac_transfer.yaml").is_file())
+        self.assertTrue((self.vm / "pullmanager.py").is_file())
+        # Not inside the extracted folder, which every update replaces.
+        self.assertEqual(list((self.vm / "pullmanager_runtime").rglob("*_transfer.yaml")), [])
+        self.assertIn("IBD_Ancestry_transfer.yaml", out)
+
+    def test_a_different_copy_already_there_is_kept_aside(self):
+        # Edited on the VM, say: not simply destroyed.
+        (self.vm / "IBD_Ancestry_transfer.yaml").write_text("edited on the VM\n", encoding="utf-8")
+        self.build_with("IBD_Ancestry")
+        out = self.unpack_quietly()
+        self.assertEqual((self.vm / "IBD_Ancestry_transfer.yaml.local").read_text(encoding="utf-8"),
+                         "edited on the VM\n")
+        self.assertEqual((self.vm / "IBD_Ancestry_transfer.yaml").read_bytes(), self.ibd.read_bytes())
+        self.assertIn("kept as IBD_Ancestry_transfer.yaml.local", out)
+
+    def test_the_same_copy_is_not_set_aside(self):
+        self.build_with("IBD_Ancestry")
+        self.unpack_quietly()
+        self.unpack_quietly()
+        self.assertFalse((self.vm / "IBD_Ancestry_transfer.yaml.local").exists())
+
+    def test_it_is_verified_like_every_other_file(self):
+        self.build_with("IBD_Ancestry")
+        text = self.bundle.read_text(encoding="utf-8").replace("from_template: IBD", "from_template: XBD")
+        self.bundle.write_text(text, encoding="utf-8")
+        with self.assertRaises(BundleError):
+            self.unpack_quietly()
+        self.assertFalse((self.vm / "IBD_Ancestry_transfer.yaml").exists())
+
+    def test_the_content_id_says_which_transfers_it_carries(self):
+        plain = build(self.tmp / "plain.py", SOURCE_ROOT)[1]["content_id"]
+        self.assertNotEqual(self.build_with("IBD_Ancestry")["content_id"], plain)
+
+    def test_names_are_read_however_they_are_typed(self):
+        from bundle_pullmanager import find_transfer, transfer_names
+
+        # The shell splits "yaml=IBD_Ancestry, Celiac.yaml" at the space.
+        self.assertEqual(transfer_names(["yaml=IBD_Ancestry,", "Celiac.yaml"]), ["IBD_Ancestry", "Celiac.yaml"])
+        self.assertEqual(transfer_names(["yaml=IBD_Ancestry,Celiac"]), ["IBD_Ancestry", "Celiac"])
+        for name in ("IBD_Ancestry", "IBD_Ancestry.yaml", "IBD_Ancestry_transfer.yaml", "ibd_ancestry"):
+            with self.subTest(name=name):
+                self.assertEqual(find_transfer(name, self.repo).name, "IBD_Ancestry_transfer.yaml")
+
+    def test_a_missing_transfer_lists_the_ones_there_are(self):
+        from bundle_pullmanager import find_transfer
+
+        with self.assertRaises(BundleError) as caught:
+            find_transfer("Crohns", self.repo)
+        self.assertIn("No Crohns_transfer.yaml", str(caught.exception))
+        self.assertIn("Celiac_transfer.yaml, IBD_Ancestry_transfer.yaml", str(caught.exception))
+
+    def test_makebundle_takes_yaml_equals(self):
+        out = self.tmp / "out.py"
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out), "yaml=Nope"],
+            capture_output=True, text=True, cwd=self.tmp,
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("No Nope_transfer.yaml", proc.stderr)
+        self.assertFalse(out.exists())
+
+    def test_it_says_which_upload_files_to_carry(self):
+        from bundle_pullmanager import upload_locations
+
+        self.assertEqual(upload_locations(self.ibd), ["data/Meds/ibd/IBD_Meds.parquet"])
+
+
 def run(group: str | None = None, verbosity: int = 2) -> int:
     loader = unittest.TestLoader()
     module = sys.modules[__name__]
