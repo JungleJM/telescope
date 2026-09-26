@@ -50,7 +50,6 @@ batching:
       values:
         - Female
         - Male
-      include_other: true
 cohorts:
   - recipe: PatientWithDx
     name: Patients

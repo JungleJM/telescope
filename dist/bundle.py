@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "6ea9723346998bf72ffe9db38bd338831dd2e10c933e80d93a3ada0b5c539fe2",
+  "content_id": "8f0062922af2e20dea97be89af4e27acdf79214945d378c03d50314d27bd001b",
   "file_count": 47,
   "files": [
     {
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "4193818786beaa138c09b272543e58519ad0589e80a60a08df8fe05649bef4e2",
-      "size": 219819
+      "sha256": "5e0831b2064c85896aabecdc2dc05ba1948ef133a1ae11361f4a320b34fbbc2d",
+      "size": 220869
     }
   ],
   "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
@@ -15562,7 +15562,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 4193818786beaa138c09b272543e58519ad0589e80a60a08df8fe05649bef4e2 SIZE: 219819 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 5e0831b2064c85896aabecdc2dc05ba1948ef133a1ae11361f4a320b34fbbc2d SIZE: 220869 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -17227,6 +17227,18 @@ if __name__ == "__main__":
 #                 fix=BATCHING_FORMS + known,
 #             )
 #             continue
+#         if "include_other" in entry:
+#             # Retired: turned off, it dropped the unlisted rows from the pull
+#             # entirely, which read as lumping them together. Unlisted values
+#             # now always get a batch of their own.
+#             entry.pop("include_other")
+#             result.warn(
+#                 "retired_option",
+#                 f"`include_other` does nothing: values not listed in batching "
+#                 f"`{entry.get('name')}` always get a batch of their own, so no row is dropped.",
+#                 f"{where}.include_other",
+#                 fix="Remove `include_other` from the template (or its batching recipe).",
+#             )
 #         entry["_source"] = where
 #         normalized.append(entry)
 #     return normalized
@@ -17525,15 +17537,15 @@ if __name__ == "__main__":
 #                 f"Batching `{item.get('name')}` uses `values: all`, which is not supported "
 #                 "yet: the pull stops when it reaches this batch.",
 #                 f"{where}.values",
-#                 fix="List the values: `values: [LA, MS, ...]`, with `include_other: true` "
-#                 "to catch the rest.",
+#                 fix="List the values: `values: [LA, MS, ...]`. Rows with any other value "
+#                 "get a batch of their own.",
 #             )
 #         elif not isinstance(values, list) or not values:
 #             result.error(
 #                 "batching_missing_values",
 #                 f"Batching `{item.get('name')}` has no `values` to split `{col}` by.",
 #                 f"{where}.values",
-#                 fix="Add `values: [<value>, ...]`, with `include_other: true` to catch the rest.",
+#                 fix="Add `values: [<value>, ...]`. Rows with any other value get a batch of their own.",
 #             )
 #
 #
@@ -18043,10 +18055,9 @@ if __name__ == "__main__":
 #     if not isinstance(values, list) or not values:
 #         return None
 #     buckets = [{"value": value, "is_other": False} for value in values]
-#     # Unless turned off, rows whose value is not listed get a batch of their
-#     # own, so none is dropped from the pull without being asked for.
-#     if truthy(dim.get("include_other", True)):
-#         buckets.append({"value": None, "is_other": True})
+#     # Rows whose value is not listed always get a batch of their own, so the
+#     # batches together are the whole PK: batching never drops a row.
+#     buckets.append({"value": None, "is_other": True})
 #     return buckets
 #
 #
@@ -18717,7 +18728,6 @@ if __name__ == "__main__":
 #     applies_to: PKTable
 #     column: Sex
 #     values: [Female, Male]
-#     include_other: false
 #   - name: chunk
 #     kind: row_chunk
 #     applies_to: PKTable
@@ -19165,16 +19175,24 @@ if __name__ == "__main__":
 #         self.assertIn("batching", first)
 #         self.assertEqual(len(first["batching"]), 2)
 #
-#     def test_include_other_is_preserved_by_normalization(self):
+#     def test_include_other_is_retired(self):
+#         # Turned off, it dropped the unlisted rows from the pull, which read as
+#         # lumping them together: it warns, and the rows are batched anyway.
+#         result = CompileResult()
 #         norm = normalize_batching(
-#             [{"sex": {"values": ["Female"], "include_other": True}}],
+#             [{"sex": {"values": ["Female"], "include_other": False}}],
 #             load_yaml_from_text(tiny_recipes()),
-#             CompileResult(),
+#             result,
 #         )
-#         self.assertEqual(
-#             {k: norm[0].get(k) for k in ("name", "values", "include_other", "column")},
-#             {"name": "sex", "values": ["Female"], "include_other": True, "column": "Sex"},
-#         )
+#         self.assertNotIn("include_other", norm[0])
+#         self.assertHasWarning(result, "retired_option")
+#         res, runs = self.runs_for("""
+# batching:
+#   - sex:
+#       values: [Female]
+#       include_other: false
+# """)
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-sex-other"])
 #
 #     def test_dimensions_cross_multiply(self):
 #         # state[LA, MS] x sex[Female, Male] is four disjoint slices, not two axes.
@@ -19182,17 +19200,18 @@ if __name__ == "__main__":
 # batching:
 #   - state:
 #       values: [LA, MS]
-#       include_other: false
 #   - sex
 # """)
 #         self.assertCompiles(res)
-#         self.assertEqual(
-#             [run["batch"]["name"] for run in runs],
-#             ["b1of4-LA-Female", "b2of4-LA-Male", "b3of4-MS-Female", "b4of4-MS-Male"],
-#         )
+#         # Each dimension's unlisted values are a batch too, so it is 3 x 3.
+#         self.assertEqual([run["batch"]["name"] for run in runs], [
+#             "b1of9-LA-Female", "b2of9-LA-Male", "b3of9-LA-sex-other",
+#             "b4of9-MS-Female", "b5of9-MS-Male", "b6of9-MS-sex-other",
+#             "b7of9-state-other-Female", "b8of9-state-other-Male", "b9of9-state-other-sex-other",
+#         ])
 #
-#     def test_values_not_listed_get_a_batch_unless_turned_off(self):
-#         # Unset, include_other is on: no row is dropped without being asked for.
+#     def test_values_not_listed_always_get_a_batch(self):
+#         # Batching never drops a row: the batches together are the whole PK.
 #         res, runs = self.runs_for("""
 # batching:
 #   - state:
@@ -19211,10 +19230,9 @@ if __name__ == "__main__":
 #     kind: column_values
 #     column: Sex
 #     values: ["A B", "A-B"]
-#     include_other: false
 # """)
 #         self.assertCompiles(res)
-#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-A-B", "b2of2-A-B"])
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of3-A-B", "b2of3-A-B", "b3of3-code-other"])
 #
 #     def test_each_run_records_its_resolved_dimensions(self):
 #         _, runs = self.runs_for("""
@@ -19236,12 +19254,11 @@ if __name__ == "__main__":
 #             ],
 #         )
 #
-#     def test_include_other_contributes_a_bucket_to_the_product(self):
+#     def test_the_unlisted_values_are_a_bucket_of_the_product(self):
 #         _, runs = self.runs_for("""
 # batching:
 #   - sex:
 #       values: [Female]
-#       include_other: true
 # """)
 #         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-sex-other"])
 #         other = runs[1]["batch"]["dimensions"][0]
@@ -19270,7 +19287,7 @@ if __name__ == "__main__":
 #   - state
 #   - chunk: 2000
 # """)
-#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of2-Female", "b2of2-Male"])
+#         self.assertEqual([run["batch"]["name"] for run in runs], ["b1of3-Female", "b2of3-Male", "b3of3-sex-other"])
 #         self.assertEqual([r["name"] for r in runs[0]["batch"]["runtime"]], ["state", "chunk"])
 #
 #     def test_no_batching_gives_one_unbatched_run(self):
@@ -19379,7 +19396,7 @@ if __name__ == "__main__":
 #                 sid = session["session_id"]
 #                 self.assertEqual(
 #                     [r["run_id"] for r in session["runs"]],
-#                     [f"{sid}__b1of2-Female", f"{sid}__b2of2-Male"],
+#                     [f"{sid}__b1of3-Female", f"{sid}__b2of3-Male", f"{sid}__b3of3-sex-other"],
 #                 )
 #                 first = session["runs"][0]["batch"]
 #                 self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
@@ -19979,7 +19996,7 @@ if __name__ == "__main__":
 #         res, out = self.split("batching:\n  - sex\n  - chunk: 1000\n")
 #         self.assertCompiles(res)
 #         runs = load_yaml(out / "pullmanifest.yaml")["sessions"][0]["runs"]
-#         self.assertEqual([r["batch"]["name"] for r in runs], ["b1of2-Female", "b2of2-Male"])
+#         self.assertEqual([r["batch"]["name"] for r in runs], ["b1of3-Female", "b2of3-Male", "b3of3-sex-other"])
 #         self.assertEqual([d["name"] for d in runs[0]["batch"]["runtime"]], ["chunk"])
 #
 #     def test_a_pk_file_not_here_yet_still_makes_a_transfer(self):
@@ -20098,7 +20115,6 @@ if __name__ == "__main__":
 #   - sex
 #   - state:
 #       values: [LA, MS]
-#       include_other: true
 # """
 #
 #     def setUp(self):
@@ -20159,7 +20175,7 @@ if __name__ == "__main__":
 #         self.assertEqual(recipe_references(transfer), [])
 #         self.assertEqual(transfer["batching"][0]["column"], "Sex")
 #         self.assertEqual(transfer["batching"][1]["values"], ["LA", "MS"])
-#         self.assertTrue(transfer["batching"][1]["include_other"])
+#         self.assertNotIn("include_other", transfer["batching"][1])
 #
 #     def test_applies_neither_multipliers_nor_batching(self):
 #         transfer = load_yaml(self.export().output_path)

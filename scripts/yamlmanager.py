@@ -150,8 +150,8 @@ def run_summary(result: Any) -> str:
             continue
         values = item.get("values")
         shown = "/".join(str(v) for v in values) if isinstance(values, list) else str(values)
-        if item.get("include_other"):
-            shown += "/other"
+        if isinstance(values, list):
+            shown += "/other"  # unlisted values always get a batch of their own
         batching.append(f"{item.get('name')}: {shown}")
     return (
         '<div class="block run-summary">'
@@ -1247,7 +1247,6 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .editor-row.cohort { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto auto auto; }
 .cohort-vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: -2px 0 10px 18px; }
 .cohort-vars label.missing input { border-color: #cf222e; }
-.batch-flags .sub-flag { margin-left: 18px; }
 .editor-row.upload { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto auto; }
 .editor-row.upload .key-columns { grid-column: 1 / span 2; }
 .multiplier { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
@@ -1661,12 +1660,11 @@ function renderBatchingRows() {
         <label>${isChunk ? 'Rows Per Batch' : 'Values'}
           ${isChunk
             ? `<input data-batching-field="chunk" data-index="${index}" value="${escapeAttr(parsed.chunk || '')}" placeholder="2000">`
-            : `<div class="tag-list">${tags || '<span class="tag-note">All values. Explicit picks will also create an all-other batch.</span>'}</div>
+            : `<div class="tag-list">${tags || '<span class="tag-note">All values. Listing some also makes a batch of every other value, so no row is dropped.</span>'}</div>
                <input data-batching-add-value="${index}" value="" placeholder="type value and press Enter">`}
         </label>
         ${isChunk ? '<span></span>' : `<span class="batch-flags">
           <label class="checkbox-label" title="Artifacts writes one parquet per value instead of one per table. Off unless a pull needs it."><input type="checkbox" data-batching-flag="separate_parquets" data-index="${index}" ${parsed.separate ? 'checked' : ''}> Separate parquets</label>
-          <label class="checkbox-label sub-flag" title="Rows whose value is not listed get a batch of their own. Turned off, those rows are not pulled at all."><input type="checkbox" data-batching-flag="include_other" data-index="${index}" ${parsed.includeOther ? 'checked' : ''} ${parsed.separate ? '' : 'disabled'}> Include others</label>
         </span>`}
         <button class="danger" data-remove-batching="${index}">Remove</button>
       </div>
@@ -2228,13 +2226,9 @@ function batchingPreset(name) {
 }
 
 function batchingFlags(source) {
-  // As the split reads them: batches stay in one parquet per table unless
-  // separate_parquets is on, and values not listed get a batch of their own
-  // unless include_other is turned off.
-  return {
-    includeOther: source?.include_other !== false,
-    separate: source?.separate_parquets === true
-  };
+  // As the split reads it: batches stay in one parquet per table unless
+  // separate_parquets is on.
+  return { separate: source?.separate_parquets === true };
 }
 
 function describeBatching(item) {
@@ -2269,10 +2263,9 @@ function batchingFromFields(name, value, flags = null) {
   const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
   const options = {};
   if (values.length) options.values = values;
-  // Each flag is written only where it differs from the recipe (or the
-  // default), so a row can turn a recipe's setting off.
+  // Written only where it differs from the recipe (or the default), so a row
+  // can turn a recipe's setting off.
   if (flags.separate !== (preset.separate_parquets === true)) options.separate_parquets = flags.separate;
-  if (flags.includeOther !== (preset.include_other !== false)) options.include_other = flags.includeOther;
   return Object.keys(options).length ? { [name]: options } : name;
 }
 
@@ -2680,13 +2673,11 @@ document.addEventListener('change', event => {
   if (!target.dataset.batchingFlag) return;
   const index = Number(target.dataset.index);
   const parsed = describeBatching(draftTemplate.batching[index]);
-  if (target.dataset.batchingFlag === 'include_other') parsed.includeOther = target.checked;
-  if (target.dataset.batchingFlag === 'separate_parquets') parsed.separate = target.checked;
+  parsed.separate = target.checked;
   const item = draftTemplate.batching[index];
   if (item && typeof item === 'object' && item.name) {
     // A batch written out in full keeps its shape; only the flag changes.
-    if (target.dataset.batchingFlag === 'include_other') item.include_other = parsed.includeOther;
-    else if (parsed.separate) item.separate_parquets = true;
+    if (parsed.separate) item.separate_parquets = true;
     else delete item.separate_parquets;
   } else {
     draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values, parsed);
@@ -3142,7 +3133,7 @@ class SectionNoteTests(unittest.TestCase):
             finished_yaml = {
                 "multipliers": [{"name": "Race", "levels": [{"strat": "black"}, {"strat": "white"}]}],
                 "cohorts": [{"batching": [
-                    {"name": "sex", "kind": "column_values", "values": ["Female", "Male"], "include_other": True},
+                    {"name": "sex", "kind": "column_values", "values": ["Female", "Male"]},
                     {"name": "chunk", "kind": "row_chunk", "rows_per_batch": 2000},
                 ]}],
             }
