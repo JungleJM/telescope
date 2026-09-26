@@ -119,17 +119,6 @@ def column_description(column: dict[str, Any], table_aliases: dict[str, str],
     return NO_DESCRIPTION
 
 
-def table_key(cohort: dict[str, Any]) -> list[str]:
-    try:
-        key_sets, _ = normalize_dedup_keys(cohort)
-    except Exception:
-        key_sets = []
-    if key_sets:
-        return list(key_sets[0])
-    key = cohort.get("key_column") or cohort.get("key_columns")
-    return [key] if isinstance(key, str) else [str(k) for k in key or []]
-
-
 def granularity(cohort: dict[str, Any]) -> str:
     own = tidy(cohort.get("granularity"))
     if own:
@@ -214,8 +203,7 @@ def pull_summary(manifest: Manifest, plan: Plan) -> list[str]:
     return lines
 
 
-def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any],
-                  shared: dict[str, list[str]]) -> list[str]:
+def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any]) -> list[str]:
     cohort = spec.cohort
     lines: list[str] = []
     for part in spec.parts:
@@ -234,11 +222,6 @@ def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any
             if specifics:
                 lines.append("- **Specific to:** " + "; ".join(specifics))
             lines.append(f"- **Description:** {tidy(cohort.get('description')) or NO_DESCRIPTION}")
-            key = table_key(cohort)
-            if key:
-                others = sorted({t for column in key for t in shared.get(column, []) if t != spec.dest})
-                joins = f"; the same column(s) are in {', '.join(others)}" if others else ""
-                lines.append(f"- **Key (testing):** {', '.join(key)}{joins}")
         lines += ["", "Columns:", ""]
         lines += column_lines(spec, dictionary)
     return lines
@@ -268,14 +251,10 @@ def column_lines(spec: TableSpec, dictionary: dict[str, Any]) -> list[str]:
 def render(manifest: Manifest, plan: Plan, dictionary: dict[str, Any] | None = None) -> str:
     dictionary = dictionary if dictionary is not None else load_dictionary(dictionary_path())
     pks = {spec.session: spec.cohort for spec in plan.tables if spec.kind == "pk"}
-    shared: dict[str, list[str]] = {}
-    for spec in plan.tables:
-        for name, _ in spec.columns:
-            shared.setdefault(name, []).append(spec.dest)
     lines = pull_summary(manifest, plan)
     lines += ["", "---", "", "Each column: its name, its SQL type in Projects, its type once "
               "loaded in Python (py) and R (r), and what it holds."]
     for spec in plan.tables:
         lines += table_section(spec, pks.get(spec.session, spec.cohort if spec.kind == "pk" else {}),
-                               dictionary, shared)
+                               dictionary)
     return "\n".join(lines).rstrip() + "\n"

@@ -58,6 +58,12 @@ class ColumnTests(ContentsTestCase):
         self.set_status()
         self.assertNotIn("_batch", self.contents())
 
+    def test_there_is_no_key_line(self):
+        # Removed after trying it: nearly every table shares PatientDurableKey,
+        # so it listed most of the pull for each table.
+        self.set_status()
+        self.assertNotIn("Key (testing)", self.contents())
+
 
 class TableTests(ContentsTestCase):
     def test_granularity_is_its_own_else_from_its_dedup_keys(self):

@@ -1212,7 +1212,8 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .inline-form { display: grid; grid-template-columns: minmax(140px, 190px) minmax(140px, 1fr) minmax(180px, 1.4fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
 .editor-rows { display: grid; gap: 10px; }
 .editor-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)) auto; gap: 8px; align-items: end; }
-.editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto; }
+.editor-row.batch { grid-template-columns: minmax(140px, 220px) minmax(220px, 1fr) auto auto; }
+.batch-flags { display: grid; gap: 4px; }
 .editor-row.custom-column { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
 .editor-row.line-editor { grid-template-columns: minmax(220px, 1fr) auto; }
 .custom-builder { display: grid; gap: 12px; margin-top: 10px; }
@@ -1654,6 +1655,10 @@ function renderBatchingRows() {
             : `<div class="tag-list">${tags || '<span class="tag-note">All values. Explicit picks will also create an all-other batch.</span>'}</div>
                <input data-batching-add-value="${index}" value="" placeholder="type value and press Enter">`}
         </label>
+        ${isChunk ? '<span></span>' : `<span class="batch-flags">
+          <label class="checkbox-label" title="Values not listed get a batch of their own, so no rows are lost"><input type="checkbox" data-batching-flag="include_other" data-index="${index}" ${parsed.includeOther ? 'checked' : ''} ${parsed.values.length ? '' : 'disabled'}> Include others</label>
+          <label class="checkbox-label" title="--artifacts writes one parquet per value instead of one per table"><input type="checkbox" data-batching-flag="separate_parquets" data-index="${index}" ${parsed.separate ? 'checked' : ''}> Separate parquets</label>
+        </span>`}
         <button class="danger" data-remove-batching="${index}">Remove</button>
       </div>
     `;
@@ -2163,33 +2168,46 @@ async function saveCohortAsRecipe(index) {
   }
 }
 
+function batchingFlags(source) {
+  // Unset means the defaults: a listed value set catches the rest, and
+  // batches stay in one parquet per table (D72).
+  return {
+    includeOther: source?.include_other === undefined ? true : source.include_other !== false,
+    separate: source?.separate_parquets === true
+  };
+}
+
 function describeBatching(item) {
-  if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [] };
-  if (typeof item === 'string') return { name: item, chunk: '', values: [] };
+  const plain = { includeOther: true, separate: false };
+  if (typeof item === 'number') return { name: 'chunk', chunk: String(item), values: [], ...plain };
+  if (typeof item === 'string') return { name: item, chunk: '', values: [], ...plain };
   if (item && typeof item === 'object') {
-    if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [] };
-    if (item.name) return { name: item.name, chunk: String(item.rows_per_batch || ''), values: Array.isArray(item.values) ? item.values : [] };
+    if ('chunk' in item) return { name: 'chunk', chunk: String(item.chunk), values: [], ...plain };
+    if (item.name) return { name: item.name, chunk: String(item.rows_per_batch || ''), values: Array.isArray(item.values) ? item.values : [], ...batchingFlags(item) };
     const keys = Object.keys(item);
     if (keys.length === 1) {
       const name = keys[0];
       const value = item[name];
-      if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [] };
-      return { name, chunk: '', values: value == null ? [] : [String(value)] };
+      if (value && typeof value === 'object') return { name, chunk: String(value.rows_per_batch || ''), values: Array.isArray(value.values) ? value.values : [], ...batchingFlags(value) };
+      return { name, chunk: '', values: value == null ? [] : [String(value)], ...plain };
     }
   }
-  return { name: '', chunk: '', values: [] };
+  return { name: '', chunk: '', values: [], ...plain };
 }
 
-function batchingFromFields(name, value) {
+function batchingFromFields(name, value, flags = { includeOther: true, separate: false }) {
   if (name === 'chunk') {
     const parsed = parseInt(value || '0', 10);
     return { chunk: Number.isFinite(parsed) && parsed > 0 ? parsed : 2000 };
   }
   const values = Array.isArray(value) ? value : String(value || '').split(',').map(v => v.trim()).filter(Boolean);
+  const options = {};
   if (values.length) {
-    return { [name]: { values, include_other: true } };
+    options.values = values;
+    options.include_other = flags.includeOther !== false;
   }
-  return name;
+  if (flags.separate) options.separate_parquets = true;
+  return Object.keys(options).length ? { [name]: options } : name;
 }
 
 function updateBatchingHelp() {
@@ -2392,10 +2410,10 @@ document.addEventListener('input', event => {
   if (target.dataset.batchingField) {
     const parsed = describeBatching(draftTemplate.batching[index]);
     if (target.dataset.batchingField === 'name') {
-      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values, parsed);
       renderBatchingRows();
     } else {
-      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
+      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value, parsed);
     }
     updateDraftYaml();
   }
@@ -2458,10 +2476,10 @@ document.addEventListener('change', event => {
   if (target.dataset.batchingField) {
     const parsed = describeBatching(draftTemplate.batching[index]);
     if (target.dataset.batchingField === 'name') {
-      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values);
+      draftTemplate.batching[index] = batchingFromFields(target.value, parsed.name === 'chunk' ? parsed.chunk : parsed.values, parsed);
       renderBatchingRows();
     } else {
-      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value);
+      draftTemplate.batching[index] = batchingFromFields(parsed.name, target.value, parsed);
     }
     updateDraftYaml();
   }
@@ -2502,7 +2520,7 @@ document.addEventListener('click', event => {
     const valueIndex = Number(target.dataset.valueIndex);
     const parsed = describeBatching(draftTemplate.batching[index]);
     parsed.values.splice(valueIndex, 1);
-    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values, parsed);
     renderBatchingRows();
     updateDraftYaml();
   }
@@ -2582,6 +2600,26 @@ document.addEventListener('click', event => {
   }
 });
 
+document.addEventListener('change', event => {
+  const target = event.target;
+  if (!target.dataset.batchingFlag) return;
+  const index = Number(target.dataset.index);
+  const parsed = describeBatching(draftTemplate.batching[index]);
+  if (target.dataset.batchingFlag === 'include_other') parsed.includeOther = target.checked;
+  if (target.dataset.batchingFlag === 'separate_parquets') parsed.separate = target.checked;
+  const item = draftTemplate.batching[index];
+  if (item && typeof item === 'object' && item.name) {
+    // A batch written out in full keeps its shape; only the flag changes.
+    if (target.dataset.batchingFlag === 'include_other') item.include_other = parsed.includeOther;
+    else if (parsed.separate) item.separate_parquets = true;
+    else delete item.separate_parquets;
+  } else {
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values, parsed);
+  }
+  renderBatchingRows();
+  updateDraftYaml();
+});
+
 document.addEventListener('keydown', event => {
   const target = event.target;
   if (target.dataset.batchingAddValue && event.key === 'Enter') {
@@ -2591,7 +2629,7 @@ document.addEventListener('keydown', event => {
     const index = Number(target.dataset.batchingAddValue);
     const parsed = describeBatching(draftTemplate.batching[index]);
     if (!parsed.values.includes(value)) parsed.values.push(value);
-    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values);
+    draftTemplate.batching[index] = batchingFromFields(parsed.name, parsed.values, parsed);
     renderBatchingRows();
     updateDraftYaml();
   }

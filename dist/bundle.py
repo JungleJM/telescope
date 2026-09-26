@@ -459,7 +459,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "504befe4f1e7e102977a882129ae3f8617cb6144a040f740cb206590245eb2a5",
+  "content_id": "b8af16ae854453f15ec2e962654e97a8630630cc096ddfd570e55e10db1773bd",
   "file_count": 47,
   "files": [
     {
@@ -507,8 +507,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/contents.py",
       "policy": "replace",
-      "sha256": "a92cf8d4c5323aa93ef1a002909186b5f34b68710f7898ff729bdb4dc723e3ed",
-      "size": 11459
+      "sha256": "858ecc7a45e3365acce7b2faddfde3e84b7ba3975ca99e0575ad14199ddcb6eb",
+      "size": 10563
     },
     {
       "path": "pullmanager/db.py",
@@ -639,8 +639,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_contents.py",
       "policy": "replace",
-      "sha256": "0eef6374bbf46c11d07ae595e15da8fbf63f5028a4afbcd86b10f749baeb9641",
-      "size": 6085
+      "sha256": "9329cad8db2250142b922f973588b240d526f50a3fe8c6e1ed938c9cd2a4a6c5",
+      "size": 6348
     },
     {
       "path": "pullmanager/tests/test_db.py",
@@ -4692,7 +4692,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/cli.py ===
-# === BEGIN FILE: pullmanager/contents.py SHA256: a92cf8d4c5323aa93ef1a002909186b5f34b68710f7898ff729bdb4dc723e3ed SIZE: 11459 ===
+# === BEGIN FILE: pullmanager/contents.py SHA256: 858ecc7a45e3365acce7b2faddfde3e84b7ba3975ca99e0575ad14199ddcb6eb SIZE: 10563 ===
 # """`contents.md`: every packaged table, for people and for the VM's AI (D73).
 #
 # A pull summary, then per table its granularity, what it is specific to, its
@@ -4814,17 +4814,6 @@ if __name__ == "__main__":
 #     return NO_DESCRIPTION
 #
 #
-# def table_key(cohort: dict[str, Any]) -> list[str]:
-#     try:
-#         key_sets, _ = normalize_dedup_keys(cohort)
-#     except Exception:
-#         key_sets = []
-#     if key_sets:
-#         return list(key_sets[0])
-#     key = cohort.get("key_column") or cohort.get("key_columns")
-#     return [key] if isinstance(key, str) else [str(k) for k in key or []]
-#
-#
 # def granularity(cohort: dict[str, Any]) -> str:
 #     own = tidy(cohort.get("granularity"))
 #     if own:
@@ -4909,8 +4898,7 @@ if __name__ == "__main__":
 #     return lines
 #
 #
-# def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any],
-#                   shared: dict[str, list[str]]) -> list[str]:
+# def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any]) -> list[str]:
 #     cohort = spec.cohort
 #     lines: list[str] = []
 #     for part in spec.parts:
@@ -4929,11 +4917,6 @@ if __name__ == "__main__":
 #             if specifics:
 #                 lines.append("- **Specific to:** " + "; ".join(specifics))
 #             lines.append(f"- **Description:** {tidy(cohort.get('description')) or NO_DESCRIPTION}")
-#             key = table_key(cohort)
-#             if key:
-#                 others = sorted({t for column in key for t in shared.get(column, []) if t != spec.dest})
-#                 joins = f"; the same column(s) are in {', '.join(others)}" if others else ""
-#                 lines.append(f"- **Key (testing):** {', '.join(key)}{joins}")
 #         lines += ["", "Columns:", ""]
 #         lines += column_lines(spec, dictionary)
 #     return lines
@@ -4963,16 +4946,12 @@ if __name__ == "__main__":
 # def render(manifest: Manifest, plan: Plan, dictionary: dict[str, Any] | None = None) -> str:
 #     dictionary = dictionary if dictionary is not None else load_dictionary(dictionary_path())
 #     pks = {spec.session: spec.cohort for spec in plan.tables if spec.kind == "pk"}
-#     shared: dict[str, list[str]] = {}
-#     for spec in plan.tables:
-#         for name, _ in spec.columns:
-#             shared.setdefault(name, []).append(spec.dest)
 #     lines = pull_summary(manifest, plan)
 #     lines += ["", "---", "", "Each column: its name, its SQL type in Projects, its type once "
 #               "loaded in Python (py) and R (r), and what it holds."]
 #     for spec in plan.tables:
 #         lines += table_section(spec, pks.get(spec.session, spec.cohort if spec.kind == "pk" else {}),
-#                                dictionary, shared)
+#                                dictionary)
 #     return "\n".join(lines).rstrip() + "\n"
 #
 # === END FILE: pullmanager/contents.py ===
@@ -10636,7 +10615,7 @@ if __name__ == "__main__":
 #         self.assertEqual(selection.params, ["Male"])
 #
 # === END FILE: pullmanager/tests/test_batches.py ===
-# === BEGIN FILE: pullmanager/tests/test_contents.py SHA256: 0eef6374bbf46c11d07ae595e15da8fbf63f5028a4afbcd86b10f749baeb9641 SIZE: 6085 ===
+# === BEGIN FILE: pullmanager/tests/test_contents.py SHA256: 9329cad8db2250142b922f973588b240d526f50a3fe8c6e1ed938c9cd2a4a6c5 SIZE: 6348 ===
 # """`contents.md`: every packaged table, described (D73)."""
 #
 # from __future__ import annotations
@@ -10696,6 +10675,12 @@ if __name__ == "__main__":
 #     def test_batch_is_never_listed(self):
 #         self.set_status()
 #         self.assertNotIn("_batch", self.contents())
+#
+#     def test_there_is_no_key_line(self):
+#         # Removed after trying it: nearly every table shares PatientDurableKey,
+#         # so it listed most of the pull for each table.
+#         self.set_status()
+#         self.assertNotIn("Key (testing)", self.contents())
 #
 #
 # class TableTests(ContentsTestCase):

@@ -55,6 +55,7 @@ recipes:
         name: AgeAtIndexDiagnosis
         type: BIGINT
         nullable: true
+        description: "Age in Years of patient at earliest diagnosis of index condition"
 
       - source: p.BirthDate
         name: BirthDate
@@ -180,6 +181,7 @@ recipes:
         name: BillingCodeType
         type: VARCHAR(400)
         nullable: true
+        description: "ICD code type"
 
       - source: dt.Value
         name: BillingCodeValue
@@ -205,6 +207,7 @@ recipes:
         name: IsReferenceBillingCode
         type: VARCHAR(100)
         nullable: true
+        description: "0/1 of if this was used as the code for Billing submission"
 
       - source: def.Type
         name: TypeOfDx
@@ -286,6 +289,7 @@ recipes:
         name: BillingCodeType
         type: VARCHAR(400)
         nullable: true
+        description: "ICD code type"
 
       - source: dt.Value
         name: BillingCodeValue
@@ -311,6 +315,7 @@ recipes:
         name: IsReferenceBillingCode
         type: VARCHAR(100)
         nullable: true
+        description: "0/1 of if this diagnosis was used for Billing submission"
 
       - source: def.Type
         name: TypeOfDx
