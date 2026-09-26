@@ -23,10 +23,14 @@ When an item here is built, delete it from this file and describe the result in
 
 ## Known Bugs
 
-None known. The four found in the first live run (Cosmos before SneakPeek,
-the Refresh button, a PK keyed only by `dedup_keys`, Execute from the
-launcher) are fixed or worked around (D65, D69, D68); D68's fix is still to be
-seen working on the VM (below).
+- **Execute sometimes ends mid-pull with exit code 1** (the IBD template,
+  September 2026: `CrohnsPatients`, its first Cosmos session, during
+  `upload_cohorts`, after the SneakPeek sessions finished). No summary, and
+  the step left `running`. Every step catches Python errors, so it was either
+  killed (Stop, or anything else on the VM: Windows gives 1) or an error
+  outside the steps, whose traceback reached only the closing window. The
+  log now keeps the traceback, or where a native crash happened; the next
+  occurrence says which. The next Execute resumes it.
 
 ---
 

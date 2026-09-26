@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "ccd551e0c20df4eeb937a7b7a54effc5fc3bf0ba6b9dcb7c80b4acb34e461e96",
+  "content_id": "123a524005ade0ad17556f668e4026c643a4fc055da79a3ff1bffdb607a14aee",
   "file_count": 47,
   "files": [
     {
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "278f71ed50a12c1d4007a54c28d28e4dd1128420a3f707ecc0c42688ce0060c9",
-      "size": 20302
+      "sha256": "74dd408a3e297cf96683ebba26b43befe25d864da38dc7b0b430702043a371b0",
+      "size": 20865
     },
     {
       "path": "pullmanager/contents.py",
@@ -573,8 +573,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/gui.py",
       "policy": "replace",
-      "sha256": "5545edaaacba1ae5e87c1474eebf08735e8c4a5f530fc3f63116d8c8180dd049",
-      "size": 19292
+      "sha256": "5a671e719726702e2385d76b8e898ebe3562eebd0fbfabf10fa97ef6b0801ad9",
+      "size": 20060
     },
     {
       "path": "pullmanager/launcher.py",
@@ -639,8 +639,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/runlog.py",
       "policy": "replace",
-      "sha256": "8b045cf4349d9ca485d1892776172f228301c94e5724fc8e64f4051e3b982c86",
-      "size": 2454
+      "sha256": "3e0f5fc35fd17e4f3172f76aad3c86c0eabf4b93afb420a2513f9357574e78e8",
+      "size": 2703
     },
     {
       "path": "pullmanager/server_sql.py",
@@ -705,8 +705,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_gui.py",
       "policy": "replace",
-      "sha256": "efdda3b7faa101a10878fc3447d372e03e7b8d5ba5d9c147e25d984d7725ca52",
-      "size": 16835
+      "sha256": "b48921babb3a416c2fefc1598f6407572d197dba5aaad5526b8add9c0b3b67d0",
+      "size": 17684
     },
     {
       "path": "pullmanager/tests/test_launcher.py",
@@ -717,8 +717,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_lock.py",
       "policy": "replace",
-      "sha256": "1ed2d719f34c5fff022816b4295f841c259afedc334d8da5b263297ae1361b9c",
-      "size": 11311
+      "sha256": "fc59457624bc01f81b1968761ea4e9dcb7f115517760821f6bacd13c883f9250",
+      "size": 12756
     },
     {
       "path": "pullmanager/tests/test_manifest.py",
@@ -4233,7 +4233,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 278f71ed50a12c1d4007a54c28d28e4dd1128420a3f707ecc0c42688ce0060c9 SIZE: 20302 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: 74dd408a3e297cf96683ebba26b43befe25d864da38dc7b0b430702043a371b0 SIZE: 20865 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -4241,6 +4241,7 @@ if __name__ == "__main__":
 # import argparse
 # import os
 # import sys
+# import traceback
 # from pathlib import Path
 #
 # from . import __version__
@@ -4402,6 +4403,13 @@ if __name__ == "__main__":
 #                     f"(last heartbeat {clock_time(stale.heartbeat)})."
 #                 )
 #             return _execute(manifest, args, connect_fn)
+#         except Exception:
+#             # Each step records its own failure; this is anything else, which
+#             # used to reach only the console, and vanish when it closed.
+#             print("ERROR Execute stopped on an error it did not expect. What it was working "
+#                   "on stays 'running', and the next --execute pulls it again:", file=sys.stderr)
+#             traceback.print_exc()
+#             return 1
 #         except KeyboardInterrupt:
 #             print(
 #                 "\nStopped (Ctrl+C). Whatever it was working on stays 'running' in the "
@@ -4706,7 +4714,11 @@ if __name__ == "__main__":
 #         args.gui = True
 #     if args.keep_open:
 #         set_console_title(f"Pullmanager: executing {args.manifest or ''}".rstrip())
-#     code = dispatch(parser, args)
+#     try:
+#         code = dispatch(parser, args)
+#     except Exception:
+#         traceback.print_exc()  # still keep the window open to read it
+#         code = 1
 #     if args.keep_open:
 #         keep_open(code, input_fn)
 #     return code
@@ -5776,7 +5788,7 @@ if __name__ == "__main__":
 #     return written
 #
 # === END FILE: pullmanager/executor.py ===
-# === BEGIN FILE: pullmanager/gui.py SHA256: 5545edaaacba1ae5e87c1474eebf08735e8c4a5f530fc3f63116d8c8180dd049 SIZE: 19292 ===
+# === BEGIN FILE: pullmanager/gui.py SHA256: 5a671e719726702e2385d76b8e898ebe3562eebd0fbfabf10fa97ef6b0801ad9 SIZE: 20060 ===
 # """Desktop launcher for running pulls.
 #
 # A thin tkinter view over launcher.py. It holds no logic of its own: every
@@ -5846,6 +5858,7 @@ if __name__ == "__main__":
 #         self.follower = launcher.LogFollower()
 #         self._console_log_seen = False
 #         self._console_handled = True
+#         self._pull_summarized = False
 #         self._status_countdown = 0
 #
 #         root.title(f"Pullmanager - {workdir}")
@@ -6023,6 +6036,7 @@ if __name__ == "__main__":
 #             return
 #         self._console_log_seen = False
 #         self._console_handled = False
+#         self._pull_summarized = False
 #         self.update_stop()
 #         self.bar.configure(text="Execute is running in its own window; its output follows in Pull Log.")
 #         self.notebook.select(self.pull_tab)
@@ -6152,6 +6166,8 @@ if __name__ == "__main__":
 #                 self.write_pull_log(f"--- {pulls.shown(log, self.workdir)} ---\n")
 #         if text:
 #             self.write_pull_log(text)
+#             if "session(s) run completed" in text:
+#                 self._pull_summarized = True
 #         if log is not None and not self._console_log_seen and self.console.started:
 #             try:
 #                 self._console_log_seen = log.stat().st_mtime >= self.console.started - 2
@@ -6169,6 +6185,15 @@ if __name__ == "__main__":
 #         if not self._console_log_seen:
 #             self.cannot_start(f"it ended with exit code {launcher.exit_code_words(code)} "
 #                               "before writing its log")
+#         elif code != 0 and not self._pull_summarized:
+#             # It ended mid-pull: killed (Stop, or anything else, gives 1 on
+#             # Windows) or an error the log shows above.
+#             self.write_pull_log(
+#                 f"--- Execute's window closed, exit code {launcher.exit_code_words(code)}, before "
+#                 "the pull finished. What it was working on stays 'running'; the next Execute "
+#                 "pulls it again. If Python gave a reason, it is just above. ---\n"
+#             )
+#             self.bar.configure(text="Execute ended before finishing; see Pull Log.")
 #         else:
 #             self.write_pull_log(f"--- Execute's window closed, exit code {code} ---\n")
 #             self.bar.configure(text="Execute has finished.")
@@ -8573,7 +8598,7 @@ if __name__ == "__main__":
 #     return lines
 #
 # === END FILE: pullmanager/refresh.py ===
-# === BEGIN FILE: pullmanager/runlog.py SHA256: 8b045cf4349d9ca485d1892776172f228301c94e5724fc8e64f4051e3b982c86 SIZE: 2454 ===
+# === BEGIN FILE: pullmanager/runlog.py SHA256: 3e0f5fc35fd17e4f3172f76aad3c86c0eabf4b93afb420a2513f9357574e78e8 SIZE: 2703 ===
 # """Everything Execute prints, written to a log as well (D68).
 #
 # However Execute is started (its own console window, a terminal, the Mac),
@@ -8586,6 +8611,7 @@ if __name__ == "__main__":
 # from __future__ import annotations
 #
 # import contextlib
+# import faulthandler
 # import sys
 # from datetime import datetime
 # from pathlib import Path
@@ -8649,9 +8675,13 @@ if __name__ == "__main__":
 #     with open(path, "x", encoding="utf-8", newline="\n", buffering=1) as log:
 #         saved = sys.stdout, sys.stderr
 #         sys.stdout, sys.stderr = Tee(saved[0], log), Tee(saved[1], log)
+#         # A crash in native code (the ODBC driver, pyarrow) kills the process
+#         # with no Python error to print; this writes where it was to the log.
+#         faulthandler.enable(file=log)
 #         try:
 #             yield path
 #         finally:
+#             faulthandler.disable()
 #             sys.stdout, sys.stderr = saved
 #
 # === END FILE: pullmanager/runlog.py ===
@@ -11520,7 +11550,7 @@ if __name__ == "__main__":
 #         self.assertEqual(plan_session(self.manifest, session), [])
 #
 # === END FILE: pullmanager/tests/test_executor.py ===
-# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: efdda3b7faa101a10878fc3447d372e03e7b8d5ba5d9c147e25d984d7725ca52 SIZE: 16835 ===
+# === BEGIN FILE: pullmanager/tests/test_gui.py SHA256: b48921babb3a416c2fefc1598f6407572d197dba5aaad5526b8add9c0b3b67d0 SIZE: 17684 ===
 # """The launcher window, built against a fake tkinter.
 #
 # There is no display on the development machine, and tests must never open a
@@ -11893,6 +11923,25 @@ if __name__ == "__main__":
 #         self.app.watch_once()
 #         self.messagebox.showerror.assert_not_called()
 #         self.assertIn("exit code 0", self.pull_log())
+#
+#     def test_a_pull_that_ends_mid_way_says_so(self):
+#         # Killed (Windows gives exit code 1) or stopped by an error: no summary.
+#         self.app.on_execute()
+#         self.write_log("=== CrohnsPatients ===\n")
+#         self.app.watch_once()
+#         self.console.returncode = 1
+#         self.app.watch_once()
+#         self.messagebox.showerror.assert_not_called()
+#         self.assertIn("before the pull finished", self.pull_log())
+#         self.assertIn("stays 'running'", self.pull_log())
+#
+#     def test_a_pull_that_finished_with_failures_is_not_called_unfinished(self):
+#         self.app.on_execute()
+#         self.write_log("1/2 session(s) run completed; 0 had nothing to pull.\n")
+#         self.app.watch_once()
+#         self.console.returncode = 1
+#         self.app.watch_once()
+#         self.assertNotIn("before the pull finished", self.pull_log())
 #
 #     def test_stop_ends_the_pull_and_frees_its_lock(self):
 #         from ..lock import read_lock
@@ -12382,7 +12431,7 @@ if __name__ == "__main__":
 #         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
 #
 # === END FILE: pullmanager/tests/test_launcher.py ===
-# === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: 1ed2d719f34c5fff022816b4295f841c259afedc334d8da5b263297ae1361b9c SIZE: 11311 ===
+# === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: fc59457624bc01f81b1968761ea4e9dcb7f115517760821f6bacd13c883f9250 SIZE: 12756 ===
 # """The lock a running Execute holds on its manifest (D67)."""
 #
 # from __future__ import annotations
@@ -12655,6 +12704,35 @@ if __name__ == "__main__":
 #         self.assertIsNotNone(read_lock(self.manifest))
 #         self.assertTrue(clear_lock_of(self.manifest, 4242))
 #         self.assertIsNone(read_lock(self.manifest))
+#
+#
+# class UnexpectedErrorTests(LockTestCase):
+#     """An error no step catches reaches the log, and the window stays open."""
+#
+#     def test_the_error_is_in_the_log_and_the_lock_released(self):
+#         def connect(*args, **kwargs):
+#             raise RuntimeError("the driver fell over")
+#
+#         args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+#         out = io.StringIO()
+#         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+#             code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect)
+#         self.assertEqual(code, 1)
+#         [log] = sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+#         text = log.read_text(encoding="utf-8")
+#         self.assertIn("did not expect", text)
+#         self.assertIn("RuntimeError: the driver fell over", text)
+#         self.assertIsNone(read_lock(self.manifest))
+#
+#     def test_the_window_waits_for_exit_even_then(self):
+#         answers = iter(["exit"])
+#         out, err = io.StringIO(), io.StringIO()
+#         with mock.patch.object(cli, "dispatch", side_effect=RuntimeError("boom")), \
+#                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+#             code = cli.main(["--execute", "x", "--keep-open"], input_fn=lambda _: next(answers))
+#         self.assertEqual(code, 1)
+#         self.assertIn("RuntimeError: boom", err.getvalue())
+#         self.assertIn("Safe to close", out.getvalue())
 #
 #
 # === END FILE: pullmanager/tests/test_lock.py ===

@@ -67,6 +67,7 @@ class LauncherApp:
         self.follower = launcher.LogFollower()
         self._console_log_seen = False
         self._console_handled = True
+        self._pull_summarized = False
         self._status_countdown = 0
 
         root.title(f"Pullmanager - {workdir}")
@@ -244,6 +245,7 @@ class LauncherApp:
             return
         self._console_log_seen = False
         self._console_handled = False
+        self._pull_summarized = False
         self.update_stop()
         self.bar.configure(text="Execute is running in its own window; its output follows in Pull Log.")
         self.notebook.select(self.pull_tab)
@@ -373,6 +375,8 @@ class LauncherApp:
                 self.write_pull_log(f"--- {pulls.shown(log, self.workdir)} ---\n")
         if text:
             self.write_pull_log(text)
+            if "session(s) run completed" in text:
+                self._pull_summarized = True
         if log is not None and not self._console_log_seen and self.console.started:
             try:
                 self._console_log_seen = log.stat().st_mtime >= self.console.started - 2
@@ -390,6 +394,15 @@ class LauncherApp:
         if not self._console_log_seen:
             self.cannot_start(f"it ended with exit code {launcher.exit_code_words(code)} "
                               "before writing its log")
+        elif code != 0 and not self._pull_summarized:
+            # It ended mid-pull: killed (Stop, or anything else, gives 1 on
+            # Windows) or an error the log shows above.
+            self.write_pull_log(
+                f"--- Execute's window closed, exit code {launcher.exit_code_words(code)}, before "
+                "the pull finished. What it was working on stays 'running'; the next Execute "
+                "pulls it again. If Python gave a reason, it is just above. ---\n"
+            )
+            self.bar.configure(text="Execute ended before finishing; see Pull Log.")
         else:
             self.write_pull_log(f"--- Execute's window closed, exit code {code} ---\n")
             self.bar.configure(text="Execute has finished.")

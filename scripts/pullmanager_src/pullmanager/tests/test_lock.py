@@ -271,3 +271,32 @@ class ClearLockTests(LockTestCase):
         self.assertTrue(clear_lock_of(self.manifest, 4242))
         self.assertIsNone(read_lock(self.manifest))
 
+
+class UnexpectedErrorTests(LockTestCase):
+    """An error no step catches reaches the log, and the window stays open."""
+
+    def test_the_error_is_in_the_log_and_the_lock_released(self):
+        def connect(*args, **kwargs):
+            raise RuntimeError("the driver fell over")
+
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect)
+        self.assertEqual(code, 1)
+        [log] = sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("did not expect", text)
+        self.assertIn("RuntimeError: the driver fell over", text)
+        self.assertIsNone(read_lock(self.manifest))
+
+    def test_the_window_waits_for_exit_even_then(self):
+        answers = iter(["exit"])
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "dispatch", side_effect=RuntimeError("boom")), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--execute", "x", "--keep-open"], input_fn=lambda _: next(answers))
+        self.assertEqual(code, 1)
+        self.assertIn("RuntimeError: boom", err.getvalue())
+        self.assertIn("Safe to close", out.getvalue())
+

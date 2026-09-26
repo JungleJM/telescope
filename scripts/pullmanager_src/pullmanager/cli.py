@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from . import __version__
@@ -166,6 +167,13 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
                     f"(last heartbeat {clock_time(stale.heartbeat)})."
                 )
             return _execute(manifest, args, connect_fn)
+        except Exception:
+            # Each step records its own failure; this is anything else, which
+            # used to reach only the console, and vanish when it closed.
+            print("ERROR Execute stopped on an error it did not expect. What it was working "
+                  "on stays 'running', and the next --execute pulls it again:", file=sys.stderr)
+            traceback.print_exc()
+            return 1
         except KeyboardInterrupt:
             print(
                 "\nStopped (Ctrl+C). Whatever it was working on stays 'running' in the "
@@ -470,7 +478,11 @@ def main(argv: list[str] | None = None, input_fn=input) -> int:
         args.gui = True
     if args.keep_open:
         set_console_title(f"Pullmanager: executing {args.manifest or ''}".rstrip())
-    code = dispatch(parser, args)
+    try:
+        code = dispatch(parser, args)
+    except Exception:
+        traceback.print_exc()  # still keep the window open to read it
+        code = 1
     if args.keep_open:
         keep_open(code, input_fn)
     return code

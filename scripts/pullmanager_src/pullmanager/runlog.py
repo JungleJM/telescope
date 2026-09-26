@@ -10,6 +10,7 @@ terminal (D70).
 from __future__ import annotations
 
 import contextlib
+import faulthandler
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -73,7 +74,11 @@ def execute_log(manifest: str | Path) -> Iterator[Path]:
     with open(path, "x", encoding="utf-8", newline="\n", buffering=1) as log:
         saved = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = Tee(saved[0], log), Tee(saved[1], log)
+        # A crash in native code (the ODBC driver, pyarrow) kills the process
+        # with no Python error to print; this writes where it was to the log.
+        faulthandler.enable(file=log)
         try:
             yield path
         finally:
+            faulthandler.disable()
             sys.stdout, sys.stderr = saved

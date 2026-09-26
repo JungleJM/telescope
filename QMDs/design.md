@@ -1221,7 +1221,10 @@ To pull it: press Execute, or in a terminal in <working folder> run:
 `runs/<project>/logs/execute-<date>-<time>.log` as well, flushed line by line,
 however it is started (D68); a refused Execute writes one too, saying why.
 Ctrl+C stops it cleanly (exit 130), releasing its lock; what it was working on
-stays `running`, and the next Execute pulls it again. `--keep-open` holds the
+stays `running`, and the next Execute pulls it again. Each step records its
+own failures in the manifest; an error no step catches is written to the log
+with its traceback, and a crash in native code (the ODBC driver, pyarrow)
+writes where it was (`faulthandler`), so the reason outlives the window. `--keep-open` holds the
 window at the end: "Safe to close: the pull has finished (exit code N). Type
 exit and press Enter to close this window." Only `exit` closes it.
 
@@ -1255,7 +1258,11 @@ working folder, running `python pullmanager.py --execute <project>
 the window with its output piped back, it died on the VM before printing a
 line (`0xC0000142`). If the console cannot be opened, or its process ends
 before writing its log, the window says so, with the exit code (in hex for a
-Windows failure), and gives the terminal command. Stop ends a pull the window
+Windows failure), and gives the terminal command. If it ends with a non-zero
+code before its log has the pull's summary, Pull Log says it ended before
+finishing: what it was working on stays `running`, and the reason, if Python
+gave one, is just above. On Windows a killed process, Stop included, ends
+with 1. Stop ends a pull the window
 started and removes the lock it could not remove itself; a pull started from
 a terminal is stopped there. Closing the window leaves a pull in its own
 console running. On the Mac, with no console to open, Execute runs unseen and
@@ -1346,7 +1353,7 @@ Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ```bash
 python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (149)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (443)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (447)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (66)
 python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
 ```

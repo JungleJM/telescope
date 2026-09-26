@@ -371,6 +371,25 @@ class ConsoleTests(GuiTestCase):
         self.messagebox.showerror.assert_not_called()
         self.assertIn("exit code 0", self.pull_log())
 
+    def test_a_pull_that_ends_mid_way_says_so(self):
+        # Killed (Windows gives exit code 1) or stopped by an error: no summary.
+        self.app.on_execute()
+        self.write_log("=== CrohnsPatients ===\n")
+        self.app.watch_once()
+        self.console.returncode = 1
+        self.app.watch_once()
+        self.messagebox.showerror.assert_not_called()
+        self.assertIn("before the pull finished", self.pull_log())
+        self.assertIn("stays 'running'", self.pull_log())
+
+    def test_a_pull_that_finished_with_failures_is_not_called_unfinished(self):
+        self.app.on_execute()
+        self.write_log("1/2 session(s) run completed; 0 had nothing to pull.\n")
+        self.app.watch_once()
+        self.console.returncode = 1
+        self.app.watch_once()
+        self.assertNotIn("before the pull finished", self.pull_log())
+
     def test_stop_ends_the_pull_and_frees_its_lock(self):
         from ..lock import read_lock
 
