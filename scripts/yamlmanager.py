@@ -761,13 +761,19 @@ def export_preview_block(title: str, artifact_id: str, filename: str, result: An
 
 def export_results(template_path: Path, recipes_path: Path) -> tuple[Any, Any, Any]:
     """The saved template's pre-YAML, transfer YAML and manifest, built once per page."""
-    symbolic = backend.build_preyaml(template_path, recipes_path, mode="symbolic")
-    transfer = backend.build_transfer(
+    def attempt(stage: str, build: Any) -> Any:
+        try:
+            return build()
+        except Exception as exc:  # noqa: BLE001 - shown in the export's box
+            return crash_result(stage, exc)
+
+    symbolic = attempt("pre-YAML", lambda: backend.build_preyaml(template_path, recipes_path, mode="symbolic"))
+    transfer = attempt("Transfer YAML", lambda: backend.build_transfer(
         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
-    )
-    manifest = backend.build_pullmanifest(
+    ))
+    manifest = attempt("pullmanifest.yaml", lambda: backend.build_pullmanifest(
         template_path, recipes_path, datadictionary_path=DATA_DICTIONARY_PATH
-    )
+    ))
     return symbolic, transfer, manifest
 
 
@@ -811,8 +817,15 @@ def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> st
 
 
 def build_html(template_path: Path, recipes_path: Path, result: backend.CompileResult, auto_refresh: int = 0) -> str:
-    template = backend.load_document(template_path) or {}
-    recipes_doc = backend.load_document(recipes_path) or {}
+    try:
+        template = backend.load_document(template_path) or {}
+    except Exception:  # noqa: BLE001 - unreadable YAML is already an error in `result`
+        template = {}
+    template = template if isinstance(template, dict) else {}
+    try:
+        recipes_doc = backend.load_document(recipes_path) or {}
+    except Exception:  # noqa: BLE001 - reported by validation
+        recipes_doc = {}
     data_dictionary = load_data_dictionary()
     source_text = template_path.read_text(encoding="utf-8")
     finished_text = yaml_text(result.finished_yaml)
@@ -1111,6 +1124,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
   </main>
 
   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
+  <script id="compileErrorsData" type="application/json">{json_payload([m.to_dict() for m in result.errors])}</script>
   <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
   <script id="recipeVarsData" type="application/json">{json_payload(recipe_vars)}</script>
   <script id="recipeNamesData" type="application/json">{json_payload(recipe_names)}</script>
@@ -2782,11 +2796,34 @@ document.getElementById('saveRefresh')?.addEventListener('click', async () => {
       showMessage('saveRefreshMessage', body.message);
       return;
     }
+    try { sessionStorage.setItem('yamlmanagerSaved', body.message); } catch (err) { /* private mode */ }
     window.location.href = `/?${new URLSearchParams({ template: body.template, recipes: recipesPath })}`;
   } catch (err) {
     showMessage('saveRefreshMessage', `Could not reach the YAML Manager server to save: ${err}`);
   }
 });
+
+// After Save & Refresh, say what was saved and, if the saved template has
+// errors, list where they are: the page stays where it was (D84).
+function showSavedErrors() {
+  let saved = null;
+  try {
+    saved = sessionStorage.getItem('yamlmanagerSaved');
+    sessionStorage.removeItem('yamlmanagerSaved');
+  } catch (err) { /* private mode */ }
+  if (!saved) return;
+  const errors = JSON.parse(document.getElementById('compileErrorsData').textContent);
+  const el = document.getElementById('saveRefreshMessage');
+  if (!el) return;
+  if (!errors.length) {
+    showMessage('saveRefreshMessage', `${saved} No errors.`, 'ok');
+    return;
+  }
+  el.className = 'message error';
+  el.innerHTML = `<div class="message-code">${escapeHtml(saved)} ${errors.length} error(s):</div>`
+    + errors.map(m => `<div class="message-body"><strong>${escapeHtml(m.context || m.code)}</strong>: `
+      + `${escapeHtml(m.message)}${m.fix ? `<div class="message-fix">Fix: ${escapeHtml(m.fix)}</div>` : ''}</div>`).join('');
+}
 
 function isEmptyCollection(value) {
   if (Array.isArray(value)) return value.length === 0;
@@ -2846,16 +2883,64 @@ function escapeAttr(value) {
 }
 
 hydrateBuilder();
+showSavedErrors();
 """
 
 
-def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
-    result = backend.compile_dashboard(
-        template_path=template_path,
-        recipes_path=recipes_path,
-        write=False,
-        datadictionary_path=DATA_DICTIONARY_PATH,
+# Where a crash inside the compiler most likely points, by the function it
+# happened in, so the message can name a Builder section to look at.
+CRASH_SECTIONS = {
+    "multiplier": "Multipliers",
+    "batch": "Batching",
+    "upload": "Uploads",
+    "cosmos": "Project (Cosmos DB)",
+    "recipe": "Cohorts (a recipe)",
+    "cohort": "Cohorts",
+    "dedup": "Cohorts (dedup)",
+    "sample": "Project (Test Options)",
+}
+
+
+def crash_result(stage: str, exc: BaseException) -> Any:
+    """A compiler crash as an ordinary error, so the page still opens (D84).
+
+    Names the compiler function and line it happened in, and the Builder
+    section that function reads, so the change that caused it can be found.
+    """
+    import traceback
+
+    frames = [f for f in traceback.extract_tb(exc.__traceback__) if f.filename.endswith("makeYaml.py")]
+    frame = frames[-1] if frames else (traceback.extract_tb(exc.__traceback__) or [None])[-1]
+    where = f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}()" if frame else "unknown"
+    names = " ".join(f.name for f in frames).lower()
+    section = next((label for key, label in CRASH_SECTIONS.items() if key in names), None)
+    result = backend.CompileResult()
+    result.error(
+        "compiler_crash",
+        f"{stage} failed: {type(exc).__name__}: {exc}",
+        where,
+        fix=(f"Look at the Builder's {section} section, where this part of the compiler reads. "
+             if section else "")
+        + "Your draft is saved; change it and Save & Refresh again. This is a compiler bug "
+        "too: it should have been an error with a fix, so report the message above.",
     )
+    return result
+
+
+def safe_compile(template_path: Path, recipes_path: Path) -> Any:
+    try:
+        return backend.compile_dashboard(
+            template_path=template_path,
+            recipes_path=recipes_path,
+            write=False,
+            datadictionary_path=DATA_DICTIONARY_PATH,
+        )
+    except Exception as exc:  # noqa: BLE001 - shown on the page, which stays usable
+        return crash_result("Validation", exc)
+
+
+def render_dashboard(template_path: Path, recipes_path: Path, auto_refresh: int = 0) -> tuple[str, backend.CompileResult]:
+    result = safe_compile(template_path, recipes_path)
     return build_html(template_path, recipes_path, result, auto_refresh), result
 
 
@@ -2902,7 +2987,7 @@ def dashboard_url(host: str, port: int, template: str, recipes: str) -> str:
     return f"http://{url_host(host)}:{port}/?{query}"
 
 
-def error_html(title: str, message: str) -> str:
+def error_html(title: str, message: str, template: str = "YAMLs/template.yaml") -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2917,7 +3002,7 @@ def error_html(title: str, message: str) -> str:
       <h1>{e(title)}</h1>
       <p>{e(message)}</p>
       <form class="path-form" method="get" action="/">
-        <label>Template YAML<input name="template" type="text" value="YAMLs/template.yaml"></label>
+        <label>Template YAML<input name="template" type="text" value="{e(template)}"></label>
         <button type="submit">Refresh</button>
       </form>
     </section>
@@ -2954,7 +3039,9 @@ def serve_dashboard(
                 html_text, _ = render_dashboard(template_path, recipes_path, auto_refresh)
                 status = 200
             except Exception as exc:  # noqa: BLE001 - surfaced as a dashboard page for local UI use.
-                html_text = error_html("Dashboard Refresh Failed", str(exc))
+                html_text = error_html(
+                    "Dashboard Refresh Failed", f"{type(exc).__name__}: {exc}", template_arg
+                )
                 status = 500
             data = html_text.encode("utf-8")
             self.send_response(status)
@@ -3118,6 +3205,49 @@ class SaveTemplateTests(unittest.TestCase):
         self.assertEqual(save_template(self.template, {})[0], 400)
 
 
+class RefreshTests(unittest.TestCase):
+    """Save & Refresh reopens the page, whatever the draft holds (D84)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.folder = Path(self._tmp.name)
+        self.template = self.folder / "template.yaml"
+        self.template.write_text("project_vars: {project_folder: Test}\n", encoding="utf-8")
+        self.recipes = PROJECT_ROOT / "YAMLs" / "recipes.yaml"
+
+    def test_a_multiplier_saved_with_no_levels_reopens_with_its_error(self):
+        draft = {
+            "cosmos_vars": {"project_db": "PROJECTD93A5E7", "cosmos_db": "Dual"},
+            "run_vars": {"min_date_key": "19900101", "max_date_key": "20260601"},
+            "project_vars": {"project_folder": "AllCohort"},
+            "vars": {},
+            "upload_cohorts": [],
+            "multipliers": [{"name": "Disease", "stage": "during_build", "levels": []}],
+            "batching": [],
+            "cohorts": [{"recipe": "PatientWithDx", "name": "Patients", "vars": {"ICD_Value": "K50.%"}}],
+        }
+        status, message, saved = save_template(self.template, draft)
+        self.assertEqual(status, 200, message)
+        html_text, result = render_dashboard(saved, self.recipes)
+        self.assertIn("multiplier_without_levels", [m.code for m in result.errors])
+        self.assertIn('id="builderProject"', html_text)
+
+    def test_a_compiler_crash_still_opens_the_builder_and_says_where(self):
+        original = backend.compile_dashboard
+
+        def crash(**_kwargs):
+            raise TypeError("'NoneType' object is not iterable")
+
+        backend.compile_dashboard = crash
+        self.addCleanup(setattr, backend, "compile_dashboard", original)
+        html_text, result = render_dashboard(self.template, self.recipes)
+        crash_message = next(m for m in result.errors if m.code == "compiler_crash")
+        self.assertIn("NoneType", crash_message.message)
+        self.assertIn("in crash()", crash_message.context)
+        self.assertIn('id="builderProject"', html_text)
+
+
 class SectionNoteTests(unittest.TestCase):
     def test_inline_and_preceding_comments_become_notes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3148,7 +3278,7 @@ class SectionNoteTests(unittest.TestCase):
 
 def run_tdd() -> int:
     suite = unittest.TestSuite()
-    for case in (SaveRecipeTests, SaveTemplateTests, SectionNoteTests):
+    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, SectionNoteTests):
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 

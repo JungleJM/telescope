@@ -267,12 +267,31 @@ def _plain_data(value: Any) -> Any:
     return value
 
 
+def _empty_collection(value: Any) -> str | None:
+    """`[]` or `{}` for an empty list or mapping, written on its key's line.
+
+    Left blank, as it once was, it reads back as null, and code that loops
+    over `levels`, `vars` or `batching` fails on it (D84).
+    """
+    if isinstance(value, list) and not value:
+        return "[]"
+    if isinstance(value, dict) and not value:
+        return "{}"
+    return None
+
+
 def _simple_yaml_dump(data: Any, indent: int = 0) -> str:
     pad = " " * indent
+    empty = _empty_collection(data)
+    if empty is not None:
+        return f"{pad}{empty}\n"
     if isinstance(data, dict):
         lines: list[str] = []
         for key, value in data.items():
-            if isinstance(value, (dict, list)):
+            empty = _empty_collection(value)
+            if empty is not None:
+                lines.append(f"{pad}{key}: {empty}")
+            elif isinstance(value, (dict, list)):
                 lines.append(f"{pad}{key}:")
                 lines.append(_simple_yaml_dump(value, indent + 2).rstrip())
             else:
@@ -281,14 +300,17 @@ def _simple_yaml_dump(data: Any, indent: int = 0) -> str:
     if isinstance(data, list):
         lines = []
         for item in data:
-            if isinstance(item, dict):
-                if not item:
-                    lines.append(f"{pad}- {{}}")
-                    continue
+            empty = _empty_collection(item)
+            if empty is not None:
+                lines.append(f"{pad}- {empty}")
+            elif isinstance(item, dict):
                 first = True
                 for key, value in item.items():
                     bullet = "- " if first else "  "
-                    if isinstance(value, (dict, list)):
+                    empty = _empty_collection(value)
+                    if empty is not None:
+                        lines.append(f"{pad}{bullet}{key}: {empty}")
+                    elif isinstance(value, (dict, list)):
                         lines.append(f"{pad}{bullet}{key}:")
                         lines.append(_simple_yaml_dump(value, indent + 4).rstrip())
                     else:
@@ -1335,9 +1357,23 @@ def expand_multipliers(template: dict[str, Any], cohorts: list[dict[str, Any]], 
     if not multipliers:
         return cohorts
     level_sets = []
-    for mult in multipliers:
-        levels = mult.get("levels", []) if isinstance(mult, dict) else []
+    for idx, mult in enumerate(multipliers):
+        levels = mult.get("levels") if isinstance(mult, dict) else None
+        if not isinstance(levels, list) or not levels:
+            # With no levels the product below is empty, and every cohort
+            # would vanish without a word (D84).
+            name = mult.get("name") if isinstance(mult, dict) else None
+            result.error(
+                "multiplier_without_levels",
+                f"Multiplier `{name}` has no levels, so it would make no cohorts at all.",
+                f"multipliers[{idx}] ({name})",
+                fix=f"Add at least one level under `{name}` (in the Builder: Multipliers, "
+                "Add Level), or remove the multiplier.",
+            )
+            continue
         level_sets.append([(mult, level) for level in levels])
+    if not level_sets:
+        return cohorts
     expanded: list[dict[str, Any]] = []
     for combo in product(*level_sets):
         prefix = "".join(str(level.get("strat", "")) for _, level in combo)
@@ -5091,7 +5127,44 @@ class FixTests(unittest.TestCase):
         self.assertTrue(contexts[0].startswith("cohorts[0] (Patients)"), contexts[0])
 
 
+class SavedDraftTests(MakeYamlTest):
+    """A template saved by the UI reads back as it was written (D84)."""
+
+    DRAFT = {
+        "project_folder": "Test Run",
+        "project_db": "PROJECTD1",
+        "cosmos_db": "COSMOS",
+        "vars": {"min_date_key": 20200101, "max_date_key": 20240101, "ICD_Value": ["K50"]},
+        "upload_cohorts": [],
+        "multipliers": [{"name": "Disease", "stage": "during_build", "levels": []}],
+        "batching": [],
+        "cohorts": [{"recipe": "PatientWithDx", "name": "Patients", "vars": {}}],
+    }
+
+    def test_empty_lists_and_mappings_read_back_empty_not_null(self):
+        text = dump_yaml_text(self.DRAFT)
+        doc = load_yaml_from_text(text)
+        self.assertEqual(doc["upload_cohorts"], [])
+        self.assertEqual(doc["batching"], [])
+        self.assertEqual(doc["multipliers"][0]["levels"], [])
+        self.assertEqual(doc["cohorts"][0]["vars"], {})
+
+    def test_a_saved_multiplier_with_no_levels_is_an_error_naming_it(self):
+        res = self.compile_template(dump_yaml_text(self.DRAFT))
+        self.assertHasError(res, "multiplier_without_levels")
+        message = next(m for m in res.errors if m.code == "multiplier_without_levels")
+        self.assertIn("Disease", message.message)
+        self.assertIn("Add Level", message.fix)
+
+    def test_levels_left_blank_by_an_older_save_are_the_same_error(self):
+        res = self.compile_template(tiny_template(
+            "multipliers:\n  - name: Disease\n    stage: during_build\n    levels:\n"
+        ))
+        self.assertHasError(res, "multiplier_without_levels")
+
+
 TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
+    "saved_draft": SavedDraftTests,
     "loading": LoadingTests,
     "recipes": RecipeTests,
     "inference": InferenceTests,
