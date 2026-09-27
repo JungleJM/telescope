@@ -11,7 +11,8 @@ When an item here is built, delete it from this file and describe the result in 
 | Part | State |
 |------------------------------------|------------------------------------|
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
-| YAML Manager browser UI | Built; Mac only. Clicked through by the user. The newest Builder changes (variable inputs, Separate parquets, Exports) are checked by running their functions under node, not yet clicked through |
+| YAML Manager browser UI | Built; Mac only. **Frozen** (D92): no fixes; retired once the tkinter app satisfies |
+| The app: model, tkinter Author and Run (D92–D98) | Decided; not started. Next, below |
 | Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79) | Built and tested. Carrying transfer YAMLs is not yet used on the VM |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
@@ -50,6 +51,23 @@ From the user's notes of 27 September 2026 (the YAML Manager and Artifacts).
 9. **The bundle queue (D91).** Builds on fix 2's folder.
 
 Then rebuild the bundle.
+
+------------------------------------------------------------------------
+
+## Next: The App, In Order
+
+From the user's redesign notes of 27 September 2026 and their answers (D92–D98). Engine changes first, so the model wraps the final shapes; the model before any view, so the view has nothing to decide.
+
+1. **Intakes (D95).** `_intake.yaml` in `YAMLs/temp/`, the existing temps and queue entries renamed, `_intake` in both suffix lists. Small, and everything after saves under it.
+2. **`pending_transfer` and typed columns for unreadable tables (D97).** The PK section and Splitters need a PK's columns before its file exists.
+3. **Renaming and dropping upload columns (D98).** Validation, and the landing in Projects, with outcome tests of what arrives under which name.
+4. **The model, part 1 (D92).** The draft and its edits: Project, PK Table, Supporting Tables, Multipliers, Splitters, Fact Tables; where each variable comes from; the tables that fit a binding, with column matches; messages with their kind and field; save, export, queue. Tested with `unittest`.
+5. **The model, part 2.** The dictionary table builder: columns from the dictionary, types, joins, order by number, Save as Recipe. The largest piece of the page's JavaScript.
+6. **The app's shell (D93).** One window, Author and Run, Run being today's launcher; opened the same way on the Mac and the VM; carried by the bundle.
+7. **Author: Project, PK Table, Supporting Tables.** The later sections read their tables and columns.
+8. **Author: Multipliers, Splitters, Fact Tables,** with the binding picker.
+9. **Validate, Exports, YAML.**
+10. **Rebuild the bundle,** then the user clicks through it on the Mac (Tk 8.6).
 
 ------------------------------------------------------------------------
 
@@ -121,20 +139,17 @@ Most of it is built inside `runs/<project>/` (D57, D72 to D75): `split/`, `sql/`
 - **Descriptions without a new split.** `contents.md` reads descriptions from the split (D73), so improving one means splitting again, which resets the pull. Reading them from the transfer YAML instead would need a way to match a multiplied table (`whitePatients_sp`) back to its template cohort.
 - **Measured column widths** go only to the console and the log (D70); they could be written to the manifest, so templates can be tuned from data.
 
-### Table-Input Binding In The UI
-
-The rule today (D45): an unbound table input is an error naming the tables that could fit, and binding happens on the cohort. When the UI grows, revisit how binding is offered there: picking from the suggested tables, and whether a recipe should be able to declare its table inputs explicitly rather than having them inferred from `{{prefix}}_{{Var}}`.
-
-The browser UI also does not yet show the uploaded PK source selection, and has no button to hand a split folder to Pullmanager.
-
 ### Queueing Transfers
 
 Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template added gets its transfer version (recipes written out; multipliers and batching still in their own sections, D49), and the queue is carried to the VM and run. Open: whether the tab lives in YAML Manager (building the queue on the Mac), in the launcher (running it on the VM), or both; and whether queued pulls run one after another or side by side (D57 allows either). Carrying several transfer YAMLs in one bundle (`makebundle.py yaml=A,B`, D79) is the first piece. The user expects two or three queued at a time, with one `--execute` starting them all (today it takes one project, D66).
 
+### A Test Server
+
+The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pull can be run end to end from the Mac. Choosing it would sit beside Cosmos in the app. The server names are already settings (`PULLMANAGER_COSMOS_SERVER`, `PULLMANAGER_PROJECTS_SERVER`), and the ODBC driver and `pyodbc` (5.3.0 on the VM's list) would be needed on the Mac. Not until the servers exist.
+
 ### Smaller Open Items
 
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names.
-- **Declaring upload column types in the Builder.** `columns:` with types (D54) has no field in the Uploads section yet; add it in the YAML.
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.
 - **`split_after_build` on an uploaded PK** is refused (D54). It could be supported by splitting the rows as the copy lands, if a list ever needs it.

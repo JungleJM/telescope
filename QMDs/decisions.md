@@ -581,6 +581,8 @@ for an override.
 
 ### D44. The VM gets a desktop launcher over the CLI, not a port of the web UI
 
+**Amended by D93:** the launcher becomes the Run half of one app that also authors.
+
 **Context.** The VM will not load a page from a Python-served localhost, and
 opening a static HTML file is blocked too. It has no Python desktop toolkit
 installed except tkinter; the `shiny` and `tcltk` entries in its package list
@@ -1558,6 +1560,8 @@ writer had been fixed for this; the Python one had not.
 
 ### D85. Temps live in `YAMLs/temp/`, named for the project, and never overwrite another file
 
+**Amended by D95:** the file is `<project>_intake.yaml`.
+
 **Context.** New Blank Template swapped the Builder's draft but left the old
 path in the header, and saving from a `_temp.yaml` overwrote that file, so a
 blank draft could replace a real one.
@@ -1646,6 +1650,8 @@ already names each one and where it goes.
 
 ### D91. Save & Refresh queues a temp for the bundle; `makebundle.py queue` carries the queue
 
+**Amended by D95:** the queue lists intakes.
+
 **Decision.**
 
 - Saving a temp adds it, once, to `YAMLs/temp/bundle_queue.txt`.
@@ -1659,3 +1665,167 @@ already names each one and where it goes.
   labelled "Transfer YAML (to be bundled with bundle.py)".
 - Plain `makebundle.py` is unchanged, so the committed bundle still carries no
   transfer YAMLs (D79).
+
+---
+
+## The App
+
+### D92. The Builder's logic moves into a Python model; every UI is a view of it
+
+**Context.** The browser UI is not decoupled from the engine. Python compiles
+and draws read-only panels, but the page's JavaScript (about 1,500 lines) holds
+the draft and every edit to it: the PK rules, where a variable comes from (a
+second copy of D78's rules), type matching against the dictionary, the custom
+table builder and a YAML writer of its own. It is checked only under node. The
+user wants several UIs over time (tkinter now; a web UI, React or a native app
+later) and a web UI redesigned only once it is easy to change.
+
+**Decision.**
+
+- A model module beside makeYaml, with no tkinter and no HTML in it, holds
+  the draft and every edit as functions. It reads the defaults, recipes and
+  dictionary, validates in-process through makeYaml, and answers what a view
+  asks: where a variable comes from, which tables fit a binding and which of
+  their columns match, a PK's columns, and each message's kind and the field
+  it points to. It is tested with `unittest`. It takes over from
+  `yamlmanager_backend.py` as the one thing a UI imports.
+- A view only wires widgets to it, as `gui.py` does to `launcher.py` (D44).
+- The browser UI is frozen from now: no fixes, and not moved onto the model.
+  It is retired once the tkinter app satisfies the user; a later web UI is
+  designed on the model.
+
+**Consequences.** Standard library and the VM's packages only, since the
+model travels with makeYaml (D93). Rules that exist twice today, in makeYaml
+and in the page, exist once.
+
+### D93. One tkinter app, on the Mac and the VM: Author and Run
+
+**Amends D44**, which kept authoring on the Mac because the VM cannot open
+the browser UI.
+
+**Context.** The user likes tkinter's file dialogs, fields and buttons, wants
+one app for opening a transfer YAML, adjusting it and running it, and wants
+the Mac to look and behave exactly as the VM does, for testing.
+
+**Decision.**
+
+- One tkinter window with two halves. **Author**: the Builder (D96),
+  Validate, Exports and YAML. **Run**: today's launcher (Validation Output,
+  Pull Log, Status), whose logic stays in `launcher.py`.
+- The same app on both sides, needing nothing installed: the standard
+  library, tkinter, and packages on the VM's list. Being VM-capable is a
+  design constraint; whether and when it ships is the user's choice.
+- On the Mac, Run works as on the VM up to the database connection. Execute
+  cannot connect there until a test server exists (roadmap).
+- Tested like the launcher: the model with `unittest`, the view against the
+  fake tkinter, and by hand with the Mac's Tk 8.6. Dark mode comes later.
+
+### D94. The flow is the same on both sides: intake, transfer, Pullmanager
+
+**Upholds D49.** Recipes stay on the Mac.
+
+**Context.** The user does not want the core of the program left on the VM
+where it could be copied. Every VM session is reached from the Mac, so
+authoring happens there. On the VM the user makes small changes to a mostly
+made YAML (names, a value) before running it.
+
+**Decision.**
+
+- On both sides, Author saves an intake (D95) and exports its transfer YAML,
+  which Run takes. There is no VM-only path.
+- On the VM the file opened is a transfer YAML. It names no recipes, so it
+  needs no recipes file, and exporting it again gives the same file with its
+  provenance kept (checked: byte-identical, `transfer:` block included).
+- Where there is no recipes file, Prefabricated lists nothing and Save as
+  Recipe is unavailable, each saying why. That follows from the file being
+  absent, not from which machine it is.
+
+### D95. A draft is an intake: `YAMLs/temp/<project>_intake.yaml`
+
+**Amends D85 and D91**: the file's suffix, not its folder.
+
+**Decision.**
+
+- Save writes `YAMLs/temp/<project_folder>_intake.yaml`. New Blank shows
+  `YAMLs/temp/_intake.yaml`. The folder keeps its name, and D85's
+  never-overwrite rule stands.
+- The existing `_temp.yaml` files and the bundle queue's entries are renamed.
+- `_intake` joins the suffixes a run folder's name drops, in makeYaml and in
+  `pulls.py` alike. `_temp` stays in that list, so older files name the same
+  run folder.
+- `project_folder` is shown as **Project name**. Its dropdown lists the
+  intakes in `YAMLs/temp/` and the transfer YAMLs in the working folder, with
+  Browse and New beside it.
+
+### D96. The Builder's layout: the PK first, and splitting made explicit
+
+**Context.** From the user's redesign. It maps onto the template's existing
+keys, so the core logic is unchanged. The difference between a
+`split_after_build` multiplier and a batch was obscure enough that the user
+had not seen it.
+
+**Decision.** Sections, in order:
+
+- **Project.** Project name (D95). "Pull from" toggles Cosmos and
+  Cosmos_SneakPeek, both on by default: both means `Dual`, one means that
+  database, neither is an error. Project DB, defaulting to `PROJECTD93A5E7`
+  (D86). The dates. "Collect all patients matching criteria", on by default:
+  on is `smallset: false`; off enables a sample size (`stop_at_for_pk_table`)
+  and "Random sample" (`random_pk_sample`).
+- **PK Table.** Exactly one source: a prefabricated recipe, a table built
+  from the dictionary, a parquet, a CSV, or a `dbtable`. It replaces the PK
+  checkbox spread across uploads and custom tables.
+- **Supporting Tables** (formerly Uploads): every upload except the PK. Each
+  shows its columns, which can be renamed and dropped (D98).
+- **Multipliers**: `during_build` only, explained as "each level becomes its
+  own set of tables".
+- **Splitters**: one section in which each splitter states its kind.
+  "**Separate tables**" is a `split_after_build` multiplier: each level gets
+  its own PK and session, with an optional control and row mult (D59).
+  "**Pieces of one table**" is batching: a chunk, or a PK column with values,
+  and Separate parquets. The column is picked from the PK's known columns.
+  Before a PK is chosen, the column controls are greyed and say "Choose a PK
+  Table first"; chunk still works. The YAML is unchanged: they are written as
+  today's `multipliers` and `batching`.
+- **Fact Tables** (formerly Cohorts): prefabricated recipes, and tables built
+  from the dictionary with the same builder the PK uses, columns ordered by
+  number. A variable left unset is labelled with its source, "from the PK
+  (K50.%)" or "set by multiplier IBDType", as a label only. A table input is
+  bound with a picker listing the tables that fit first, with a ✓ or ✗ for
+  each column it needs. It never picks, even when only one fits (D45 stands;
+  the user will try it).
+- **Validate** merges Validation and Pipeline. Errors are red, warnings
+  yellow, pending transfers blue (D97), passes green. Clicking a message goes
+  to its field. It runs a moment after each edit; Save stays explicit, and
+  the title shows unsaved changes.
+- **Exports** (the queue, D91, and each intake's three exports) and **YAML**
+  come across. The Cohorts cards, Graph and Recipes tabs follow later.
+- Looking codes up (ICD, CPT) through an outside service is dropped.
+
+### D97. `pending_transfer: true` marks a file that will exist only on the VM
+
+**Decision.**
+
+- A PK or supporting table read from a file may say `pending_transfer:
+  true`. On the Mac, its missing file is reported as pending (blue), not as a
+  warning. A missing file not so marked stays a warning, so a real mistake
+  stays loud.
+- It changes nothing at the split: a file the split needs and cannot find is
+  an error there, as now.
+- A table whose columns cannot be read (a `dbtable`, or a file not here yet)
+  takes its column names, and optionally types, typed in under `columns:`, so
+  the Splitters dropdown and binding checks work. Without them its column
+  controls stay empty, with a warning saying why.
+
+### D98. A supporting table's columns can be renamed and dropped
+
+**Decision.**
+
+- An entry under an upload's `columns:` may add `from:`, the file's column
+  name, making `name` the table's column. `drop: true` leaves a column out.
+  Columns not listed are kept as they are.
+- The change is made as the file lands in Projects, so the Projects copy,
+  its Cosmos temp, validation and every recipe bound to it see the new names.
+- Validation refuses a `from:` the file lacks (when the file can be read),
+  two columns ending with one name, and dropping a column the table's key or
+  a binding needs, each with its fix.
