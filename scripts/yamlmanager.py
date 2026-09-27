@@ -1351,6 +1351,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .column-title strong { overflow-wrap: anywhere; }
 .column-actions { display: inline-flex; gap: 5px; justify-content: end; }
 .column-actions button { padding: 4px 7px; min-width: 28px; }
+.column-actions .column-order { width: 64px; padding: 4px 6px; }
 .join-builder { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(150px, 1fr) 70px minmax(170px, 1fr) minmax(150px, 1fr) minmax(130px, .7fr); gap: 8px; align-items: center; }
 .join-builder label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .join-builder label select, .join-builder label input { width: 100%; color: var(--ink); font-weight: 400; }
@@ -2106,8 +2107,7 @@ function renderCustomColumnRows() {
         <input data-custom-column-field="name" data-index="${index}" value="${escapeAttr(column.name || '')}" title="Output name">
         <input data-custom-column-field="description" data-index="${index}" value="${escapeAttr(column.description || '')}" title="Description, for contents.md" placeholder="${escapeAttr(meta.description ? 'blank: the dictionary\'s' : 'Description')}">
         <span class="column-actions">
-          <button data-move-custom-column="${index}" data-direction="-1" title="Move up">Up</button>
-          <button data-move-custom-column="${index}" data-direction="1" title="Move down">Down</button>
+          <input class="column-order" type="number" min="1" max="${customDraft.columns.length}" value="${index + 1}" data-column-order="${index}" title="Position: type a number and press Enter to move the column there">
           <button class="danger" data-remove-custom-column="${index}" title="Remove">-</button>
         </span>
       </div>
@@ -2790,17 +2790,6 @@ document.addEventListener('click', event => {
     renderCustomBuilder();
     document.getElementById('customName')?.focus();
   }
-  if (target.dataset.moveCustomColumn) {
-    const index = Number(target.dataset.moveCustomColumn);
-    const direction = Number(target.dataset.direction);
-    const next = index + direction;
-    if (next >= 0 && next < customDraft.columns.length) {
-      const [column] = customDraft.columns.splice(index, 1);
-      customDraft.columns.splice(next, 0, column);
-      renderCustomColumnRows();
-      renderJoinBuilder();
-    }
-  }
   if (target.dataset.removeCustomColumn) {
     const index = Number(target.dataset.removeCustomColumn);
     const [column] = customDraft.columns.splice(index, 1);
@@ -2857,8 +2846,27 @@ document.addEventListener('change', event => {
   updateDraftYaml();
 });
 
+// A column's position: the number typed, on Enter. 1 is the top; a number
+// past the end is the bottom.
+function moveColumnTo(columns, from, position) {
+  const to = Math.min(Math.max(Math.round(position) - 1, 0), columns.length - 1);
+  const [column] = columns.splice(from, 1);
+  columns.splice(to, 0, column);
+  return to;
+}
+
 document.addEventListener('keydown', event => {
   const target = event.target;
+  if (target.dataset.columnOrder !== undefined && event.key === 'Enter') {
+    event.preventDefault();
+    const position = Number(target.value);
+    if (!Number.isFinite(position) || target.value.trim() === '') return;
+    const to = moveColumnTo(customDraft.columns, Number(target.dataset.columnOrder), position);
+    renderCustomColumnRows();
+    renderJoinBuilder();
+    document.querySelector(`[data-column-order="${to}"]`)?.focus();
+    return;
+  }
   if (target.dataset.batchingAddValue && event.key === 'Enter') {
     event.preventDefault();
     const value = target.value.trim();
