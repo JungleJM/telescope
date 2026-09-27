@@ -45,6 +45,8 @@ BACKEND_MODULE = os.environ.get(
     "YAMLMANAGER_BACKEND_MODULE",
     "yamlmanager_backend",
 )
+from bundle_pullmanager import QUEUE_NAME, queue_add, queue_remove, read_queue  # noqa: E402
+
 try:
     backend = importlib.import_module(BACKEND_MODULE)
 except ImportError as exc:
@@ -256,6 +258,9 @@ def save_template(current: Path | None, draft: Any, temp_dir: Path | None = None
     except Exception as exc:  # noqa: BLE001 - reported to the page
         temp.unlink(missing_ok=True)
         return 500, f"Could not save {target.name}: {exc}", None
+    # Queued for the bundle, once (D91); only temps in the temp folder queue.
+    if queue_add(target.name, target.parent):
+        notes.append(f"Added to the bundle queue ({QUEUE_NAME}).")
     return 200, " ".join([f"Saved {target.parent.name}/{target.name}."] + notes), target
 
 
@@ -905,6 +910,32 @@ def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> st
     """
 
 
+def queue_state(temp_dir: Path | None = None) -> dict[str, Any]:
+    """The bundle queue, and the temps that could join it (D91)."""
+    folder = temp_dir or TEMP_DIR
+    queue = read_queue(folder)
+    temps = sorted(path.name for path in folder.glob("*_temp.yaml")) if folder.is_dir() else []
+    return {
+        "dir": temp_dir_shown() if temp_dir is None else str(folder),
+        "queue": [{"name": name, "exists": (folder / name).is_file()} for name in queue],
+        "available": [name for name in temps if name not in queue],
+    }
+
+
+def change_queue(action: str, name: str, temp_dir: Path | None = None) -> tuple[int, str]:
+    folder = temp_dir or TEMP_DIR
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        return 400, f"Not a temp's file name: {name!r}."
+    if action == "add":
+        if not (folder / name).is_file():
+            return 404, f"{name} is not in {folder.name}/."
+        return 200, (f"Queued {name}." if queue_add(name, folder) else f"{name} was already queued.")
+    if action == "remove":
+        return 200, (f"Removed {name} from the queue." if queue_remove(name, folder)
+                     else f"{name} was not queued.")
+    return 400, f"Unknown queue action {action!r}: use add or remove."
+
+
 def temp_dir_shown() -> str:
     try:
         return TEMP_DIR.relative_to(PROJECT_ROOT).as_posix()
@@ -1161,8 +1192,17 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
           </section>
 
           <section id="builderExports" class="builder-section">
-            <div class="section-title"><h2>Exports</h2><span class="section-note">The saved template's exports, as on the Exports tab. Save &amp; Refresh to see changes made here.</span></div>
-            {export_blocks(exports, "builderExport")}
+            <section class="block">
+              <div class="section-title"><h2>Bundle Queue</h2><span class="section-note">Temps carried by <code>python3 makebundle.py queue</code>, which exports each one's transfer YAML and puts it in <code>bundle.py</code>; on the VM they land beside <code>pullmanager.py</code>. Save &amp; Refresh adds the temp it saves. Choose one to see its exports.</span></div>
+              <div id="bundleQueueRows" class="editor-rows"></div>
+              <div class="inline-form queue-add">
+                <select id="bundleQueueAvailable"></select>
+                <button id="bundleQueueAdd">Add To Queue</button>
+              </div>
+              <div id="bundleQueueMessage" class="message hidden"></div>
+            </section>
+            <div class="section-title"><h2 id="queueExportsTitle">Exports: {e(template_path.name)}</h2><span class="section-note">The saved template's exports, as on the Exports tab. Save &amp; Refresh to see changes made here.</span></div>
+            <div id="queueExports">{export_blocks(exports, "builderExport")}</div>
           </section>
         </div>
       </div>
@@ -1222,6 +1262,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
   </main>
 
   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
+  <script id="bundleQueueData" type="application/json">{json_payload(queue_state())}</script>
   <script id="builderDefaultsData" type="application/json">{json_payload(builder_defaults())}</script>
   <script id="compileErrorsData" type="application/json">{json_payload([m.to_dict() for m in result.errors])}</script>
   <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
@@ -1281,6 +1322,9 @@ input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 
 .header-path-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
 .save-target { color: var(--muted); font-size: 12px; }
+.editor-row.queue { grid-template-columns: minmax(200px, 1fr) auto auto; align-items: center; }
+.editor-row.queue.selected { border-color: var(--accent); }
+.inline-form.queue-add { grid-template-columns: minmax(200px, 420px) auto; margin-top: 10px; }
 .save-target strong { color: var(--ink); }
 main { padding: 22px; }
 .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
@@ -2972,6 +3016,69 @@ function showSavedErrors() {
       + `${escapeHtml(m.message)}${m.fix ? `<div class="message-fix">Fix: ${escapeHtml(m.fix)}</div>` : ''}</div>`).join('');
 }
 
+// The bundle queue (D91): what makebundle.py queue carries.
+let bundleQueue = JSON.parse(document.getElementById('bundleQueueData').textContent);
+
+function renderBundleQueue() {
+  const rows = document.getElementById('bundleQueueRows');
+  const select = document.getElementById('bundleQueueAvailable');
+  if (!rows || !select) return;
+  rows.innerHTML = bundleQueue.queue.map(item => `
+    <div class="editor-row queue" data-queue-row="${escapeAttr(item.name)}">
+      <button class="linklike" data-queue-show="${escapeAttr(item.name)}" title="Show its pre-YAML, transfer YAML and manifest">${escapeHtml(item.name)}</button>
+      <span class="muted">${item.exists ? '' : `not in ${escapeHtml(bundleQueue.dir)}/: makebundle.py queue will stop on it`}</span>
+      <button class="danger" data-queue-remove="${escapeAttr(item.name)}">Remove</button>
+    </div>`).join('') || '<div class="empty">Nothing queued. Save &amp; Refresh a temp, or add one below.</div>';
+  select.innerHTML = bundleQueue.available.length
+    ? bundleQueue.available.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join('')
+    : `<option value="">Every temp in ${escapeHtml(bundleQueue.dir)}/ is queued</option>`;
+}
+
+async function changeBundleQueue(action, name) {
+  if (window.location.protocol === 'file:') {
+    showMessage('bundleQueueMessage', 'This page was opened as a file, so it cannot change the queue. Serve it (python3 yamlmgr.py).', 'warn');
+    return;
+  }
+  try {
+    const response = await fetch('/bundle-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, name })
+    });
+    const body = await response.json();
+    if (body.state) bundleQueue = body.state;
+    renderBundleQueue();
+    showMessage('bundleQueueMessage', body.message, body.ok ? 'ok' : 'error');
+  } catch (err) {
+    showMessage('bundleQueueMessage', `Could not reach the YAML Manager server: ${err}`);
+  }
+}
+
+async function showQueuedExports(name) {
+  const target = document.getElementById('queueExports');
+  const title = document.getElementById('queueExportsTitle');
+  if (!target) return;
+  document.querySelectorAll('[data-queue-row]').forEach(row => row.classList.toggle('selected', row.dataset.queueRow === name));
+  const recipes = document.querySelector('input[name="recipes"]')?.value || '';
+  try {
+    const response = await fetch(`/exports?${new URLSearchParams({ template: name, recipes })}`);
+    target.innerHTML = await response.text();
+    if (title) title.textContent = `Exports: ${name}`;
+  } catch (err) {
+    showMessage('bundleQueueMessage', `Could not load the exports of ${name}: ${err}`);
+  }
+}
+
+document.addEventListener('click', event => {
+  const target = event.target;
+  if (target.dataset.queueShow) showQueuedExports(target.dataset.queueShow);
+  if (target.dataset.queueRemove) changeBundleQueue('remove', target.dataset.queueRemove);
+  if (target.id === 'bundleQueueAdd') {
+    const name = getValue('bundleQueueAvailable');
+    if (name) changeBundleQueue('add', name);
+  }
+});
+
 function isEmptyCollection(value) {
   if (Array.isArray(value)) return value.length === 0;
   return Boolean(value) && typeof value === 'object'
@@ -3030,6 +3137,7 @@ function escapeAttr(value) {
 }
 
 hydrateBuilder();
+renderBundleQueue();
 showSavedErrors();
 try {
   const scroll = sessionStorage.getItem('yamlmanagerScroll');
@@ -3179,10 +3287,29 @@ def serve_dashboard(
     class DashboardHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            if parsed.path == "/exports":
+                # One temp's three exports, for the Builder's bundle queue (D91).
+                name = params.get("template", [""])[0]
+                recipes_arg = params.get("recipes", [default_recipes])[0] or default_recipes
+                path = TEMP_DIR / Path(name).name
+                if not name or not path.is_file():
+                    fragment, status = f'<div class="message error">No {e(name)} in {e(temp_dir_shown())}/.</div>', 404
+                else:
+                    fragment = export_blocks(
+                        export_results(path, resolve_workspace_path(recipes_arg)), "queueExport"
+                    )
+                    status = 200
+                data = fragment.encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if parsed.path not in ("/", "/dashboard", "/dashboard.html"):
                 self.send_error(404)
                 return
-            params = urllib.parse.parse_qs(parsed.query)
             template_arg = params.get("template", [default_template])[0] or default_template
             recipes_arg = params.get("recipes", [default_recipes])[0] or default_recipes
             template_path = resolve_workspace_path(template_arg)
@@ -3205,14 +3332,17 @@ def serve_dashboard(
         def do_POST(self) -> None:
             """The one write the page can make: a custom table saved as a recipe."""
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path not in ("/save-recipe", "/save-template"):
+            if parsed.path not in ("/save-recipe", "/save-template", "/bundle-queue"):
                 self.send_error(404)
                 return
             reply: dict[str, Any] = {}
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length) or b"{}")
-                if parsed.path == "/save-recipe":
+                if parsed.path == "/bundle-queue":
+                    status, message = change_queue(str(body.get("action")), str(body.get("name") or ""))
+                    reply["state"] = queue_state()
+                elif parsed.path == "/save-recipe":
                     recipes_path = resolve_workspace_path(body.get("recipes") or default_recipes)
                     status, message = save_recipe(recipes_path, body.get("recipe"))
                 else:
@@ -3488,6 +3618,44 @@ class SneakPeekConnectionTests(unittest.TestCase):
         self.assertNotIn("None detected", sp_card[:sp_card.index("</summary>")])
 
 
+class BundleQueueTests(unittest.TestCase):
+    """D91: Save & Refresh queues its temp once; the Builder adds and removes."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.temps = Path(self._tmp.name) / "temp"
+
+    def save(self, folder):
+        return save_template(None if not (self.temps / f"{folder}_temp.yaml").exists()
+                             else self.temps / f"{folder}_temp.yaml",
+                             {"project_vars": {"project_folder": folder}, "cohorts": []},
+                             temp_dir=self.temps)
+
+    def test_saving_queues_the_temp_once(self):
+        _, first, _ = self.save("Celiac")
+        _, again, _ = self.save("Celiac")
+        self.save("IBD Ancestry")
+        self.assertIn("Added to the bundle queue", first)
+        self.assertNotIn("bundle queue", again)
+        self.assertEqual(read_queue(self.temps), ["Celiac_temp.yaml", "IBD_Ancestry_temp.yaml"])
+
+    def test_the_builder_removes_and_adds_back(self):
+        self.save("Celiac")
+        (self.temps / "Old_temp.yaml").write_text("cohorts: []\n", encoding="utf-8")
+        self.assertEqual(queue_state(self.temps)["available"], ["Old_temp.yaml"])
+        self.assertEqual(change_queue("add", "Old_temp.yaml", self.temps)[0], 200)
+        self.assertEqual(change_queue("remove", "Celiac_temp.yaml", self.temps)[0], 200)
+        self.assertEqual(read_queue(self.temps), ["Old_temp.yaml"])
+        self.assertEqual(queue_state(self.temps)["available"], ["Celiac_temp.yaml"])
+
+    def test_only_temps_in_the_folder_can_be_queued(self):
+        self.temps.mkdir()
+        self.assertEqual(change_queue("add", "Missing_temp.yaml", self.temps)[0], 404)
+        self.assertEqual(change_queue("add", "../recipes.yaml", self.temps)[0], 400)
+        self.assertEqual(read_queue(self.temps), [])
+
+
 class SectionNoteTests(unittest.TestCase):
     def test_inline_and_preceding_comments_become_notes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3518,7 +3686,7 @@ class SectionNoteTests(unittest.TestCase):
 
 def run_tdd() -> int:
     suite = unittest.TestSuite()
-    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, BuilderDefaultTests, SneakPeekConnectionTests, SectionNoteTests):
+    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, BuilderDefaultTests, SneakPeekConnectionTests, BundleQueueTests, SectionNoteTests):
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 

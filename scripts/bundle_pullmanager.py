@@ -6,6 +6,7 @@ The VM cannot pull from git, so development happens as normal modules under
 
     python3 scripts/bundle_pullmanager.py            # build dist/bundle.py
     python3 makebundle.py yaml=IBD_Ancestry,Celiac   # and carry those transfer YAMLs
+    python3 makebundle.py queue                      # or the temps queued in YAMLs/temp
     python3 scripts/bundle_pullmanager.py --tdd      # run bundle/extractor tests
 
 On the VM:
@@ -70,6 +71,17 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
 # where `makeYaml --export-transfer` writes them. Each is extracted beside
 # pullmanager.py on the VM, ready to run.
 TRANSFER_SUFFIX = "_transfer.yaml"
+
+# The bundle queue (D91): temps YAML Manager's Save & Refresh queued, one file
+# name per line. `makebundle.py queue` exports each one's transfer YAML to the
+# repository root and carries it, as `yaml=` does.
+TEMP_DIR = REPO_ROOT / "YAMLs" / "temp"
+QUEUE_NAME = "bundle_queue.txt"
+QUEUE_HEADER = (
+    "# Temps queued for the bundle, one per line (D91). YAML Manager's Save & Refresh\n"
+    "# adds to it and its Builder > Exports edits it; python3 makebundle.py queue carries it.\n"
+)
+RECIPES_PATH = REPO_ROOT / "YAMLs" / "recipes.yaml"
 
 BUNDLE_FORMAT_VERSION = 1
 FUTURE_IMPORT = "from __future__ import annotations"
@@ -170,6 +182,77 @@ def find_transfer(name: str, folder: Path = REPO_ROOT) -> Path:
         f"No {wanted} in {folder}. Transfer YAMLs there: {there}. Export it first: "
         f"python3 scripts/makeYaml.py --template <template> --export-transfer"
     )
+
+
+def read_queue(folder: Path = TEMP_DIR) -> list[str]:
+    """The queued temps' file names, in the order queued, each once."""
+    try:
+        lines = (folder / QUEUE_NAME).read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    names: list[str] = []
+    for line in lines:
+        name = line.strip()
+        if name and not name.startswith("#") and name not in names:
+            names.append(name)
+    return names
+
+
+def write_queue(names: list[str], folder: Path = TEMP_DIR) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / QUEUE_NAME).write_text(QUEUE_HEADER + "".join(f"{n}\n" for n in names), encoding="utf-8")
+
+
+def queue_add(name: str, folder: Path = TEMP_DIR) -> bool:
+    """Queue a temp by file name; False if it was already queued."""
+    names = read_queue(folder)
+    if name in names:
+        return False
+    write_queue(names + [name], folder)
+    return True
+
+
+def queue_remove(name: str, folder: Path = TEMP_DIR) -> bool:
+    names = read_queue(folder)
+    if name not in names:
+        return False
+    write_queue([n for n in names if n != name], folder)
+    return True
+
+
+def export_queue(folder: Path = TEMP_DIR, out_dir: Path | None = None) -> list[tuple[Path, Path]]:
+    """Each queued temp's transfer YAML, written (to the repository root unless
+    `out_dir`), as (temp, transfer) pairs. Any temp that does not validate
+    stops the build, with every one that failed named."""
+    import makeYaml
+
+    names = read_queue(folder)
+    if not names:
+        raise BundleError(
+            f"The bundle queue ({folder / QUEUE_NAME}) is empty. Save & Refresh a temp in "
+            "YAML Manager, or add one in its Builder's Exports."
+        )
+    exported: list[tuple[Path, Path]] = []
+    problems: list[str] = []
+    for name in names:
+        temp = folder / name
+        if not temp.is_file():
+            problems.append(f"{name}: not in {folder}. Remove it from the queue (Builder > Exports) "
+                            "or put the file back.")
+            continue
+        result = makeYaml.build_transfer(
+            template_path=temp, recipes_path=RECIPES_PATH, write=True, output_dir=out_dir
+        )
+        if result.errors:
+            first = result.errors[0]
+            problems.append(f"{name}: {len(result.errors)} error(s), the first [{first.code}] "
+                            f"{first.message} Open it in YAML Manager to see them all.")
+            continue
+        exported.append((temp, Path(result.output_path)))
+    if problems:
+        raise BundleError("Queued temps that cannot be exported, so nothing was built:\n  "
+                          + "\n  ".join(problems))
+    return exported
 
 
 def bundled_files(
@@ -278,7 +361,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="yaml=NAME,NAME",
         help="Transfer YAMLs to carry, by project name: yaml=IBD_Ancestry,Celiac finds "
              "IBD_Ancestry_transfer.yaml and Celiac_transfer.yaml at the repository "
-             "root. Each is extracted beside pullmanager.py on the VM.",
+             "root. Each is extracted beside pullmanager.py on the VM. `queue` exports "
+             "and carries every temp queued in YAMLs/temp/bundle_queue.txt (D91).",
     )
     parser.add_argument(
         "--tdd",
@@ -301,7 +385,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content_id: {manifest['content_id']}")
             return 0
 
-        transfers = [find_transfer(name) for name in transfer_names(args.yaml)]
+        queued = [token for token in args.yaml if token == "queue"]
+        named = [token for token in args.yaml if token != "queue"]
+        transfers = [find_transfer(name) for name in transfer_names(named)]
+        if queued:
+            for temp, transfer in export_queue():
+                print(f"Exported {transfer.name} from {temp.relative_to(REPO_ROOT).as_posix()}")
+                if transfer not in transfers:
+                    transfers.append(transfer)
         output, manifest = build(Path(args.out), Path(args.src), transfers)
         size_kb = output.stat().st_size / 1024
         print(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")

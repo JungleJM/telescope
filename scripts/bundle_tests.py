@@ -758,6 +758,75 @@ class TransferYamlTests(unittest.TestCase):
         self.assertEqual(upload_locations(self.ibd), ["data/Meds/ibd/IBD_Meds.parquet"])
 
 
+class QueueTests(unittest.TestCase):
+    """D91: `makebundle.py queue` exports every queued temp and carries it."""
+
+    TEMP = (
+        "cosmos_vars: {{project_db: PROJECTD93A5E7, cosmos_db: Dual}}\n"
+        "run_vars: {{min_date_key: 19900101, max_date_key: 20260601}}\n"
+        "project_vars: {{project_folder: {folder}}}\n"
+        "cohorts:\n"
+        "  - {{recipe: PatientWithDx, name: Patients, vars: {{ICD_Value: {code}}}}}\n"
+        "  - {{recipe: IndexDiagnosis, name: IndexDiagnosis}}\n"
+    )
+
+    def setUp(self):
+        from bundle_pullmanager import write_queue
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+        self.temps = self.tmp / "temp"
+        self.temps.mkdir()
+        self.out = self.tmp / "root"
+        for folder, code in (("Celiac", "K90.0"), ("IBD Ancestry", '"K50.%"')):
+            (self.temps / f"{folder.replace(' ', '_')}_temp.yaml").write_text(
+                self.TEMP.format(folder=folder, code=code), encoding="utf-8")
+        write_queue(["Celiac_temp.yaml", "IBD_Ancestry_temp.yaml"], self.temps)
+
+    def test_each_queued_temp_is_exported_and_carried(self):
+        from bundle_pullmanager import export_queue
+
+        exported = export_queue(self.temps, self.out)
+        self.assertEqual([t.name for _, t in exported],
+                         ["Celiac_transfer.yaml", "IBD_Ancestry_transfer.yaml"])
+        self.assertIn("K90.0", (self.out / "Celiac_transfer.yaml").read_text(encoding="utf-8"))
+        bundle = self.tmp / "bundle.py"
+        build(bundle, SOURCE_ROOT, [t for _, t in exported])
+        sections, _ = read_bundle(bundle)
+        published = {section["path"] for section in sections}
+        self.assertIn("root/Celiac_transfer.yaml", published)
+        self.assertIn("root/IBD_Ancestry_transfer.yaml", published)
+
+    def test_a_queued_temp_that_does_not_validate_stops_the_build_naming_it(self):
+        from bundle_pullmanager import export_queue
+
+        (self.temps / "Celiac_temp.yaml").write_text(
+            self.TEMP.format(folder="Celiac", code="K90.0").replace("recipe: IndexDiagnosis", "recipe: NoSuchRecipe"),
+            encoding="utf-8")
+        with self.assertRaises(BundleError) as caught:
+            export_queue(self.temps, self.out)
+        self.assertIn("Celiac_temp.yaml", str(caught.exception))
+        self.assertNotIn("IBD_Ancestry_temp.yaml", str(caught.exception))
+        self.assertFalse((self.out / "Celiac_transfer.yaml").exists())
+
+    def test_a_queued_temp_that_is_gone_is_named(self):
+        from bundle_pullmanager import export_queue, write_queue
+
+        write_queue(["Gone_temp.yaml"], self.temps)
+        with self.assertRaises(BundleError) as caught:
+            export_queue(self.temps, self.out)
+        self.assertIn("Gone_temp.yaml: not in", str(caught.exception))
+
+    def test_an_empty_queue_says_how_to_fill_it(self):
+        from bundle_pullmanager import export_queue, write_queue
+
+        write_queue([], self.temps)
+        with self.assertRaises(BundleError) as caught:
+            export_queue(self.temps, self.out)
+        self.assertIn("Save & Refresh", str(caught.exception))
+
+
 def run(group: str | None = None, verbosity: int = 2) -> int:
     loader = unittest.TestLoader()
     module = sys.modules[__name__]
