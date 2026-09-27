@@ -1,0 +1,40 @@
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: AllCohort
+vars:
+
+upload_cohorts:
+  - name: allCrohns
+    dest_table: allCrohns
+    file_type: dbtable
+    push_this_cycle: true
+  - name: allUC
+    dest_table: allUC
+    file_type: dbtable
+    push_this_cycle: true
+  - name: HospitalICDTable
+    dest_table: HospitalICDTable
+    file_type: csv
+    push_this_cycle: true
+multipliers:
+  - name: Disease
+    stage: during_build
+    levels:
+batching:
+
+cohorts:
+  - recipe: OtherDiagnoses
+    name: OtherDiagnoses
+  - recipe: OtherHospitalizations
+    name: OtherHospitalizations
+    vars:
+      HospitalICDTable: HospitalICDTable

@@ -1,0 +1,296 @@
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: CrohnsClinicalData
+vars:
+
+upload_cohorts:
+  - name: Crohns_AllCohort
+    dest_table: Crohns_AllCohort
+    file_type: parquet
+    push_this_cycle: true
+    type: pk
+    key_columns:
+      - PatientDurableKey
+  - name: HospitalICDTable
+    dest_table: HospitalICDTable
+    file_type: csv
+    push_this_cycle: true
+multipliers:
+
+batching:
+
+cohorts:
+  - recipe: OtherDiagnoses
+    name: OtherDiagnoses
+  - recipe: OtherHospitalizations
+    name: AllHospitalizations
+    vars:
+      HospitalICDTable: HospitalICDTable
+  - name: MedOrderHistory
+    dest_table: MedOrderHistory
+    type: fact
+    pull_this_cycle: true
+    description: All MedicationOrders (Rx written) in patient's history
+    granularity: One row per med order
+    columns:
+      - source: mof._IsDeleted
+        name: _IsDeleted
+        type: BIT
+        nullable: false
+      - source: mof._IsInferred
+        name: _IsInferred
+        type: BIT
+        nullable: false
+      - source: mof.Count
+        name: Count
+        type: INT
+        nullable: false
+      - source: mof.DepartmentKey
+        name: DepartmentKey
+        type: BIGINT
+        nullable: true
+      - source: mof.DiscontinueReason
+        name: DiscontinueReason
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.DoseUnit
+        name: DoseUnit
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.DurationKey
+        name: DurationKey
+        type: BIGINT
+        nullable: true
+      - source: mof.EncounterKey
+        name: EncounterKey
+        type: BIGINT
+        nullable: true
+      - source: mof.EndDateKey
+        name: EndDateKey
+        type: INT
+        nullable: true
+      - source: mof.FifthIndicationForUse
+        name: FifthIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.FirstIndicationForUse
+        name: FirstIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.FourthIndicationForUse
+        name: FourthIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.Frequency
+        name: Frequency
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.IsOutpatientMode
+        name: IsOutpatientMode
+        type: BIT
+        nullable: true
+      - source: mof.MedicationKey
+        name: MedicationKey
+        type: BIGINT
+        nullable: false
+      - source: mof.MedicationOrderKey
+        name: MedicationOrderKey
+        type: BIGINT
+        nullable: false
+      - source: mof.MinimumDose
+        name: MinimumDose
+        type: FLOAT
+        nullable: true
+      - source: mof.Mode
+        name: Mode
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.MorphineEquivalentDailyDosage
+        name: MorphineEquivalentDailyDosage
+        type: FLOAT
+        nullable: true
+      - source: mof.OrderedDateKey
+        name: OrderedDateKey
+        type: INT
+        nullable: true
+      - source: mof.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: mof.Quantity
+        name: Quantity
+        type: FLOAT
+        nullable: true
+      - source: mof.RefillsWritten
+        name: RefillsWritten
+        type: INT
+        nullable: true
+      - source: mof.Route
+        name: Route
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.SecondIndicationForUse
+        name: SecondIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.SixthIndicationForUse
+        name: SixthIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.SourceComboKey_X
+        name: SourceComboKey_X
+        type: BIGINT
+        nullable: true
+      - source: mof.StartDateKey
+        name: StartDateKey
+        type: INT
+        nullable: true
+      - source: mof.ThirdIndicationForUse
+        name: ThirdIndicationForUse
+        type: VARCHAR(400)
+        nullable: true
+      - source: mof.Type_X
+        name: Type_X
+        type: VARCHAR(400)
+        nullable: true
+    filter:
+      from:
+        - MedicationOrderFact as mof
+  - name: MedDispenseHisoty
+    dest_table: MedDispenseHistory
+    type: fact
+    pull_this_cycle: true
+    description: All Med Dispenses (patient picked up the Rx) in patient's history
+    columns:
+      - source: mdf._IsDeleted
+        name: _IsDeleted
+        type: BIT
+        nullable: false
+      - source: mdf._IsInferred
+        name: _IsInferred
+        type: BIT
+        nullable: false
+      - source: mdf.Count
+        name: Count
+        type: INT
+        nullable: false
+      - source: mdf.DaysSupply
+        name: DaysSupply
+        type: INT
+        nullable: true
+      - source: mdf.DispenseDataSourceType_X
+        name: DispenseDataSourceType_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.DoseUnit_X
+        name: DoseUnit_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.FilledDateKey
+        name: FilledDateKey
+        type: INT
+        nullable: true
+      - source: mdf.FilledInstant
+        name: FilledInstant
+        type: DATETIME2(7)
+        nullable: true
+      - source: mdf.FilledTimeOfDayKey
+        name: FilledTimeOfDayKey
+        type: INT
+        nullable: true
+      - source: mdf.FillNumber
+        name: FillNumber
+        type: INT
+        nullable: true
+      - source: mdf.FirstDispense
+        name: FirstDispense
+        type: BIT
+        nullable: true
+      - source: mdf.Frequency_X
+        name: Frequency_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.MedicationDispenseKey
+        name: MedicationDispenseKey
+        type: BIGINT
+        nullable: false
+      - source: mdf.MedicationKey
+        name: MedicationKey
+        type: BIGINT
+        nullable: false
+      - source: mdf.MedicationOrderKey
+        name: MedicationOrderKey
+        type: BIGINT
+        nullable: true
+      - source: mdf.MedicationOrderWrittenDateKey_X
+        name: MedicationOrderWrittenDateKey_X
+        type: INT
+        nullable: true
+      - source: mdf.MinimumDose_X
+        name: MinimumDose_X
+        type: FLOAT
+        nullable: true
+      - source: mdf.Mode
+        name: Mode
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.PatientDurableKey
+        name: PatientDurableKey
+        type: BIGINT
+        nullable: false
+      - source: mdf.PrimaryComponentQuantity
+        name: PrimaryComponentQuantity
+        type: FLOAT
+        nullable: true
+      - source: mdf.PrimaryComponentQuantityUnit
+        name: PrimaryComponentQuantityUnit
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.PrimaryComponentUnformattedNdc
+        name: PrimaryComponentUnformattedNdc
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.RawCodeSystem_X
+        name: RawCodeSystem_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.RawCodeValue_X
+        name: RawCodeValue_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.ReadyToDispenseDateKey
+        name: ReadyToDispenseDateKey
+        type: INT
+        nullable: true
+      - source: mdf.RefillsRemaining_X
+        name: RefillsRemaining_X
+        type: INT
+        nullable: true
+      - source: mdf.RefillsWritten_X
+        name: RefillsWritten_X
+        type: INT
+        nullable: true
+      - source: mdf.Route_X
+        name: Route_X
+        type: VARCHAR(400)
+        nullable: true
+      - source: mdf.SourceComboKey_X
+        name: SourceComboKey_X
+        type: BIGINT
+        nullable: true
+      - source: mdf.SupplyEndDateKey_X
+        name: SupplyEndDateKey_X
+        type: INT
+        nullable: true
+    filter:
+      from:
+        - MedicationDispenseFact as mdf
