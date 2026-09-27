@@ -22,6 +22,12 @@ Read before working:
   roadmap. When something is decided, add a numbered decision.
 - Do not add new design documents. A temporary brief for the VM (questions to
   put to its AI) is the exception; delete it once its answers are folded in.
+- **"Update docs"** means all four: bring `design.md`, `decisions.md` and
+  `roadmap.md` up to date with the code by the rules above, then extend
+  `QMDs/commemorating/thoroughhistory.qmd` from its stated cut-off to the
+  latest commit (timeline, numbers, defects, decision index, open questions)
+  and move the cut-off. The history is a record, not a design document: it
+  may repeat facts, and it keeps what the other three have since deleted.
 
 ## Planning And Doing Work
 

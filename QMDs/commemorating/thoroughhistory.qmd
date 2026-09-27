@@ -1,7 +1,7 @@
 ---
 title: "Designing Telescope to Peer Through the Cosmos"
 subtitle: "A thorough history: the raw record, to be whittled into a portfolio piece"
-date: 2026-09-25
+date: 2026-09-27
 format:
   html:
     toc: true
@@ -14,17 +14,17 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `30ceff7` (25 Sep, 02:21), every planning
+- **Sources.** Every commit up to `2e17998` (27 Sep, 12:13), every planning
   document committed by then (most since deleted, recovered from git), the
-  design, decision and roadmap documents as they stood then, your note in
-  `post-mortem buildling task.md`, and the Gen1 analysis
-  (`old_Generator_analysis.qmd`).
-- **Cut-off.** Work after `30ceff7` is not covered yet. That includes building
-  D65 to D71, the keys-research summary, and D72 to D75 (parquet artifacts).
-  The one exception is the keys-research paragraph in Section 10, which
-  another session added.
+  design, decision and roadmap documents as they stood then, your notes in
+  `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
+  Gen1 analysis (`old_Generator_analysis.qmd`).
+- **Cut-off.** `2e17998`, which decided D84 to D91. Building them was under
+  way at the cut-off and is not covered. An earlier version of this record
+  stopped at `30ceff7` (25 Sep, 02:21); everything after it was added on
+  27 Sep from the commits and the three design documents.
 - **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
-  number (D1 to D71). Section 12 explains how to recover any deleted document.
+  number (D1 to D91). Section 12 explains how to recover any deleted document.
 - **Proprietary detail.** Server names, project database names and internal
   paths are left out on purpose. Scrub further before sharing anything.
 
@@ -72,9 +72,13 @@ It is two programs joined by files (design.md, "The Pipeline"):
   into the project database. It records every step in a manifest, so a failed
   batch can be retried alone and a monthly Cosmos refresh is detected.
 
-Both reach the VM as one self-verifying text file (699 KB **[Measured]**),
-"carried across as pasted text" (the PheWAS side-project document, describing
-how the bundle travels).
+Both reach the VM as one self-verifying text file (699 KB on 25 Sep, 875 KB on
+27 Sep **[Measured]**), "carried across as pasted text" (the PheWAS
+side-project document, describing how the bundle travels).
+
+A third piece, **Artifacts** (25 Sep, D72 to D75), packages a finished pull
+for the analyst: its tables as parquets, a client-facing `contents.md`, and
+scripts to load them.
 
 **Where it came from.** It replaces *Gen1*, the generator in your earlier repo
 on the VM (`generator.py`, `makeCosmos.py`, `makeProjects.py`, `makeR`).
@@ -93,13 +97,19 @@ and report back.
   from `a129b74` on. A co-author line does not measure proportion.
 - **[Ask]** Which parts did you write by hand?
 
-**Status at the cut-off.** The first live pull, *IBD Ancestry*, was running on
-the VM (roadmap). Its transfer YAML defines:
+**Status at the cut-off.** The first live pull, *IBD Ancestry*, ran to the end
+from VSCodium's terminal and is marked "Proven live" (roadmap, `951e36d`). Its
+transfer YAML defines:
 
 - Crohn's disease (ICD `K50.%`) and ulcerative colitis (`K51.%`), each split
   by ancestry;
 - Black patients as cases and White patients as controls, at `row_mult: 4`;
 - pulls from both Cosmos and SneakPeek (`Dual`), batched by sex.
+
+A second run of it, on the bundle with Artifacts, followed. By 26 Sep 04:12
+three pulls were running at once ("running 3 queries fine", `bdd3cc6`);
+**[Guess]** IBD Ancestry, Celiac and a whole-cohort template, from the temp
+templates committed alongside. Artifacts had not yet been run on the VM.
 
 **The pain point.** Your note says you "identified a specific pain point,
 detailed it and then investigated all the reasons why it occurred". The record
@@ -121,26 +131,28 @@ recoverable, reproducible and hard to get wrong.
 
 ## 2. By The Numbers
 
-All values at the cut-off unless stated.
+Two columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped) and
+the cut-off, 27 Sep 12:13 (`2e17998`).
 
-| Measure | Value | Basis |
-| --- | --- | --- |
-| Telescope elapsed time | 8 days, 17 to 25 Sep 2026 | git log |
-| Commits | 130 | git log |
-| Commit hours | some in every hour of the day except 10:00 | **[Measured]** git log |
-| Python in the repository | about 18,000 lines: YAML Manager 5,020; browser UI 3,290; Pullmanager runtime 4,653; its tests 3,806; bundle tooling 1,380 | **[Measured]** `wc -l`, blank and comment lines included; says nothing about who typed them |
-| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | design.md, Testing |
-| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | commit messages, then design.md |
-| Architecture decisions | 71 (D1 to D68 committed; D69 to D71 decided at 03:29, just after the cut-off, `d46b666`) | decisions.md, git log |
-| First decision record | 39 decisions, 22 Sep 22:47 | `ea74c3d` |
-| Design documents consolidated | 7 → 3 | D47 |
-| Current design documents | 2,797 lines | **[Measured]** design, decisions, roadmap |
-| Data dictionary | 17 Cosmos tables, 2,836 lines | **[Measured]** `YAMLs/datadictionary.yaml` |
-| VM software inventory | 1,375 lines | commit `38a4d55` |
-| Bundle size | 211 KB → 451 KB → 699 KB | D41 for the first two; **[Measured]** for the last |
-| Defects listed in Section 8 | 35 | my compilation from commits and decisions |
-| One fix's effect | sample template went from 1,120 generated SQL files to 168 | `61befa4` |
-| First live pull | 8 sessions, 48 units | see below |
+| Measure | 25 Sep | 27 Sep | Basis |
+| --- | --- | --- | --- |
+| Telescope elapsed time | 8 days | 10 days, from 17 Sep | git log |
+| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | git log |
+| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 | **[Measured]** git log |
+| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | commit messages, design.md, then **[Measured]** |
+| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | decisions.md |
+| First decision record | 39 decisions, 22 Sep 22:47 | | `ea74c3d` |
+| Design documents consolidated | 7 → 3 | still 3 | D47 |
+| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged | **[Measured]** `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines | unchanged | commit `38a4d55` |
+| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | D41 for the first two; **[Measured]** for the rest |
+| Defects listed in Section 8 | 35 | 45 | my compilation from commits and decisions |
+| One fix's effect | sample template went from 1,120 generated SQL files to 168 | | `61befa4` |
+| First live pull | 8 sessions, 48 units, running | ran to the end | see below; roadmap |
+| Pulls running at once | 1 | 3 | `bdd3cc6` |
 
 How the first live pull's figures were reached:
 
@@ -218,6 +230,13 @@ error names the part to paste again (the PheWAS document).
 - The Mac has a python.org 3.13.9 with exactly those versions, pinned in
   `requirements-vm.txt`.
 - The test framework was chosen for this: stdlib `unittest` (D7).
+- The same discipline reached R when Artifacts began writing R scripts
+  (25 Sep). The VM has R `arrow` 11; the Mac got R with `arrow` 25 so the
+  tests could run the R load scripts at all, and design.md records that
+  check as "close, not exact". `pandas` 2.2.3 joined the Mac's VM-matched
+  Python for the same reason.
+- `duckdb` 1.4.1 was added to `requirements-vm.txt` with the parquet viewer
+  (`e515d2b`).
 
 ### 3.4 No HTML
 
@@ -226,6 +245,10 @@ error names the part to paste again (the PheWAS document).
 - Its only Python desktop toolkit is tkinter. The `shiny` and `tcltk` entries
   in its package list are R, not Python.
 - So the VM gets a tkinter launcher, and authoring stays on the Mac (D44).
+- The same limit shaped how clients see their data. `viewparquets.py`, a
+  tkinter parquet viewer "copied as plain text onto a VM" (its docstring),
+  was committed under your name on 27 Sep and replaced the generated
+  in-memory examine scripts (D89).
 
 ### 3.5 A Locked-Down Windows
 
@@ -236,6 +259,15 @@ error names the part to paste again (the PheWAS document).
   ("a DLL failed to initialize"), while the same command typed into VSCodium's
   terminal ran (D68).
 - The fix could not count on starting `cmd.exe` or `powershell.exe` (D68).
+  It opens a new console window running Python directly, with no shell in
+  between (`549740b`).
+- Windows reports a killed process as exit code 1. An Execute that stopped
+  mid-pull with code 1 left no reason anywhere, because its traceback went
+  only to a console that then closed. The fix is diagnostic: the log now
+  keeps any traceback, and `faulthandler` records where a native crash
+  happened (`e07ac8f`). The cause is still unknown (roadmap, Known Bugs).
+- On Windows, `os.kill(pid, 0)` ends the process rather than probing it, so
+  the lock that marks a running pull uses a heartbeat file instead (D67).
 
 ### 3.6 The Database Topology
 
@@ -590,7 +622,7 @@ added three files:
     VM showed ...").
   - **[Ask]** Who read the output and spotted each problem?
 
-### 25 Sep: The First Live Run (to the cut-off)
+### 25 Sep: The First Live Run, Then Artifacts (19 commits after 02:21)
 
 - **00:31 to 00:48, simpler commands** (D63, D64).
 - **The IBD Ancestry run** (roadmap, "Where it stands"):
@@ -606,8 +638,133 @@ added three files:
   - renaming "Output" to "Validation Output";
   - "I didn't know that it needed to do the try run in order for the SQL to
     generate".
-- **After the cut-off.** These became D69 to D71, decided at 03:29
-  (`d46b666`) and built from 04:39.
+- **03:29, D69 to D71 decided** (`d46b666`) from those responses, with the
+  PK-key bug found in the live run (Section 8, #32). The roadmap records the
+  first session finishing every phase.
+- **04:32, the first version of this record** (`20d68cb`), committed under
+  your name.
+- **04:39 to 10:56, the live-run fixes built** (D65 to D71), in the order the
+  roadmap gave:
+  - SneakPeek sessions first; the PK's key is one rule (`f30af13`);
+  - `--execute IBD_Ancestry` by name, and Preview SQL ending with the command
+    to run (`ce40b18`);
+  - the lock, with a heartbeat every 30 seconds and `--running` to list pulls
+    (`bc68346`);
+  - Execute in its own console window, closed only by typing `exit`, with a
+    log that the new Pull Log tab follows (`549740b`);
+  - each session's warnings, then one table of column widths (`9893b48`),
+    tested for the first time because the fake Projects database now answers
+    the width query.
+- **12:22 to 15:56, the keys research closed.** The brief and the VM AI's
+  answer were summarized and deleted (`3c91f56`, `d6f2030`). Each key
+  relationship now carries a grade, seen, counted or said, and validation
+  may read only the first two (`8128199`).
+- **15:56, your artifacts specification** (`2571e92`, `QMDs/artifact.md`,
+  51 lines, no co-author line). **[Guess]** In your words (first person,
+  typos). It asked for:
+  - the parquets, "a straight pull of the tables that we actually
+    downloaded", with separated batches as their own files;
+  - `load_parquets` and `examine_parquets`, in R and Python, and a how-to on
+    which to use;
+  - a client-facing `contents.md`, "friendly to non-coders", with each
+    table's granularity, what it is "specific to", and each column's type and
+    description.
+
+  Your answers to the assistant's questions are in the same file:
+  - types must be "the programmatic definition, as they'll need it for
+    writing code", likely handed to the VM's AI: you overruled the
+    assistant's recommendation here;
+  - SneakPeek and Cosmos subfolders *and* an `_sp` suffix, "so when they load
+    them all together you can see easily which is which";
+  - `_batch` appears "nowhere because it's internal";
+  - `--artifacts` over "package" and "extract" ("consistent with AI artifact
+    language"). The name was the assistant's suggestion; you chose it.
+
+  The same commit deleted `dist/bundle.py` by accident; it was rebuilt ten
+  minutes later (`fd8e70d`).
+- **16:04 to 16:27, Artifacts decided and built** (D72 to D75), five commits
+  in 23 minutes: description fields through the split and the Builder
+  (`fd8e70d`); the parquets (`ac5be73`); `contents.md` (`9bee157`); the load
+  and examine scripts and `HOW_TO.md` (`25ba6bb`); the recipes given
+  granularity and descriptions, and the R scripts run in the tests
+  (`0511d91`).
+- **22:52, Builder toggles** for Include others and Separate parquets, and the
+  `contents.md` key line dropped after trial: "nearly every table shares
+  PatientDurableKey, so it listed most of the pull for each table"
+  (`0e55f2e`, D81).
+
+### 26 Sep: Batching Simplified, Three Pulls At Once (11 commits)
+
+- **00:16, transfer YAMLs at the repository root, carried in the bundle**
+  (`ee732d8`, D79): `python3 makebundle.py yaml=IBD_Ancestry,Celiac`, and
+  `python3 yamlmgr.py` to open YAML Manager from anywhere.
+- **01:31 to 01:52, batching reconsidered twice in 21 minutes.**
+  - `d6e5bf1` made `include_other` default on, `separate_parquets` off unless
+    asked (D77), and let a table take its PK's variables (D78), so
+    `IndexDiagnosis` reads the diagnosis code its patients were chosen by
+    without it being written twice.
+  - `bd15620` then retired `include_other` altogether (D76). Turned off, it
+    had dropped the unlisted rows from the pull, "which read as lumping them
+    together; that confusion could lose data". Now the batches together are
+    always the whole PK.
+- **02:18, "updating testing"** (`76d2984`), your commit: this record revised
+  (the labels, the cut-off) and the first temp templates, Celiac and IBD
+  Ancestry.
+- **02:33, `required_column`** (D80), so a batch's column "reads as a
+  requirement"; the old `column` is refused with the exact fix. The Builder's
+  Draft YAML section, "which did nothing a user needed", became Exports.
+- **02:37, the docs caught up**: D76 to D81, and the roadmap marks the first
+  IBD Ancestry pull **proven live** (`951e36d`).
+- **03:03, a batch with no values** (D82). Refused until now, it is resolved
+  inside its run once the PK is in Projects, as chunks are, so the manifest
+  stays fixed: fifty states become fifty passes, shown as `v3of51 (LA)`. The
+  Builder fills in the project database and dates (D83). The decision to
+  keep variable inheritance a rule for all, rather than have recipes declare
+  it, was yours: "the Builder already says where a value comes from".
+- **04:06, Execute keeps the reason it stopped** (`e07ac8f`). A pull had
+  ended mid-run with exit code 1 and left no trace (Section 3.5).
+- **04:12 and 04:50, three pulls running at once**, your commits: "running 3
+  queries fine, want to clean up a few bugs and process things", then "Good
+  stopping point while 3 runs are going", with your notes in `response.md`
+  and the temps moved to `YAMLs/temp/`.
+
+### 27 Sep: Your Weekend Notes, And D84 To D91 (3 commits)
+
+- **02:57 and 05:08, your commits** (`e515d2b`, `d4e30bb`):
+  - `response.md` grows to 23 notes from using YAML Manager, with
+    screenshots. Your answers to the assistant's questions on them were
+    written into the same file and folded into `2e17998` without being
+    committed on their own; the quotes below come from them.
+  - It also has a "Commemorating" section (this update), and a "UI Redesign"
+    section: the whole of YAML Manager in tkinter, and a plainer Builder
+    (Primary Key table, Supporting Tables, Multipliers and Splitters, Fact
+    Tables, Validate Pipeline) mapped onto the existing variables. Neither is
+    decided.
+  - A parquet viewer, `parKview.py`, renamed `viewparquets.py`.
+  - Two more temps: `AllCohort` and `CrohnsClinicalData` (296 lines).
+- **Your batching question.** Your note read batching as "doing fifty
+  versions of a miniature PK table", which "defeats the purpose". The answer
+  (D87) was that it does not: the PK is built once and each batch is selected
+  from its Projects copy (D18, D19). What repeats is every fact-table query,
+  whose cost nobody has measured. So batching was left as it is, the PK is
+  written to parquet as soon as it lands, and measuring a batch's cost went
+  on the live-run list, which you asked for ("I'll do that sometime soon").
+- **12:13, D84 to D91 decided and nine fixes ordered** (`2e17998`), from those
+  notes:
+  - Save & Refresh keeps empty lists, and a failed refresh keeps your place
+    (D84; the crash you hit, Section 8);
+  - temps in `YAMLs/temp/`, never overwriting another file (D85);
+  - a missing `cosmos_db` means `Dual`, and the Builder's defaults come from
+    `template.yaml`, the one place to edit them (D86), which you asked for;
+  - the PK parquet at the PK phase (D87);
+  - Artifacts reports each file as it goes (D88), which you asked for;
+  - `viewparquets.py` replaces the examine scripts, and `HOW_TO.md` comes from
+    a stock file you edit (D89), both yours;
+  - upload files not carried in the bundle (D90): "That's a pain. I'd say
+    I'll just manually move them - this isn't worth the complexity";
+  - a bundle queue, filled by Save & Refresh and carried by `makebundle.py
+    queue` (D91), which you designed in your notes.
+- **After the cut-off.** Building the nine fixes began the same day.
 
 ---
 
@@ -632,7 +789,10 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   - `artifactDesign.qmd`, the delivered-folder sketch (22 Sep);
   - `recentResearch.qmd` (23 Sep);
   - `responses.md` (24 Sep);
-  - `response/responses.md` (25 Sep).
+  - `response/responses.md` (25 Sep);
+  - `artifact.md`, the artifacts specification (25 Sep);
+  - `response.md`, notes from using YAML Manager and running three pulls, and
+    the UI redesign ideas (26 and 27 Sep).
 - **Longer specifications, authorship not recorded** **[Ask]**:
   `managerplan.qmd` (1,112 lines) and `productionplan.qmd`, both committed
   under your name with no AI co-author line.
@@ -647,7 +807,14 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
     situation where somebody sends me a CSV");
   - a supplied patient list (the uploaded PK);
   - several pulls running at once ("I'm planning on running multiple
-    yamls/pulls at a time", `artifactDesign.qmd`).
+    yamls/pulls at a time", `artifactDesign.qmd`), which happened on 26 Sep;
+  - clients who are not coders: `contents.md` is "a client facing document
+    that is friendly to non-coders" (`artifact.md`);
+  - the VM's AI as a reader: you expect clients to hand `contents.md` to it
+    "as a reference for stringing functions together" (`artifact.md`), which
+    is why its types are the programmatic ones (D73);
+  - clients who come back: the bundle queue lets you "re-do an old one as
+    well when a client wants a refresh" (`response.md`, D91).
 - **Principles, and where each came from:**
   - Loud errors that suggest a fix, and the author makes the choice. `CLAUDE.md`
     records this as your preference: "The user wants to make the choice."
@@ -658,14 +825,24 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
 - **Scope refused rather than half-built.** `values: all` batching, split
   levels on an uploaded PK, and partial resume (D17, D54, D46). Deferred
   items include a transfer queue, deeper control matching and parquet export
-  (roadmap).
+  (roadmap). Two of those were later built properly rather than patched:
+  parquet export became Artifacts (D72), and `values: all` became a batch
+  resolved inside its run (D82). Carrying upload files in the bundle was
+  refused on your call (D90).
+- **An option removed because it confused.** `include_other` was retired
+  because turning it off silently dropped rows (D76); the batches together
+  are now always the whole PK.
 - **Priorities written down.** Each build batch had a numbered "Fixes, In
   Order" list with reasons. For example, D68 came last: "The least certain to
   work on the VM, so last; if it cannot start, it falls back to fix 2's
-  command" (roadmap at the cut-off).
+  command" (roadmap on 25 Sep).
 - **Stakeholders.** Your research note came partly "from speaking to Epic".
   D51 "answers the questions for the Cosmos developers without them".
 - **Versioned release.** Pullmanager 0.3.0 (`bc35dae`).
+- **Measure before redesigning.** Your proposal to rebuild batching was
+  answered by what the code already did, and the open cost question became a
+  measurement on the VM rather than a rewrite (D87; roadmap, "What a batch
+  costs").
 
 ### 6.2 UX And Interaction Design
 
@@ -680,12 +857,29 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
     renamed to 'add custom table' - this isn't a whole cohort you're adding";
     one Save-as-Recipe action; a read-only multiplier and batching summary.
   - Then Save & Refresh, which never overwrites the template.
+  - Then (25 and 26 Sep) description and granularity fields; batching
+    toggles; an input per variable a recipe needs, saying whether a
+    multiplier or the PK supplies it and red when nothing does; Exports in
+    place of the Draft YAML section; defaults for the project database and
+    dates.
+  - Then your 27 Sep notes (D84 to D86, D91): keep your place through a failed
+    refresh and name where the error is; full-width layout; column order by
+    number; defaults editable in `template.yaml`; a bundle queue in Exports.
+  - Proposed, not decided: a plainer Builder organized as Primary Key table,
+    Supporting Tables, Multipliers and Splitters, Fact Tables and Validate
+    Pipeline, and possibly all of YAML Manager in tkinter (`response.md`).
 - **The VM launcher:**
   - no arguments opens it (D63);
   - one command and a `y` to install (D64);
   - execute by project name (D66);
   - greyed buttons and a heartbeat display while a pull runs (D67);
-  - a console that closes only on `exit`, which was your request (D68).
+  - a console that closes only on `exit`, which was your request (D68);
+  - a Pull Log tab that follows the live log (D68, D71);
+  - an Artifacts button (D72).
+- **What the client receives** (D72 to D75, D89): parquets in SneakPeek and
+  Cosmos folders, `contents.md` written for non-coders, load scripts in R and
+  Python, a `HOW_TO.md` you edit, and a tkinter viewer instead of scripts
+  that read everything into memory.
 - **Error messages as interface:**
   - every error carries a fix and a field path, enforced by a test (D49);
   - an unbound table input lists the tables that fit and the line to add
@@ -695,8 +889,12 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   - Validate says what it checked (D62);
   - the dry run ends with the next command (D66).
 - **Names that misled.** You took the dry run for a required step, which led
-  to "Preview SQL" and "Validation Output" (D71, after the cut-off). The
-  request for the terminal readout in the GUI led to D70.
+  to "Preview SQL" and "Validation Output" (D71). The request for the
+  terminal readout in the GUI led to D70. `include_other` read as "lump the
+  rest together" and was retired (D76); a batch's `column` became
+  `required_column` so it "reads as a requirement" (D80); you found
+  "package" confusing, and "extract" too close to "execute", so it is
+  `--artifacts` (`artifact.md`).
 
 ### 6.3 Software Architecture
 
@@ -713,6 +911,17 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   - A batch narrows the PK by refilling its temp table (D18).
   - Batches are selected from the durable Projects copy, so a fresh run and a
     resume share one code path (D19).
+  - What cannot be known at plan time is resolved inside the run, so the
+    manifest never changes after planning: chunks (D53), then a batch's
+    values when none are listed (D82).
+  - Unlisted values always get a batch of their own, so the batches always
+    make up the whole PK (D76).
+- **Variable inheritance.** A table takes its PK's variables unless it sets
+  its own (D78, D83).
+- **Artifacts read the manifest to decide what is finished** (D72): a PK
+  table once its phase is done, a run's table once all its runs are.
+- **One run folder per project** now holds the split, SQL, logs, lock,
+  parquets and the client's files (D57, D67, D68, D72).
 - **The transfer YAML** (D49).
 - **The launcher is a front end over the command line** (D44).
 - **Determinism**: bundle identity (D5, D64), batch membership (D52), hash
@@ -740,8 +949,16 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
 - **Concurrency.** Per-project prefixes (D50). A heartbeat lock, because
   "`os.kill(pid, 0)` ends it" on Windows (D67).
 - **Performance reasoning.** Widths are measured and reported, not applied,
-  and a blanket wide type "is not free" (D34). The full-scan count was dropped
-  (D33).
+  and a blanket wide type "is not free" (D34), now once per session in one
+  table (D70). The full-scan count was dropped (D33). Whether batching costs
+  a pull's time once or fifty times depends on whether SQL Server seeks each
+  fact table by patient or scans it per pass; that is to be measured on
+  SneakPeek (roadmap, D87).
+- **Export to parquet.** Tables read from Projects in 50,000-row chunks into
+  `pyarrow`, typed from their own `INFORMATION_SCHEMA` columns; R keeps 64-bit
+  keys as `integer64` so joins match (D72, D75).
+- **The PK's key is one rule** for sampling, the uniqueness check, chunk
+  ordering and batch selection (D69).
 - **Schema knowledge.**
   - A 17-table dictionary with type families and alias resolution (D26,
     D27).
@@ -783,12 +1000,29 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   through every phase" (D65).
 - **Output for analysts.** A contents file describing each table and column
   "so that it serves as a small data dictionary for my users" (splitting
-  notes).
+  notes), planned 20 Sep and built 25 Sep as `contents.md` (D73). Each table
+  gets its granularity ("One row per" its keys, unless a recipe says
+  otherwise) and what it is "specific to", written from the multiplier levels
+  and splits that chose its patients, so the file also records how the
+  cohort was selected. A column's description is its own, else the data
+  dictionary's, else "No description": "definitely better than guessing"
+  (`artifact.md`).
+- **Recipes describe themselves** (D74): granularity per table and a
+  description per column, which you write for your own recipes.
 
 ### 6.6 QA And Test Engineering
 
-- **545 automated tests** in four suites (design.md). The runtime suite went
-  from 47 to 346 between 22 and 25 Sep (commit messages, design.md).
+- **671 automated tests** in four suites by 27 Sep, all passing
+  (**[Measured]**; 545 on 25 Sep, design.md). The runtime suite went from 47
+  to 447 between 22 and 27 Sep.
+- **Generated code is run, not just written.** The artifact tests run the
+  Python load scripts and, through `Rscript`, the R ones, checking that
+  64-bit keys come back as `integer64` (`25ba6bb`, `0511d91`).
+- **Tests follow the fakes.** The column-width readout was untested until the
+  fake Projects database learned to answer the width query (`9893b48`).
+- **Diagnostics before a cause is known.** When a pull died with no trace,
+  the fix was to make the next occurrence explain itself (`e07ac8f`), not to
+  guess.
 - **Outcome tests.** `CLAUDE.md`: "A bug fix gets a test of the outcome (what
   data ends up where), confirmed to fail with the bug reintroduced. D46 is
   what happens otherwise."
@@ -808,7 +1042,9 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult` times the
   same on the black PK" (roadmap). **[Ask]** Who drafted the checklist.
 - **User acceptance testing.** Your Mac click-through notes (`responses.md`)
-  drove `40bfcd8`.
+  drove `40bfcd8`; your 26 and 27 Sep notes (`response.md`) drove D84 to D91.
+- **The first live pull, proven** (roadmap, `951e36d`), then three pulls at
+  once (`bdd3cc6`).
 - **Defects found and fixed**: Section 8.
 
 ### 6.7 Release Engineering And DevOps
@@ -823,6 +1059,11 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
   `requirements-vm.txt`; Xvfb on the dev box (design.md).
 - **[Guess]** Self-hosted Gitea over Tailscale (Section 3.10).
 - **The same transfer method for an R package** (PheWAS).
+- **Pulls travel with the code.** `makebundle.py yaml=A,B` carries transfer
+  YAMLs in the bundle, verified like every file (D79); a queue filled by
+  Save & Refresh is decided (D91).
+- **Two runtimes checked for R.** R `arrow` 25 on the Mac against 11 on the VM
+  (Section 3.3).
 
 ### 6.8 Security, Privacy And Compliance
 
@@ -843,8 +1084,19 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
 
 ### 6.9 Documentation And Knowledge Management
 
-- **The decision record.** 39 entries on 22 Sep, 71 by the cut-off. Reversed
-  decisions keep their reasoning (D24, D25, D28, D41, D46).
+- **The decision record.** 39 entries on 22 Sep, 71 on 25 Sep, 91 by 27 Sep.
+  Reversed decisions keep their reasoning (D24, D25, D28, D41, D46), and
+  later ones say what they supersede (D85 over saving a draft beside its
+  template, D89 over D75's examine scripts).
+- **Evidence graded by how it was obtained.** Each key relationship is seen
+  (read off a dictionary page), counted (a query was run) or said (the VM's
+  AI or convention), and validation reads only the first two (`8128199`).
+  The raw brief and answer were then deleted, with a summary kept (Section
+  10).
+- **Client documentation generated from the pull** (`contents.md`, D73), and
+  a `HOW_TO.md` you edit in one place (D89).
+- **This record.** Begun 25 Sep, extended 27 Sep; `CLAUDE.md` now makes it
+  part of "update docs".
 - **Three documents, one job each** (D47): "A fact has one home."
 - **`CLAUDE.md`, the written working method** (Section 6.10).
 - **Temporary briefs deleted once folded in** (`CLAUDE.md`). Raw answers are
@@ -880,7 +1132,23 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
     console window itself was proposed to you ("i like opening a new console
     window");
   - the terminal readout in the GUI, and the tab names
-    (`response/responses.md`).
+    (`response/responses.md`);
+  - Artifacts itself: the parquets, load and examine scripts, and the
+    client-facing contents file with granularity and "specific to"
+    (`artifact.md`). The contents file goes back to your 20 Sep splitting
+    notes;
+  - programmatic types in `contents.md`, against the assistant's
+    recommendation, and the `_sp` suffix beside the folders (`artifact.md`);
+  - the parquet viewer (`viewparquets.py`), and a stock `HOW_TO.md` to edit
+    (`response.md`);
+  - the bundle queue and its Exports list (`response.md`, D91);
+  - keeping variable inheritance as a rule for all (D83).
+- **Where an assistant's explanation changed your plan.** Your proposal to
+  rebuild batching rested on a misreading of what it did; once that was
+  explained, you kept it and asked for a measurement (D87).
+- **Running two AI sessions at once.** `response.md` gives this history
+  update to "one instance of Claude ... separate from the other headings",
+  while another builds D84 to D91.
 - **Relaying between two AIs that cannot reach each other.** The keys brief
   was written on the Mac (`f7a3400`), taken to the VM, answered there, and
   brought back as screenshots, then transcribed (`511b86e`). The VM brief for
@@ -894,7 +1162,10 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
 - **Branch policy.** The `pullmanager` branch merged into main at 0.3.0
   (`bc35dae`).
 - **Pace.** 130 commits in 8 days, from an empty repository to a live
-  multi-session pull.
+  multi-session pull; 163 in 10 days, to three pulls at once and a client
+  deliverable.
+- **Planning around long runs.** "Good stopping point while 3 runs are going"
+  (`be56174`): notes were written while pulls ran on the VM.
 - **[Ask]** Whether this ran alongside clinical work.
 
 ### 6.12 Hands-On Technical Work
@@ -907,6 +1178,15 @@ you made under `CLAUDE.md`'s process, and does not credit you with the idea.
 - **PowerShell probes.** `$PSVersionTable` and `ipconfig` (your responses).
 - **Hand edits on the VM.** **[Guess]** You hand-edited transfer YAMLs: the
   `d8d806b` fix exists because "editing the grouped one by hand did nothing".
+- **The parquet viewer.** `parKview.py` (365 lines) was committed under your
+  name with no co-author line (`e515d2b`). **[Ask]** Whether you wrote it,
+  or had another AI write it. It reads parquets with `duckdb` (on the VM's
+  list, and added to `requirements-vm.txt` in the same commit), which nothing
+  else in Telescope uses.
+- **Pull templates.** The temps for Celiac, IBD Ancestry, totalcohort,
+  AllCohort and CrohnsClinicalData were committed under your name
+  (`76d2984` to `d4e30bb`). **[Guess]** Built in the Builder and edited by
+  hand.
 - **[Ask]** The data dictionary, the PheWAS scripts, and anything else you
   wrote yourself.
 
@@ -944,7 +1224,25 @@ design document.
 | PheWAS side project | Removed the same day | "Back to main repo goal" | `840d996` |
 | The delivered-project folder sketch (**[Guess]** yours) | Partly built (`runs/<project>/`) | | roadmap, D57 |
 | A hand-off button in YAML Manager | Not built | | roadmap |
-| Key and relationship validation | Researched, not built by the cut-off | | roadmap |
+| Key and relationship validation | Researched; each relationship graded seen, counted or said; validation not built | The VM's AI ran no queries | roadmap, `8128199` |
+| The keys brief and the VM AI's 704-line answer | Summarized, then deleted | Only what a page or a count backs may be used | `3c91f56`, `d6f2030` |
+| Launcher tabs Output and Dry run | Validation Output and Preview SQL, plus Pull Log | You took the dry run for a required step | D71 |
+| Column widths as warnings, per batch | One table per session, as notes | They drowned the real warnings | D70 |
+| Cosmos session before its SneakPeek twin | Every SneakPeek session first | SneakPeek is the quick first round | D65 |
+| "package" or "extract" for the artifacts command | `--artifacts` | "consistent with AI artifact language" | `artifact.md` |
+| `contents.md` "Key (testing)" line | Removed after trial | It listed most of the pull for every table | D81 |
+| Builder's Draft YAML section | Exports: pre-YAML, transfer YAML, manifest | "did nothing a user needed" | D81 |
+| `include_other`, briefly defaulted on | Retired; the rest always gets a batch | Turned off, it left rows out of the pull; you read it as lumping them together | D76 |
+| Batching recipes setting `separate_parquets` | Off unless a batch asks | "Separating is the unusual case" | D77 |
+| A batch's `column` | `required_column`; the old name refused with the fix | It reads as a requirement | D80 |
+| `values: all` warned about and refused | Resolved inside the run from the PK's values | The values exist only once the PK does | D82 |
+| Recipes declaring the variables they inherit | Not built; inheritance stays a rule for all | The Builder already shows the source | D83 |
+| Transfer YAMLs in `YAMLs/` | At the repository root, carried by `makebundle.py yaml=` | | D79 |
+| Batching rebuilt around a PK landed first (your proposal) | Kept as it is; the PK written to parquet on landing; cost to be measured | It already builds the PK once | D87 |
+| `examine_parquets.R` and `.py` | `viewparquets.py`, a tkinter viewer | Better for clients | D89 |
+| A generated `HOW_TO.md` | Copied from a stock file you edit | | D89 |
+| Temps saved beside their template | `YAMLs/temp/`, never overwriting another file | A blank draft could replace a real temp | D85 |
+| An "add to bundle" option for CSV uploads | Not built | Excel CSVs are not reliably UTF-8 with Unix line endings; parquet cannot travel as text | D90 |
 
 ---
 
@@ -952,11 +1250,15 @@ design document.
 
 - **Where each was found.** "Surfaced by" quotes or paraphrases the source.
   "Not recorded" means the source names the defect but not how it was found.
-- **Where they happened.** All were found on the Mac, in a VM dry run, or at a
-  failed connection, except #32, which showed in the live run as warnings.
-- **Data.** None is recorded as having damaged data.
+- **Where they happened.** Up to #35, all were found on the Mac, in a VM dry
+  run, or at a failed connection, except #32, which showed in the live run
+  as warnings. From #36, several came from the live runs and from your use of
+  the Builder.
+- **Data.** None is recorded as having damaged data. #40 could have: it is
+  recorded as a misreading that "could lose data", not as having done so.
 - **Who spotted them.** For #21 to #26 the dry run is documented as the source;
-  who spotted each problem is **[Ask]**.
+  who spotted each problem is **[Ask]**. #43 to #45 are from your notes.
+- **#43 to #45** were decided at the cut-off and were being fixed after it.
 
 | # | Defect | What it would have done | Surfaced by | Ref |
 | --- | --- | --- | --- | --- |
@@ -991,14 +1293,24 @@ design document.
 | 29 | `smallset` at the top level ignored | Test limit silently lost | Not recorded | `51c7069` |
 | 30 | Fix text derived the database name | Wrong advice | Not recorded | `2badf85` |
 | 31 | Two projects shared folders | One export replaced another's live manifest | Not recorded | D57 |
-| 32 | PK key read two ways | Uniqueness never checked | "in the first live run every session warned" | D69 |
+| 32 | PK key read two ways | Uniqueness never checked; a `chunk:` on such a PK failed its run | "in the first live run every session warned" | D69, `f30af13` |
 | 33 | Gen1 limited every PK-typed cohort | Compounded samples | Gen1 code analysis | D29 |
 | 34 | `--port 0` wrote a static file | The opposite of what was asked | Not recorded | `d4c760b` |
 | 35 | Builder wrote an empty `vars:` section | Invalid YAML | Not recorded | `39c6490` |
+| 36 | Under `Dual`, each Cosmos session ran before its SneakPeek twin | The long pull ran first, so a problem showed late | The first live run "started on Cosmos" | D65, `f30af13` |
+| 37 | Execute from the launcher died at start, `0xC0000142` | No pull from the launcher | The first live run | D68, `549740b` |
+| 38 | Column widths printed as warnings, once per batch | The real warnings were lost among them | The first live run | D70, `9893b48` |
+| 39 | Editing a batching row in the Builder reset `include_other` and dropped `separate_parquets` | The template said other than what was set | Not recorded | `0e55f2e` |
+| 40 | `include_other: false` left unlisted rows out of the pull | Rows missing from a pull meant to be whole | Your reading of it (D76) | D76, `bd15620` |
+| 41 | Execute ended mid-pull with exit code 1 and left no reason | The cause could not be found | A live run | `e07ac8f`; cause still open |
+| 42 | `dist/bundle.py` deleted in a docs commit | No committed bundle for the ten minutes until it was rebuilt | Not recorded | `2571e92`, `fd8e70d` |
+| 43 | The UI's YAML writer saved `[]` as a blank | Save & Refresh crashed with `'NoneType' object is not iterable`, and the page lost your place | Your Builder notes | D84 |
+| 44 | New Blank Template kept the old path; saving a temp could overwrite another | A blank draft could replace a real one | Your Builder notes | D85 |
+| 45 | `_sp` cards on the Cohorts tab lost their connection colours | Dependencies not shown for SneakPeek copies | Your Builder notes | roadmap, fix 4 |
 
 ---
 
-## 9. Decision Index (D1 To D71)
+## 9. Decision Index (D1 To D91)
 
 One line each, paraphrasing the decision's title; the reasoning is in
 `decisions.md`.
@@ -1073,9 +1385,31 @@ One line each, paraphrasing the decision's title; the reasoning is in
 | 66 | `--execute` takes a project name; the dry run ends with the command |
 | 67 | A running Execute holds a lock |
 | 68 | Execute runs in its own console window and writes a log |
-| 69 | The PK's key is one rule everywhere (decided after the cut-off) |
-| 70 | The pull readout: a plain-text log, and widths once per session as notes (after the cut-off) |
-| 71 | Launcher names: Validation Output, Pull Log, Preview SQL (after the cut-off) |
+| 69 | The PK's key is one rule everywhere |
+| 70 | The pull readout: a plain-text log, and widths once per session as notes |
+| 71 | Launcher names: Validation Output, Pull Log, Preview SQL; the preview ends in one statement |
+| 72 | `--artifacts` packages a pull's finished tables as parquets |
+| 73 | `contents.md` describes every packaged table, for people and for the VM's AI |
+| 74 | Recipes carry `granularity` per table and `description` per column |
+| 75 | `load_parquets` and `examine_parquets`, in R and in Python |
+| 76 | `include_other` retired: listed values always get a batch of the rest |
+| 77 | One parquet per table unless `separate_parquets` is set |
+| 78 | A table takes its PK's variables when it does not set them |
+| 79 | Transfer YAMLs at the repository root, and the bundle can carry them |
+| 80 | A batch names its column `required_column` |
+| 81 | `contents.md` drops the key line; the Builder shows exports, not a draft |
+| 82 | A batch that lists no values batches by every value the PK has |
+| 83 | Inherited variables stay a rule for all; the Builder defaults the project |
+| 84 | A saved template keeps its empty lists; a multiplier needs levels; a failed refresh keeps the page |
+| 85 | Temps live in `YAMLs/temp/`, named for the project, and never overwrite another file |
+| 86 | A missing `cosmos_db` means `Dual`; the Builder's defaults come from `template.yaml` |
+| 87 | The PK is written to parquet as soon as it lands; batching is unchanged |
+| 88 | Artifacts reports each file as it goes, and carries on past a failed table |
+| 89 | `viewparquets.py` replaces `examine_parquets`; `HOW_TO.md` from an editable stock file |
+| 90 | Upload files are not carried in the bundle |
+| 91 | Save & Refresh queues a temp for the bundle; `makebundle.py queue` carries the queue |
+
+D84 to D91 were decided at the cut-off; building them came after.
 
 ---
 
@@ -1118,6 +1452,9 @@ Every planning document committed by the cut-off, and what became of it.
 | `keys_research/vm_ai_answer.md` | 24 Sep | The VM AI's answer, transcribed | VM's AI, transcribed | Summarized and deleted 25 Sep (below) |
 | `response/responses.md` | 25 Sep | Responses to D65 to D68; readout request | Your words | Folded into D69 to D71 (`d46b666`) |
 | `commemorating/` | 25 Sep | This task | | Current |
+| `artifact.md` | 25 Sep | The artifacts specification, and your answers to the assistant's questions | Your words | Folded into D72 to D75 and deleted (`9361c34`) |
+| `response.md` | 26 Sep | Notes from using YAML Manager and three pulls; this task; UI redesign ideas | Your words | Fixes folded into D84 to D91 (`2e17998`); the rest current |
+| `images/paste-*.png` | 26 and 27 Sep | Screenshots for `response.md` | Yours | Current |
 
 **The keys research, in brief.** The brief (138 lines) asked the VM's AI three
 questions: are keys declared where SQL can read them (`INFORMATION_SCHEMA`,
@@ -1174,6 +1511,16 @@ resume line.
 12. **Clinical context.** The research question behind IBD Ancestry, and
     whether it can be described publicly.
 13. **Clinical work.** Did this run alongside your clinical duties?
+14. **The parquet viewer.** Did you write `viewparquets.py`, or did another
+    AI? Which?
+15. **The three pulls of 26 Sep.** Which were they, did they finish, and how
+    long did each take? Has Artifacts been run on them?
+16. **The exit code 1.** Has the pull that ended mid-run happened again, and
+    what did the log say?
+17. **Batch cost.** Once measured on SneakPeek (roadmap), the result belongs
+    here: it decides whether batching saves time or only memory.
+18. **The clients.** Who receives the Celiac, AllCohort and
+    CrohnsClinicalData pulls, and can their questions be described?
 
 **Attribution, and my recommendation.**
 
@@ -1202,5 +1549,8 @@ git show 6a16bd8^:QMDs/pullmanager/pullmanager_contracts.md
 git show f7a3400^:QMDs/recentResearch.qmd                         # your research note
 git show b328879^:responses.md                                    # your UI test notes
 git show 840d996^:QMDs/sideproject-phewas/sideproject-phewas.qmd
+git show 2571e92:QMDs/artifact.md                                 # your artifacts spec
+git show d4e30bb:QMDs/response.md                                 # your 26-27 Sep notes
+git show d6f2030^:QMDs/keys_research/vm_ai_answer.md              # the VM AI's keys answer
 git log --reverse --format='%h %ad %s%n%b' --date=iso              # every commit with its reasoning
 ```
