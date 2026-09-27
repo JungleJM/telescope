@@ -59,6 +59,8 @@ class FakeCursor:
             return
         match = re.match(r"SELECT (.+) FROM \S+\.dbo\.(\w+)(?: WHERE (.+))?;$", sql, re.S)
         assert match, sql
+        if match.group(2) in self.db.fail:
+            raise RuntimeError(f"[42000] Invalid column name in {match.group(2)}")
         names = re.findall(r"\[(\w+)\] AS|\[(\w+)\]", match.group(1))
         names = [a or b for a, b in names]
         rows = self.db.rows[match.group(2)]
@@ -82,6 +84,7 @@ class FakeCursor:
 class FakeProjects:
     def __init__(self, columns, rows):
         self.columns, self.rows = columns, rows
+        self.fail: set[str] = set()  # tables whose SELECT fails, as a driver error would
         self.executed: list = []
         self.closed = False
 
@@ -277,8 +280,39 @@ class CommandTests(ArtifactTestCase):
         code, out = self.run_artifacts(db)
         self.assertEqual(code, 0, out)
         self.assertIn("left out OtherHospitalizations", out)
-        self.assertIn("Artifacts finished: 2 table(s)", out)
+        self.assertIn("2 table(s) in 2 parquet file(s)", out)
+        self.assertIn("1 left out, 0 failed", out)
         self.assertTrue(db.closed)
+
+    def test_it_says_when_each_file_starts_and_how_it_went(self):
+        self.set_status()
+        code, out = self.run_artifacts(self.projects())
+        self.assertEqual(code, 0, out)
+        lines = out.splitlines()
+        start = lines.index("  writing  parquets/Cosmos/Patients.parquet ...")
+        self.assertRegex(
+            lines[start + 1],
+            r"^  wrote    parquets/Cosmos/Patients\.parquet  \(3 rows, [\d.,]+ (bytes|KB), \d+\.\ds\)$",
+        )
+        listed = lines[next(i for i, l in enumerate(lines) if l.startswith("Files written, in")) + 1:]
+        self.assertTrue(any(l.startswith("  parquets/Cosmos/Patients.parquet  3 rows") for l in listed), out)
+        self.assertIn("  contents.md", listed)
+        self.assertRegex(out, r"Artifacts finished in \d+\.\ds: 3 table\(s\) in 3 parquet file\(s\), 7 rows")
+
+    def test_a_table_that_fails_is_reported_and_the_rest_are_packaged(self):
+        self.set_status()
+        db = self.projects()
+        db.fail.add("Patients")
+        code, out = self.run_artifacts(db)
+        self.assertEqual(code, 1, out)
+        self.assertIn("  FAILED   Patients: RuntimeError: [42000] Invalid column name in Patients", out)
+        self.assertFalse((self.out / "Cosmos" / "Patients.parquet").exists())
+        self.assertFalse(list(self.out.rglob("*.tmp")))
+        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file())
+        self.assertIn("Failed (not packaged; the rest were):\n  Patients:", out)
+        self.assertIn("1 failed", out)
+        contents = (self.split.parent / "contents.md").read_text(encoding="utf-8")
+        self.assertIn("OtherHospitalizations", contents)
 
     def test_a_pull_still_executing_is_not_packaged(self):
         self.set_status()

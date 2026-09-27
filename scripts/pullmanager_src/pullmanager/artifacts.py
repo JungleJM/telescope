@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -52,6 +53,7 @@ class Part:
     params: list[Any] = field(default_factory=list)
     path: Path | None = None
     rows: int = 0
+    seconds: float = 0.0
 
 
 @dataclass
@@ -77,6 +79,7 @@ class TableSpec:
 class Plan:
     tables: list[TableSpec] = field(default_factory=list)
     left_out: list[tuple[str, str]] = field(default_factory=list)  # table, why
+    failed: list[tuple[str, str]] = field(default_factory=list)  # table, the error (D88)
 
 
 def is_settled(node: Any) -> bool:
@@ -268,15 +271,19 @@ def write_part(cursor: Any, pa: Any, pq: Any, sql: str, params: list[Any],
     schema = pa.schema([(name, arrow_type(pa, sql_type)) for name, sql_type in columns])
     tmp = path.with_name(path.name + ".tmp")
     rows = 0
-    cursor.execute(sql, params)
-    with pq.ParquetWriter(tmp, schema) as writer:
-        for chunk in batches_of(cursor):
-            arrays = [
-                pa.array([row[i] for row in chunk], type=schema.field(i).type)
-                for i in range(len(columns))
-            ]
-            writer.write_batch(pa.record_batch(arrays, schema=schema))
-            rows += len(chunk)
+    try:
+        cursor.execute(sql, params)
+        with pq.ParquetWriter(tmp, schema) as writer:
+            for chunk in batches_of(cursor):
+                arrays = [
+                    pa.array([row[i] for row in chunk], type=schema.field(i).type)
+                    for i in range(len(columns))
+                ]
+                writer.write_batch(pa.record_batch(arrays, schema=schema))
+                rows += len(chunk)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # no half-written file is left to be mistaken for one
+        raise
     tmp.replace(path)
     return rows
 
@@ -299,27 +306,21 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
     for spec in result.tables:
         folder = out_dir / spec.folder
         folder.mkdir(parents=True, exist_ok=True)
-        if spec.kind == "upload":
-            part = spec.parts[0]
-            part.path = folder / file_name(spec.dest, "")
-            shutil.copyfile(spec.source_file, part.path)
-            table = pq.read_metadata(part.path)
-            part.rows = table.num_rows
-            schema = pq.read_schema(part.path)
-            spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
-            log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows)")
-            continue
-        described = describe(cursor, project_db, spec.dest)
-        if not described:
-            result.left_out.append((spec.dest, f"it is not in {project_db}"))
-            continue
-        spec.columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
-        select = ", ".join(select_expression(name, sql_type) for name, sql_type in spec.columns)
-        for part in spec.parts:
-            part.path = folder / file_name(spec.dest, part.label)
-            sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
-            part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
-            log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows)")
+        try:
+            package_table(spec, cursor, pa, pq, project_db, folder, out_dir, result, log)
+        except Exception as exc:  # noqa: BLE001 - one table's failure spares the rest (D88)
+            # A driver error names the table in its SQL; say which table anyway.
+            result.failed.append((spec.dest, f"{type(exc).__name__}: {exc}"))
+            log(f"  FAILED   {spec.dest}: {type(exc).__name__}: {exc}")
+            for part in spec.parts:
+                if part.path is not None and part.path.exists():
+                    part.path.unlink()  # a table is packaged whole or not at all
+            spec.columns = []
+            try:  # a failed statement can leave the cursor unusable
+                cursor.close()
+            except Exception:  # noqa: BLE001
+                pass
+            cursor = connection.cursor()
     result.tables = [spec for spec in result.tables if spec.columns]
     return result
 
@@ -345,6 +346,54 @@ def write_whole_table(connection: Any, project_db: str, table: str, path: Path) 
     path.parent.mkdir(parents=True, exist_ok=True)
     return write_part(cursor, pa, pq, f"SELECT {select} FROM {destination(project_db, table)};",
                       [], columns, path)
+
+
+def package_table(spec: TableSpec, cursor: Any, pa: Any, pq: Any, project_db: str, folder: Path,
+                  out_dir: Path, result: Plan, log: Callable[[str], None]) -> None:
+    """Write one table's parquet(s), saying when each starts and how it went."""
+    if spec.kind == "upload":
+        part = spec.parts[0]
+        part.path = folder / file_name(spec.dest, "")
+        started = time.monotonic()
+        shutil.copyfile(spec.source_file, part.path)
+        part.rows = pq.read_metadata(part.path).num_rows
+        part.seconds = time.monotonic() - started
+        schema = pq.read_schema(part.path)
+        spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
+        log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows, "
+            f"{size_text(part.path)}, {seconds_text(part.seconds)})")
+        return
+    described = describe(cursor, project_db, spec.dest)
+    if not described:
+        result.left_out.append((spec.dest, f"it is not in {project_db}"))
+        return
+    spec.columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
+    select = ", ".join(select_expression(name, sql_type) for name, sql_type in spec.columns)
+    for part in spec.parts:
+        part.path = folder / file_name(spec.dest, part.label)
+        log(f"  writing  {shown(part.path, out_dir)} ...")
+        started = time.monotonic()
+        sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
+        part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
+        part.seconds = time.monotonic() - started
+        log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows, "
+            f"{size_text(part.path)}, {seconds_text(part.seconds)})")
+
+
+def size_text(path: Path) -> str:
+    size = float(path.stat().st_size)
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:,.0f} {unit}" if unit == "bytes" else f"{size:,.1f} {unit}"
+        size /= 1024
+    return ""
+
+
+def seconds_text(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, rest = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {rest:02d}s" if minutes < 60 else f"{minutes // 60}h {minutes % 60:02d}m"
 
 
 def shown(path: Path, out_dir: Path) -> str:

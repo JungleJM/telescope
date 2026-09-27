@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "8b184bd126ad4867ef819b1dba14f369a5fccaeb73aee0139d22fd9f5f3a7d42",
+  "content_id": "74a836486c9e8ea1c71e18415b477771c2cc81512696b4d325f364ebfdbb917e",
   "file_count": 47,
   "files": [
     {
@@ -537,8 +537,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/artifacts.py",
       "policy": "replace",
-      "sha256": "e051411c44f3b198309867b213dcfa2578da85716878cc84a483155434598f7c",
-      "size": 14857
+      "sha256": "b3703a4304ca9502610e3644ae7568d9138bddd99fd6bcdfcecfaff7b320c4d5",
+      "size": 17059
     },
     {
       "path": "pullmanager/batches.py",
@@ -549,8 +549,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/cli.py",
       "policy": "replace",
-      "sha256": "74dd408a3e297cf96683ebba26b43befe25d864da38dc7b0b430702043a371b0",
-      "size": 20865
+      "sha256": "d54bc0e38666191713689d46514f935d6565da7c64986cc90377874d86a4c8dc",
+      "size": 21766
     },
     {
       "path": "pullmanager/contents.py",
@@ -675,8 +675,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_artifacts.py",
       "policy": "replace",
-      "sha256": "8ebd16a21507696f012bbe660b59494e92da60eed2db4a11172978612bf8da2b",
-      "size": 15576
+      "sha256": "e58cae335ad1f454b24eb19388a01683b0ebc4f0911d25624817e00a75e7f258",
+      "size": 17522
     },
     {
       "path": "pullmanager/tests/test_batches.py",
@@ -3676,7 +3676,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
-# === BEGIN FILE: pullmanager/artifacts.py SHA256: e051411c44f3b198309867b213dcfa2578da85716878cc84a483155434598f7c SIZE: 14857 ===
+# === BEGIN FILE: pullmanager/artifacts.py SHA256: b3703a4304ca9502610e3644ae7568d9138bddd99fd6bcdfcecfaff7b320c4d5 SIZE: 17059 ===
 # """`--artifacts`: a pull's finished tables, as parquets in its run folder (D72).
 #
 #     runs/<project>/parquets/SneakPeek/   tables pulled from COSMOS_SneakPeek (`_sp`)
@@ -3696,6 +3696,7 @@ if __name__ == "__main__":
 #
 # import re
 # import shutil
+# import time
 # from dataclasses import dataclass, field
 # from pathlib import Path
 # from typing import Any, Callable, Iterator
@@ -3731,6 +3732,7 @@ if __name__ == "__main__":
 #     params: list[Any] = field(default_factory=list)
 #     path: Path | None = None
 #     rows: int = 0
+#     seconds: float = 0.0
 #
 #
 # @dataclass
@@ -3756,6 +3758,7 @@ if __name__ == "__main__":
 # class Plan:
 #     tables: list[TableSpec] = field(default_factory=list)
 #     left_out: list[tuple[str, str]] = field(default_factory=list)  # table, why
+#     failed: list[tuple[str, str]] = field(default_factory=list)  # table, the error (D88)
 #
 #
 # def is_settled(node: Any) -> bool:
@@ -3947,15 +3950,19 @@ if __name__ == "__main__":
 #     schema = pa.schema([(name, arrow_type(pa, sql_type)) for name, sql_type in columns])
 #     tmp = path.with_name(path.name + ".tmp")
 #     rows = 0
-#     cursor.execute(sql, params)
-#     with pq.ParquetWriter(tmp, schema) as writer:
-#         for chunk in batches_of(cursor):
-#             arrays = [
-#                 pa.array([row[i] for row in chunk], type=schema.field(i).type)
-#                 for i in range(len(columns))
-#             ]
-#             writer.write_batch(pa.record_batch(arrays, schema=schema))
-#             rows += len(chunk)
+#     try:
+#         cursor.execute(sql, params)
+#         with pq.ParquetWriter(tmp, schema) as writer:
+#             for chunk in batches_of(cursor):
+#                 arrays = [
+#                     pa.array([row[i] for row in chunk], type=schema.field(i).type)
+#                     for i in range(len(columns))
+#                 ]
+#                 writer.write_batch(pa.record_batch(arrays, schema=schema))
+#                 rows += len(chunk)
+#     except BaseException:
+#         tmp.unlink(missing_ok=True)  # no half-written file is left to be mistaken for one
+#         raise
 #     tmp.replace(path)
 #     return rows
 #
@@ -3978,27 +3985,21 @@ if __name__ == "__main__":
 #     for spec in result.tables:
 #         folder = out_dir / spec.folder
 #         folder.mkdir(parents=True, exist_ok=True)
-#         if spec.kind == "upload":
-#             part = spec.parts[0]
-#             part.path = folder / file_name(spec.dest, "")
-#             shutil.copyfile(spec.source_file, part.path)
-#             table = pq.read_metadata(part.path)
-#             part.rows = table.num_rows
-#             schema = pq.read_schema(part.path)
-#             spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
-#             log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows)")
-#             continue
-#         described = describe(cursor, project_db, spec.dest)
-#         if not described:
-#             result.left_out.append((spec.dest, f"it is not in {project_db}"))
-#             continue
-#         spec.columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
-#         select = ", ".join(select_expression(name, sql_type) for name, sql_type in spec.columns)
-#         for part in spec.parts:
-#             part.path = folder / file_name(spec.dest, part.label)
-#             sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
-#             part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
-#             log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows)")
+#         try:
+#             package_table(spec, cursor, pa, pq, project_db, folder, out_dir, result, log)
+#         except Exception as exc:  # noqa: BLE001 - one table's failure spares the rest (D88)
+#             # A driver error names the table in its SQL; say which table anyway.
+#             result.failed.append((spec.dest, f"{type(exc).__name__}: {exc}"))
+#             log(f"  FAILED   {spec.dest}: {type(exc).__name__}: {exc}")
+#             for part in spec.parts:
+#                 if part.path is not None and part.path.exists():
+#                     part.path.unlink()  # a table is packaged whole or not at all
+#             spec.columns = []
+#             try:  # a failed statement can leave the cursor unusable
+#                 cursor.close()
+#             except Exception:  # noqa: BLE001
+#                 pass
+#             cursor = connection.cursor()
 #     result.tables = [spec for spec in result.tables if spec.columns]
 #     return result
 #
@@ -4024,6 +4025,54 @@ if __name__ == "__main__":
 #     path.parent.mkdir(parents=True, exist_ok=True)
 #     return write_part(cursor, pa, pq, f"SELECT {select} FROM {destination(project_db, table)};",
 #                       [], columns, path)
+#
+#
+# def package_table(spec: TableSpec, cursor: Any, pa: Any, pq: Any, project_db: str, folder: Path,
+#                   out_dir: Path, result: Plan, log: Callable[[str], None]) -> None:
+#     """Write one table's parquet(s), saying when each starts and how it went."""
+#     if spec.kind == "upload":
+#         part = spec.parts[0]
+#         part.path = folder / file_name(spec.dest, "")
+#         started = time.monotonic()
+#         shutil.copyfile(spec.source_file, part.path)
+#         part.rows = pq.read_metadata(part.path).num_rows
+#         part.seconds = time.monotonic() - started
+#         schema = pq.read_schema(part.path)
+#         spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
+#         log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows, "
+#             f"{size_text(part.path)}, {seconds_text(part.seconds)})")
+#         return
+#     described = describe(cursor, project_db, spec.dest)
+#     if not described:
+#         result.left_out.append((spec.dest, f"it is not in {project_db}"))
+#         return
+#     spec.columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
+#     select = ", ".join(select_expression(name, sql_type) for name, sql_type in spec.columns)
+#     for part in spec.parts:
+#         part.path = folder / file_name(spec.dest, part.label)
+#         log(f"  writing  {shown(part.path, out_dir)} ...")
+#         started = time.monotonic()
+#         sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
+#         part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
+#         part.seconds = time.monotonic() - started
+#         log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows, "
+#             f"{size_text(part.path)}, {seconds_text(part.seconds)})")
+#
+#
+# def size_text(path: Path) -> str:
+#     size = float(path.stat().st_size)
+#     for unit in ("bytes", "KB", "MB", "GB"):
+#         if size < 1024 or unit == "GB":
+#             return f"{size:,.0f} {unit}" if unit == "bytes" else f"{size:,.1f} {unit}"
+#         size /= 1024
+#     return ""
+#
+#
+# def seconds_text(seconds: float) -> str:
+#     if seconds < 60:
+#         return f"{seconds:.1f}s"
+#     minutes, rest = divmod(int(round(seconds)), 60)
+#     return f"{minutes}m {rest:02d}s" if minutes < 60 else f"{minutes // 60}h {minutes % 60:02d}m"
 #
 #
 # def shown(path: Path, out_dir: Path) -> str:
@@ -4256,7 +4305,7 @@ if __name__ == "__main__":
 #     )
 #
 # === END FILE: pullmanager/batches.py ===
-# === BEGIN FILE: pullmanager/cli.py SHA256: 74dd408a3e297cf96683ebba26b43befe25d864da38dc7b0b430702043a371b0 SIZE: 20865 ===
+# === BEGIN FILE: pullmanager/cli.py SHA256: d54bc0e38666191713689d46514f935d6565da7c64986cc90377874d86a4c8dc SIZE: 21766 ===
 # """Command line entry point: summarize, preview (--dry-run) or execute a pull."""
 #
 # from __future__ import annotations
@@ -4445,7 +4494,9 @@ if __name__ == "__main__":
 #
 # def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
 #     """Package the pull's finished tables (D72), then describe them (D73, D75)."""
-#     from .artifacts import ArtifactError, package, parquets_folder
+#     import time
+#
+#     from .artifacts import ArtifactError, package, parquets_folder, seconds_text, size_text
 #     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
 #     from .lock import held_message, live_lock, pull_name
 #
@@ -4462,6 +4513,7 @@ if __name__ == "__main__":
 #     settings = Settings.from_env()
 #     project_db = str(manifest.project.get("project_db") or "")
 #     out = parquets_folder(manifest.path)
+#     started = time.monotonic()
 #     print(f"Artifacts {pull_name(manifest.path)}: {shown(out)}")
 #     try:
 #         connection = (connect_fn or connect)(
@@ -4495,16 +4547,35 @@ if __name__ == "__main__":
 #     run_dir = run_folder(manifest.path)
 #     contents = run_dir / "contents.md"
 #     contents.write_text(render(manifest, result), encoding="utf-8")
-#     print(f"  wrote    {shown(contents)}")
-#     for path in write_loaders(run_dir, out, pull_name(manifest.path)):
+#     others = [contents, *write_loaders(run_dir, out, pull_name(manifest.path))]
+#     for path in others[1:]:
 #         print(f"  wrote    {shown(path)}")
-#     files = sum(len(spec.parts) for spec in result.tables)
+#     print(f"  wrote    {shown(contents)}")
+#
+#     # Everything this packaging made, in one place (D88).
+#     parts = [part for spec in result.tables for part in spec.parts]
+#     print()
+#     print(f"Files written, in {shown(run_dir)}:")
+#     for part in parts:
+#         print(f"  {part.path.relative_to(run_dir).as_posix()}  {part.rows:,} rows, {size_text(part.path)}")
+#     for path in others:
+#         print(f"  {path.relative_to(run_dir).as_posix()}")
+#     if result.failed:
+#         print()
+#         print("Failed (not packaged; the rest were):")
+#         for dest, why in result.failed:
+#             print(f"  {dest}: {why}")
 #     print()
 #     print(
-#         f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
-#         f"{len(result.left_out)} left out. In {shown(run_dir)}: contents.md describes "
+#         f"Artifacts finished in {seconds_text(time.monotonic() - started)}: "
+#         f"{len(result.tables)} table(s) in {len(parts)} parquet file(s), "
+#         f"{sum(part.rows for part in parts):,} rows, {len(result.left_out)} left out, "
+#         f"{len(result.failed)} failed. In {shown(run_dir)}: contents.md describes "
 #         "them, HOW_TO.md says how to open them."
 #     )
+#     if result.failed:
+#         print("Run Artifacts again once the cause is fixed: each run replaces the last.")
+#         return 1
 #     return 0
 #
 #
@@ -10299,7 +10370,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 8ebd16a21507696f012bbe660b59494e92da60eed2db4a11172978612bf8da2b SIZE: 15576 ===
+# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: e58cae335ad1f454b24eb19388a01683b0ebc4f0911d25624817e00a75e7f258 SIZE: 17522 ===
 # """`--artifacts`: a pull's finished tables as parquets (D72)."""
 #
 # from __future__ import annotations
@@ -10361,6 +10432,8 @@ if __name__ == "__main__":
 #             return
 #         match = re.match(r"SELECT (.+) FROM \S+\.dbo\.(\w+)(?: WHERE (.+))?;$", sql, re.S)
 #         assert match, sql
+#         if match.group(2) in self.db.fail:
+#             raise RuntimeError(f"[42000] Invalid column name in {match.group(2)}")
 #         names = re.findall(r"\[(\w+)\] AS|\[(\w+)\]", match.group(1))
 #         names = [a or b for a, b in names]
 #         rows = self.db.rows[match.group(2)]
@@ -10384,6 +10457,7 @@ if __name__ == "__main__":
 # class FakeProjects:
 #     def __init__(self, columns, rows):
 #         self.columns, self.rows = columns, rows
+#         self.fail: set[str] = set()  # tables whose SELECT fails, as a driver error would
 #         self.executed: list = []
 #         self.closed = False
 #
@@ -10579,8 +10653,39 @@ if __name__ == "__main__":
 #         code, out = self.run_artifacts(db)
 #         self.assertEqual(code, 0, out)
 #         self.assertIn("left out OtherHospitalizations", out)
-#         self.assertIn("Artifacts finished: 2 table(s)", out)
+#         self.assertIn("2 table(s) in 2 parquet file(s)", out)
+#         self.assertIn("1 left out, 0 failed", out)
 #         self.assertTrue(db.closed)
+#
+#     def test_it_says_when_each_file_starts_and_how_it_went(self):
+#         self.set_status()
+#         code, out = self.run_artifacts(self.projects())
+#         self.assertEqual(code, 0, out)
+#         lines = out.splitlines()
+#         start = lines.index("  writing  parquets/Cosmos/Patients.parquet ...")
+#         self.assertRegex(
+#             lines[start + 1],
+#             r"^  wrote    parquets/Cosmos/Patients\.parquet  \(3 rows, [\d.,]+ (bytes|KB), \d+\.\ds\)$",
+#         )
+#         listed = lines[next(i for i, l in enumerate(lines) if l.startswith("Files written, in")) + 1:]
+#         self.assertTrue(any(l.startswith("  parquets/Cosmos/Patients.parquet  3 rows") for l in listed), out)
+#         self.assertIn("  contents.md", listed)
+#         self.assertRegex(out, r"Artifacts finished in \d+\.\ds: 3 table\(s\) in 3 parquet file\(s\), 7 rows")
+#
+#     def test_a_table_that_fails_is_reported_and_the_rest_are_packaged(self):
+#         self.set_status()
+#         db = self.projects()
+#         db.fail.add("Patients")
+#         code, out = self.run_artifacts(db)
+#         self.assertEqual(code, 1, out)
+#         self.assertIn("  FAILED   Patients: RuntimeError: [42000] Invalid column name in Patients", out)
+#         self.assertFalse((self.out / "Cosmos" / "Patients.parquet").exists())
+#         self.assertFalse(list(self.out.rglob("*.tmp")))
+#         self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file())
+#         self.assertIn("Failed (not packaged; the rest were):\n  Patients:", out)
+#         self.assertIn("1 failed", out)
+#         contents = (self.split.parent / "contents.md").read_text(encoding="utf-8")
+#         self.assertIn("OtherHospitalizations", contents)
 #
 #     def test_a_pull_still_executing_is_not_packaged(self):
 #         self.set_status()

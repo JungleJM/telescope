@@ -186,7 +186,9 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
 
 def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
     """Package the pull's finished tables (D72), then describe them (D73, D75)."""
-    from .artifacts import ArtifactError, package, parquets_folder
+    import time
+
+    from .artifacts import ArtifactError, package, parquets_folder, seconds_text, size_text
     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
     from .lock import held_message, live_lock, pull_name
 
@@ -203,6 +205,7 @@ def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> 
     settings = Settings.from_env()
     project_db = str(manifest.project.get("project_db") or "")
     out = parquets_folder(manifest.path)
+    started = time.monotonic()
     print(f"Artifacts {pull_name(manifest.path)}: {shown(out)}")
     try:
         connection = (connect_fn or connect)(
@@ -236,16 +239,35 @@ def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> 
     run_dir = run_folder(manifest.path)
     contents = run_dir / "contents.md"
     contents.write_text(render(manifest, result), encoding="utf-8")
-    print(f"  wrote    {shown(contents)}")
-    for path in write_loaders(run_dir, out, pull_name(manifest.path)):
+    others = [contents, *write_loaders(run_dir, out, pull_name(manifest.path))]
+    for path in others[1:]:
         print(f"  wrote    {shown(path)}")
-    files = sum(len(spec.parts) for spec in result.tables)
+    print(f"  wrote    {shown(contents)}")
+
+    # Everything this packaging made, in one place (D88).
+    parts = [part for spec in result.tables for part in spec.parts]
+    print()
+    print(f"Files written, in {shown(run_dir)}:")
+    for part in parts:
+        print(f"  {part.path.relative_to(run_dir).as_posix()}  {part.rows:,} rows, {size_text(part.path)}")
+    for path in others:
+        print(f"  {path.relative_to(run_dir).as_posix()}")
+    if result.failed:
+        print()
+        print("Failed (not packaged; the rest were):")
+        for dest, why in result.failed:
+            print(f"  {dest}: {why}")
     print()
     print(
-        f"Artifacts finished: {len(result.tables)} table(s) in {files} parquet file(s), "
-        f"{len(result.left_out)} left out. In {shown(run_dir)}: contents.md describes "
+        f"Artifacts finished in {seconds_text(time.monotonic() - started)}: "
+        f"{len(result.tables)} table(s) in {len(parts)} parquet file(s), "
+        f"{sum(part.rows for part in parts):,} rows, {len(result.left_out)} left out, "
+        f"{len(result.failed)} failed. In {shown(run_dir)}: contents.md describes "
         "them, HOW_TO.md says how to open them."
     )
+    if result.failed:
+        print("Run Artifacts again once the cause is fixed: each run replaces the last.")
+        return 1
     return 0
 
 
