@@ -382,6 +382,22 @@ def session_label(name: str, pk_table: str) -> str:
     return pk_table or name
 
 
+SP_SUFFIX = "_sp"
+
+
+def is_sp_copy(cohort: dict[str, Any]) -> bool:
+    """A cohort's copy for COSMOS_SneakPeek, which the analysis does not list."""
+    return str(cohort.get("cosmos_db") or "").lower() == "cosmos_sneakpeek" and str(
+        cohort.get("name", "")
+    ).endswith(SP_SUFFIX)
+
+
+def original_name(cohort: dict[str, Any], field: str = "name") -> str:
+    """The name the analysis knows a cohort by: an `_sp` copy's original's."""
+    value = str(cohort.get(field) or cohort.get("name") or "")
+    return value[: -len(SP_SUFFIX)] if is_sp_copy(cohort) and value.endswith(SP_SUFFIX) else value
+
+
 def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], dict[str, str]]:
     cohorts = result.finished_yaml.get("cohorts", []) or []
     required_cols = (result.analysis or {}).get("required_table_columns", {})
@@ -390,6 +406,9 @@ def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list
     sessions: dict[str, str] = {}
     current_pk_dest = ""
     color_by_source: dict[str, int] = {}
+    # Tables the pull builds: an `_sp` copy reads their `_sp` copies, and
+    # shares the uploads.
+    generated = {str(c.get("dest_table", c.get("name", ""))) for c in cohorts if not is_sp_copy(c)}
     for cohort in cohorts:
         dest = str(cohort.get("dest_table", cohort.get("name", "")))
         name = str(cohort.get("name", dest))
@@ -397,10 +416,12 @@ def build_connection_maps(result: backend.CompileResult) -> tuple[dict[str, list
             current_pk_dest = dest
         sessions[name] = session_label(name, current_pk_dest)
         resolved_vars = cohort.get("_resolved_vars", {})
-        for table_var, cols in (required_cols.get(name) or {}).items():
+        for table_var, cols in (required_cols.get(original_name(cohort)) or {}).items():
             target = str(resolved_vars.get(table_var) or table_var)
             if table_var == "PKTable" and current_pk_dest:
                 target = current_pk_dest
+            elif is_sp_copy(cohort) and target in generated:
+                target += SP_SUFFIX
             if target not in color_by_source:
                 color_by_source[target] = len(color_by_source) % 8
             item = {
@@ -592,8 +613,8 @@ def cohort_cards(result: backend.CompileResult) -> str:
         known_tables.update({str(name), str(dest)})
         ctype = str(cohort.get("type", "fact"))
         kind = "pk" if ctype.lower() == "pk" else "neutral"
-        req_var_names = sorted((required_vars.get(name) or {}).keys())
-        table_inputs = required_cols.get(name) or {}
+        req_var_names = sorted((required_vars.get(original_name(cohort)) or {}).keys())
+        table_inputs = required_cols.get(original_name(cohort)) or {}
         table_bits = []
         for table_var, cols in table_inputs.items():
             table_bits.append(f"<h4>{e(table_var)}</h4>{value_list(cols)}")
@@ -621,7 +642,7 @@ def cohort_cards(result: backend.CompileResult) -> str:
                 </section>
                 <section>
                   <h4>Output Columns</h4>
-                  {column_list(outputs.get(dest, []), outgoing, 12)}
+                  {column_list(outputs.get(original_name(cohort, "dest_table"), []), outgoing, 12)}
                 </section>
               </div>
               <section>
@@ -3432,6 +3453,33 @@ class BuilderDefaultTests(unittest.TestCase):
         self.assertIs(defaults["test_options"]["smallset"], False)
 
 
+class SneakPeekConnectionTests(unittest.TestCase):
+    """An `_sp` copy's card shows its connections, to the `_sp` tables."""
+
+    def test_sp_copies_connect_to_the_sp_pk(self):
+        with tempfile.TemporaryDirectory() as d:
+            template = Path(d) / "Celiac_temp.yaml"
+            template.write_text(
+                "cosmos_vars: {project_db: PROJECTD93A5E7, cosmos_db: Dual}\n"
+                "run_vars: {min_date_key: 19900101, max_date_key: 20260601}\n"
+                "project_vars: {project_folder: Celiac}\n"
+                "cohorts:\n"
+                "  - {recipe: PatientWithDx, name: CeDPatients, vars: {ICD_Value: K90.0}}\n"
+                "  - {recipe: IndexDiagnosis, name: IndexDiagnosis}\n",
+                encoding="utf-8",
+            )
+            result = backend.compile_dashboard(
+                template_path=template, recipes_path=PROJECT_ROOT / "YAMLs" / "recipes.yaml"
+            )
+        outgoing, incoming, _ = build_connection_maps(result)
+        self.assertEqual([i["source"] for i in incoming["IndexDiagnosis_sp"]], ["Patients_sp"])
+        self.assertEqual([i["source"] for i in incoming["IndexDiagnosis"]], ["Patients"])
+        self.assertEqual([i["target"] for i in outgoing["Patients_sp"]], ["IndexDiagnosis_sp"])
+        cards = cohort_cards(result)
+        sp_card = cards[cards.index('id="cohort-cedpatients_sp"'):]
+        self.assertNotIn("None detected", sp_card[:sp_card.index("</summary>")])
+
+
 class SectionNoteTests(unittest.TestCase):
     def test_inline_and_preceding_comments_become_notes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3462,7 +3510,7 @@ class SectionNoteTests(unittest.TestCase):
 
 def run_tdd() -> int:
     suite = unittest.TestSuite()
-    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, BuilderDefaultTests, SectionNoteTests):
+    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, BuilderDefaultTests, SneakPeekConnectionTests, SectionNoteTests):
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
