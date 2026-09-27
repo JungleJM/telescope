@@ -324,6 +324,29 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
     return result
 
 
+def pk_parquet_path(manifest_path: Path, cohort: dict[str, Any], doc: dict[str, Any], dest: str) -> Path:
+    """Where Artifacts puts a PK's parquet, so the one written early is replaced."""
+    return parquets_folder(manifest_path) / database_folder(cohort, doc) / file_name(dest, "")
+
+
+def write_whole_table(connection: Any, project_db: str, table: str, path: Path) -> int:
+    """One Projects table into one parquet, typed from its own columns (D87)."""
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise ArtifactError(f"this Python lacks pyarrow ({exc})") from exc
+    cursor = connection.cursor()
+    described = describe(cursor, project_db, table)
+    if not described:
+        raise ArtifactError(f"{table} is not in {project_db}")
+    columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
+    select = ", ".join(select_expression(name, sql_type) for name, sql_type in columns)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return write_part(cursor, pa, pq, f"SELECT {select} FROM {destination(project_db, table)};",
+                      [], columns, path)
+
+
 def shown(path: Path, out_dir: Path) -> str:
     try:
         return str(path.relative_to(out_dir.parent))

@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "7d26bc5b2596c5f3eac7b0a174cb975501b464e6a5ee9abedeb61d3c52e171d0",
+  "content_id": "8b184bd126ad4867ef819b1dba14f369a5fccaeb73aee0139d22fd9f5f3a7d42",
   "file_count": 47,
   "files": [
     {
@@ -537,8 +537,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/artifacts.py",
       "policy": "replace",
-      "sha256": "bc95817e1bb25e1c40fd878eb1d177443b4e0397512c659fe9d740501942f9bc",
-      "size": 13681
+      "sha256": "e051411c44f3b198309867b213dcfa2578da85716878cc84a483155434598f7c",
+      "size": 14857
     },
     {
       "path": "pullmanager/batches.py",
@@ -651,8 +651,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/session.py",
       "policy": "replace",
-      "sha256": "aaaf8e0c8f25a9de8aeac2fcc4d6e5fcd3ef8c83c2999567a335115dcfac0894",
-      "size": 36406
+      "sha256": "6c868abbc944f73c3b9010f2fe3ac5ec19ee1fbdedc3a5c78b09743f4152e414",
+      "size": 37731
     },
     {
       "path": "pullmanager/sql.py",
@@ -759,8 +759,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_session.py",
       "policy": "replace",
-      "sha256": "76af55b1a7658d7885d7f849dc6630ff0112009060b48727633827946d12f909",
-      "size": 47836
+      "sha256": "8d640e7d1867bb621cbb8ece20d22409cf8987aa8c4b88cebd37e55813c71836",
+      "size": 50490
     },
     {
       "path": "pullmanager/tests/test_sql.py",
@@ -3676,7 +3676,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: pullmanager/__main__.py ===
-# === BEGIN FILE: pullmanager/artifacts.py SHA256: bc95817e1bb25e1c40fd878eb1d177443b4e0397512c659fe9d740501942f9bc SIZE: 13681 ===
+# === BEGIN FILE: pullmanager/artifacts.py SHA256: e051411c44f3b198309867b213dcfa2578da85716878cc84a483155434598f7c SIZE: 14857 ===
 # """`--artifacts`: a pull's finished tables, as parquets in its run folder (D72).
 #
 #     runs/<project>/parquets/SneakPeek/   tables pulled from COSMOS_SneakPeek (`_sp`)
@@ -4001,6 +4001,29 @@ if __name__ == "__main__":
 #             log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows)")
 #     result.tables = [spec for spec in result.tables if spec.columns]
 #     return result
+#
+#
+# def pk_parquet_path(manifest_path: Path, cohort: dict[str, Any], doc: dict[str, Any], dest: str) -> Path:
+#     """Where Artifacts puts a PK's parquet, so the one written early is replaced."""
+#     return parquets_folder(manifest_path) / database_folder(cohort, doc) / file_name(dest, "")
+#
+#
+# def write_whole_table(connection: Any, project_db: str, table: str, path: Path) -> int:
+#     """One Projects table into one parquet, typed from its own columns (D87)."""
+#     try:
+#         import pyarrow as pa
+#         import pyarrow.parquet as pq
+#     except ImportError as exc:
+#         raise ArtifactError(f"this Python lacks pyarrow ({exc})") from exc
+#     cursor = connection.cursor()
+#     described = describe(cursor, project_db, table)
+#     if not described:
+#         raise ArtifactError(f"{table} is not in {project_db}")
+#     columns = [(name, sql_type) for name, sql_type in described if name != BATCH_COLUMN]
+#     select = ", ".join(select_expression(name, sql_type) for name, sql_type in columns)
+#     path.parent.mkdir(parents=True, exist_ok=True)
+#     return write_part(cursor, pa, pq, f"SELECT {select} FROM {destination(project_db, table)};",
+#                       [], columns, path)
 #
 #
 # def shown(path: Path, out_dir: Path) -> str:
@@ -9063,7 +9086,7 @@ if __name__ == "__main__":
 #     ]
 #
 # === END FILE: pullmanager/server_sql.py ===
-# === BEGIN FILE: pullmanager/session.py SHA256: aaaf8e0c8f25a9de8aeac2fcc4d6e5fcd3ef8c83c2999567a335115dcfac0894 SIZE: 36406 ===
+# === BEGIN FILE: pullmanager/session.py SHA256: 6c868abbc944f73c3b9010f2fe3ac5ec19ee1fbdedc3a5c78b09743f4152e414 SIZE: 37731 ===
 # """Executing one session.
 #
 # The Cosmos connection is held open for the whole session, because every
@@ -9531,9 +9554,38 @@ if __name__ == "__main__":
 #         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
 #         sampled = self._sample_control(node, doc)
 #         total = self._verify_pk_uniqueness(doc)
+#         self._write_pk_parquet(node, doc)
 #         if sampled is not None:
 #             return sampled
 #         return rows if rows is not None else total
+#
+#     def _write_pk_parquet(self, node: Any, doc: dict[str, Any]) -> None:
+#         """The whole PK as a parquet as soon as it lands, before any run (D87).
+#
+#         Where Artifacts would put it, and replaced by Artifacts later. A
+#         failure here warns: the pull does not need the file. An uploaded PK
+#         is a file already.
+#         """
+#         if not self._pk_is_generated():
+#             return
+#         from .artifacts import pk_parquet_path, write_whole_table
+#         from .pulls import run_folder
+#
+#         pk_table = self.session.pk_table or ""
+#         path = pk_parquet_path(self.manifest.path, self._pk_cohort(doc) or {}, doc, pk_table)
+#         try:
+#             rows = write_whole_table(self.projects, self.project_db, self._pk_copy(), path)
+#         except Exception as exc:  # noqa: BLE001 - reported; the pull goes on
+#             self.report.warnings.append(
+#                 f"{node.label}: the PK was not written to parquet ({exc}). The pull goes "
+#                 "on; Artifacts writes it once the pull has finished."
+#             )
+#             return
+#         try:
+#             shown = path.relative_to(run_folder(self.manifest.path)).as_posix()
+#         except ValueError:
+#             shown = str(path)
+#         node.outputs["pk_parquet"] = {"file": shown, "rows": rows}
 #
 #     def _pk_cohort(self, doc: dict[str, Any]) -> dict[str, Any] | None:
 #         return next(
@@ -14133,7 +14185,7 @@ if __name__ == "__main__":
 #         self.assertTrue(all(b.dest_table in b.block_id for b in server))
 #
 # === END FILE: pullmanager/tests/test_render.py ===
-# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 76af55b1a7658d7885d7f849dc6630ff0112009060b48727633827946d12f909 SIZE: 47836 ===
+# === BEGIN FILE: pullmanager/tests/test_session.py SHA256: 8d640e7d1867bb621cbb8ece20d22409cf8987aa8c4b88cebd37e55813c71836 SIZE: 50490 ===
 # """Session execution, against scripted fake connections.
 #
 # There is no database reachable from the development machine, so the
@@ -14208,6 +14260,12 @@ if __name__ == "__main__":
 #             return None
 #         rows = self._current[1]
 #         return rows[0] if rows else None
+#
+#     def fetchmany(self, size):
+#         if self._current is None:
+#             raise RuntimeError("no rows")
+#         rows, self._current = self._current[1][:size], (self._current[0], self._current[1][size:])
+#         return list(rows)
 #
 #     def nextset(self):
 #         if not self._sets:
@@ -14347,6 +14405,10 @@ if __name__ == "__main__":
 #             return [(["count"], [(self.pk_rows,)])]
 #         if "SELECT * FROM" in sql:
 #             return [(["PatientDurableKey", "Sex"], [(i, "Female") for i in range(3)])]
+#         if whole := re.match(r"SELECT ((?:\[[^\]]+\](?:, )?)+) FROM (PROJECTD\S+);$", sql):
+#             # A whole table read into a parquet (D87): its described columns.
+#             names = re.findall(r"\[([^\]]+)\]", whole.group(1))
+#             return [(names, [tuple(f"{name}{i}" for name in names) for i in range(self.pk_rows)])]
 #         sets = []
 #         for match in re.finditer(r"'([^']+)' AS \[DestTable\]", sql):
 #             dest = match.group(1)
@@ -14504,6 +14566,60 @@ if __name__ == "__main__":
 #             runner.execute()
 #         self.assertTrue(self.cosmos.closed)
 #         self.assertTrue(self.projects.closed)
+#
+#
+# class PkParquetTests(SessionTestCase):
+#     """D87: the whole PK is written to parquet once it lands, before any run."""
+#
+#     def test_the_pk_is_a_parquet_where_artifacts_puts_it(self):
+#         import pyarrow.parquet as pq
+#
+#         with self.runner(projects={"pk_rows": 5}) as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         path = self.root.parent / "parquets" / "Cosmos" / "Patients.parquet"
+#         self.assertTrue(path.is_file(), report.warnings)
+#         self.assertEqual(pq.read_metadata(path).num_rows, 5)
+#         pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+#         self.assertEqual(pk.outputs["pk_parquet"], {"file": "parquets/Cosmos/Patients.parquet", "rows": 5})
+#
+#     def test_it_is_written_before_any_run(self):
+#         from .. import artifacts
+#
+#         order = []
+#         original = artifacts.write_whole_table
+#
+#         def spy(*args):
+#             order.append("pk parquet")
+#             return original(*args)
+#
+#         artifacts.write_whole_table = spy
+#         self.addCleanup(setattr, artifacts, "write_whole_table", original)
+#         with self.runner() as runner:
+#             original_run = runner._run_run
+#
+#             def run(*args):
+#                 order.append("run")
+#                 return original_run(*args)
+#
+#             runner._run_run = run
+#             runner.execute()
+#         self.assertEqual(order[0], "pk parquet", order)
+#
+#     def test_a_failure_to_write_it_warns_and_the_pull_goes_on(self):
+#         from .. import artifacts
+#
+#         def broken(*_):
+#             raise artifacts.ArtifactError("this Python lacks pyarrow")
+#
+#         original = artifacts.write_whole_table
+#         artifacts.write_whole_table = broken
+#         self.addCleanup(setattr, artifacts, "write_whole_table", original)
+#         with self.runner() as runner:
+#             report = runner.execute()
+#         self.assertTrue(report.ok, report.failed)
+#         self.assertEqual(len(report.completed), 4)
+#         self.assertTrue(any("PK was not written to parquet" in w for w in report.warnings), report.warnings)
 #
 #
 # class FailureTests(SessionTestCase):

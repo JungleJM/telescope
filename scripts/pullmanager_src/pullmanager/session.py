@@ -465,9 +465,38 @@ class SessionRunner:
         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
         sampled = self._sample_control(node, doc)
         total = self._verify_pk_uniqueness(doc)
+        self._write_pk_parquet(node, doc)
         if sampled is not None:
             return sampled
         return rows if rows is not None else total
+
+    def _write_pk_parquet(self, node: Any, doc: dict[str, Any]) -> None:
+        """The whole PK as a parquet as soon as it lands, before any run (D87).
+
+        Where Artifacts would put it, and replaced by Artifacts later. A
+        failure here warns: the pull does not need the file. An uploaded PK
+        is a file already.
+        """
+        if not self._pk_is_generated():
+            return
+        from .artifacts import pk_parquet_path, write_whole_table
+        from .pulls import run_folder
+
+        pk_table = self.session.pk_table or ""
+        path = pk_parquet_path(self.manifest.path, self._pk_cohort(doc) or {}, doc, pk_table)
+        try:
+            rows = write_whole_table(self.projects, self.project_db, self._pk_copy(), path)
+        except Exception as exc:  # noqa: BLE001 - reported; the pull goes on
+            self.report.warnings.append(
+                f"{node.label}: the PK was not written to parquet ({exc}). The pull goes "
+                "on; Artifacts writes it once the pull has finished."
+            )
+            return
+        try:
+            shown = path.relative_to(run_folder(self.manifest.path)).as_posix()
+        except ValueError:
+            shown = str(path)
+        node.outputs["pk_parquet"] = {"file": shown, "rows": rows}
 
     def _pk_cohort(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         return next(

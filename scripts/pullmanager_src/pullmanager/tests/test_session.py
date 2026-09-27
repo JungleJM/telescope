@@ -73,6 +73,12 @@ class ScriptedCursor:
         rows = self._current[1]
         return rows[0] if rows else None
 
+    def fetchmany(self, size):
+        if self._current is None:
+            raise RuntimeError("no rows")
+        rows, self._current = self._current[1][:size], (self._current[0], self._current[1][size:])
+        return list(rows)
+
     def nextset(self):
         if not self._sets:
             return False
@@ -211,6 +217,10 @@ class FakeConnection:
             return [(["count"], [(self.pk_rows,)])]
         if "SELECT * FROM" in sql:
             return [(["PatientDurableKey", "Sex"], [(i, "Female") for i in range(3)])]
+        if whole := re.match(r"SELECT ((?:\[[^\]]+\](?:, )?)+) FROM (PROJECTD\S+);$", sql):
+            # A whole table read into a parquet (D87): its described columns.
+            names = re.findall(r"\[([^\]]+)\]", whole.group(1))
+            return [(names, [tuple(f"{name}{i}" for name in names) for i in range(self.pk_rows)])]
         sets = []
         for match in re.finditer(r"'([^']+)' AS \[DestTable\]", sql):
             dest = match.group(1)
@@ -368,6 +378,60 @@ class HappyPathTests(SessionTestCase):
             runner.execute()
         self.assertTrue(self.cosmos.closed)
         self.assertTrue(self.projects.closed)
+
+
+class PkParquetTests(SessionTestCase):
+    """D87: the whole PK is written to parquet once it lands, before any run."""
+
+    def test_the_pk_is_a_parquet_where_artifacts_puts_it(self):
+        import pyarrow.parquet as pq
+
+        with self.runner(projects={"pk_rows": 5}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        path = self.root.parent / "parquets" / "Cosmos" / "Patients.parquet"
+        self.assertTrue(path.is_file(), report.warnings)
+        self.assertEqual(pq.read_metadata(path).num_rows, 5)
+        pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+        self.assertEqual(pk.outputs["pk_parquet"], {"file": "parquets/Cosmos/Patients.parquet", "rows": 5})
+
+    def test_it_is_written_before_any_run(self):
+        from .. import artifacts
+
+        order = []
+        original = artifacts.write_whole_table
+
+        def spy(*args):
+            order.append("pk parquet")
+            return original(*args)
+
+        artifacts.write_whole_table = spy
+        self.addCleanup(setattr, artifacts, "write_whole_table", original)
+        with self.runner() as runner:
+            original_run = runner._run_run
+
+            def run(*args):
+                order.append("run")
+                return original_run(*args)
+
+            runner._run_run = run
+            runner.execute()
+        self.assertEqual(order[0], "pk parquet", order)
+
+    def test_a_failure_to_write_it_warns_and_the_pull_goes_on(self):
+        from .. import artifacts
+
+        def broken(*_):
+            raise artifacts.ArtifactError("this Python lacks pyarrow")
+
+        original = artifacts.write_whole_table
+        artifacts.write_whole_table = broken
+        self.addCleanup(setattr, artifacts, "write_whole_table", original)
+        with self.runner() as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(len(report.completed), 4)
+        self.assertTrue(any("PK was not written to parquet" in w for w in report.warnings), report.warnings)
 
 
 class FailureTests(SessionTestCase):
