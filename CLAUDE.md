@@ -50,6 +50,11 @@ The user works in this cycle; follow it for any change bigger than a small fix.
   and commit it whenever a bundled file changes.
 - Standard library only, unless the package appears in `YAMLs/DSVM Plugins.yaml`
   (the VM's installed list). The VM runs Python 3.13.9.
+- A test that needs a package this machine lacks: look it up in
+  `YAMLs/DSVM Plugins.yaml` and install exactly that version, with no need to
+  ask: `python3.13 -m pip install --user <package>==<version>` (an R package
+  at its listed version the same way). Not listed means the VM does not have
+  it: do not install it, and do not depend on it.
 - Nothing here can reach a database. Database code is tested against fakes, and
   the user runs it on the VM and reports back, often with screenshots.
 

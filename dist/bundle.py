@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "0591c3f92f841c4d13ff8ab8728f40f21c1f8be27926b6dede57a18b39520874",
+  "content_id": "7d26bc5b2596c5f3eac7b0a174cb975501b464e6a5ee9abedeb61d3c52e171d0",
   "file_count": 47,
   "files": [
     {
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "2d99bfd12a5b06454cd950d61aecbd088765ed4e07692e477a38f96c356aa6b5",
-      "size": 226668
+      "sha256": "d15bb3fa37f15611702bbff0761191b23c8810830ec72c775fa74cec7b4c4672",
+      "size": 227290
     }
   ],
   "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
@@ -15798,7 +15798,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 2d99bfd12a5b06454cd950d61aecbd088765ed4e07692e477a38f96c356aa6b5 SIZE: 226668 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: d15bb3fa37f15611702bbff0761191b23c8810830ec72c775fa74cec7b4c4672 SIZE: 227290 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -17845,6 +17845,13 @@ if __name__ == "__main__":
 #
 #
 # COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
+# # A template that does not say which database pulls from both (D86): the
+# # usual pull. The project database and dates have no such default (D83).
+# DEFAULT_COSMOS_DB = "Dual"
+#
+#
+# def cosmos_setting(template: dict[str, Any]) -> str:
+#     return str(template.get("cosmos_db") or DEFAULT_COSMOS_DB)
 #
 #
 # OLD_TEMP_MARKER = "##JVM_"
@@ -18040,7 +18047,7 @@ if __name__ == "__main__":
 #
 #
 # def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
-#     cosmos = str(template.get("cosmos_db", "COSMOS"))
+#     cosmos = cosmos_setting(template)
 #     value = cosmos.lower()
 #     generated = {str(c.get("dest_table") or c.get("name")) for c in cohorts}
 #     marker = temp_marker(template)
@@ -18067,7 +18074,7 @@ if __name__ == "__main__":
 #
 #
 # def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
-#     value = str(template.get("cosmos_db", "COSMOS")).lower()
+#     value = cosmos_setting(template).lower()
 #     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
 #         result.error(
 #             "bad_cosmos_db",
@@ -19600,6 +19607,14 @@ if __name__ == "__main__":
 #             CompileResult(),
 #         )
 #         self.assertEqual([c["dest_table"] for c in out], ["Patients", "Patients_sp"])
+#
+#     def test_a_template_that_names_no_database_pulls_from_both(self):
+#         res = self.compile_template(tiny_template().replace("cosmos_db: COSMOS\n", ""))
+#         self.assertCompiles(res)
+#         self.assertEqual(
+#             sorted(c["name"] for c in res.finished_yaml["cohorts"]),
+#             ["OtherDx", "OtherDx_sp", "Patients", "Patients_sp"],
+#         )
 #
 #     def test_unknown_cosmos_db_is_an_error(self):
 #         res = CompileResult()

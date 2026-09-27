@@ -124,6 +124,30 @@ def template_section_notes(path: Path = NOTES_TEMPLATE) -> dict[str, str]:
     return notes
 
 
+# What a new template starts with, when YAMLs/template.yaml does not say (D86).
+BUILT_IN_DEFAULTS = {
+    "cosmos_vars": {"project_db": "PROJECTD93A5E7", "cosmos_db": "Dual"},
+    "run_vars": {"min_date_key": "19900101", "max_date_key": "20260601"},
+    "test_options": {"smallset": False, "stop_at_for_pk_table": 10, "random_pk_sample": False},
+}
+
+
+def builder_defaults(path: Path = NOTES_TEMPLATE) -> dict[str, dict[str, Any]]:
+    """A new template's settings: YAMLs/template.yaml's, so editing that file
+    edits the defaults; the built-in values fill anything it leaves out."""
+    try:
+        doc = backend.load_document(path) or {}
+    except Exception:  # noqa: BLE001 - a missing or broken file falls back
+        doc = {}
+    defaults = {}
+    for group, fallback in BUILT_IN_DEFAULTS.items():
+        own = doc.get(group) if isinstance(doc, dict) else None
+        own = own if isinstance(own, dict) else {}
+        defaults[group] = {key: own.get(key, value) if own.get(key) is not None else value
+                           for key, value in fallback.items()}
+    return defaults
+
+
 def section_note(notes: dict[str, str], *keys: str) -> str:
     text = " ".join(notes[key].rstrip(".") + "." for key in keys if notes.get(key))
     return f'<span class="section-note">{e(text)}</span>' if text else ""
@@ -828,7 +852,7 @@ def export_blocks(results: tuple[Any, Any, Any], id_prefix: str = "export") -> s
     return f"""
       <div class="grid three">
         {export_preview_block("pre-YAML", f"{id_prefix}PreyamlSymbolic", "preyaml.yaml", symbolic)}
-        {export_preview_block("Transfer YAML (for the VM)", f"{id_prefix}Transfer", transfer_name, transfer)}
+        {export_preview_block("Transfer YAML (to be bundled with bundle.py)", f"{id_prefix}Transfer", transfer_name, transfer)}
         {export_preview_block("pullmanifest.yaml", f"{id_prefix}Pullmanifest", "pullmanifest.yaml", manifest)}
       </div>"""
 
@@ -969,9 +993,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
               <label>Project DB<input id="builderProjectDb" type="text" placeholder="PROJECTD93A5E7"></label>
               <label>Cosmos DB
                 <select id="builderCosmosDb">
+                  <option value="Dual">Dual (both)</option>
                   <option value="COSMOS">COSMOS</option>
                   <option value="COSMOS_SneakPeek">COSMOS_SneakPeek</option>
-                  <option value="Dual">Dual</option>
                 </select>
               </label>
               <label>Min Date Key<input id="builderMinDate" type="text" placeholder="19900101"></label>
@@ -995,9 +1019,9 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
             <div id="uploadPkMessage" class="message error hidden"></div>
             <div class="inline-form">
               <select id="newUploadType">
-                <option value="dbtable">dbtable</option>
-                <option value="csv">csv</option>
                 <option value="parquet">parquet</option>
+                <option value="csv">csv</option>
+                <option value="dbtable">dbtable</option>
               </select>
               <input id="newUploadName" type="text" placeholder="name">
               <input id="newUploadPath" type="text" placeholder="file_loc or table hint">
@@ -1177,6 +1201,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
   </main>
 
   <script id="initialTemplateData" type="application/json">{json_payload(template)}</script>
+  <script id="builderDefaultsData" type="application/json">{json_payload(builder_defaults())}</script>
   <script id="compileErrorsData" type="application/json">{json_payload([m.to_dict() for m in result.errors])}</script>
   <script id="recipeDefsData" type="application/json">{json_payload(recipe_defs)}</script>
   <script id="recipeVarsData" type="application/json">{json_payload(recipe_vars)}</script>
@@ -1231,12 +1256,12 @@ button:hover { border-color: var(--accent); }
 input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--panel); color: var(--ink); min-width: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .header-main { display: grid; gap: 8px; min-width: 0; flex: 1; }
-.header-path-form { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; gap: 10px; align-items: center; max-width: 980px; }
+.header-path-form { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; gap: 10px; align-items: center; }
 .header-path-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
 .save-target { color: var(--muted); font-size: 12px; }
 .save-target strong { color: var(--ink); }
-main { padding: 22px; max-width: 1500px; margin: 0 auto; }
+main { padding: 22px; }
 .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
 .path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .path-form input { width: 100%; }
@@ -1299,7 +1324,7 @@ pre { white-space: pre-wrap; overflow: auto; background: var(--chip); border: 1p
 .custom-builder { display: grid; gap: 12px; margin-top: 10px; }
 .column-picker { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .column-list { display: grid; gap: 6px; align-content: start; min-height: 42px; }
-.column-item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, .35fr) minmax(120px, 1fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
+.column-item { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(160px, .8fr) minmax(220px, 1.6fr) auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 7px; padding: 8px; background: var(--chip); }
 .column-item.removed { opacity: .78; }
 .column-title { display: grid; gap: 2px; min-width: 0; }
 .column-title strong { overflow-wrap: anywhere; }
@@ -1470,8 +1495,16 @@ document.querySelectorAll('.builder-link').forEach(button => {
     document.querySelectorAll('.builder-section').forEach(s => s.classList.remove('active'));
     button.classList.add('active');
     document.getElementById(button.dataset.builderSection).classList.add('active');
+    try { sessionStorage.setItem('yamlmanagerBuilderSection', button.dataset.builderSection); } catch (err) { /* private mode */ }
   });
 });
+
+// Save & Refresh reloads the page; come back to the Builder section and the
+// place on the page that were open.
+try {
+  const lastSection = sessionStorage.getItem('yamlmanagerBuilderSection');
+  if (lastSection) document.querySelector(`.builder-link[data-builder-section="${lastSection}"]`)?.click();
+} catch (err) { /* private mode */ }
 
 function ensureDraftShape() {
   draftTemplate.cosmos_vars = draftTemplate.cosmos_vars || {};
@@ -1485,12 +1518,15 @@ function ensureDraftShape() {
   draftTemplate.cohorts = Array.isArray(draftTemplate.cohorts) ? draftTemplate.cohorts : [];
 }
 
-// The usual project and date range, filled in wherever a template has none,
-// so a mistyped database or a missing date is less often the error.
+// A new template's settings, from YAMLs/template.yaml (D86). The project and
+// date range are also filled in wherever a loaded template has none, so a
+// mistyped database or a missing date is less often the error.
+const BUILDER_DEFAULTS = JSON.parse(document.getElementById('builderDefaultsData').textContent);
 const PROJECT_DEFAULTS = {
-  project_db: 'PROJECTD93A5E7',
-  min_date_key: '19900101',
-  max_date_key: '20260601'
+  project_db: BUILDER_DEFAULTS.cosmos_vars.project_db,
+  cosmos_db: BUILDER_DEFAULTS.cosmos_vars.cosmos_db,
+  min_date_key: String(BUILDER_DEFAULTS.run_vars.min_date_key),
+  max_date_key: String(BUILDER_DEFAULTS.run_vars.max_date_key)
 };
 
 function applyProjectDefaults() {
@@ -1502,19 +1538,9 @@ function applyProjectDefaults() {
 
 function blankTemplate() {
   return {
-    cosmos_vars: {
-      project_db: PROJECT_DEFAULTS.project_db,
-      cosmos_db: 'COSMOS'
-    },
-    run_vars: {
-      min_date_key: PROJECT_DEFAULTS.min_date_key,
-      max_date_key: PROJECT_DEFAULTS.max_date_key
-    },
-    test_options: {
-      smallset: false,
-      stop_at_for_pk_table: 10,
-      random_pk_sample: false
-    },
+    cosmos_vars: clone(BUILDER_DEFAULTS.cosmos_vars),
+    run_vars: clone(BUILDER_DEFAULTS.run_vars),
+    test_options: clone(BUILDER_DEFAULTS.test_options),
     project_vars: {
       project_folder: ''
     },
@@ -1531,7 +1557,7 @@ function hydrateBuilder() {
   applyProjectDefaults();
   setValue('builderProjectFolder', draftTemplate.project_vars.project_folder || draftTemplate.project_folder || '');
   setValue('builderProjectDb', draftTemplate.cosmos_vars.project_db || draftTemplate.project_db || '');
-  setValue('builderCosmosDb', draftTemplate.cosmos_vars.cosmos_db || draftTemplate.cosmos_db || 'COSMOS');
+  setValue('builderCosmosDb', normalCosmosDb(draftTemplate.cosmos_vars.cosmos_db || draftTemplate.cosmos_db || PROJECT_DEFAULTS.cosmos_db));
   setValue('builderMinDate', draftTemplate.run_vars.min_date_key || draftTemplate.vars.min_date_key || '');
   setValue('builderMaxDate', draftTemplate.run_vars.max_date_key || draftTemplate.vars.max_date_key || '');
   setChecked('builderSmallset', Boolean(draftTemplate.test_options.smallset));
@@ -1547,6 +1573,15 @@ function hydrateBuilder() {
   renderCohortRows();
   showSaveTarget();
   updateDraftYaml();
+}
+
+// The dropdown's spelling of a setting makeYaml also accepts as sp, both, ...
+function normalCosmosDb(value) {
+  const text = String(value || '').toLowerCase();
+  if (['dual', 'both'].includes(text)) return 'Dual';
+  if (['cosmos_sneakpeek', 'sneakpeek', 'sp'].includes(text)) return 'COSMOS_SneakPeek';
+  if (text === 'cosmos') return 'COSMOS';
+  return value;
 }
 
 function setValue(id, value) {
@@ -1595,7 +1630,7 @@ function syncProjectFields() {
   ensureDraftShape();
   draftTemplate.project_vars.project_folder = getValue('builderProjectFolder');
   draftTemplate.cosmos_vars.project_db = getValue('builderProjectDb');
-  draftTemplate.cosmos_vars.cosmos_db = getValue('builderCosmosDb') || 'COSMOS';
+  draftTemplate.cosmos_vars.cosmos_db = getValue('builderCosmosDb') || PROJECT_DEFAULTS.cosmos_db;
   draftTemplate.run_vars.min_date_key = getValue('builderMinDate');
   draftTemplate.run_vars.max_date_key = getValue('builderMaxDate');
   draftTemplate.test_options.smallset = getChecked('builderSmallset');
@@ -1678,7 +1713,7 @@ function renderUploadRows() {
       <label>Destination<input data-upload-field="dest_table" data-index="${index}" value="${escapeAttr(upload.dest_table || upload.name || '')}"></label>
       <label>Type
         <select data-upload-field="file_type" data-index="${index}">
-          ${['dbtable', 'csv', 'parquet'].map(type => `<option value="${type}" ${type === upload.file_type ? 'selected' : ''}>${type}</option>`).join('')}
+          ${['parquet', 'csv', 'dbtable'].map(type => `<option value="${type}" ${type === upload.file_type ? 'selected' : ''}>${type}</option>`).join('')}
         </select>
       </label>
       <label>File/Table<input data-upload-field="file_loc" data-index="${index}" value="${escapeAttr(upload.file_loc || '')}"></label>
@@ -2403,7 +2438,7 @@ function updateBatchingHelp() {
 document.getElementById('addUpload')?.addEventListener('click', () => {
   ensureDraftShape();
   const name = getValue('newUploadName') || `Upload${draftTemplate.upload_cohorts.length + 1}`;
-  const fileType = getValue('newUploadType') || 'csv';
+  const fileType = getValue('newUploadType') || 'parquet';
   const upload = {
     name,
     dest_table: name,
@@ -2876,7 +2911,10 @@ document.getElementById('saveRefresh')?.addEventListener('click', async () => {
       showMessage('saveRefreshMessage', body.message);
       return;
     }
-    try { sessionStorage.setItem('yamlmanagerSaved', body.message); } catch (err) { /* private mode */ }
+    try {
+      sessionStorage.setItem('yamlmanagerSaved', body.message);
+      sessionStorage.setItem('yamlmanagerScroll', String(window.scrollY));
+    } catch (err) { /* private mode */ }
     window.location.href = `/?${new URLSearchParams({ template: body.template, recipes: recipesPath })}`;
   } catch (err) {
     showMessage('saveRefreshMessage', `Could not reach the YAML Manager server to save: ${err}`);
@@ -2964,6 +3002,11 @@ function escapeAttr(value) {
 
 hydrateBuilder();
 showSavedErrors();
+try {
+  const scroll = sessionStorage.getItem('yamlmanagerScroll');
+  sessionStorage.removeItem('yamlmanagerScroll');
+  if (scroll) window.scrollTo(0, Number(scroll));
+} catch (err) { /* private mode */ }
 """
 
 
@@ -3367,6 +3410,28 @@ class RefreshTests(unittest.TestCase):
         self.assertIn('id="builderProject"', html_text)
 
 
+class BuilderDefaultTests(unittest.TestCase):
+    """A new template's settings come from YAMLs/template.yaml (D86)."""
+
+    def test_the_template_file_sets_them_and_the_built_ins_fill_gaps(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "template.yaml"
+            path.write_text(
+                "cosmos_vars:\n  project_db: PROJECTD1\ntest_options:\n  smallset: true\n",
+                encoding="utf-8",
+            )
+            defaults = builder_defaults(path)
+        self.assertEqual(defaults["cosmos_vars"], {"project_db": "PROJECTD1", "cosmos_db": "Dual"})
+        self.assertIs(defaults["test_options"]["smallset"], True)
+        self.assertEqual(defaults["run_vars"]["min_date_key"], "19900101")
+
+    def test_the_shipped_template_starts_on_both_databases_without_small_set(self):
+        defaults = builder_defaults()
+        self.assertEqual(defaults["cosmos_vars"]["cosmos_db"], "Dual")
+        self.assertEqual(defaults["cosmos_vars"]["project_db"], "PROJECTD93A5E7")
+        self.assertIs(defaults["test_options"]["smallset"], False)
+
+
 class SectionNoteTests(unittest.TestCase):
     def test_inline_and_preceding_comments_become_notes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -3397,7 +3462,7 @@ class SectionNoteTests(unittest.TestCase):
 
 def run_tdd() -> int:
     suite = unittest.TestSuite()
-    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, SectionNoteTests):
+    for case in (SaveRecipeTests, SaveTemplateTests, RefreshTests, BuilderDefaultTests, SectionNoteTests):
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(case))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 

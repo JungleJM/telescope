@@ -2044,6 +2044,13 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
 
 
 COSMOS_DB_FIX = "Use `cosmos_db: COSMOS`, `cosmos_db: COSMOS_SneakPeek`, or `cosmos_db: Dual` for both."
+# A template that does not say which database pulls from both (D86): the
+# usual pull. The project database and dates have no such default (D83).
+DEFAULT_COSMOS_DB = "Dual"
+
+
+def cosmos_setting(template: dict[str, Any]) -> str:
+    return str(template.get("cosmos_db") or DEFAULT_COSMOS_DB)
 
 
 OLD_TEMP_MARKER = "##JVM_"
@@ -2239,7 +2246,7 @@ def assign_sessions(cohorts: list[dict[str, Any]], uploaded_pk: str | None) -> N
 
 
 def expand_cosmos(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> list[dict[str, Any]]:
-    cosmos = str(template.get("cosmos_db", "COSMOS"))
+    cosmos = cosmos_setting(template)
     value = cosmos.lower()
     generated = {str(c.get("dest_table") or c.get("name")) for c in cohorts}
     marker = temp_marker(template)
@@ -2266,7 +2273,7 @@ def is_sneakpeek(cohort: dict[str, Any]) -> bool:
 
 
 def validate_cosmos(template: dict[str, Any], result: CompileResult) -> None:
-    value = str(template.get("cosmos_db", "COSMOS")).lower()
+    value = cosmos_setting(template).lower()
     if value not in ("cosmos", "cosmos_sneakpeek", "sneakpeek", "sp", "dual", "both"):
         result.error(
             "bad_cosmos_db",
@@ -3799,6 +3806,14 @@ class CosmosTests(MakeYamlTest):
             CompileResult(),
         )
         self.assertEqual([c["dest_table"] for c in out], ["Patients", "Patients_sp"])
+
+    def test_a_template_that_names_no_database_pulls_from_both(self):
+        res = self.compile_template(tiny_template().replace("cosmos_db: COSMOS\n", ""))
+        self.assertCompiles(res)
+        self.assertEqual(
+            sorted(c["name"] for c in res.finished_yaml["cohorts"]),
+            ["OtherDx", "OtherDx_sp", "Patients", "Patients_sp"],
+        )
 
     def test_unknown_cosmos_db_is_an_error(self):
         res = CompileResult()

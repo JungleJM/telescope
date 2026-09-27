@@ -1,6 +1,6 @@
 # Cosmos variables
 cosmos_vars:
-  project_db: PROJECTD33A929  #Must Start with 'PROJECTD...'
+  project_db: PROJECTD93A5E7  #Must Start with 'PROJECTD...'
   cosmos_db: Dual          # COSMOS or COSMOS_SneakPeek or Dual. 
                            # Makes _sp multiplications if using SP, and will finish all _sp before any non_sp
 
