@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "e4bf7bb97a30229514444b4cc2a13b7cb20aa4ef11ada82bea2f13782f4335b0",
+  "content_id": "91219e7f272d50dc29851c8511e8b48a725ef6827a00af9426f28d3b570ea4ee",
   "file_count": 49,
   "files": [
     {
@@ -627,8 +627,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/pulls.py",
       "policy": "replace",
-      "sha256": "9758216ded90db5e06ab585f9a5a9d0da19ad4d24f8ace2d903bccf871d9714f",
-      "size": 10498
+      "sha256": "88c5b1551d4b424e75860a722993cd436584c1d819f4af05cfc30b33b0037e06",
+      "size": 10576
     },
     {
       "path": "pullmanager/refresh.py",
@@ -711,8 +711,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "527de4133e5b260810b7388bff63b5186155b0af4726021b4934b62fafb75976",
-      "size": 18576
+      "sha256": "5e73f6c793cb366ed8e649cc5f5846d0423ccb9a7940e037afa212526048135e",
+      "size": 18604
     },
     {
       "path": "pullmanager/tests/test_lock.py",
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "d15bb3fa37f15611702bbff0761191b23c8810830ec72c775fa74cec7b4c4672",
-      "size": 227290
+      "sha256": "4b50420368af10e1ffba54abc9c1987816d137c739413b0220328b6554a1d0ca",
+      "size": 227376
     },
     {
       "path": "stock/HOW_TO.md",
@@ -8249,7 +8249,7 @@ if __name__ == "__main__":
 #     return roots[0]
 #
 # === END FILE: pullmanager/normalize.py ===
-# === BEGIN FILE: pullmanager/pulls.py SHA256: 9758216ded90db5e06ab585f9a5a9d0da19ad4d24f8ace2d903bccf871d9714f SIZE: 10498 ===
+# === BEGIN FILE: pullmanager/pulls.py SHA256: 88c5b1551d4b424e75860a722993cd436584c1d819f4af05cfc30b33b0037e06 SIZE: 10576 ===
 # """Finding a pull by its project's name, and listing the pulls there are (D66).
 #
 # A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
@@ -8274,8 +8274,9 @@ if __name__ == "__main__":
 # SPLIT_DIR = "split"
 # LOGS_DIR = "logs"
 # MANIFEST_FILENAME = "pullmanifest.yaml"
-# # Dropped from a transfer YAML's file name to name its run folder (D57).
-# RUN_NAME_SUFFIXES = ("_transfer", "_temp")
+# # Dropped from a transfer YAML's file name to name its run folder (D57);
+# # `_temp` is what intakes were called before D95.
+# RUN_NAME_SUFFIXES = ("_transfer", "_intake", "_temp")
 # YAML_SUFFIXES = (".yaml", ".yml")
 #
 #
@@ -8285,7 +8286,7 @@ if __name__ == "__main__":
 #
 # def run_folder_name(template: str | Path) -> str:
 #     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
-#     without `.yaml` and without `_transfer` or `_temp`.
+#     without `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
 #
 #     Only the file name: the folders above it (the project share) play no part.
 #     The same rule as `makeYaml.run_folder_name`; a test holds the two together.
@@ -12112,7 +12113,7 @@ if __name__ == "__main__":
 #         self.assertIn("transfer YAML", message)
 #
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 527de4133e5b260810b7388bff63b5186155b0af4726021b4934b62fafb75976 SIZE: 18576 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 5e73f6c793cb366ed8e649cc5f5846d0423ccb9a7940e037afa212526048135e SIZE: 18604 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -12306,7 +12307,7 @@ if __name__ == "__main__":
 #         sys.modules[spec.name] = make_yaml  # its dataclasses look themselves up there
 #         self.addCleanup(sys.modules.pop, spec.name, None)
 #         spec.loader.exec_module(make_yaml)
-#         for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
+#         for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_intake.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
 #                      "My Pull (v2).yaml", "_transfer.yaml"):
 #             with self.subTest(name=name):
 #                 self.assertEqual(launcher.run_folder_name(name), make_yaml.run_folder_name(name))
@@ -15964,7 +15965,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: d15bb3fa37f15611702bbff0761191b23c8810830ec72c775fa74cec7b4c4672 SIZE: 227290 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 4b50420368af10e1ffba54abc9c1987816d137c739413b0220328b6554a1d0ca SIZE: 227376 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -16003,7 +16004,7 @@ if __name__ == "__main__":
 # WILDCARD_CHARS = ("%", "_", "[", "]")
 # RUNS_DIR = Path("runs")
 # # Dropped from a template's file name to name its run folder (D57).
-# RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_temp")
+# RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_intake", "_temp")
 #
 #
 # # =============================================================================
@@ -16332,7 +16333,7 @@ if __name__ == "__main__":
 #
 # def run_folder_name(template_path: str | Path) -> str:
 #     """`<project>` in `runs/<project>/` (D57): the template's file name without
-#     `.yaml` and without `_transfer` or `_temp`.
+#     `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
 #
 #     The file name rather than `project_folder`, so two transfer files never
 #     share a run folder. The launcher keeps a copy of this rule
@@ -20895,6 +20896,7 @@ if __name__ == "__main__":
 #     def test_the_name_is_the_file_name_without_our_suffixes(self):
 #         for name, expected in (
 #             ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry"),
+#             ("IBD_Ancestry_intake.yaml", "IBD_Ancestry"),
 #             ("IBD_Ancestry_temp.yaml", "IBD_Ancestry"),
 #             ("template.yaml", "template"),
 #             ("My Pull (v2).yaml", "My_Pull_v2"),

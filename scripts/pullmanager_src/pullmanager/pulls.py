@@ -22,8 +22,9 @@ RUNS_DIR = "runs"
 SPLIT_DIR = "split"
 LOGS_DIR = "logs"
 MANIFEST_FILENAME = "pullmanifest.yaml"
-# Dropped from a transfer YAML's file name to name its run folder (D57).
-RUN_NAME_SUFFIXES = ("_transfer", "_temp")
+# Dropped from a transfer YAML's file name to name its run folder (D57);
+# `_temp` is what intakes were called before D95.
+RUN_NAME_SUFFIXES = ("_transfer", "_intake", "_temp")
 YAML_SUFFIXES = (".yaml", ".yml")
 
 
@@ -33,7 +34,7 @@ class PullNotFound(RuntimeError):
 
 def run_folder_name(template: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
-    without `.yaml` and without `_transfer` or `_temp`.
+    without `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
 
     Only the file name: the folders above it (the project share) play no part.
     The same rule as `makeYaml.run_folder_name`; a test holds the two together.

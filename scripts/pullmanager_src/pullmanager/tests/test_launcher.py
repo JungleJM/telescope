@@ -191,7 +191,7 @@ class RunFolderTests(unittest.TestCase):
         sys.modules[spec.name] = make_yaml  # its dataclasses look themselves up there
         self.addCleanup(sys.modules.pop, spec.name, None)
         spec.loader.exec_module(make_yaml)
-        for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
+        for name in ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry_intake.yaml", "IBD_Ancestry_temp.yaml", "template.yaml",
                      "My Pull (v2).yaml", "_transfer.yaml"):
             with self.subTest(name=name):
                 self.assertEqual(launcher.run_folder_name(name), make_yaml.run_folder_name(name))

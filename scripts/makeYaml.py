@@ -36,7 +36,7 @@ TRANSFER_SUFFIX = "_transfer"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 RUNS_DIR = Path("runs")
 # Dropped from a template's file name to name its run folder (D57).
-RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_temp")
+RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_intake", "_temp")
 
 
 # =============================================================================
@@ -365,7 +365,7 @@ def transfer_home() -> Path:
 
 def run_folder_name(template_path: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the template's file name without
-    `.yaml` and without `_transfer` or `_temp`.
+    `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
 
     The file name rather than `project_folder`, so two transfer files never
     share a run folder. The launcher keeps a copy of this rule
@@ -4928,6 +4928,7 @@ class RunFolderTests(MakeYamlTest):
     def test_the_name_is_the_file_name_without_our_suffixes(self):
         for name, expected in (
             ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry"),
+            ("IBD_Ancestry_intake.yaml", "IBD_Ancestry"),
             ("IBD_Ancestry_temp.yaml", "IBD_Ancestry"),
             ("template.yaml", "template"),
             ("My Pull (v2).yaml", "My_Pull_v2"),

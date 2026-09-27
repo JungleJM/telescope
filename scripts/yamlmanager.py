@@ -187,7 +187,7 @@ def run_summary(result: Any) -> str:
     )
 
 
-# Every template the Builder saves goes here, named for its project (D85).
+# Every template the Builder saves goes here, as <project>_intake.yaml (D85, D95).
 TEMP_DIR = PROJECT_ROOT / "YAMLs" / "temp"
 
 
@@ -196,13 +196,13 @@ def project_folder_of(draft: dict[str, Any]) -> str:
 
 
 def temp_name(folder: str) -> str:
-    """`IBD Ancestry` is `IBD_Ancestry_temp.yaml`; no folder yet is `_temp.yaml`."""
+    """`IBD Ancestry` is `IBD_Ancestry_intake.yaml`; no folder yet is `_intake.yaml`."""
     clean = re.sub(r"[^A-Za-z0-9]+", "_", folder).strip("_")
-    return f"{clean}_temp.yaml"
+    return f"{clean}_intake.yaml"
 
 
 def temp_template_path(draft: dict[str, Any], temp_dir: Path | None = None) -> Path:
-    """Where the Builder's draft is saved: `YAMLs/temp/<project>_temp.yaml`."""
+    """Where the Builder's draft is saved: `YAMLs/temp/<project>_intake.yaml`."""
     return (temp_dir or TEMP_DIR) / temp_name(project_folder_of(draft))
 
 
@@ -231,7 +231,7 @@ def repoint_uploads(draft: dict[str, Any], source_dir: Path, target_dir: Path) -
 
 
 def save_template(current: Path | None, draft: Any, temp_dir: Path | None = None) -> tuple[int, str, Path | None]:
-    """Write the Builder's draft to its `_temp.yaml`, parsed back before it lands.
+    """Write the Builder's draft to its `_intake.yaml`, parsed back before it lands.
 
     `current` is the template the page opened (None for a new blank one). A
     save never replaces any other file: a target that exists and is not
@@ -889,7 +889,7 @@ def exports_panel(template_path: Path, recipes_path: Path, results: tuple[Any, A
       <section class="block">
         <h2>Handoff</h2>
         <p>Export the transfer YAML to the repository root, then carry it in the bundle: on the VM, <code>python bundle.py</code> puts it beside <code>pullmanager.py</code>, ready to run. Upload files it reads travel separately, at the same paths relative to it. Recipes stay here; the transfer YAML carries them written out. On the VM, <code>python pullmanager.py</code> opens the launcher: choose the transfer YAML, then Validate, Export split, Preview SQL and Execute.</p>
-        <pre>python3 scripts/makeYaml.py --template YAMLs/&lt;project&gt;_temp.yaml --export-transfer
+        <pre>python3 scripts/makeYaml.py --template YAMLs/temp/&lt;project&gt;_intake.yaml --export-transfer
 python3 makebundle.py yaml=&lt;project&gt;</pre>
       </section>
     """
@@ -914,7 +914,7 @@ def queue_state(temp_dir: Path | None = None) -> dict[str, Any]:
     """The bundle queue, and the temps that could join it (D91)."""
     folder = temp_dir or TEMP_DIR
     queue = read_queue(folder)
-    temps = sorted(path.name for path in folder.glob("*_temp.yaml")) if folder.is_dir() else []
+    temps = sorted(path.name for path in folder.glob("*_intake.yaml")) if folder.is_dir() else []
     return {
         "dir": temp_dir_shown() if temp_dir is None else str(folder),
         "queue": [{"name": name, "exists": (folder / name).is_file()} for name in queue],
@@ -1010,7 +1010,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <button class="tab" data-tab="graph">Graph</button>
       <button class="tab" data-tab="exports">Exports</button>
       <button class="tab" data-tab="yaml">YAML</button>
-      <button id="saveRefresh" class="save-refresh" title="Save the Builder's draft as YAMLs/temp/&lt;project&gt;_temp.yaml, then reload every tab from it">Save &amp; Refresh</button>
+      <button id="saveRefresh" class="save-refresh" title="Save the Builder's draft as YAMLs/temp/&lt;project&gt;_intake.yaml, then reload every tab from it">Save &amp; Refresh</button>
     </nav>
     <div id="saveRefreshMessage" class="message hidden"></div>
 
@@ -1677,10 +1677,10 @@ function numericOrZero(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-// Where Save & Refresh will write: YAMLs/temp/<project_folder>_temp.yaml, as
+// Where Save & Refresh will write: YAMLs/temp/<project_folder>_intake.yaml, as
 // the server names it. A new blank template shows it in the path box too.
 function tempFileName(folder) {
-  return `${String(folder || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}_temp.yaml`;
+  return `${String(folder || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}_intake.yaml`;
 }
 
 function showSaveTarget() {
@@ -3460,7 +3460,7 @@ recipes:
 
 
 class SaveTemplateTests(unittest.TestCase):
-    """Save & Refresh writes YAMLs/temp/<project>_temp.yaml and nothing else (D85)."""
+    """Save & Refresh writes YAMLs/temp/<project>_intake.yaml and nothing else (D85)."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -3479,7 +3479,7 @@ class SaveTemplateTests(unittest.TestCase):
     def test_saved_in_the_temp_folder_named_for_the_project(self):
         status, _, saved = self.save(self.template, self.draft())
         self.assertEqual(status, 200)
-        self.assertEqual(saved, self.temps / "IBD_Ancestry_temp.yaml")
+        self.assertEqual(saved, self.temps / "IBD_Ancestry_intake.yaml")
         self.assertEqual(backend.load_document(saved)["project_vars"]["project_folder"], "IBD Ancestry")
         self.assertIn("# the real template", self.template.read_text(encoding="utf-8"))
 
@@ -3493,7 +3493,7 @@ class SaveTemplateTests(unittest.TestCase):
         _, _, existing = self.save(self.template, {**self.draft(), "vars": {"keep": 1}})
         status, message, saved = self.save(None, self.draft())
         self.assertEqual((status, saved), (409, None))
-        self.assertIn("IBD_Ancestry_temp.yaml already exists", message)
+        self.assertIn("IBD_Ancestry_intake.yaml already exists", message)
         self.assertEqual(backend.load_document(existing)["vars"], {"keep": 1})
 
     def test_renaming_the_project_to_an_existing_temp_is_refused(self):
@@ -3503,9 +3503,9 @@ class SaveTemplateTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(backend.load_document(celiac)["vars"], {"keep": 1})
 
-    def test_a_new_blank_with_no_folder_is_named_temp(self):
+    def test_a_new_blank_with_no_folder_is_named_intake(self):
         _, _, saved = self.save(None, self.draft(""))
-        self.assertEqual(saved.name, "_temp.yaml")
+        self.assertEqual(saved.name, "_intake.yaml")
 
     def test_upload_paths_still_reach_the_same_file(self):
         (self.temps / "csv").mkdir(parents=True)
@@ -3596,7 +3596,7 @@ class SneakPeekConnectionTests(unittest.TestCase):
 
     def test_sp_copies_connect_to_the_sp_pk(self):
         with tempfile.TemporaryDirectory() as d:
-            template = Path(d) / "Celiac_temp.yaml"
+            template = Path(d) / "Celiac_intake.yaml"
             template.write_text(
                 "cosmos_vars: {project_db: PROJECTD93A5E7, cosmos_db: Dual}\n"
                 "run_vars: {min_date_key: 19900101, max_date_key: 20260601}\n"
@@ -3627,8 +3627,8 @@ class BundleQueueTests(unittest.TestCase):
         self.temps = Path(self._tmp.name) / "temp"
 
     def save(self, folder):
-        return save_template(None if not (self.temps / f"{folder}_temp.yaml").exists()
-                             else self.temps / f"{folder}_temp.yaml",
+        return save_template(None if not (self.temps / f"{folder}_intake.yaml").exists()
+                             else self.temps / f"{folder}_intake.yaml",
                              {"project_vars": {"project_folder": folder}, "cohorts": []},
                              temp_dir=self.temps)
 
@@ -3638,20 +3638,20 @@ class BundleQueueTests(unittest.TestCase):
         self.save("IBD Ancestry")
         self.assertIn("Added to the bundle queue", first)
         self.assertNotIn("bundle queue", again)
-        self.assertEqual(read_queue(self.temps), ["Celiac_temp.yaml", "IBD_Ancestry_temp.yaml"])
+        self.assertEqual(read_queue(self.temps), ["Celiac_intake.yaml", "IBD_Ancestry_intake.yaml"])
 
     def test_the_builder_removes_and_adds_back(self):
         self.save("Celiac")
-        (self.temps / "Old_temp.yaml").write_text("cohorts: []\n", encoding="utf-8")
-        self.assertEqual(queue_state(self.temps)["available"], ["Old_temp.yaml"])
-        self.assertEqual(change_queue("add", "Old_temp.yaml", self.temps)[0], 200)
-        self.assertEqual(change_queue("remove", "Celiac_temp.yaml", self.temps)[0], 200)
-        self.assertEqual(read_queue(self.temps), ["Old_temp.yaml"])
-        self.assertEqual(queue_state(self.temps)["available"], ["Celiac_temp.yaml"])
+        (self.temps / "Old_intake.yaml").write_text("cohorts: []\n", encoding="utf-8")
+        self.assertEqual(queue_state(self.temps)["available"], ["Old_intake.yaml"])
+        self.assertEqual(change_queue("add", "Old_intake.yaml", self.temps)[0], 200)
+        self.assertEqual(change_queue("remove", "Celiac_intake.yaml", self.temps)[0], 200)
+        self.assertEqual(read_queue(self.temps), ["Old_intake.yaml"])
+        self.assertEqual(queue_state(self.temps)["available"], ["Celiac_intake.yaml"])
 
     def test_only_temps_in_the_folder_can_be_queued(self):
         self.temps.mkdir()
-        self.assertEqual(change_queue("add", "Missing_temp.yaml", self.temps)[0], 404)
+        self.assertEqual(change_queue("add", "Missing_intake.yaml", self.temps)[0], 404)
         self.assertEqual(change_queue("add", "../recipes.yaml", self.temps)[0], 400)
         self.assertEqual(read_queue(self.temps), [])
 
