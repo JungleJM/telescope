@@ -1,0 +1,34 @@
+cosmos_vars:
+  project_db: PROJECTD33A929
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: Celiac
+vars:
+
+upload_cohorts:
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    file_loc: csv/HospitalICDCodes.csv
+    scope: global
+    push_this_cycle: true
+multipliers:
+
+batching:
+
+cohorts:
+  - recipe: PatientWithDx
+    name: CeDPatients
+    vars:
+      ICD_Value: K90.0
+  - recipe: IndexDiagnosis
+    name: IndexDiagnosis
+  - recipe: OtherDiagnoses
+    name: OtherDiagnoses
