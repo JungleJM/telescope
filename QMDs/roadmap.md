@@ -25,6 +25,34 @@ When an item here is built, delete it from this file and describe the result in 
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+From the user's notes of 27 September 2026 (the YAML Manager and Artifacts).
+
+1. **Save keeps empty lists; `multiplier_without_levels`; a failed refresh
+   keeps the page (D84).** Every Save & Refresh wrote the nulls, and the crash
+   lost the user's place.
+2. **Temps in `YAMLs/temp/`, New Blank, never overwrite (D85).** A blank draft
+   could replace a real temp, and fix 8 reads this folder. Move the existing
+   temps and `YAMLs/csv/` there.
+3. **Defaults (D86), the transfer label, full width, the Builder section kept
+   on Save & Refresh.** Cheap, and felt every session. With them, the
+   CLAUDE.md rule for installing the VM's package versions, and its allow
+   entry.
+4. **`_sp` cards show their connections** on the Cohorts tab, with the same
+   colours: the analysis is keyed by the template's names, which `_sp` copies
+   are not.
+5. **Column order by number** in the custom table's columns, in place of Up
+   and Down; Enter moves the column.
+6. **The PK parquet at the PK phase (D87).**
+7. **Artifacts reports as it goes (D88).**
+8. **`viewparquets.py` and the stock `HOW_TO.md` (D89).**
+9. **The bundle queue (D91).** Builds on fix 2's folder.
+
+Then rebuild the bundle.
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
@@ -57,6 +85,7 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
 8.  An upload of around 250,000 rows, timed: it now travels twice, file to Projects, then Projects to Cosmos.
 9.  During a large transfer, check whether other work on the Projects database waits on it. Pullmanager commits after every cohort (D55), but the driver runs with autocommit off, so one cohort's `OPENQUERY` into staging still sits inside an open transaction until that cohort commits. If it blocks others, open the Projects connection with autocommit on.
 10. An uploaded PK: a parquet list marked `type: pk`, batched by a column it carries. Its uniqueness check and batches should read `upload_<dest>`.
+11. **What a batch costs (D87).** Batching builds the PK once; what repeats per batch is every fact-table query, joined to that batch's PK rows. Whether fifty passes cost about one pull or about fifty depends on whether SQL Server seeks each fact table by `PatientDurableKey` or scans its date range on every pass, which nobody has measured. On `COSMOS_SneakPeek`, run one template three ways, unbatched, `chunk:` and `state` (every value), and compare each run's `duration` in the manifest. If the fact tables are scanned per pass, prefer fewer, larger batches (`chunk: 100000`) to many small ones.
 
 ------------------------------------------------------------------------
 

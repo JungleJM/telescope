@@ -1536,3 +1536,126 @@ already says where a value comes from and lets it be overridden.
   template has no project database or dates, so a mistyped or missing one is
   less often the error. makeYaml has no such default: a template written by
   hand still says what it means.
+
+### D84. A saved template keeps its empty lists; a multiplier needs levels; a failed refresh keeps the page
+
+**Context.** Save & Refresh crashed with `'NoneType' object is not iterable`
+and replaced the page with one that knew neither the template nor the error's
+place. The cause: the UI's YAML writer (`dump_yaml_text`) wrote `[]` and `{}`
+as blanks, which read back as null, so a multiplier added with no levels yet
+saved as `levels:` and `expand_multipliers` failed on it. The browser's own
+writer had been fixed for this; the Python one had not.
+
+**Decision.**
+
+- The writer writes an empty list as `[]` and an empty mapping as `{}`.
+- A multiplier with no levels is an error, `multiplier_without_levels`,
+  naming it, with the fix. Even read correctly it would have made no cohorts,
+  silently.
+- A template that fails to compile or render still opens the dashboard: the
+  Builder holds the saved draft, and the failure is shown as an error saying
+  where it happened, not replaced by a page that starts over.
+
+### D85. Temps live in `YAMLs/temp/`, named for the project, and never overwrite another file
+
+**Context.** New Blank Template swapped the Builder's draft but left the old
+path in the header, and saving from a `_temp.yaml` overwrote that file, so a
+blank draft could replace a real one.
+
+**Decision.**
+
+- Save & Refresh writes `YAMLs/temp/<project_folder>_temp.yaml`, whichever
+  template the page opened with.
+- New Blank shows `YAMLs/temp/_temp.yaml` in the header, and the name follows
+  the Project Folder as it is typed.
+- A save never replaces a different file: a target that exists and is not the
+  file the page opened is refused, saying to load it or pick another name.
+  Changing a loaded temp's folder saves a new file and leaves the old one.
+- Upload files for temps live in `YAMLs/temp/csv/`, so `file_loc` stays
+  `csv/<file>` relative to the temp, and the transfer export still copies it.
+- The existing temps move there; `YAMLs/Celiac_temp.yaml` is the current
+  Celiac.
+
+**Consequences.** Replaces the rule that a draft is saved beside the template
+it came from, which kept relative upload paths working; keeping uploads under
+`YAMLs/temp/csv/` does that now.
+
+### D86. A missing `cosmos_db` means `Dual`; the Builder's defaults come from `template.yaml`
+
+**Decision.**
+
+- `cosmos_db` left out of a template means `Dual`, in makeYaml as in the
+  Builder, since both databases is the usual pull. This is the one default
+  makeYaml supplies; the project database and dates are still the author's to
+  write (D83).
+- A new template in the Builder takes `cosmos_vars`, `run_vars` and
+  `test_options` from `YAMLs/template.yaml`, so that file is the one place to
+  edit the defaults. The built-in fallback is `PROJECTD93A5E7`, `19900101`,
+  `20260601`, `Dual`, and small set off.
+- Uploads default to parquet.
+
+### D87. The PK is written to parquet as soon as it lands; batching is unchanged
+
+**Context.** The user read batching as rebuilding a small PK per batch. It
+does not: the PK is built once and copied to Projects, and each batch is
+selected from that copy and uploaded to the Cosmos temp (D18, D19). What
+repeats per batch is the fact-table queries, whose cost per pass is
+unmeasured. The user's proposal, the whole PK landed first and batches drawn
+from it, is what is built.
+
+**Decision.**
+
+- Batching stays as it is. Its cost is measured on the VM before anything
+  changes (roadmap).
+- Once the PK phase has landed and checked the PK, Execute writes it to
+  `runs/<project>/parquets/<database>/<PK>.parquet`, where Artifacts would, so
+  the whole PK is in hand before any run starts. A failure to write it warns
+  and the pull continues. Artifacts later replaces it with everything else.
+
+### D88. Artifacts reports each file as it goes, and carries on past a failed table
+
+**Decision.** Artifacts says when it starts each file, then its rows and
+seconds; a table that fails is recorded with its error and the rest are still
+packaged. It ends with every file it wrote (rows, size), the errors, and the
+total time, and exits non-zero if any table failed.
+
+### D89. `viewparquets.py` replaces `examine_parquets`; `HOW_TO.md` is copied from an editable stock file
+
+**Context.** D75 wrote `examine_parquets.R/.py` to read every table into
+memory. The user wrote `viewparquets.py`, a tkinter window that opens
+parquets, which suits the client better.
+
+**Decision.**
+
+- Artifacts no longer writes `examine_parquets.R` or `.py`. It copies
+  `viewparquets.py` into the run folder. `load_parquets.R` and `.py` stay.
+- `HOW_TO.md` is copied from `scripts/pullmanager_src/stock/HOW_TO.md`, which
+  the user edits; `{project}` and `{parquets}` in it are filled in.
+  `viewparquets.py` lives beside it. Both travel in the bundle.
+
+**Consequences.** Supersedes D75's examine scripts.
+
+### D90. Upload files are not carried in the bundle
+
+**Context.** A CSV upload could have been ticked "add to bundle" and carried
+in `bundle.py`. The bundle takes UTF-8 text with Unix line endings, and CSVs
+from Excel are often neither, and a parquet cannot travel as text at all.
+
+**Decision.** Not built. Upload files are copied to the VM by hand; the build
+already names each one and where it goes.
+
+### D91. Save & Refresh queues a temp for the bundle; `makebundle.py queue` carries the queue
+
+**Decision.**
+
+- Saving a temp adds it, once, to `YAMLs/temp/bundle_queue.txt`.
+- Builder → Exports lists the queue, each with Remove; choosing one shows its
+  pre-YAML, transfer YAML and manifest. A dropdown adds a temp from
+  `YAMLs/temp/` that is not queued, such as an old pull a client wants
+  refreshed.
+- `python3 makebundle.py queue` exports each queued temp's transfer YAML to
+  the repository root and carries them all, as `yaml=` does (D79). A queued
+  temp that fails validation stops the build, naming it. The export is
+  labelled "Transfer YAML (to be bundled with bundle.py)".
+- Plain `makebundle.py` is unchanged, so the committed bundle still carries no
+  transfer YAMLs (D79).
