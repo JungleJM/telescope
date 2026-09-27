@@ -328,8 +328,12 @@ class ParquetViewer(tk.Tk):
         self.status.configure(text=f"Loaded {len(self.tabs):,} file(s).")
 
     def pick_files(self) -> None:
+        # Beside a pull's files (Artifacts copies this script there), start in
+        # its parquets folder.
+        beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parquets")
         paths = filedialog.askopenfilenames(
             title="Open Parquet file",
+            initialdir=beside if os.path.isdir(beside) else None,
             filetypes=[
                 ("Parquet files", "*.parquet *.parq"),
                 ("All files", "*.*"),

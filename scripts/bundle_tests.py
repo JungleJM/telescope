@@ -128,6 +128,13 @@ class BuildTests(BundleTestCase):
             with self.subTest(path=expected):
                 self.assertIn(expected, published)
 
+    def test_carries_the_stock_files_artifacts_copies(self):
+        # D89: HOW_TO.md is not Python, and still has to reach the VM.
+        sections, _ = read_bundle(self.bundle)
+        published = {section["path"] for section in sections}
+        self.assertIn("stock/HOW_TO.md", published)
+        self.assertIn("stock/viewparquets.py", published)
+
     def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
         # makeYaml resolves YAMLs/ as a sibling of scripts/, so the published
         # layout has to preserve that or its defaults break once extracted.

@@ -93,13 +93,23 @@ if __name__ == "__main__":
 '''
 
 
+# Files Artifacts copies into every pull's folder, kept where the user edits
+# them (D89): every file in it ships, not only Python.
+STOCK_DIR = "stock"
+
+
 def source_files(root: Path = SOURCE_ROOT) -> list[Path]:
-    """Every .py file that should ship, sorted for deterministic output."""
+    """Every .py file that should ship, and every stock file, sorted for
+    deterministic output."""
     files = [
         path
         for path in root.rglob("*.py")
         if "__pycache__" not in path.parts
     ]
+    stock = root / STOCK_DIR
+    if stock.is_dir():
+        files += [path for path in stock.iterdir()
+                  if path.is_file() and path.suffix != ".py" and not path.name.startswith(".")]
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 
 

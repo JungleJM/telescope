@@ -328,7 +328,7 @@ class CommandTests(ArtifactTestCase):
 
 
 class LoaderTests(ArtifactTestCase):
-    """D75: the scripts written beside contents.md open what was packaged."""
+    """D75, D89: the files written beside contents.md open what was packaged."""
 
     def write(self):
         from ..loaders import write_loaders
@@ -344,29 +344,46 @@ class LoaderTests(ArtifactTestCase):
         return subprocess.run([sys.executable, str(self.out.parent / name)], capture_output=True,
                               text=True, timeout=120, cwd=str(self.work))
 
-    def test_all_five_files_are_written_at_the_run_folders_root(self):
+    def test_the_load_scripts_viewer_and_how_to_are_written_at_the_run_folders_root(self):
         written = self.write()
         self.assertEqual(sorted(p.name for p in written), [
-            "HOW_TO.md", "examine_parquets.R", "examine_parquets.py",
-            "load_parquets.R", "load_parquets.py",
+            "HOW_TO.md", "load_parquets.R", "load_parquets.py", "viewparquets.py",
         ])
         self.assertIn(self.out.resolve().as_posix(), (self.out.parent / "load_parquets.R").read_text())
+        self.assertFalse(list(self.out.parent.glob("examine_parquets.*")))
+
+    def test_the_viewer_is_the_stock_copy(self):
+        from ..loaders import STOCK_DIR
+
+        self.write()
+        self.assertEqual((self.out.parent / "viewparquets.py").read_bytes(),
+                         (STOCK_DIR / "viewparquets.py").read_bytes())
+
+    def test_how_to_comes_from_the_stock_file_with_the_pull_filled_in(self):
+        from .. import loaders
+
+        stock = self.work / "stock"
+        stock.mkdir()
+        (stock / "viewparquets.py").write_text("# viewer\n", encoding="utf-8")
+        (stock / "HOW_TO.md").write_text(
+            "<!-- stock HOW_TO.md: a note for the editor -->\n# {project}\n"
+            "Files in {parquets}. Braces {like these} stay.\n",
+            encoding="utf-8",
+        )
+        original = loaders.STOCK_DIR
+        loaders.STOCK_DIR = stock
+        self.addCleanup(setattr, loaders, "STOCK_DIR", original)
+        self.write()
+        text = (self.out.parent / "HOW_TO.md").read_text(encoding="utf-8")
+        self.assertEqual(
+            text, f"# IBD_Ancestry\nFiles in {self.out.resolve().as_posix()}. Braces {{like these}} stay.\n"
+        )
 
     def test_the_python_load_script_opens_every_table_by_name(self):
         self.write()
         done = self.run_script("load_parquets.py")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("Opened 3 table(s): OtherHospitalizations, Patients, HospitalICDCodes", done.stdout)
-
-    def test_the_python_examine_script_reads_them_with_arrow_types(self):
-        try:
-            import pandas  # noqa: F401
-        except ImportError:
-            self.skipTest("examine_parquets.py needs pandas")
-        self.write()
-        done = self.run_script("examine_parquets.py")
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
 
     def test_the_r_scripts_keep_64_bit_keys_as_integer64(self):
         import shutil
@@ -380,7 +397,7 @@ class LoaderTests(ArtifactTestCase):
         if has_arrow.returncode:
             self.skipTest("this R has no arrow package")
         self.write()
-        for name, get in (("load_parquets.R", "dplyr::collect(Patients)"), ("examine_parquets.R", "Patients")):
+        for name, get in (("load_parquets.R", "dplyr::collect(Patients)"),):
             with self.subTest(script=name):
                 done = subprocess.run(
                     [rscript, "-e", f'source("{name}"); cat(class({get}$PatientDurableKey))'],
@@ -397,7 +414,7 @@ class LoaderTests(ArtifactTestCase):
         if not rscript:
             self.skipTest("no Rscript here")
         self.write()
-        for name in ("load_parquets.R", "examine_parquets.R"):
+        for name in ("load_parquets.R",):
             with self.subTest(script=name):
                 path = (self.out.parent / name).as_posix()
                 done = subprocess.run([rscript, "-e", f'invisible(parse("{path}"))'],

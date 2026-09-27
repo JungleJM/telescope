@@ -507,8 +507,8 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "74a836486c9e8ea1c71e18415b477771c2cc81512696b4d325f364ebfdbb917e",
-  "file_count": 47,
+  "content_id": "e4bf7bb97a30229514444b4cc2a13b7cb20aa4ef11ada82bea2f13782f4335b0",
+  "file_count": 49,
   "files": [
     {
       "path": "YAMLs/datadictionary.yaml",
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/loaders.py",
       "policy": "replace",
-      "sha256": "c3e14dfa1d1b5be177d7bb28c12afd7c11afb6eb3d8c20cc9fb226a6d5137b97",
-      "size": 7348
+      "sha256": "dc99bbf4c015da4007e6654b1b75e0ef7616bb72ee3a29d478a186c1484058ea",
+      "size": 4129
     },
     {
       "path": "pullmanager/local_sql.py",
@@ -675,8 +675,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_artifacts.py",
       "policy": "replace",
-      "sha256": "e58cae335ad1f454b24eb19388a01683b0ebc4f0911d25624817e00a75e7f258",
-      "size": 17522
+      "sha256": "28c082563e6990eabdeb43fca33751c1b12dbe4fd97da41d7acbc8f0b55d02b2",
+      "size": 18215
     },
     {
       "path": "pullmanager/tests/test_batches.py",
@@ -791,6 +791,18 @@ BUNDLE_MANIFEST_JSON = r'''{
       "policy": "replace",
       "sha256": "d15bb3fa37f15611702bbff0761191b23c8810830ec72c775fa74cec7b4c4672",
       "size": 227290
+    },
+    {
+      "path": "stock/HOW_TO.md",
+      "policy": "replace",
+      "sha256": "6024b83852485dbd774b37ed27d8b467a970da762e65a668b31f15a4a02c7fd1",
+      "size": 2352
+    },
+    {
+      "path": "stock/viewparquets.py",
+      "policy": "replace",
+      "sha256": "d43aa0ad683833f5a74835bfb22373e1a4105ab75ff53e75d5d7b85ded4be45b",
+      "size": 12709
     }
   ],
   "prelude_sha256": "0efeef0765f92132d9f8bdaf03d7df38a31583d196cb655382a6e5e9182ecbe6"
@@ -6809,19 +6821,25 @@ if __name__ == "__main__":
 #     return path
 #
 # === END FILE: pullmanager/launcher.py ===
-# === BEGIN FILE: pullmanager/loaders.py SHA256: c3e14dfa1d1b5be177d7bb28c12afd7c11afb6eb3d8c20cc9fb226a6d5137b97 SIZE: 7348 ===
-# """`load_parquets` and `examine_parquets`, in R and Python, and HOW_TO.md (D75).
+# === BEGIN FILE: pullmanager/loaders.py SHA256: dc99bbf4c015da4007e6654b1b75e0ef7616bb72ee3a29d478a186c1484058ea SIZE: 4129 ===
+# """`load_parquets` in R and Python (D75), `viewparquets.py` and HOW_TO.md (D89).
 #
 # Written at the root of `runs/<project>/`, beside `contents.md`. The client
 # keeps whichever language it uses and deletes the rest. Each names every
 # parquet by its table (`Patients`, `OtherDiagnoses_sp`), so they load side by
-# side without confusion. They use only what the VM has: R `arrow`, `dplyr` and
-# `bit64`; Python `pyarrow` and `pandas`.
+# side without confusion. They use only what the VM has: R `arrow` and `dplyr`;
+# Python `pyarrow`, and tkinter for the viewer.
+#
+# `viewparquets.py` and `HOW_TO.md` are copied from `stock/`, beside this
+# package, which the user edits and the bundle carries.
 # """
 #
 # from __future__ import annotations
 #
+# import shutil
 # from pathlib import Path
+#
+# STOCK_DIR = Path(__file__).resolve().parent.parent / "stock"
 #
 # LOAD_PY = '''"""Open every parquet of {project} without reading it into memory.
 #
@@ -6854,34 +6872,6 @@ if __name__ == "__main__":
 # print(f"Opened {{len(tables)}} table(s): {{', '.join(tables)}}")
 # '''
 #
-# EXAMINE_PY = '''"""Read every parquet of {project} into memory, for browsing.
-#
-# Run it, and each table becomes a variable named for it, a pandas DataFrame
-# with Arrow types, so a whole-number column with gaps stays whole numbers and
-# a 64-bit key keeps every digit. For large tables use load_parquets.py
-# instead: this reads everything at once. `tables` holds them all by name.
-# If you move this folder, change PARQUETS below.
-# """
-#
-# from pathlib import Path
-#
-# import pandas as pd
-#
-# PARQUETS = Path(r"{parquets}")
-#
-#
-# def examine_parquets(folder=PARQUETS):
-#     """Every parquet under `folder`, by table name, read into memory."""
-#     return {{path.stem: pd.read_parquet(path, dtype_backend="pyarrow")
-#             for path in sorted(Path(folder).rglob("*.parquet"))}}
-#
-#
-# tables = examine_parquets()
-# globals().update(tables)
-# for name, frame in tables.items():
-#     print(f"{{name}}: {{len(frame):,}} rows x {{frame.shape[1]}} columns")
-# '''
-#
 # LOAD_R = '''# Open every parquet of {project} without reading it into memory.
 # #
 # # source() it (in RStudio: Source), and each table becomes a variable named
@@ -6910,95 +6900,33 @@ if __name__ == "__main__":
 # message("Opened ", length(loaded), " table(s): ", paste(loaded, collapse = ", "))
 # '''
 #
-# EXAMINE_R = '''# Read every parquet of {project} into memory, for browsing.
-# #
-# # source() it, and each table becomes a variable named for it, a data frame
-# # (a tibble). 64-bit keys are integer64 (package bit64), so every digit is
-# # kept and joins match. For large tables use load_parquets.R instead: this
-# # reads everything at once. If you move this folder, change PARQUETS below.
-#
-# options(arrow.int64_downcast = FALSE)
-# library(arrow)
-# library(bit64)
-#
-# PARQUETS <- "{parquets}"
-#
-# examine_parquets <- function(folder = PARQUETS, envir = globalenv()) {{
-#   files <- sort(list.files(folder, pattern = "\\\\.parquet$", recursive = TRUE, full.names = TRUE))
-#   names <- sub("\\\\.parquet$", "", basename(files))
-#   for (i in seq_along(files)) assign(names[i], read_parquet(files[i]), envir = envir)
-#   invisible(names)
-# }}
-#
-# examined <- examine_parquets()
-# for (name in examined) message(name, ": ", nrow(get(name)), " rows x ", ncol(get(name)), " columns")
-# '''
-#
-# HOW_TO = '''# How To Use These Files: {project}
-#
-# Everything this pull produced is in this folder:
-#
-# | File | What it is |
-# | --- | --- |
-# | `contents.md` | Every table and column: what it holds, one row per what, and its type in SQL, Python and R. Start here. |
-# | `parquets/SneakPeek/` | Tables pulled from COSMOS_SneakPeek. Their names end in `_sp`. |
-# | `parquets/Cosmos/` | Tables pulled from COSMOS. |
-# | `parquets/uploads/` | Lists that were uploaded to make the pull, as supplied. |
-# | `load_parquets.R`, `load_parquets.py` | Open every table without reading it into memory. |
-# | `examine_parquets.R`, `examine_parquets.py` | Read every table into memory. |
-#
-# Keep the language you use and delete the other two scripts if you like.
-#
-# ## Load Or Examine?
-#
-# **Load** (`load_parquets`) opens each table without reading it. Nothing
-# reaches memory until you ask for it, so you can filter, select columns or
-# count first, and read only the result. Use it for large tables, and whenever
-# you want only part of one.
-#
-# - R: `Patients |> filter(Sex == "Female") |> select(PatientDurableKey) |> collect()`
-# - Python: `Patients.to_table(filter=ds.field("Sex") == "Female", columns=["PatientDurableKey"])`
-#
-# **Examine** (`examine_parquets`) reads every table into memory as a data
-# frame, ready to browse, sort and view. Use it for small tables, or a test
-# pull. On a full pull it may need more memory than the machine has.
-#
-# Both name each table after its file: `Patients`, `OtherDiagnoses_sp`.
-#
-# ## Running Them
-#
-# - **RStudio:** open the `.R` file and press Source, or `source("load_parquets.R")`.
-# - **VSCodium:** open the `.py` file and run it in the interactive window, or
-#   `%run load_parquets.py`.
-#
-# Each script names this folder in `PARQUETS` near its top. If the folder is
-# moved, change that line.
-#
-# ## Joining Tables
-#
-# Tables join on the key columns `contents.md` lists, such as
-# `PatientDurableKey`. 64-bit keys are read as `int64` in Python and
-# `integer64` in R in every table, so they match exactly; do not convert them
-# to decimals (`double`), which can lose digits.
-# '''
+# def stock_how_to(project: str, parquets: Path) -> str:
+#     """The stock HOW_TO.md for one pull: its editing note dropped, its name and
+#     folder filled in. Plain replacement, not format(): other braces stay."""
+#     text = (STOCK_DIR / "HOW_TO.md").read_text(encoding="utf-8")
+#     start, end = text.find("<!-- stock HOW_TO.md"), text.find("-->")
+#     if start != -1 and end > start:
+#         text = text[:start] + text[end + 3:].lstrip("\n")
+#     return text.replace("{project}", project).replace("{parquets}", parquets.as_posix())
 #
 #
 # def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
-#     """Write the four scripts and HOW_TO.md; returns what was written."""
+#     """Write the load scripts, and copy the viewer and HOW_TO.md; returns what was written."""
 #     location = parquets.resolve()
 #     files = {
 #         "load_parquets.py": LOAD_PY.format(project=project, parquets=location),
-#         "examine_parquets.py": EXAMINE_PY.format(project=project, parquets=location),
 #         # R reads forward slashes on Windows too, and a backslash would escape.
 #         "load_parquets.R": LOAD_R.format(project=project, parquets=location.as_posix()),
-#         "examine_parquets.R": EXAMINE_R.format(project=project, parquets=location.as_posix()),
-#         "HOW_TO.md": HOW_TO.format(project=project),
+#         "HOW_TO.md": stock_how_to(project, location),
 #     }
 #     written = []
 #     for name, text in files.items():
 #         path = run_dir / name
 #         path.write_text(text, encoding="utf-8")
 #         written.append(path)
+#     viewer = run_dir / "viewparquets.py"
+#     shutil.copyfile(STOCK_DIR / "viewparquets.py", viewer)
+#     written.append(viewer)
 #     return written
 #
 # === END FILE: pullmanager/loaders.py ===
@@ -10370,7 +10298,7 @@ if __name__ == "__main__":
 #     return Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=Path("split/pullmanifest.yaml"))
 #
 # === END FILE: pullmanager/tests/support.py ===
-# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: e58cae335ad1f454b24eb19388a01683b0ebc4f0911d25624817e00a75e7f258 SIZE: 17522 ===
+# === BEGIN FILE: pullmanager/tests/test_artifacts.py SHA256: 28c082563e6990eabdeb43fca33751c1b12dbe4fd97da41d7acbc8f0b55d02b2 SIZE: 18215 ===
 # """`--artifacts`: a pull's finished tables as parquets (D72)."""
 #
 # from __future__ import annotations
@@ -10701,7 +10629,7 @@ if __name__ == "__main__":
 #
 #
 # class LoaderTests(ArtifactTestCase):
-#     """D75: the scripts written beside contents.md open what was packaged."""
+#     """D75, D89: the files written beside contents.md open what was packaged."""
 #
 #     def write(self):
 #         from ..loaders import write_loaders
@@ -10717,29 +10645,46 @@ if __name__ == "__main__":
 #         return subprocess.run([sys.executable, str(self.out.parent / name)], capture_output=True,
 #                               text=True, timeout=120, cwd=str(self.work))
 #
-#     def test_all_five_files_are_written_at_the_run_folders_root(self):
+#     def test_the_load_scripts_viewer_and_how_to_are_written_at_the_run_folders_root(self):
 #         written = self.write()
 #         self.assertEqual(sorted(p.name for p in written), [
-#             "HOW_TO.md", "examine_parquets.R", "examine_parquets.py",
-#             "load_parquets.R", "load_parquets.py",
+#             "HOW_TO.md", "load_parquets.R", "load_parquets.py", "viewparquets.py",
 #         ])
 #         self.assertIn(self.out.resolve().as_posix(), (self.out.parent / "load_parquets.R").read_text())
+#         self.assertFalse(list(self.out.parent.glob("examine_parquets.*")))
+#
+#     def test_the_viewer_is_the_stock_copy(self):
+#         from ..loaders import STOCK_DIR
+#
+#         self.write()
+#         self.assertEqual((self.out.parent / "viewparquets.py").read_bytes(),
+#                          (STOCK_DIR / "viewparquets.py").read_bytes())
+#
+#     def test_how_to_comes_from_the_stock_file_with_the_pull_filled_in(self):
+#         from .. import loaders
+#
+#         stock = self.work / "stock"
+#         stock.mkdir()
+#         (stock / "viewparquets.py").write_text("# viewer\n", encoding="utf-8")
+#         (stock / "HOW_TO.md").write_text(
+#             "<!-- stock HOW_TO.md: a note for the editor -->\n# {project}\n"
+#             "Files in {parquets}. Braces {like these} stay.\n",
+#             encoding="utf-8",
+#         )
+#         original = loaders.STOCK_DIR
+#         loaders.STOCK_DIR = stock
+#         self.addCleanup(setattr, loaders, "STOCK_DIR", original)
+#         self.write()
+#         text = (self.out.parent / "HOW_TO.md").read_text(encoding="utf-8")
+#         self.assertEqual(
+#             text, f"# IBD_Ancestry\nFiles in {self.out.resolve().as_posix()}. Braces {{like these}} stay.\n"
+#         )
 #
 #     def test_the_python_load_script_opens_every_table_by_name(self):
 #         self.write()
 #         done = self.run_script("load_parquets.py")
 #         self.assertEqual(done.returncode, 0, done.stderr)
 #         self.assertIn("Opened 3 table(s): OtherHospitalizations, Patients, HospitalICDCodes", done.stdout)
-#
-#     def test_the_python_examine_script_reads_them_with_arrow_types(self):
-#         try:
-#             import pandas  # noqa: F401
-#         except ImportError:
-#             self.skipTest("examine_parquets.py needs pandas")
-#         self.write()
-#         done = self.run_script("examine_parquets.py")
-#         self.assertEqual(done.returncode, 0, done.stderr)
-#         self.assertIn("Patients: 3 rows x 3 columns", done.stdout)
 #
 #     def test_the_r_scripts_keep_64_bit_keys_as_integer64(self):
 #         import shutil
@@ -10753,7 +10698,7 @@ if __name__ == "__main__":
 #         if has_arrow.returncode:
 #             self.skipTest("this R has no arrow package")
 #         self.write()
-#         for name, get in (("load_parquets.R", "dplyr::collect(Patients)"), ("examine_parquets.R", "Patients")):
+#         for name, get in (("load_parquets.R", "dplyr::collect(Patients)"),):
 #             with self.subTest(script=name):
 #                 done = subprocess.run(
 #                     [rscript, "-e", f'source("{name}"); cat(class({get}$PatientDurableKey))'],
@@ -10770,7 +10715,7 @@ if __name__ == "__main__":
 #         if not rscript:
 #             self.skipTest("no Rscript here")
 #         self.write()
-#         for name in ("load_parquets.R", "examine_parquets.R"):
+#         for name in ("load_parquets.R",):
 #             with self.subTest(script=name):
 #                 path = (self.out.parent / name).as_posix()
 #                 done = subprocess.run([rscript, "-e", f'invisible(parse("{path}"))'],
@@ -21473,3 +21418,428 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/makeYaml.py ===
+# === BEGIN FILE: stock/HOW_TO.md SHA256: 6024b83852485dbd774b37ed27d8b467a970da762e65a668b31f15a4a02c7fd1 SIZE: 2352 ===
+# # How To Use These Files: {project}
+#
+# <!-- stock HOW_TO.md: Artifacts copies this file into every pull's folder,
+#      without this note, filling in the pull's name where "project" is written
+#      in braces, and the parquets folder where "parquets" is. Edit it on the Mac
+#      in scripts/pullmanager_src/stock/, then rebuild the bundle
+#      (python3 makebundle.py) to take it to the VM. -->
+#
+# Everything this pull produced is in this folder:
+#
+# | File | What it is |
+# | --- | --- |
+# | `contents.md` | Every table and column: what it holds, one row per what, and its type in SQL, Python and R. Start here. |
+# | `parquets/SneakPeek/` | Tables pulled from COSMOS_SneakPeek. Their names end in `_sp`. |
+# | `parquets/Cosmos/` | Tables pulled from COSMOS. |
+# | `parquets/uploads/` | Lists that were uploaded to make the pull, as supplied. |
+# | `viewparquets.py` | A window for looking at the tables: open one or several, page through, sort. |
+# | `load_parquets.R`, `load_parquets.py` | Open every table in R or Python without reading it into memory. |
+#
+# ## Looking At The Data
+#
+# Run `python viewparquets.py` in this folder (or open it in VSCodium and run
+# it). Press Open, choose one or more parquets, and each opens in its own tab.
+# It needs nothing but Python.
+#
+# ## Working With The Data
+#
+# `load_parquets` opens each table without reading it. Nothing reaches memory
+# until you ask for it, so you can filter, select columns or count first, and
+# read only the result. Keep the language you use and delete the other script
+# if you like.
+#
+# - R: `Patients |> filter(Sex == "Female") |> select(PatientDurableKey) |> collect()`
+# - Python: `Patients.to_table(filter=ds.field("Sex") == "Female", columns=["PatientDurableKey"])`
+#
+# Each names a table after its file: `Patients`, `OtherDiagnoses_sp`.
+#
+# - **RStudio:** open `load_parquets.R` and press Source, or `source("load_parquets.R")`.
+# - **VSCodium:** open `load_parquets.py` and run it in the interactive window,
+#   or `%run load_parquets.py`.
+#
+# Each script names the parquets folder in `PARQUETS` near its top
+# (`{parquets}`). If the folder is moved, change that line.
+#
+# ## Joining Tables
+#
+# Tables join on the key columns `contents.md` lists, such as
+# `PatientDurableKey`. 64-bit keys are read as `int64` in Python and
+# `integer64` in R in every table, so they match exactly; do not convert them
+# to decimals (`double`), which can lose digits.
+#
+# === END FILE: stock/HOW_TO.md ===
+# === BEGIN FILE: stock/viewparquets.py SHA256: d43aa0ad683833f5a74835bfb22373e1a4105ab75ff53e75d5d7b85ded4be45b SIZE: 12709 ===
+# #!/usr/bin/env python3
+# """
+# A small Tkinter Parquet viewer.
+#
+# Runtime requirement:
+#     One of these must be installed in the Python environment:
+#       - duckdb
+#       - pyarrow
+#       - pandas with a parquet engine available
+#
+# Tkinter ships with most Python installs, but Parquet decoding does not. This
+# file intentionally avoids app plugins or extra project files so it can be copied
+# as plain text onto a VM.
+# """
+#
+# from __future__ import annotations
+#
+# import math
+# import os
+# import sys
+# import tkinter as tk
+# from dataclasses import dataclass
+# from tkinter import filedialog, messagebox, ttk
+# from typing import Any, Callable, Iterable
+#
+#
+# MAX_CELL_CHARS = 500
+# DEFAULT_PAGE_SIZE = 1000
+# CLOSE_TAB_PIXELS = 24
+#
+#
+# @dataclass
+# class TableData:
+#     path: str
+#     columns: list[str]
+#     rows: list[tuple[Any, ...]]
+#
+#     @property
+#     def name(self) -> str:
+#         return os.path.basename(self.path) or self.path
+#
+#
+# def stringify(value: Any) -> str:
+#     if value is None:
+#         return ""
+#     text = str(value)
+#     if len(text) > MAX_CELL_CHARS:
+#         return text[: MAX_CELL_CHARS - 3] + "..."
+#     return text
+#
+#
+# def sort_key(value: Any) -> tuple[int, Any]:
+#     if value is None:
+#         return (1, "")
+#     if isinstance(value, (int, float)):
+#         if isinstance(value, float) and math.isnan(value):
+#             return (1, "")
+#         return (0, value)
+#     return (0, str(value).casefold())
+#
+#
+# def load_with_pyarrow(path: str) -> TableData:
+#     import pyarrow.parquet as pq
+#
+#     table = pq.read_table(path)
+#     columns = [str(name) for name in table.column_names]
+#     data = table.to_pylist()
+#     rows = [tuple(row.get(column) for column in columns) for row in data]
+#     return TableData(path=path, columns=columns, rows=rows)
+#
+#
+# def load_with_pandas(path: str) -> TableData:
+#     import pandas as pd
+#
+#     frame = pd.read_parquet(path)
+#     columns = [str(name) for name in frame.columns]
+#     rows = [tuple(row) for row in frame.itertuples(index=False, name=None)]
+#     return TableData(path=path, columns=columns, rows=rows)
+#
+#
+# def load_with_duckdb(path: str) -> TableData:
+#     import duckdb
+#
+#     frame = duckdb.read_parquet(path).df()
+#     columns = [str(name) for name in frame.columns]
+#     rows = [tuple(row) for row in frame.itertuples(index=False, name=None)]
+#     return TableData(path=path, columns=columns, rows=rows)
+#
+#
+# def load_parquet(path: str) -> TableData:
+#     errors: list[str] = []
+#     loaders: list[tuple[str, Callable[[str], TableData]]] = [
+#         ("duckdb", load_with_duckdb),
+#         ("pyarrow", load_with_pyarrow),
+#         ("pandas", load_with_pandas),
+#     ]
+#
+#     for name, loader in loaders:
+#         try:
+#             return loader(path)
+#         except ModuleNotFoundError as exc:
+#             errors.append(f"{name}: missing module {exc.name!r}")
+#         except ImportError as exc:
+#             errors.append(f"{name}: {exc}")
+#         except Exception as exc:
+#             errors.append(f"{name}: {type(exc).__name__}: {exc}")
+#
+#     detail = "\n".join(f"  - {line}" for line in errors)
+#     raise RuntimeError(
+#         "Could not read the Parquet file. Install duckdb, pyarrow, or pandas if possible:\n"
+#         "  python -m pip install duckdb pyarrow pandas\n\n"
+#         f"Tried:\n{detail}"
+#     )
+#
+#
+# class DataTab(ttk.Frame):
+#     def __init__(self, parent: tk.Misc, table: TableData) -> None:
+#         super().__init__(parent)
+#         self.table = table
+#         self.view_rows = list(table.rows)
+#         self.page_size = DEFAULT_PAGE_SIZE
+#         self.page = 0
+#         self.sort_column: int | None = None
+#         self.sort_descending = False
+#
+#         self._build_toolbar()
+#         self._build_tree()
+#         self._refresh_tree()
+#
+#     def _build_toolbar(self) -> None:
+#         toolbar = ttk.Frame(self)
+#         toolbar.pack(fill=tk.X, padx=8, pady=(8, 4))
+#
+#         self.summary = ttk.Label(toolbar)
+#         self.summary.pack(side=tk.LEFT)
+#
+#         nav = ttk.Frame(toolbar)
+#         nav.pack(side=tk.RIGHT)
+#
+#         ttk.Button(nav, text="First", command=self.first_page).pack(side=tk.LEFT, padx=(0, 4))
+#         ttk.Button(nav, text="Prev", command=self.prev_page).pack(side=tk.LEFT, padx=(0, 4))
+#         ttk.Button(nav, text="Next", command=self.next_page).pack(side=tk.LEFT, padx=(0, 4))
+#         ttk.Button(nav, text="Last", command=self.last_page).pack(side=tk.LEFT)
+#
+#     def _build_tree(self) -> None:
+#         holder = ttk.Frame(self)
+#         holder.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+#
+#         self.tree = ttk.Treeview(holder, columns=self.table.columns, show="headings")
+#         self.tree.grid(row=0, column=0, sticky="nsew")
+#
+#         yscroll = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=self.tree.yview)
+#         yscroll.grid(row=0, column=1, sticky="ns")
+#         xscroll = ttk.Scrollbar(holder, orient=tk.HORIZONTAL, command=self.tree.xview)
+#         xscroll.grid(row=1, column=0, sticky="ew")
+#         self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+#
+#         holder.rowconfigure(0, weight=1)
+#         holder.columnconfigure(0, weight=1)
+#
+#         for index, column in enumerate(self.table.columns):
+#             self.tree.heading(
+#                 column,
+#                 text=column,
+#                 command=lambda i=index: self.sort_by_column(i),
+#             )
+#             self.tree.column(column, width=150, minwidth=60, stretch=True)
+#
+#     def page_count(self) -> int:
+#         if not self.view_rows:
+#             return 1
+#         return math.ceil(len(self.view_rows) / self.page_size)
+#
+#     def _refresh_tree(self) -> None:
+#         self.tree.delete(*self.tree.get_children())
+#
+#         start = self.page * self.page_size
+#         end = min(start + self.page_size, len(self.view_rows))
+#         for row in self.view_rows[start:end]:
+#             self.tree.insert("", tk.END, values=[stringify(value) for value in row])
+#
+#         sort_text = ""
+#         if self.sort_column is not None:
+#             direction = "desc" if self.sort_descending else "asc"
+#             sort_text = f" | sorted by {self.table.columns[self.sort_column]} {direction}"
+#
+#         self.summary.configure(
+#             text=(
+#                 f"{self.table.name} | {len(self.table.rows):,} rows | "
+#                 f"{len(self.table.columns):,} columns | page {self.page + 1:,}/{self.page_count():,}"
+#                 f"{sort_text}"
+#             )
+#         )
+#
+#     def sort_by_column(self, column_index: int) -> None:
+#         if self.sort_column == column_index:
+#             self.sort_descending = not self.sort_descending
+#         else:
+#             self.sort_column = column_index
+#             self.sort_descending = False
+#
+#         self.view_rows.sort(
+#             key=lambda row: sort_key(row[column_index]),
+#             reverse=self.sort_descending,
+#         )
+#         self.page = 0
+#         self._refresh_tree()
+#
+#     def first_page(self) -> None:
+#         self.page = 0
+#         self._refresh_tree()
+#
+#     def prev_page(self) -> None:
+#         self.page = max(0, self.page - 1)
+#         self._refresh_tree()
+#
+#     def next_page(self) -> None:
+#         self.page = min(self.page_count() - 1, self.page + 1)
+#         self._refresh_tree()
+#
+#     def last_page(self) -> None:
+#         self.page = self.page_count() - 1
+#         self._refresh_tree()
+#
+#
+# class ParquetViewer(tk.Tk):
+#     def __init__(self, initial_files: Iterable[str] = ()) -> None:
+#         super().__init__()
+#         self.title("Parquet Viewer")
+#         self.geometry("1100x720")
+#         self.minsize(800, 480)
+#
+#         self.tabs: list[DataTab] = []
+#         self.active_notebook: ttk.Notebook | None = None
+#         self.right_notebook: ttk.Notebook | None = None
+#
+#         self._build_menu()
+#         self._build_layout()
+#
+#         for path in initial_files:
+#             self.open_file(path)
+#
+#     def _build_menu(self) -> None:
+#         menu = tk.Menu(self)
+#         file_menu = tk.Menu(menu, tearoff=False)
+#         file_menu.add_command(label="Open Parquet...", accelerator="Ctrl+O", command=self.pick_files)
+#         file_menu.add_command(label="Close Tab", accelerator="Ctrl+W", command=self.close_active_tab)
+#         file_menu.add_separator()
+#         file_menu.add_command(label="Exit", command=self.destroy)
+#
+#         menu.add_cascade(label="File", menu=file_menu)
+#         self.configure(menu=menu)
+#         self.bind("<Control-o>", lambda _event: self.pick_files())
+#         self.bind("<Control-w>", lambda _event: self.close_active_tab())
+#
+#     def _build_layout(self) -> None:
+#         toolbar = ttk.Frame(self)
+#         toolbar.pack(fill=tk.X, padx=8, pady=8)
+#         ttk.Button(toolbar, text="Open Parquet...", command=self.pick_files).pack(side=tk.LEFT)
+#         self.add_view_button = ttk.Button(toolbar, text="Add View", command=self.add_second_view)
+#         self.add_view_button.pack(side=tk.LEFT, padx=(8, 0))
+#         self.status = ttk.Label(toolbar, text="Open one or more .parquet files to begin.")
+#         self.status.pack(side=tk.LEFT, padx=(12, 0))
+#
+#         self.pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+#         self.pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
+#
+#         self.left_notebook = ttk.Notebook(self.pane)
+#         self.pane.add(self.left_notebook, weight=1)
+#         self.active_notebook = self.left_notebook
+#         self.left_notebook.bind("<<NotebookTabChanged>>", self._mark_active_notebook, add="+")
+#         self.left_notebook.bind("<Button-1>", self._handle_tab_click, add="+")
+#
+#     def _mark_active_notebook(self, event: tk.Event) -> None:
+#         widget = event.widget
+#         if isinstance(widget, ttk.Notebook):
+#             self.active_notebook = widget
+#
+#     def add_second_view(self) -> None:
+#         if self.right_notebook is not None:
+#             self.active_notebook = self.right_notebook
+#             return
+#
+#         self.right_notebook = ttk.Notebook(self.pane)
+#         self.right_notebook.bind("<<NotebookTabChanged>>", self._mark_active_notebook, add="+")
+#         self.right_notebook.bind("<Button-1>", self._handle_tab_click, add="+")
+#         self.pane.add(self.right_notebook, weight=1)
+#         self.active_notebook = self.right_notebook
+#         self.add_view_button.configure(state=tk.DISABLED)
+#         self.status.configure(text="Second view added. Open files load into the selected view.")
+#
+#     def _handle_tab_click(self, event: tk.Event) -> str | None:
+#         notebook = event.widget
+#         if not isinstance(notebook, ttk.Notebook):
+#             return None
+#
+#         try:
+#             tab_index = notebook.index(f"@{event.x},{event.y}")
+#             x, _y, width, _height = notebook.bbox(tab_index)
+#         except tk.TclError:
+#             return None
+#
+#         if event.x < x + width - CLOSE_TAB_PIXELS:
+#             return None
+#
+#         self._close_tab(notebook, tab_index)
+#         return "break"
+#
+#     def close_active_tab(self) -> None:
+#         notebook = self.active_notebook
+#         if notebook is None or not notebook.tabs():
+#             return
+#
+#         try:
+#             tab_index = notebook.index(notebook.select())
+#         except tk.TclError:
+#             return
+#
+#         self._close_tab(notebook, tab_index)
+#
+#     def _close_tab(self, notebook: ttk.Notebook, tab_index: int) -> None:
+#         tab_widget_name = notebook.tabs()[tab_index]
+#         tab_widget = self.nametowidget(tab_widget_name)
+#         notebook.forget(tab_index)
+#         if isinstance(tab_widget, DataTab) and tab_widget in self.tabs:
+#             self.tabs.remove(tab_widget)
+#         tab_widget.destroy()
+#         self.status.configure(text=f"Loaded {len(self.tabs):,} file(s).")
+#
+#     def pick_files(self) -> None:
+#         # Beside a pull's files (Artifacts copies this script there), start in
+#         # its parquets folder.
+#         beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parquets")
+#         paths = filedialog.askopenfilenames(
+#             title="Open Parquet file",
+#             initialdir=beside if os.path.isdir(beside) else None,
+#             filetypes=[
+#                 ("Parquet files", "*.parquet *.parq"),
+#                 ("All files", "*.*"),
+#             ],
+#         )
+#         for path in paths:
+#             self.open_file(path)
+#
+#     def open_file(self, path: str) -> None:
+#         try:
+#             table = load_parquet(path)
+#         except Exception as exc:
+#             messagebox.showerror("Could not open Parquet", str(exc))
+#             return
+#
+#         target = self.active_notebook or self.left_notebook
+#         tab = DataTab(target, table)
+#         self.tabs.append(tab)
+#         target.add(tab, text=f"{table.name}  x")
+#         target.select(tab)
+#         self.active_notebook = target
+#         self.status.configure(text=f"Loaded {len(self.tabs):,} file(s).")
+#
+#
+# def main() -> int:
+#     paths = [path for path in sys.argv[1:] if path.lower().endswith((".parquet", ".parq"))]
+#     app = ParquetViewer(paths)
+#     app.mainloop()
+#     return 0
+#
+#
+# if __name__ == "__main__":
+#     raise SystemExit(main())
+#
+# === END FILE: stock/viewparquets.py ===
