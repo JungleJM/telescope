@@ -161,24 +161,68 @@ def run_summary(result: Any) -> str:
     )
 
 
-def temp_template_path(current: Path, draft: dict[str, Any]) -> Path:
-    """Where the Builder's draft is saved: `<project>_temp.yaml` beside the template.
+# Every template the Builder saves goes here, named for its project (D85).
+TEMP_DIR = PROJECT_ROOT / "YAMLs" / "temp"
 
-    Beside it, so upload paths relative to the template still resolve. Never the
-    template itself, unless the template already is a `_temp.yaml`.
+
+def project_folder_of(draft: dict[str, Any]) -> str:
+    return str((draft.get("project_vars") or {}).get("project_folder") or draft.get("project_folder") or "")
+
+
+def temp_name(folder: str) -> str:
+    """`IBD Ancestry` is `IBD_Ancestry_temp.yaml`; no folder yet is `_temp.yaml`."""
+    clean = re.sub(r"[^A-Za-z0-9]+", "_", folder).strip("_")
+    return f"{clean}_temp.yaml"
+
+
+def temp_template_path(draft: dict[str, Any], temp_dir: Path | None = None) -> Path:
+    """Where the Builder's draft is saved: `YAMLs/temp/<project>_temp.yaml`."""
+    return (temp_dir or TEMP_DIR) / temp_name(project_folder_of(draft))
+
+
+def repoint_uploads(draft: dict[str, Any], source_dir: Path, target_dir: Path) -> list[str]:
+    """Keep each relative `file_loc` pointing at the same file from the new folder.
+
+    A path that would need `..` is left as written, since the transfer export
+    does not copy those; the returned notes say which, and where to move it.
     """
-    if current.name.endswith("_temp.yaml"):
-        return current
-    folder = (draft.get("project_vars") or {}).get("project_folder") or draft.get("project_folder")
-    clean = re.sub(r"[^A-Za-z0-9]+", "_", str(folder or "")).strip("_") or "draft"
-    return current.parent / f"{clean}_temp.yaml"
+    notes: list[str] = []
+    if source_dir.resolve() == target_dir.resolve():
+        return notes
+    for upload in draft.get("upload_cohorts") or []:
+        loc = upload.get("file_loc") if isinstance(upload, dict) else None
+        if not loc or Path(str(loc)).is_absolute():
+            continue
+        moved = os.path.relpath((source_dir / str(loc)).resolve(), target_dir.resolve())
+        if moved.startswith(".."):
+            notes.append(
+                f"{upload.get('name')}: file_loc {loc} is kept as written; put the file at "
+                f"{(target_dir / str(loc)).relative_to(target_dir.parent)} so it is found."
+            )
+        else:
+            upload["file_loc"] = Path(moved).as_posix()
+    return notes
 
 
-def save_template(current: Path, draft: Any) -> tuple[int, str, Path | None]:
-    """Write the Builder's draft to its `_temp.yaml`, parsed back before it lands."""
+def save_template(current: Path | None, draft: Any, temp_dir: Path | None = None) -> tuple[int, str, Path | None]:
+    """Write the Builder's draft to its `_temp.yaml`, parsed back before it lands.
+
+    `current` is the template the page opened (None for a new blank one). A
+    save never replaces any other file: a target that exists and is not
+    `current` is refused (D85).
+    """
     if not isinstance(draft, dict) or not draft:
         return 400, "Nothing to save: the Builder's draft is empty.", None
-    target = temp_template_path(current, draft)
+    target = temp_template_path(draft, temp_dir)
+    if target.exists() and (current is None or target.resolve() != current.resolve()):
+        return 409, (
+            f"{target.name} already exists in {target.parent.name}/, and this page did not "
+            f"open it, so it was not replaced. Load it (put its path in Template YAML and "
+            f"press Refresh), or change the Project Folder to save under a new name."
+        ), None
+    draft = json.loads(json.dumps(draft))  # repointing must not touch the caller's copy
+    notes = repoint_uploads(draft, current.parent if current else target.parent, target.parent)
+    target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name(target.name + ".tmp")
     try:
         temp.write_text(yaml_text(draft) + "\n", encoding="utf-8")
@@ -188,7 +232,7 @@ def save_template(current: Path, draft: Any) -> tuple[int, str, Path | None]:
     except Exception as exc:  # noqa: BLE001 - reported to the page
         temp.unlink(missing_ok=True)
         return 500, f"Could not save {target.name}: {exc}", None
-    return 200, f"Saved {target.name}.", target
+    return 200, " ".join([f"Saved {target.parent.name}/{target.name}."] + notes), target
 
 
 def save_recipe(recipes_path: Path, recipe: Any) -> tuple[int, str]:
@@ -816,6 +860,13 @@ def summary_cards(template: dict[str, Any], result: backend.CompileResult) -> st
     """
 
 
+def temp_dir_shown() -> str:
+    try:
+        return TEMP_DIR.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return TEMP_DIR.as_posix()
+
+
 def build_html(template_path: Path, recipes_path: Path, result: backend.CompileResult, auto_refresh: int = 0) -> str:
     try:
         template = backend.load_document(template_path) or {}
@@ -862,6 +913,8 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
         <input id="templatePathInput" name="template" type="text" value="{e(template_path)}">
         <input name="recipes" type="hidden" value="{e(recipes_path)}">
         <button id="refreshPage" type="submit" title="Reload dashboard">Refresh</button>
+        <span></span>
+        <span id="saveTarget" class="save-target" data-temp-dir="{e(temp_dir_shown())}"></span>
       </form>
     </div>
     <div class="header-actions">
@@ -881,7 +934,7 @@ def build_html(template_path: Path, recipes_path: Path, result: backend.CompileR
       <button class="tab" data-tab="graph">Graph</button>
       <button class="tab" data-tab="exports">Exports</button>
       <button class="tab" data-tab="yaml">YAML</button>
-      <button id="saveRefresh" class="save-refresh" title="Save the Builder's draft as &lt;project&gt;_temp.yaml beside the template, then reload every tab from it">Save &amp; Refresh</button>
+      <button id="saveRefresh" class="save-refresh" title="Save the Builder's draft as YAMLs/temp/&lt;project&gt;_temp.yaml, then reload every tab from it">Save &amp; Refresh</button>
     </nav>
     <div id="saveRefreshMessage" class="message hidden"></div>
 
@@ -1181,6 +1234,8 @@ input, select { border: 1px solid var(--line); border-radius: 7px; padding: 9px 
 .header-path-form { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; gap: 10px; align-items: center; max-width: 980px; }
 .header-path-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .header-path-form input { width: 100%; padding: 7px 9px; background: var(--bg); }
+.save-target { color: var(--muted); font-size: 12px; }
+.save-target strong { color: var(--ink); }
 main { padding: 22px; max-width: 1500px; margin: 0 auto; }
 .path-form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 10px; align-items: end; margin-top: 12px; }
 .path-form label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
@@ -1328,6 +1383,10 @@ const dataDictionaryRaw = JSON.parse(document.getElementById('dataDictionaryData
 const dataDictionary = normalizeDataDictionary(dataDictionaryRaw);
 const dictionaryTableNames = Object.keys(dataDictionary).sort((a, b) => a.localeCompare(b));
 let draftTemplate = clone(initialTemplate);
+// The file this page opened; empty once New Blank Template is pressed, so a
+// save can never replace an existing file with a blank draft (D85).
+const openedTemplatePath = document.getElementById('templatePathInput')?.value || '';
+let loadedTemplatePath = openedTemplatePath;
 let customDraft = blankCustomCohort();
 let editingCustomIndex = null;
 
@@ -1457,7 +1516,7 @@ function blankTemplate() {
       random_pk_sample: false
     },
     project_vars: {
-      project_folder: 'New Project'
+      project_folder: ''
     },
     vars: {},
     upload_cohorts: [],
@@ -1486,6 +1545,7 @@ function hydrateBuilder() {
   renderMultiplierRows();
   renderBatchingRows();
   renderCohortRows();
+  showSaveTarget();
   updateDraftYaml();
 }
 
@@ -1516,6 +1576,21 @@ function numericOrZero(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+// Where Save & Refresh will write: YAMLs/temp/<project_folder>_temp.yaml, as
+// the server names it. A new blank template shows it in the path box too.
+function tempFileName(folder) {
+  return `${String(folder || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}_temp.yaml`;
+}
+
+function showSaveTarget() {
+  const el = document.getElementById('saveTarget');
+  if (!el) return;
+  const target = `${el.dataset.tempDir}/${tempFileName(getValue('builderProjectFolder'))}`;
+  el.innerHTML = `Save &amp; Refresh writes <strong>${escapeHtml(target)}</strong>`
+    + (loadedTemplatePath ? '' : ' (new, not saved yet)');
+  if (!loadedTemplatePath) setValue('templatePathInput', target);
+}
+
 function syncProjectFields() {
   ensureDraftShape();
   draftTemplate.project_vars.project_folder = getValue('builderProjectFolder');
@@ -1528,6 +1603,7 @@ function syncProjectFields() {
   draftTemplate.test_options.random_pk_sample = getChecked('builderRandomPkSample');
   // Retired (D62): dropped from a loaded draft when it is saved.
   ['stop_at_for_non_pk_tables', 'print_md', 'printout_md'].forEach(key => delete draftTemplate.test_options[key]);
+  showSaveTarget();
   updateDraftYaml();
 }
 
@@ -2742,11 +2818,15 @@ document.addEventListener('keydown', event => {
 
 document.getElementById('builderNewTemplate')?.addEventListener('click', () => {
   draftTemplate = blankTemplate();
+  loadedTemplatePath = '';
   hydrateBuilder();
+  document.getElementById('builderProjectFolder')?.focus();
 });
 
 document.getElementById('builderUseCurrent')?.addEventListener('click', () => {
   draftTemplate = clone(initialTemplate);
+  loadedTemplatePath = openedTemplatePath;
+  setValue('templatePathInput', openedTemplatePath);
   hydrateBuilder();
 });
 
@@ -2779,7 +2859,7 @@ function draftDocument() {
 }
 
 document.getElementById('saveRefresh')?.addEventListener('click', async () => {
-  const templatePath = document.getElementById('templatePathInput')?.value || '';
+  const templatePath = loadedTemplatePath;
   const recipesPath = document.querySelector('input[name="recipes"]')?.value || '';
   if (window.location.protocol === 'file:') {
     showMessage('saveRefreshMessage', 'This page was opened as a file, so it cannot save. Serve it (python3 yamlmgr.py) to use Save & Refresh.', 'warn');
@@ -3064,7 +3144,8 @@ def serve_dashboard(
                     recipes_path = resolve_workspace_path(body.get("recipes") or default_recipes)
                     status, message = save_recipe(recipes_path, body.get("recipe"))
                 else:
-                    current = resolve_workspace_path(body.get("template") or default_template)
+                    opened = body.get("template")  # empty for a new blank template
+                    current = resolve_workspace_path(opened) if opened else None
                     status, message, saved = save_template(current, body.get("draft"))
                     if saved is not None:
                         try:
@@ -3177,32 +3258,70 @@ recipes:
 
 
 class SaveTemplateTests(unittest.TestCase):
-    """Save & Refresh writes <project>_temp.yaml and never the template."""
+    """Save & Refresh writes YAMLs/temp/<project>_temp.yaml and nothing else (D85)."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.template = Path(self._tmp.name) / "template.yaml"
+        root = Path(self._tmp.name)
+        self.template = root / "template.yaml"
         self.template.write_text("# the real template\nproject_vars: {project_folder: Test}\n", encoding="utf-8")
+        self.temps = root / "temp"
 
     def draft(self, folder="IBD Ancestry"):
         return {"project_vars": {"project_folder": folder}, "vars": {}, "cohorts": []}
 
-    def test_saved_beside_the_template_named_for_the_project(self):
-        status, _, saved = save_template(self.template, self.draft())
+    def save(self, current, draft):
+        return save_template(current, draft, temp_dir=self.temps)
+
+    def test_saved_in_the_temp_folder_named_for_the_project(self):
+        status, _, saved = self.save(self.template, self.draft())
         self.assertEqual(status, 200)
-        self.assertEqual(saved, self.template.parent / "IBD_Ancestry_temp.yaml")
+        self.assertEqual(saved, self.temps / "IBD_Ancestry_temp.yaml")
         self.assertEqual(backend.load_document(saved)["project_vars"]["project_folder"], "IBD Ancestry")
         self.assertIn("# the real template", self.template.read_text(encoding="utf-8"))
 
-    def test_saving_a_temp_again_overwrites_it(self):
-        _, _, first = save_template(self.template, self.draft())
-        _, _, second = save_template(first, self.draft("Renamed"))
-        self.assertEqual(first, second)
-        self.assertEqual(backend.load_document(second)["project_vars"]["project_folder"], "Renamed")
+    def test_saving_the_opened_temp_again_overwrites_it(self):
+        _, _, first = self.save(self.template, self.draft())
+        status, _, second = self.save(first, {**self.draft(), "vars": {"x": 1}})
+        self.assertEqual((status, second), (200, first))
+        self.assertEqual(backend.load_document(second)["vars"], {"x": 1})
+
+    def test_a_new_blank_template_never_replaces_an_existing_temp(self):
+        _, _, existing = self.save(self.template, {**self.draft(), "vars": {"keep": 1}})
+        status, message, saved = self.save(None, self.draft())
+        self.assertEqual((status, saved), (409, None))
+        self.assertIn("IBD_Ancestry_temp.yaml already exists", message)
+        self.assertEqual(backend.load_document(existing)["vars"], {"keep": 1})
+
+    def test_renaming_the_project_to_an_existing_temp_is_refused(self):
+        _, _, celiac = self.save(self.template, {**self.draft("Celiac"), "vars": {"keep": 1}})
+        _, _, ibd = self.save(self.template, self.draft())
+        status, _, _ = self.save(ibd, self.draft("Celiac"))
+        self.assertEqual(status, 409)
+        self.assertEqual(backend.load_document(celiac)["vars"], {"keep": 1})
+
+    def test_a_new_blank_with_no_folder_is_named_temp(self):
+        _, _, saved = self.save(None, self.draft(""))
+        self.assertEqual(saved.name, "_temp.yaml")
+
+    def test_upload_paths_still_reach_the_same_file(self):
+        (self.temps / "csv").mkdir(parents=True)
+        (self.temps / "csv" / "codes.csv").write_text("a\n1\n", encoding="utf-8")
+        draft = {**self.draft(), "upload_cohorts": [
+            {"name": "Codes", "file_type": "csv", "file_loc": "temp/csv/codes.csv"},
+            {"name": "Far", "file_type": "csv", "file_loc": "elsewhere/far.csv"},
+        ]}
+        status, message, saved = self.save(self.template, draft)
+        self.assertEqual(status, 200)
+        uploads = backend.load_document(saved)["upload_cohorts"]
+        self.assertEqual(uploads[0]["file_loc"], "csv/codes.csv")
+        self.assertTrue((saved.parent / uploads[0]["file_loc"]).is_file())
+        self.assertEqual(uploads[1]["file_loc"], "elsewhere/far.csv")
+        self.assertIn("Far: file_loc elsewhere/far.csv is kept as written", message)
 
     def test_an_empty_draft_is_refused(self):
-        self.assertEqual(save_template(self.template, {})[0], 400)
+        self.assertEqual(self.save(self.template, {})[0], 400)
 
 
 class RefreshTests(unittest.TestCase):
@@ -3227,7 +3346,7 @@ class RefreshTests(unittest.TestCase):
             "batching": [],
             "cohorts": [{"recipe": "PatientWithDx", "name": "Patients", "vars": {"ICD_Value": "K50.%"}}],
         }
-        status, message, saved = save_template(self.template, draft)
+        status, message, saved = save_template(self.template, draft, temp_dir=self.folder / "temp")
         self.assertEqual(status, 200, message)
         html_text, result = render_dashboard(saved, self.recipes)
         self.assertIn("multiplier_without_levels", [m.code for m in result.errors])

@@ -72,7 +72,7 @@ upload_cohorts:
   - name: HospitalICDCodes
     dest_table: HospitalICDCodes
     file_type: csv
-    file_loc: "csv/HospitalICDCodes.csv"   # relative to this template; travels with the transfer YAML
+    file_loc: "temp/csv/HospitalICDCodes.csv"   # relative to this template; travels with the transfer YAML
     scope: global #global or per_group
     push_this_cycle: true
 
