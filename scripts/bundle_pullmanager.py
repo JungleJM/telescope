@@ -56,10 +56,14 @@ DEFAULT_OUTPUT = REPO_ROOT / "dist" / "bundle.py"
 #
 # Recipes, the browser UI and the template example stay on the Mac (D49). The
 # VM works from transfer YAMLs, which carry their recipes written out in full,
-# and it cannot open the browser UI anyway. Nothing the user authors is
-# bundled.
+# and it cannot open the browser UI anyway; the app's Author half adjusts
+# them there (D94). Nothing the user authors is bundled.
 COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
+    # The app's Author half (D93): the model and its tkinter view, beside the
+    # makeYaml they use, where the launcher finds them.
+    (REPO_ROOT / "scripts" / "yamlmanager_model.py", "scripts/yamlmanager_model.py", "replace"),
+    (REPO_ROOT / "scripts" / "yamlmanager_tk.py", "scripts/yamlmanager_tk.py", "replace"),
     # Authored on the Mac and flowing one way, so the shipped copy wins.
     (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml", "replace"),
 )

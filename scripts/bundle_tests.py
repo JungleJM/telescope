@@ -572,6 +572,40 @@ class EndToEndTests(BundleTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Sessions:", proc.stdout)
 
+    def test_the_apps_author_adjusts_a_transfer_yaml_on_the_vm(self):
+        # D93, D94: in the extracted tree, with no recipes, the model opens a
+        # transfer YAML from the working folder, saves the change as an intake,
+        # and exports the transfer again beside pullmanager.py.
+        work = self.tmp / "work"
+        shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
+        export = self.run_python(
+            str(REPO_ROOT / "scripts" / "makeYaml.py"),
+            "--template", str(work / "01_valid_basic.yaml"),
+            "--recipes", str(REPO_ROOT / "YAMLs" / "recipes.yaml"),
+            "--export-transfer", "--out", str(work / "Basic_transfer.yaml"),
+        )
+        self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
+        target = work / "pullmanager_runtime"
+        extract(self.bundle, target)
+        script = (
+            "import sys; sys.path.insert(0, sys.argv[1])\n"
+            "import yamlmanager_model as m\n"
+            "ws = m.Workspace.default()\n"
+            "print('home', ws.home.name, 'recipes', ws.has_recipes)\n"
+            "d = m.Draft.open(ws, ws.home / 'Basic_transfer.yaml')\n"
+            "d.project_db = 'PROJECTD777'\n"
+            "saved = d.save(); print('saved', saved.ok, saved.path.relative_to(ws.home).as_posix())\n"
+            "ok, message, path = d.export_transfer(); print('exported', ok, path.name if path else message)\n"
+        )
+        proc = subprocess.run([sys.executable, "-c", script, str(target / "scripts")],
+                              capture_output=True, text=True, cwd=work)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("home work recipes False", proc.stdout)
+        self.assertIn("saved True YAMLs/temp/", proc.stdout)
+        exported = proc.stdout.split("exported True ")[-1].strip()
+        self.assertTrue((work / exported).is_file(), proc.stdout)
+        self.assertIn("PROJECTD777", (work / exported).read_text(encoding="utf-8"))
+
     def test_the_vm_pathway_from_a_transfer_yaml(self):
         # D49 end to end. On the Mac: export a transfer YAML. On the VM, with
         # no recipes anywhere: split it from the working directory by a typed

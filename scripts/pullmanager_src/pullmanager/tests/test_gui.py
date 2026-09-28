@@ -401,12 +401,19 @@ class ConsoleTests(GuiTestCase):
 
 
 class DefaultTests(GuiTestCase):
-    """D63: `python pullmanager.py` with nothing after it opens the launcher."""
+    """D63, D93: `python pullmanager.py` with nothing after it opens the app."""
 
-    def test_no_arguments_opens_the_launcher(self):
+    def setUp(self):
+        super().setUp()
+        package = __name__.rsplit(".", 2)[0]
+        sys.modules.pop(f"{package}.app", None)
+        self.addCleanup(sys.modules.pop, f"{package}.app", None)
+        self.app_module = importlib.import_module(f"{package}.app")
+
+    def test_no_arguments_opens_the_app(self):
         from .. import cli
 
-        with mock.patch.object(self.gui, "main", return_value=0) as opened:
+        with mock.patch.object(self.app_module, "main", return_value=0) as opened:
             self.assertEqual(cli.main([]), 0)
         opened.assert_called_once_with()
 
@@ -419,7 +426,7 @@ class DefaultTests(GuiTestCase):
         path = self.work / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, path)
         out = io.StringIO()
-        with mock.patch.object(self.gui, "main", return_value=0) as opened, \
+        with mock.patch.object(self.app_module, "main", return_value=0) as opened, \
                 contextlib.redirect_stdout(out):
             self.assertEqual(cli.main([str(path)]), 0)
         opened.assert_not_called()
@@ -455,3 +462,38 @@ class StatusTests(GuiTestCase):
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]
         self.assertIn("transfer YAML", message)
+
+
+class AppTests(GuiTestCase):
+    """D93: Author and Run in one window; Author's transfer goes to Run (D94)."""
+
+    def setUp(self):
+        super().setUp()
+        package = __name__.rsplit(".", 2)[0]
+        sys.modules.pop(f"{package}.app", None)
+        self.addCleanup(sys.modules.pop, f"{package}.app", None)
+        self.app_module = importlib.import_module(f"{package}.app")
+        from ..launcher import locate_tools
+        self.tools = locate_tools()
+
+    def test_launcher_builds_inside_the_run_tab_and_leaves_the_window_alone(self):
+        root = mock.MagicMock()
+        frame = mock.MagicMock()
+        run = self.gui.LauncherApp(root, self.tools, self.work, parent=frame)
+        self.assertFalse(run.standalone)
+        root.title.assert_not_called()
+        root.protocol.assert_not_called()
+
+    def test_a_transfer_from_author_is_loaded_into_run_and_shown(self):
+        with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no author here")):
+            app = self.app_module.App(mock.MagicMock(), self.tools, self.work)
+        transfer = self.work / "IBD_Ancestry_transfer.yaml"
+        app.take_transfer(transfer)
+        self.assertEqual(app.run.vars["template"].get(), str(transfer))
+        app.halves.select.assert_called_with(app.run_frame)
+
+    def test_run_still_opens_when_author_cannot(self):
+        with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no yamlmanager_tk")):
+            app = self.app_module.App(mock.MagicMock(), self.tools, self.work)
+        self.assertIsNone(app.author)
+        self.assertIsNotNone(app.run)

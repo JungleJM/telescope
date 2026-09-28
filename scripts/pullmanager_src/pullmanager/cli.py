@@ -456,8 +456,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--gui",
         action="store_true",
-        help="Open the desktop launcher (also what no arguments does). Uses tkinter, "
-             "which ships with Python.",
+        help="Open the app: Author and Run in one window (D93; also what no arguments "
+             "does). Uses tkinter, which ships with Python.",
     )
     parser.add_argument("--out-dir", default=None, help="Write rendered SQL here (dry run).")
     parser.add_argument(
@@ -519,7 +519,7 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
     if args.gui:
         try:
-            from .gui import main as gui_main
+            from .app import main as gui_main
         except ImportError as exc:
             print(
                 f"ERROR the launcher needs tkinter, which this Python lacks ({exc}). "

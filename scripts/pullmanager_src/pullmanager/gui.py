@@ -49,8 +49,13 @@ FIELDS = (
 
 
 class LauncherApp:
-    def __init__(self, root: tk.Tk, tools: launcher.Tools, workdir: Path):
+    """The launcher. Given `parent`, it builds inside that frame, as the Run
+    half of the app (D93), and leaves the window's title and closing to it."""
+
+    def __init__(self, root: tk.Tk, tools: launcher.Tools, workdir: Path, parent=None):
         self.root = root
+        self.standalone = parent is None
+        self.frame = root if parent is None else parent
         self.tools = tools
         self.workdir = workdir
         self.runner = launcher.CommandRunner()
@@ -70,10 +75,11 @@ class LauncherApp:
         self._pull_summarized = False
         self._status_countdown = 0
 
-        root.title(f"Pullmanager - {workdir}")
-        root.geometry("1100x760")
-        root.minsize(820, 520)
-        root.protocol("WM_DELETE_WINDOW", self.on_close)
+        if self.standalone:
+            root.title(f"Pullmanager - {workdir}")
+            root.geometry("1100x760")
+            root.minsize(820, 520)
+            root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self._build_inputs()
         self._build_tabs()
@@ -85,7 +91,7 @@ class LauncherApp:
     # ------------------------------------------------------------- layout
 
     def _build_inputs(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="Pull inputs", padding=8)
+        frame = ttk.LabelFrame(self.frame, text="Pull inputs", padding=8)
         frame.pack(fill="x", padx=10, pady=(10, 4))
         frame.columnconfigure(1, weight=1)
 
@@ -123,7 +129,7 @@ class LauncherApp:
         self.stop_button.pack(side="right")
 
     def _build_tabs(self) -> None:
-        notebook = ttk.Notebook(self.root)
+        notebook = ttk.Notebook(self.frame)
         notebook.pack(fill="both", expand=True, padx=10, pady=4)
         self.notebook = notebook
 
@@ -168,7 +174,7 @@ class LauncherApp:
         notebook.add(status_tab, text="Status")
 
     def _build_status_bar(self) -> None:
-        self.bar = ttk.Label(self.root, text="Ready.", anchor="w", padding=(10, 4))
+        self.bar = ttk.Label(self.frame, text="Ready.", anchor="w", padding=(10, 4))
         self.bar.pack(fill="x", side="bottom")
 
     # ------------------------------------------------------------ settings
@@ -455,15 +461,27 @@ class LauncherApp:
             message = f"{self.pull_lock.summary()}.  {manifest}"
         self.status_message.configure(text=message or f"{manifest}")
 
-    def on_close(self) -> None:
-        # A pull in its own window carries on when this one closes.
+    def use_transfer(self, path: Path) -> None:
+        """Take a transfer YAML the Author half exported (D94)."""
+        self.vars["template"].set(str(path))
+        self._save_settings()
+        self.refresh_status()
+        self.bar.configure(text=f"Loaded {Path(path).name}. Validate, Export split, then Execute.")
+
+    def close(self) -> bool:
+        """Ready the launcher to close; False if the user chose to keep it open.
+        A pull in its own window carries on when this one closes."""
         if self.runner.running and not messagebox.askyesno(
             "Quit", "A command is still running. Stop it and quit?"
         ):
-            return
+            return False
         self.runner.stop()
         self._save_settings()
-        self.root.destroy()
+        return True
+
+    def on_close(self) -> None:
+        if self.close():
+            self.root.destroy()
 
 
 def main(workdir: Path | None = None) -> int:
