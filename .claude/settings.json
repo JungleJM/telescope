@@ -1,0 +1,1 @@
+{ "permissions": { "allow": ["Bash(python3.13 -m pip install --user *)"] } }

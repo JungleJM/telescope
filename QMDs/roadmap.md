@@ -30,15 +30,15 @@ When an item here is built, delete it from this file and describe the result in 
 
 From the user's redesign notes of 27 September 2026 and their answers (D92–D98). Engine changes first, so the model wraps the final shapes; the model before any view, so the view has nothing to decide.
 
-1. **Intakes (D95).** `_intake.yaml` in `YAMLs/temp/`, the existing temps and queue entries renamed, `_intake` in both suffix lists. Small, and everything after saves under it.
-2. **`pending_transfer` and typed columns for unreadable tables (D97).** The PK section and Splitters need a PK's columns before its file exists.
-3. **Renaming and dropping upload columns (D98).** Validation, and the landing in Projects, with outcome tests of what arrives under which name.
-4. **The model, part 1 (D92).** The draft and its edits: Project, PK Table, Supporting Tables, Multipliers, Splitters, Fact Tables; where each variable comes from; the tables that fit a binding, with column matches; messages with their kind and field; save, export, queue. Tested with `unittest`.
-5. **The model, part 2.** The dictionary table builder: columns from the dictionary, types, joins, order by number, Save as Recipe. The largest piece of the page's JavaScript.
-6. **The app's shell (D93).** One window, Author and Run, Run being today's launcher; opened the same way on the Mac and the VM; carried by the bundle.
-7. **Author: Project, PK Table, Supporting Tables.** The later sections read their tables and columns.
-8. **Author: Multipliers, Splitters, Fact Tables,** with the binding picker.
-9. **Validate, Exports, YAML.**
+1.  **Intakes (D95).** `_intake.yaml` in `YAMLs/temp/`, the existing temps and queue entries renamed, `_intake` in both suffix lists. Small, and everything after saves under it.
+2.  **`pending_transfer` and typed columns for unreadable tables (D97).** The PK section and Splitters need a PK's columns before its file exists.
+3.  **Renaming and dropping upload columns (D98).** Validation, and the landing in Projects, with outcome tests of what arrives under which name.
+4.  **The model, part 1 (D92).** The draft and its edits: Project, PK Table, Supporting Tables, Multipliers, Splitters, Fact Tables; where each variable comes from; the tables that fit a binding, with column matches; messages with their kind and field; save, export, queue. Tested with `unittest`.
+5.  **The model, part 2.** The dictionary table builder: columns from the dictionary, types, joins, order by number, Save as Recipe. The largest piece of the page's JavaScript.
+6.  **The app's shell (D93).** One window, Author and Run, Run being today's launcher; opened the same way on the Mac and the VM; carried by the bundle.
+7.  **Author: Project, PK Table, Supporting Tables.** The later sections read their tables and columns.
+8.  **Author: Multipliers, Splitters, Fact Tables,** with the binding picker.
+9.  **Validate, Exports, YAML.**
 10. **Rebuild the bundle,** then the user clicks through it on the Mac (Tk 8.6).
 
 ------------------------------------------------------------------------
