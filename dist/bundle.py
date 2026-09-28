@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "73d9201ca2125543e33e1c2d5ca323763c40fcd33a29d7638b309e8b01125172",
+  "content_id": "9a5673dd909be557a00f7c08ecf38832a3914955fa77c8ae048738576b0e90cd",
   "file_count": 52,
   "files": [
     {
@@ -807,8 +807,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/yamlmanager_tk.py",
       "policy": "replace",
-      "sha256": "4ed5e9a83a2c7a1037a4ddd6f57451ab81c9440cb1f9e29d14334023a2d18b03",
-      "size": 72010
+      "sha256": "adff7b9ea34515fb0e19a00f26f55fd8d277ea808aae9b8fc3adc1a9b92a68bb",
+      "size": 82848
     },
     {
       "path": "stock/HOW_TO.md",
@@ -24157,7 +24157,7 @@ if __name__ == "__main__":
 #     print(__doc__)
 #
 # === END FILE: scripts/yamlmanager_model.py ===
-# === BEGIN FILE: scripts/yamlmanager_tk.py SHA256: 4ed5e9a83a2c7a1037a4ddd6f57451ab81c9440cb1f9e29d14334023a2d18b03 SIZE: 72010 ===
+# === BEGIN FILE: scripts/yamlmanager_tk.py SHA256: adff7b9ea34515fb0e19a00f26f55fd8d277ea808aae9b8fc3adc1a9b92a68bb SIZE: 82848 ===
 # """YAML Manager's Author half, in tkinter (D93).
 #
 # A view over yamlmanager_model (D92): every value shown is read from the
@@ -24290,6 +24290,10 @@ if __name__ == "__main__":
 #         self.section_builders: dict[str, Callable[[Any], None]] = {}
 #         for key, build in SECTION_BUILDERS.items():
 #             self.register(key, lambda parent, build=build: build(self, parent))
+#         self.validate_panel = ValidatePanel(self)
+#         self.refresh_validate = self.validate_panel.refresh
+#         self.exports_panel = ExportsPanel(self)
+#         self.refresh_exports = self.exports_panel.refresh
 #         self.show_section("project")
 #         self.refresh_files()
 #         self.loaded()
@@ -24350,7 +24354,18 @@ if __name__ == "__main__":
 #         """A section's builder: it fills the frame it is given from the model."""
 #         self.section_builders[key] = build
 #
+#     def goto(self, field: model.FieldRef | None) -> None:
+#         """Open the Builder at the field a message points to, marked there."""
+#         if field is None or field.section not in dict(SECTIONS):
+#             self.say("That message names no field in the Builder; its fix says what to change.")
+#             return
+#         self.highlight = field
+#         self.tabs.select(self.builder_tab)
+#         self.show_section(field.section)
+#
 #     def show_section(self, key: str) -> None:
+#         if key != self.section_key:
+#             self.highlight = None if self.highlight is None or self.highlight.section != key else self.highlight
 #         self.section_key = key
 #         if self.nav.selection() != (key,):
 #             self.nav.selection_set(key)
@@ -24461,6 +24476,9 @@ if __name__ == "__main__":
 #
 #     def loaded(self) -> None:
 #         """A draft was opened or started: show it everywhere."""
+#         if getattr(self, "exports_panel", None) is not None:
+#             self.exports_panel.chosen = None
+#         self.highlight = None
 #         self._setting_name = True
 #         self.name_var.set(self.draft.project_name)
 #         self._setting_name = False
@@ -25396,6 +25414,154 @@ if __name__ == "__main__":
 #     view.say(message, "pass" if ok else "error")
 #
 #
+# # =============================================================================
+# # Validate
+# # =============================================================================
+#
+#
+# KIND_LABELS = {"error": "Error", "warning": "Warning", "pending": "Pending transfer"}
+# SECTION_LABELS = dict(SECTIONS)
+#
+#
+# class ValidatePanel:
+#     """The pipeline's steps, then every message with its fix; choosing one
+#     goes to the field it points at (D96)."""
+#
+#     def __init__(self, view: AuthorView):
+#         self.view = view
+#         frame = view.validate_tab
+#         self.steps = ttk.Frame(frame, padding=(10, 8))
+#         self.steps.pack(fill="x")
+#         columns = ("where", "message")
+#         self.tree = ttk.Treeview(frame, columns=columns, show="tree headings", selectmode="browse")
+#         self.tree.heading("#0", text="Kind")
+#         self.tree.column("#0", width=150, stretch=False)
+#         self.tree.heading("where", text="Where")
+#         self.tree.column("where", width=260, stretch=False)
+#         self.tree.heading("message", text="Message")
+#         self.tree.column("message", width=800)
+#         for kind, colour in COLOURS.items():
+#             self.tree.tag_configure(kind, foreground=colour)
+#         bar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+#         self.tree.configure(yscrollcommand=bar.set)
+#         self.fix = note(frame, "Choose a message to see its fix; double-click it to go there.")
+#         self.fix.pack(side="bottom", fill="x", padx=10, pady=8)
+#         self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0))
+#         bar.pack(side="left", fill="y")
+#         self.messages: dict[str, model.Message] = {}
+#         self.tree.bind("<<TreeviewSelect>>", lambda e: self.show_fix())
+#         self.tree.bind("<Double-1>", lambda e: self.go())
+#         self.tree.bind("<Return>", lambda e: self.go())
+#
+#     def refresh(self, validation: model.Validation) -> None:
+#         for child in self.steps.winfo_children():
+#             child.destroy()
+#         for label, status in validation.steps:
+#             mark = {"pass": "✓", "fail": "✗", "pending": "…"}[status]
+#             ttk.Label(self.steps, text=f"{mark} {label}", foreground=COLOURS[status if status != "fail" else "error"]
+#                       ).pack(side="left", padx=(0, 16))
+#         self.tree.delete(*self.tree.get_children())
+#         self.messages = {}
+#         order = {"error": 0, "warning": 1, "pending": 2}
+#         for message in sorted(validation.messages, key=lambda m: order[m.kind]):
+#             where = SECTION_LABELS.get(message.field.section, "") if message.field else ""
+#             if message.field and message.field.detail:
+#                 where = f"{where}: {message.field.detail}" if where else message.field.detail
+#             iid = self.tree.insert("", "end", text=KIND_LABELS[message.kind],
+#                                    values=(where or message.context, f"[{message.code}] {message.text}"),
+#                                    tags=(message.kind,))
+#             self.messages[iid] = message
+#         if not validation.messages:
+#             self.tree.insert("", "end", text="Valid", values=("", "Nothing to fix."), tags=("pass",))
+#         self.fix.configure(text="Choose a message to see its fix; double-click it to go there.",
+#                            foreground=COLOURS["muted"])
+#
+#     def selected(self) -> model.Message | None:
+#         chosen = self.tree.selection()
+#         return self.messages.get(chosen[0]) if chosen else None
+#
+#     def show_fix(self) -> None:
+#         message = self.selected()
+#         if message is not None:
+#             self.fix.configure(text=f"Fix: {message.fix}" if message.fix else "No fix recorded.",
+#                                foreground=COLOURS[message.kind])
+#
+#     def go(self) -> None:
+#         message = self.selected()
+#         if message is not None:
+#             self.view.goto(message.field)
+#
+#
+# # =============================================================================
+# # Exports
+# # =============================================================================
+#
+#
+# class ExportsPanel:
+#     """The bundle queue (D91) and a saved intake's three exports."""
+#
+#     def __init__(self, view: AuthorView):
+#         self.view = view
+#         self.frame = view.exports_tab
+#         self.chosen: Path | None = None
+#
+#     def refresh(self) -> None:
+#         for child in self.frame.winfo_children():
+#             child.destroy()
+#         view = self.view
+#         top = ttk.Frame(self.frame, padding=(10, 8))
+#         top.pack(fill="x")
+#         state = model.queue_state(view.ws)
+#         if state["available"]:
+#             queue = ttk.LabelFrame(top, text="Bundle queue: python3 makebundle.py queue carries these", padding=8)
+#             queue.pack(fill="x")
+#             for item in state["queue"]:
+#                 row = ttk.Frame(queue)
+#                 row.pack(fill="x")
+#                 ttk.Button(row, text=item["name"], command=lambda n=item["name"]: self.show(view.ws.temp_dir / n)
+#                            ).pack(side="left")
+#                 if not item["exists"]:
+#                     note(row, "not in YAMLs/temp/: the build will stop on it", "error").pack(side="left", padx=6)
+#                 ttk.Button(row, text="Remove", command=lambda n=item["name"]: self.queue("remove", n)).pack(side="right")
+#             if not state["queue"]:
+#                 note(queue, "Nothing queued. Saving an intake queues it.").pack(anchor="w")
+#             if state["addable"]:
+#                 add = ttk.Frame(queue)
+#                 add.pack(fill="x", pady=(6, 0))
+#                 pick = tk.StringVar(value=state["addable"][0])
+#                 keep(add, pick)
+#                 ttk.Combobox(add, textvariable=pick, values=state["addable"], state="readonly", width=40).pack(side="left")
+#                 ttk.Button(add, text="Add to queue", command=lambda: self.queue("add", pick.get())).pack(side="left", padx=6)
+#         else:
+#             note(top, "The bundle queue is kept on the Mac, beside makebundle.py.").pack(anchor="w")
+#         path = self.chosen or (view.draft.path if not view.draft.dirty else None)
+#         if path is None:
+#             note(self.frame, "Save the draft to see its exports: they are made from the saved intake.",
+#                  "warning").pack(anchor="w", padx=10, pady=10)
+#             return
+#         ttk.Label(self.frame, text=f"Exports of {path.name}", font=("TkDefaultFont", 12, "bold")).pack(anchor="w", padx=10)
+#         panes = ttk.Frame(self.frame, padding=(10, 4))
+#         panes.pack(fill="both", expand=True)
+#         for column, (title, text, ok) in enumerate(model.exports(view.ws, path)):
+#             panes.columnconfigure(column, weight=1)
+#             ttk.Label(panes, text=title, foreground=COLOURS["pass" if ok else "error"]).grid(row=0, column=column, sticky="w")
+#             box = scrolledtext.ScrolledText(panes, wrap="none", font=("Courier", 10), height=30)
+#             box.insert("1.0", text)
+#             box.configure(state="disabled")
+#             box.grid(row=1, column=column, sticky="nsew", padx=3)
+#         panes.rowconfigure(1, weight=1)
+#
+#     def show(self, path: Path) -> None:
+#         self.chosen = path
+#         self.refresh()
+#
+#     def queue(self, action: str, name: str) -> None:
+#         folder = self.view.ws.temp_dir
+#         done = model.queue_add(name, folder) if action == "add" else model.queue_remove(name, folder)
+#         self.view.say(f"{'Queued' if action == 'add' else 'Removed'} {name}." if done else f"{name}: nothing to change.")
+#         self.refresh()
+#
+#
 # SECTION_BUILDERS: dict[str, Callable[[AuthorView, Any], None]] = {
 #     "project": build_project,
 #     "pk": build_pk,
@@ -25594,10 +25760,58 @@ if __name__ == "__main__":
 #         self.assertEqual([c.get("name") for _, c in self.view.draft.fact_tables()], [names[-1]] + names[:-1])
 #
 #
+# class ValidateAndExportViewTests(ViewTest):
+#     def test_messages_are_listed_by_kind_and_one_goes_to_its_field(self):
+#         self.open("IBD_Ancestry_intake.yaml")
+#         self.pump()
+#         panel = self.view.validate_panel
+#         rows = [panel.tree.item(i) for i in panel.tree.get_children()]
+#         self.assertTrue(rows)
+#         self.assertEqual(rows[0]["text"], "Error")
+#         self.assertIn("missing_variable", rows[0]["values"][1])
+#         first = panel.tree.get_children()[0]
+#         panel.tree.selection_set(first)
+#         self.root.update()
+#         self.assertTrue(panel.fix.cget("text").startswith("Fix:"))
+#         panel.go()
+#         self.root.update()
+#         self.assertEqual(self.view.section_key, "pk")
+#         self.assertEqual(self.view.tabs.select(), str(self.view.builder_tab))
+#         marks = [w.cget("text") for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
+#         self.assertTrue(any(str(text).startswith("Validate points here") for text in marks))
+#
+#     def test_the_steps_show_pending(self):
+#         self.open("Celiac_intake.yaml")
+#         index = self.view.draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
+#         self.view.changed()
+#         self.pump()
+#         steps = [w.cget("text") for w in self.view.validate_panel.steps.winfo_children()]
+#         self.assertIn("… Uploads", steps)
+#         self.assertIn(index, [i for i, _ in self.view.draft.supporting()])
+#
+#     def test_exports_show_a_saved_intakes_three_files_and_the_queue(self):
+#         self.open("Celiac_intake.yaml")
+#         self.view.exports_panel.refresh()
+#         boxes = [w for w in widgets(self.view.exports_tab) if isinstance(w, scrolledtext.ScrolledText)]
+#         self.assertEqual(len(boxes), 3)
+#         self.assertIn("transfer:", boxes[1].get("1.0", "end"))
+#         if model.queue_available():
+#             self.view.exports_panel.queue("add", "Celiac_intake.yaml")
+#             self.assertEqual(model.queue_state(self.ws)["queue"][0]["name"], "Celiac_intake.yaml")
+#
+#     def test_an_unsaved_draft_says_to_save_first(self):
+#         self.open("Celiac_intake.yaml")
+#         self.view.edit(lambda: setattr(self.view.draft, "project_db", "PROJECTD9"))
+#         self.view.exports_panel.refresh()
+#         text = " ".join(str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label))
+#         self.assertIn("Save the draft", text)
+#
+#
 # def run_tdd(verbosity: int = 2) -> int:
 #     loader = unittest.TestLoader()
 #     suite = unittest.TestSuite([loader.loadTestsFromTestCase(case)
-#                                 for case in (SectionViewTests, SplitAndFactViewTests)])
+#                                 for case in (SectionViewTests, SplitAndFactViewTests,
+#                                              ValidateAndExportViewTests)])
 #     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
 #     if _TEST_ROOT and _TEST_ROOT[0] is not None:
 #         _TEST_ROOT[0].destroy()
