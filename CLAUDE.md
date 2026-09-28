@@ -51,9 +51,10 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Constraints
 
-- Code reaches the VM only through `dist/bundle.py`. The bundle is
-  committed and deterministic: rebuild it (`python3 makebundle.py`)
-  and commit it whenever a bundled file changes.
+- Code reaches the VM only through a bundle in `dist/`: `bundle.py` (the
+  runtime), or `bundle_with_yamls.py` (with the queued transfer YAMLs).
+  Bundles are deterministic build products and `dist/` is not committed
+  (D106): rebuild (`python3 makebundle.py`) after a bundled file changes.
 - Standard library only, unless the package appears in `YAMLs/DSVM Plugins.yaml`
   (the VM's installed list). The VM runs Python 3.13.9.
 - A test that needs a package this machine lacks: look it up in

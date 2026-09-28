@@ -26,6 +26,20 @@ When an item here is built, delete it from this file and describe the result in 
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+From the user's notes of 28 September 2026 on the app and its first VM run, and their answers (D104–D110). The progress-stopping bug is already fixed (D103).
+
+1. **`dist/` ignored; `bundle.py` and `bundle_with_yamls.py`; `content_id.txt`; Make bundle in Exports (D106).** Changes how every later step is delivered, so first.
+2. **The VM side from the extracted bundle: no Pending there, a missing file an error (D108).** Confusing on the VM now.
+3. **Browse writes relative paths (D104).** Small; the rest of the uploads work builds on it.
+4. **`add_where` and `add_join`; where lines by column, Value or In supporting table; the join operator (D105).** The engine first, then the Builder; needed for the medication-codes pull.
+5. **Add a fact table inline, at the top (D110),** and the PK's dictionary table the same way.
+6. **Row key, prefilled (D107).**
+7. **`quoted_column_name` (D109).**
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
@@ -102,7 +116,8 @@ Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template add
 
 ### The App, Later
 
-- **Tabs to come across** (D96): the Cohorts cards with their connections, Graph and Recipes. Dark mode, styled by hand in Tk.
+- **Tabs to come across** (D96): the Cohorts cards with their connections, Graph and Recipes.
+- **Dark mode, a nice-to-have.** The Mac's Tk follows the system's dark mode already; Windows' Tk 8.6 does not, and styling it by hand is not worth it unless the VM needs it.
 - **Retiring the browser UI** once the app satisfies (D92), and what `python3 yamlmgr.py` opens then. A later web UI would be designed on the model.
 - **Joins to Cosmos tables** in the table builder are written out by hand; picking them from the dictionary would need its keys (Needs Research, below).
 - **Typing in a column field re-checks the draft on each key**, since renames change what validation reads; a slower draft may lag. If it does, check only after a pause, as the other fields do.

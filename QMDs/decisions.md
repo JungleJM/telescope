@@ -1928,3 +1928,99 @@ draft in memory, said both were fine.
 **Consequences.** A transfer written elsewhere may now differ from the
 template in an upload's `file_loc`, where before it could differ from the
 file it meant.
+
+### D104. Upload paths are written relative, never hardcoded
+
+**Context.** Browse wrote a full path (`\\epic-nas\...\IBD_meds.parquet`)
+when the file was not under the draft's folder. Upload files mostly stay on
+the VM, beside the transfer YAML, so a path should say where the file is
+relative to the YAML, not on which machine.
+
+**Decision.** Browse writes the chosen file relative to the draft's folder,
+with `..` where it must (`../../IBD_meds.parquet` from `YAMLs/temp/`), as
+save and the transfer export keep it (D103). A full path is written only
+where no relative one exists (another drive), or where you type one.
+
+### D105. Extra lines on any table: `add_where` and `add_join`; where lines by column
+
+**Context.** A prefabricated table cannot take a filter of its own: a
+template's `filter.where` on a recipe cohort replaces the recipe's whole
+list. The user needs, for one, medication tables limited to an uploaded list
+of medication codes.
+
+**Decision.**
+
+- Beside `where:` and `join:`, a table's `filter:` may list `add_where:` and
+  `add_join:`, lines of the same kind, appended to the table's own (its
+  recipe's, for a prefabricated one) when the template is read. A transfer
+  YAML writes the recipe out with them already appended.
+- The Builder writes a where line by column: this table's column, then
+  either **Value** (a value typed in) or **In supporting table** (a
+  supporting table and one of its columns), which writes
+  `x.Column IN (SELECT [Col] FROM {{prefix}}_Table)`: `IN`, not a join, so a
+  code listed twice cannot duplicate rows. A prefabricated table's lines go
+  under `add_where` and `add_join`; a built table's under `where` and `join`.
+- Joins to the template's tables choose their operator (`=`, `<>`, ...) as
+  well as their type, with what each type does beside it.
+
+### D106. `dist/` is not committed; two bundles, one with the queued YAMLs
+
+**Amends D63 and D64** (the committed bundle), **D79** (its consequence) and
+**D102** (the committed bundle built from the commit).
+
+**Context.** `dist/bundle.py` was committed and rebuilt with every bundled
+change, but it is a build product: the Mac builds it and it is copied to the
+VM. D79 kept transfer YAMLs out of the committed bundle, which kept project
+pulls out of the repository's generic build; a build with them then
+overwrote the committed file locally.
+
+**Decision.**
+
+- `dist/` is ignored by git. `python3 makebundle.py` writes `dist/bundle.py`,
+  the runtime alone; `python3 makebundle.py queue` writes
+  `dist/bundle_with_yamls.py`, carrying every queued intake's transfer YAML.
+  You choose which to copy.
+- Each build writes its content_id to `dist/content_id.txt` beside it (one
+  line per bundle file).
+- The app's Exports has **Make bundle**, beside the queue (Mac only): it
+  replaces `dist/bundle_with_yamls.py` and shows its content_id until the
+  next build.
+
+**Consequences.** A checkout has no bundle until one is built. A bundle is
+built from the working tree again, so an uncommitted file under
+`scripts/pullmanager_src/` is carried (D102's `utils/` rule stands).
+
+### D107. The PK's key is a "Row key", prefilled
+
+**Decision.** Key columns are labelled **Row key**, "the columns that make
+each row one of its own", with what relies on them: the uniqueness check
+(D20), chunk order (D53), the random sample (D60) and control sampling
+(D59). A new uploaded PK, or one without a key, is given
+`PatientDurableKey` when its file has that column.
+
+### D108. The VM side is where the app runs from an extracted bundle
+
+**Context.** Pending transfer was offered on the VM, where it means
+nothing, and confused. Detecting the VM must not probe the network or the
+system.
+
+**Decision.** The app is on the VM side when it runs from an extracted
+bundle (a `.bundle-manifest.json` beside the code), which is also how it
+finds the working folder. There, Pending transfer is not offered, and a
+missing upload file is an error in Validate, as it is at the split. On the
+Mac, which runs from the repository, nothing changes.
+
+### D109. A column name with quotes in it is a warning
+
+**Decision.** A CSV or parquet column whose name has a quote character
+(`'DiagnosisCode'`) is `quoted_column_name`, a warning whose fix is to rename
+it in the app (D98) or save the file without them.
+
+### D110. A fact table is added inline, at the top of Fact Tables
+
+**Decision.** "Add a fact table" moves to the top of Fact Tables, shaded
+apart from the tables below. It offers **Prefabricated** (a recipe) and
+**From data dictionary** (a table), each with a Name. Choosing a dictionary
+table opens the whole form in place (name, destination, description,
+granularity, columns, joins, where), not in a window of its own. The PK
+Table's "Table from the dictionary" opens the same way.
