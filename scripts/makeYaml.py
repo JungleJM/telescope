@@ -567,6 +567,7 @@ def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result
         else:
             merged = copy.deepcopy(cohort)
         merged["_source"] = f"cohorts[{idx}]"
+        apply_added_lines(merged, result, f"cohorts[{idx}]")
         if not merged.get("name"):
             merged["name"] = merged.get("dest_table") or merged.get("_recipe") or f"cohort_{idx + 1}"
             result.warn(
@@ -584,6 +585,35 @@ def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result
             )
         imported.append(merged)
     return imported
+
+
+ADDED_LINES = (("add_where", "where"), ("add_join", "join"))
+
+
+def apply_added_lines(cohort: dict[str, Any], result: CompileResult, where: str) -> None:
+    """`filter.add_where` and `filter.add_join`: lines appended to the table's
+    own `where` and `join`, its recipe's for a prefabricated one (D105). A
+    template's `where` would replace the recipe's; these add to it."""
+    filt = cohort.get("filter")
+    if not isinstance(filt, dict):
+        return
+    for added, own in ADDED_LINES:
+        if added not in filt:
+            continue
+        lines = filt.pop(added)
+        if isinstance(lines, str):
+            lines = [lines]
+        if not isinstance(lines, list) or not all(isinstance(line, str) for line in lines):
+            result.error(
+                "bad_added_lines",
+                f"`{added}` must be lines of SQL, like `{own}`.",
+                f"{where}.filter.{added}",
+                fix=f"Write `{added}:` as a list of quoted lines, one per condition or join, "
+                f"as the table's own `{own}:` is written.",
+            )
+            continue
+        current = filt.get(own) or []
+        filt[own] = ([current] if isinstance(current, str) else list(current)) + lines
 
 
 def deep_merge(base: Any, overlay: Any) -> Any:
@@ -5384,6 +5414,47 @@ class SavedDraftTests(MakeYamlTest):
         self.assertHasError(res, "multiplier_without_levels")
 
 
+class AddedLinesTests(MakeYamlTest):
+    """D105: extra where and join lines on a table, a recipe's included."""
+
+    ADDED_WHERE = "def.DiagnosisKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)"
+    COHORT = (
+        "  - recipe: OtherDx\n"
+        "    name: OtherDx\n"
+        "    filter:\n"
+        "      add_where:\n"
+        "        - \"def.DiagnosisKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)\"\n"
+        "      add_join:\n"
+        "        - \"INNER JOIN PatientDim AS p ON p.DurableKey = def.PatientDurableKey\"\n"
+    )
+
+    def template(self, cohort: str = COHORT) -> tuple[Path, Path]:
+        text = tiny_template().replace("  - recipe: OtherDx\n    name: OtherDx\n", cohort)
+        return self.write_pair(text)
+
+    def test_they_are_added_to_the_recipes_own_not_in_place_of_them(self):
+        template, recipes = self.template()
+        res = compile_yaml(template, recipes)
+        self.assertNotIn("bad_added_lines", [m.code for m in res.errors])
+        filt = import_recipes(load_yaml(template), load_yaml(recipes), CompileResult())[1]["filter"]
+        self.assertEqual(filt["where"], ["def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}",
+                                         self.ADDED_WHERE])
+        self.assertEqual(len(filt["join"]), 2)
+        self.assertNotIn("add_where", filt)
+
+    def test_the_transfer_writes_the_recipe_out_with_them(self):
+        template, recipes = self.template()
+        res = build_transfer(template, recipes, write=True)
+        cohort = next(c for c in load_yaml(res.output_path)["cohorts"] if c["name"] == "OtherDx")
+        self.assertIn(self.ADDED_WHERE, cohort["filter"]["where"])
+        self.assertNotIn("add_where", cohort["filter"])
+
+    def test_something_other_than_lines_is_refused(self):
+        bad = self.COHORT.split("      add_where:")[0] + "      add_where: {a: 1}\n"
+        res = compile_yaml(*self.template(bad))
+        self.assertHasError(res, "bad_added_lines")
+
+
 class PendingTransferTests(MakeYamlTest):
     """D97: a file that will only exist on the VM, and columns typed in for it."""
 
@@ -5541,6 +5612,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "project_db": ProjectDbTests,
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
+    "added_lines": AddedLinesTests,
     "upload_column_changes": UploadColumnChangeTests,
 }
 

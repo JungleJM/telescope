@@ -175,6 +175,45 @@ class Workspace:
         return entries if isinstance(entries, dict) else {}
 
 
+def sql_literal(value: str) -> str:
+    """A value typed in, as SQL: a number as it is, text quoted."""
+    text = value.strip()
+    if re.fullmatch(r"-?\d+(\.\d+)?", text):
+        return text
+    return "'" + text.replace("'", "''") + "'"
+
+
+WHERE_MODES = ("value", "in_table")
+
+
+def where_line(source: str, mode: str, value: str = "", table: str = "", column: str = "") -> str:
+    """A where line by column (D105). `value`: one value is `=`, several
+    (commas) `IN`, one with `%` `LIKE`. `in_table`: `IN` the column of a
+    supporting table, so a code listed twice cannot duplicate rows."""
+    source = source.strip()
+    if not source:
+        raise DraftError("Choose the column the condition is on.")
+    if mode == "in_table":
+        if not table or not column:
+            raise DraftError("Choose the supporting table and its column.")
+        return f"{source} IN (SELECT [{column}] FROM {{{{prefix}}}}_{table})"
+    if mode != "value":
+        raise DraftError(f"A where line is by value or in a supporting table, not {mode}.")
+    values = split_list(value)
+    if not values:
+        raise DraftError("Type the value the column must have.")
+    if len(values) > 1:
+        return f"{source} IN ({', '.join(sql_literal(v) for v in values)})"
+    if "%" in values[0]:
+        return f"{source} LIKE {sql_literal(values[0])}"
+    return f"{source} = {sql_literal(values[0])}"
+
+
+def join_line(join_type: str, source: str, operator: str, table: str, alias: str, column: str) -> str:
+    return (f"{join_type} JOIN {{{{prefix}}}}_{table} AS {alias} "
+            f"ON {source} {operator} {alias}.{column}")
+
+
 def is_pk(cohort: dict[str, Any] | None) -> bool:
     return str((cohort or {}).get("type", "")).lower() == "pk"
 
@@ -1124,6 +1163,113 @@ class Draft:
     def bind(self, index: int, var: str, table: str) -> None:
         self.set_var(index, var, table)
 
+    # ------------------------------------------------ added where and join
+
+    def filter_sources(self, index: int) -> list[tuple[str, str, str]]:
+        """A table's columns a where line or join can be on: (its name, the
+        SQL it is read from, its type)."""
+        merged = self._merged_cohort(index) or {}
+        out = []
+        for column in merged.get("columns") or []:
+            if isinstance(column, dict) and column.get("source"):
+                source = str(column["source"])
+                out.append((str(column.get("name") or source.split(".")[-1]), source, str(column.get("type") or "")))
+        return out
+
+    def template_tables(self, exclude: int | None = None) -> list[tuple[str, str, list[tuple[str, str]]]]:
+        """The template's tables a join or condition can reach, but the one at
+        `exclude`: (name, kind, [(column, type)]), columns as they land."""
+        out = []
+        for i, cohort in enumerate(self.doc["cohorts"]):
+            if i == exclude or not isinstance(cohort, dict):
+                continue
+            merged = self._merged_cohort(i) or cohort
+            name = str(merged.get("dest_table") or merged.get("name") or "")
+            columns = [(str(c.get("name") or str(c.get("source") or "").split(".")[-1]), str(c.get("type") or ""))
+                       for c in merged.get("columns") or [] if isinstance(c, dict)]
+            if name:
+                out.append((name, "recipe" if cohort.get("recipe") else "table", columns))
+        for index, upload in enumerate(self.doc["upload_cohorts"]):
+            if not isinstance(upload, dict):
+                continue
+            name = str(upload.get("dest_table") or upload.get("name") or "")
+            types = {my.column_source(c): str(c.get("type") or "")
+                     for c in upload.get("columns") or [] if isinstance(c, dict)}
+            columns = [(row.name, types.get(row.source, "")) for row in self.column_rows(index) if not row.dropped]
+            if name:
+                out.append((name, "upload", columns))
+        return out
+
+    def supporting_columns(self) -> dict[str, list[str]]:
+        """Each supporting table's columns as they land, for "In supporting table"."""
+        return {name: [c for c, _ in columns] for name, kind, columns in self.template_tables() if kind == "upload"}
+
+    def join_check(self, source_type: str, table: str, column: str, exclude: int | None = None) -> tuple[bool, str]:
+        """Whether a column of type `source_type` can join `table.column`."""
+        other = next((t for t in self.template_tables(exclude) if t[0] == table), None)
+        if other is None:
+            return False, "No such table in this template."
+        right = dict(other[2]).get(column)
+        if right is None:
+            return False, f"{table} has no column {column}."
+        if not source_type or not right:
+            return False, f"{'This column' if not source_type else f'{table}.{column}'} has no declared type, so the match cannot be checked."
+        if types_compatible(source_type, right):
+            return True, f"{type_family(source_type)} match"
+        return False, f"{source_type} vs {right}"
+
+    def _lines_key(self, index: int, kind: str) -> tuple[dict[str, Any], str]:
+        """Where a table's added lines go: `add_where` / `add_join` on a
+        prefabricated table, its own `where` / `join` on a built one (D105)."""
+        if kind not in ("where", "join"):
+            raise DraftError(f"A line is a where or a join, not {kind}.")
+        cohort = self._cohort(index)
+        filt = cohort.setdefault("filter", {})
+        if not isinstance(filt, dict):
+            raise DraftError("This table's filter is not a mapping; fix it in the YAML.")
+        return filt, (f"add_{kind}" if cohort.get("recipe") else kind)
+
+    def added_lines(self, index: int, kind: str) -> list[str]:
+        filt, key = self._lines_key(index, kind)
+        lines = filt.get(key) or []
+        return [lines] if isinstance(lines, str) else [str(line) for line in lines]
+
+    def add_line(self, index: int, kind: str, line: str) -> None:
+        line = line.strip()
+        if not line:
+            raise DraftError("The line is empty.")
+        filt, key = self._lines_key(index, kind)
+        filt[key] = self.added_lines(index, kind) + [line]
+        self._changed()
+
+    def remove_line(self, index: int, kind: str, position: int) -> None:
+        filt, key = self._lines_key(index, kind)
+        lines = self.added_lines(index, kind)
+        del lines[position]
+        if lines:
+            filt[key] = lines
+        else:
+            filt.pop(key, None)
+            if not filt:
+                self._cohort(index).pop("filter", None)
+        self._changed()
+
+    def add_where_by_column(self, index: int, source: str, mode: str, value: str = "",
+                            table: str = "", column: str = "") -> None:
+        self.add_line(index, "where", where_line(source, mode, value, table, column))
+
+    def add_join_to(self, index: int, source: str, table: str, column: str,
+                    join_type: str = "INNER", operator: str = "=") -> None:
+        """A join from this table's column to another table of the template,
+        refused unless the two columns' types match (D105)."""
+        if join_type not in JOIN_TYPES or operator not in JOIN_OPERATORS:
+            raise DraftError(f"A join is {'/'.join(JOIN_TYPES)} with {' '.join(JOIN_OPERATORS)}.")
+        types = {src: typ for _, src, typ in self.filter_sources(index)}
+        ok, text = self.join_check(types.get(source, ""), table, column, exclude=index)
+        if not ok:
+            raise DraftError(f"Not joined: {text}.")
+        self.add_line(index, "join", join_line(join_type, source, operator, table, alias_for(table), column))
+
     # ----------------------------------------------------------- validation
 
     def location_for(self, chosen: str | Path) -> str:
@@ -1497,42 +1643,18 @@ class TableBuilder:
 
     def join_tables(self) -> list[tuple[str, str, list[tuple[str, str]]]]:
         """The template's other tables a join can reach: (name, kind, [(column, type)])."""
-        out = []
-        for i, cohort in enumerate(self.draft.doc["cohorts"]):
-            if i == self.index or not isinstance(cohort, dict):
-                continue
-            merged = self.draft._merged_cohort(i) or cohort
-            name = str(merged.get("dest_table") or merged.get("name") or "")
-            columns = [(str(c.get("name") or str(c.get("source") or "").split(".")[-1]), str(c.get("type") or ""))
-                       for c in merged.get("columns") or [] if isinstance(c, dict)]
-            if name:
-                out.append((name, "recipe" if cohort.get("recipe") else "table", columns))
-        for index, upload in enumerate(self.draft.doc["upload_cohorts"]):
-            if not isinstance(upload, dict):
-                continue
-            name = str(upload.get("dest_table") or upload.get("name") or "")
-            types = {my.column_source(c): str(c.get("type") or "") for c in upload.get("columns") or [] if isinstance(c, dict)}
-            columns = [(row.name, types.get(row.source, "")) for row in self.draft.column_rows(index) if not row.dropped]
-            if name:
-                out.append((name, "upload", columns))
-        return out
+        return self.draft.template_tables(self.index)
 
     def join_check(self, base: int, table: str, column: str) -> tuple[bool, str]:
         """Whether a join of this table's column `base` to `table.column` matches types."""
         if not (0 <= base < len(self.columns)):
             return False, "Choose a column of this table."
-        other = next((t for t in self.join_tables() if t[0] == table), None)
-        if other is None:
-            return False, "No such table in this template."
-        right = dict(other[2]).get(column)
-        if right is None:
-            return False, f"{table} has no column {column}."
-        left = self.columns[base].get("type") or ""
-        if not right:
-            return False, f"{table}.{column} has no declared type, so the match cannot be checked."
-        if types_compatible(left, right):
-            return True, f"{type_family(left)} match"
-        return False, f"{left} vs {right}"
+        return self.draft.join_check(str(self.columns[base].get("type") or ""), table, column, self.index)
+
+    def add_where_by_column(self, base: int, mode: str, value: str = "", table: str = "", column: str = "") -> None:
+        if not (0 <= base < len(self.columns)):
+            raise DraftError("Choose a column of this table.")
+        self.wheres.append(where_line(str(self.columns[base].get("source") or ""), mode, value, table, column))
 
     def add_join(self, base: int, table: str, column: str, join_type: str = "INNER", operator: str = "=") -> None:
         """A join to another table of the template, refused unless the types match."""
@@ -2319,12 +2441,70 @@ class VmFlowTests(ModelTest):
         self.assertNotIn("unknown_upload_column", [m.code for m in again.validate().messages])
 
 
+class FilterLineTests(ModelTest):
+    """D105: where lines by column, and extra lines on a prefabricated table."""
+
+    def test_a_where_line_is_written_by_column(self):
+        self.assertEqual(where_line("e.Dept", "value", "Cardiology"), "e.Dept = 'Cardiology'")
+        self.assertEqual(where_line("e.Key", "value", "12"), "e.Key = 12")
+        self.assertEqual(where_line("e.Dept", "value", "A, B"), "e.Dept IN ('A', 'B')")
+        self.assertEqual(where_line("dt.Value", "value", "K50.%"), "dt.Value LIKE 'K50.%'")
+        self.assertEqual(where_line("e.Name", "value", "O'Brien"), "e.Name = 'O''Brien'")
+        self.assertEqual(where_line("m.MedicationKey", "in_table", table="MedCodes", column="Code"),
+                         "m.MedicationKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)")
+        with self.assertRaises(DraftError):
+            where_line("m.Key", "in_table", table="MedCodes")
+
+    def test_a_prefabricated_tables_lines_reach_the_transfer_after_its_own(self):
+        draft = self.codes_draft()
+        draft.bind(1, "CodesTable", "Codes")
+        sources = dict((name, source) for name, source, _ in draft.filter_sources(1))
+        self.assertEqual(sources["EncounterKey"], "e.EncounterKey")
+        self.assertEqual(draft.supporting_columns(), {"Codes": ["Code", "Label"]})
+        draft.add_where_by_column(1, "e.EncounterKey", "in_table", table="Codes", column="Code")
+        self.assertEqual(draft.doc["cohorts"][1]["filter"],
+                         {"add_where": ["e.EncounterKey IN (SELECT [Code] FROM {{prefix}}_Codes)"]})
+        self.assertTrue(draft.save().ok)
+        ok, message, transfer = draft.export_transfer()
+        self.assertTrue(ok, message)
+        cohort = next(c for c in my.load_yaml(transfer)["cohorts"] if c["name"] == "Codes")
+        self.assertEqual(cohort["filter"]["where"][-1], "e.EncounterKey IN (SELECT [Code] FROM {{prefix}}_Codes)")
+        self.assertEqual(len(cohort["filter"]["where"]), 2)  # the recipe's own is kept
+
+    def test_removing_the_last_line_leaves_no_filter_behind(self):
+        draft = self.codes_draft()
+        draft.add_where_by_column(1, "e.EncounterKey", "value", "5")
+        draft.remove_line(1, "where", 0)
+        self.assertNotIn("filter", draft.doc["cohorts"][1])
+
+    def test_a_join_is_refused_unless_the_types_match(self):
+        draft = self.codes_draft()
+        with self.assertRaises(DraftError) as caught:
+            draft.add_join_to(1, "e.EncounterKey", "Codes", "Code")
+        self.assertIn("no declared type", str(caught.exception))
+        draft.set_column_type(draft.supporting()[0][0], "Code", "BIGINT")
+        draft.add_join_to(1, "e.EncounterKey", "Codes", "Code", "LEFT", "<>")
+        self.assertEqual(draft.added_lines(1, "join"),
+                         ["LEFT JOIN {{prefix}}_Codes AS c ON e.EncounterKey <> c.Code"])
+
+    def test_a_built_tables_where_is_its_own(self):
+        draft = self.draft()
+        builder = TableBuilder(draft)
+        builder.name = "Visits"
+        builder.set_from_table("EncounterFact")
+        builder.add_where_by_column(3, "value", "Cardiology")
+        index = builder.commit()
+        self.assertEqual(draft.doc["cohorts"][index]["filter"]["where"], ["ef.Department = 'Cardiology'"])
+        draft.add_line(index, "where", "ef.DateKey > 0")
+        self.assertEqual(len(draft.doc["cohorts"][index]["filter"]["where"]), 2)
+
+
 def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
                  SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
-                 LocationTests):
+                 LocationTests, FilterLineTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1
