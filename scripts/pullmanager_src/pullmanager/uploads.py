@@ -179,7 +179,8 @@ def sql_type_for(name: str, column) -> str:
 
 
 def read_parquet(cohort: dict[str, Any], root: Path) -> UploadTable:
-    """Read a parquet upload, applying the types declared under `columns:`."""
+    """Read a parquet upload, applying what `columns:` declares: types, renames
+    and dropped columns (D54, D98)."""
     pa, pc, pq = _pyarrow()
     dest = upload_dest(cohort)
     file_loc = cohort.get("file_loc")
@@ -190,21 +191,36 @@ def read_parquet(cohort: dict[str, Any], root: Path) -> UploadTable:
     if not path.is_file():
         raise UploadError(f"Upload file not found: {path}")
     table = pq.read_table(str(path))
+    entries = [c for c in cohort.get("columns") or [] if isinstance(c, dict) and c.get("name")]
+    # An entry names the file's column by `from:`, else by `name` (D98).
     declared = {
-        str(c["name"]): str(c["type"])
-        for c in cohort.get("columns") or []
-        if isinstance(c, dict) and c.get("name") and c.get("type")
+        str(c.get("from") or c["name"]): str(c["type"])
+        for c in entries
+        if c.get("type") and c.get("drop") is not True
     }
-    missing = [name for name in declared if name not in table.column_names]
+    renames = {str(c["from"]): str(c["name"]) for c in entries if c.get("from") and c.get("drop") is not True}
+    dropped = {str(c.get("from") or c["name"]) for c in entries if c.get("drop") is True}
+    missing = [name for name in [*declared, *renames, *sorted(dropped)] if name not in table.column_names]
     if missing:
         raise UploadError(
-            f"Upload {dest!r}: declared column(s) {', '.join(missing)} are not in "
+            f"Upload {dest!r}: declared column(s) {', '.join(dict.fromkeys(missing))} are not in "
             f"{path.name} ({', '.join(table.column_names)})."
+        )
+    landed = [renames.get(name, name) for name in table.column_names if name not in dropped]
+    repeated = sorted({name for name in landed if landed.count(name) > 1})
+    if repeated:
+        raise UploadError(
+            f"Upload {dest!r}: more than one column would be called {', '.join(repeated)}. "
+            "Rename or drop one under `columns:`."
         )
     notes: list[str] = []
     columns: list[tuple[str, str]] = []
+    kept: list[Any] = []
     for index, name in enumerate(table.column_names):
+        if name in dropped:
+            continue
         column = table.column(index)
+        target = renames.get(name, name)
         if name in declared:
             try:
                 column = pc.cast(column, arrow_type_for(declared[name]), safe=True)
@@ -213,16 +229,17 @@ def read_parquet(cohort: dict[str, Any], root: Path) -> UploadTable:
                     f"Upload {dest!r}, column `{name}`: {str(exc).splitlines()[0]}. Fix the "
                     f"value in {path.name}, or declare a type that fits."
                 ) from exc
-            table = table.set_column(index, name, column)
-            columns.append((name, declared[name].upper()))
+            columns.append((target, declared[name].upper()))
+            kept.append(column)
             continue
         if pa.types.is_timestamp(column.type) and column.type.tz is not None:
             # SQL Server's DATETIME2 has no zone; land UTC and say so.
+            zone = column.type
             column = pc.cast(column, pa.timestamp(column.type.unit))
-            table = table.set_column(index, name, column)
-            notes.append(f"{dest}.{name} had time zone {column.type}; landed as UTC.")
-        columns.append((name, sql_type_for(name, column)))
-    values = [table.column(i).to_pylist() for i in range(table.num_columns)]
+            notes.append(f"{dest}.{target} had time zone {zone}; landed as UTC.")
+        columns.append((target, sql_type_for(target, column)))
+        kept.append(column)
+    values = [column.to_pylist() for column in kept]
     rows = list(zip(*values)) if values else []
     if not rows:
         notes.append(f"{path.name} has no rows; landing an empty table.")

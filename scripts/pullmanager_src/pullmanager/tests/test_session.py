@@ -831,6 +831,27 @@ class UploadCopyTests(SessionTestCase):
         phase = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[1]
         self.assertEqual(phase.outputs["uploads"]["Unused"]["cosmos"], "not read in this session")
 
+    def test_a_renamed_and_dropped_upload_lands_so_in_projects(self):
+        # D98: the rename happens as the file lands, so what reads the copy sees it.
+        path = self.root / "sessions" / "Patients" / "upload_cohorts.yaml"
+        doc = load_yaml(path)
+        doc["upload_cohorts"][0]["columns"] = [{"name": "ICDCode", "from": "DiagnosisCode"},
+                                               {"name": "Description", "drop": True}]
+        dump_yaml(doc, path)
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        projects = "\n".join(self.projects.executed)
+        created = projects[projects.index(f"CREATE TABLE {self.COPY}"):]
+        created = created[:created.index(");")]
+        self.assertIn("[ICDCode]", created)
+        self.assertNotIn("[DiagnosisCode]", created)
+        self.assertNotIn("[Description]", created)
+        # Filled under the new name; the Cosmos temp copies the copy's columns
+        # as INFORMATION_SCHEMA reports them, which this fake does not model.
+        inserts = [sql for sql, _ in self.projects.inserted if self.COPY in sql]
+        self.assertTrue(inserts)
+        self.assertTrue(all("[ICDCode]" in sql and "Description" not in sql for sql in inserts))
+
     def test_a_retry_uses_the_copy_not_the_file(self):
         # The file is gone (or changed) by the retry; the copy is what counts.
         first = self.execute(fail_once={r"WHERE \[_batch\] = 'Male'": "timeout"})

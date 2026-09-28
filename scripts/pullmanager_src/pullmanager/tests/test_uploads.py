@@ -129,6 +129,38 @@ class ParquetTests(unittest.TestCase):
             read_parquet(cohort, self.root)
         self.assertIn("Nope", str(caught.exception))
 
+    def test_a_renamed_column_lands_under_its_new_name_with_its_type(self):
+        # D98: `from:` is the file's name for it; the type is declared on it too.
+        cohort = self.write({"ICD10": ["K50.0", "K51.9"], "Key": [1.0, 2.0]})
+        cohort["columns"] = [{"name": "ICDCode", "from": "ICD10"},
+                             {"name": "PatientDurableKey", "from": "Key", "type": "BIGINT"}]
+        table = read_parquet(cohort, self.root)
+        self.assertEqual([name for name, _ in table.columns], ["ICDCode", "PatientDurableKey"])
+        self.assertEqual(table.columns[1], ("PatientDurableKey", "BIGINT"))
+        self.assertEqual(table.rows, [("K50.0", 1), ("K51.9", 2)])
+
+    def test_a_dropped_column_does_not_land_and_the_rest_are_kept(self):
+        cohort = self.write({"Keep": [1], "Secret": ["x"], "Also": ["y"]})
+        cohort["columns"] = [{"name": "Secret", "drop": True}]
+        table = read_parquet(cohort, self.root)
+        self.assertEqual([name for name, _ in table.columns], ["Keep", "Also"])
+        self.assertEqual(table.rows, [(1, "y")])
+
+    def test_renaming_or_dropping_a_column_the_file_lacks_is_refused(self):
+        for entry in ({"name": "New", "from": "Nope"}, {"name": "Nope", "drop": True}):
+            cohort = self.write({"Key": [1]})
+            cohort["columns"] = [entry]
+            with self.subTest(entry=entry), self.assertRaises(UploadError) as caught:
+                read_parquet(cohort, self.root)
+            self.assertIn("Nope", str(caught.exception))
+
+    def test_two_columns_ending_with_one_name_are_refused(self):
+        cohort = self.write({"A": [1], "B": [2]})
+        cohort["columns"] = [{"name": "B", "from": "A"}]
+        with self.assertRaises(UploadError) as caught:
+            read_parquet(cohort, self.root)
+        self.assertIn("B", str(caught.exception))
+
     def test_a_missing_file_is_refused(self):
         with self.assertRaises(UploadError):
             read_parquet({"name": "F", "file_type": "parquet", "file_loc": "gone.parquet"}, self.root)

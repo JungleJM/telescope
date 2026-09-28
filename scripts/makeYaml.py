@@ -1013,13 +1013,97 @@ def declared_upload_columns(upload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def listed_column_names(upload: dict[str, Any]) -> list[str] | None:
     """The column names typed under `columns:` (or `schema:`), with or without
-    types: the schema of a table nothing here can read (D97). None if none."""
+    types: the schema of a table nothing here can read (D97), as it will land,
+    so renamed and without its dropped columns (D98). None if none."""
     schema = upload.get("columns") or upload.get("schema") or []
     if not isinstance(schema, list):
         return None
-    names = [str(c.get("name")) if isinstance(c, dict) else str(c) for c in schema]
+    names = [
+        str(c.get("name")) if isinstance(c, dict) else str(c)
+        for c in schema if not (isinstance(c, dict) and c.get("drop") is True)
+    ]
     names = [n for n in names if n and n != "None"]
     return names or None
+
+
+def column_source(column: dict[str, Any]) -> str:
+    """The file's name for a `columns:` entry: its `from:`, else its `name` (D98)."""
+    return str(column.get("from") or column.get("name"))
+
+
+def column_changes(upload: dict[str, Any]) -> tuple[dict[str, str], set[str]]:
+    """({file column: table column} for renames, {file columns dropped}) (D98)."""
+    renames: dict[str, str] = {}
+    dropped: set[str] = set()
+    for column in upload.get("columns") or []:
+        if not isinstance(column, dict):
+            continue
+        if column.get("drop") is True:
+            dropped.add(column_source(column))
+        elif column.get("from") and column.get("name"):
+            renames[str(column["from"])] = str(column["name"])
+    return renames, dropped
+
+
+def landed_columns(upload: dict[str, Any], file_names: list[str]) -> list[str]:
+    """A file's columns as its table will have them: renamed, dropped ones left out."""
+    renames, dropped = column_changes(upload)
+    return [renames.get(name, name) for name in file_names if name not in dropped]
+
+
+def check_column_changes(
+    upload: dict[str, Any], file_type: str, file_names: list[str] | None, where: str, result: CompileResult
+) -> None:
+    """Renames and drops name file columns, leave no two columns one name, and
+    keep the key (D98). `file_names` is None where the file cannot be read."""
+    renames, dropped = column_changes(upload)
+    if not renames and not dropped:
+        return
+    if file_type == "dbtable":
+        result.error(
+            "upload_rename_on_dbtable",
+            "A dbtable is copied whole inside the database, so its columns cannot be "
+            "renamed or dropped on the way.",
+            f"{where}.columns",
+            fix="Remove `from:` and `drop:` here, and rename the columns in the table itself, "
+            "or export it as a parquet upload.",
+        )
+        return
+    if file_names is not None:
+        for source in [*renames, *sorted(dropped)]:
+            if source not in file_names:
+                result.error(
+                    "unknown_upload_column",
+                    f"`{source}` is renamed or dropped, but it is not in the file.",
+                    f"{where}.columns ({source})",
+                    fix=f"Use one of the file's columns: {', '.join(file_names) or 'none'}.",
+                )
+        final = landed_columns(upload, file_names)
+    else:
+        final = listed_column_names(upload) or []
+    repeated = sorted({name for name in final if final.count(name) > 1})
+    if repeated:
+        result.error(
+            "duplicate_upload_column",
+            f"More than one column would be called {', '.join(f'`{n}`' for n in repeated)}.",
+            f"{where}.columns",
+            fix="Give each renamed column a name no other column has, or drop one of them.",
+        )
+    for key in upload.get("key_columns") or []:
+        if str(key) in dropped:
+            result.error(
+                "dropped_key_column",
+                f"Key column `{key}` is dropped, so the table would have no key.",
+                f"{where}.columns ({key})",
+                fix=f"Remove `drop: true` from `{key}`, or choose other `key_columns`.",
+            )
+        elif str(key) in renames:
+            result.error(
+                "renamed_key_column",
+                f"Key column `{key}` is renamed to `{renames[str(key)]}`.",
+                f"{where}.key_columns",
+                fix=f"Name the key by its new name: `{renames[str(key)]}`.",
+            )
 
 
 def pyarrow_modules():
@@ -1059,14 +1143,16 @@ def convert_csv_to_parquet(csv_path: Path, parquet_path: Path, declared: list[di
     with Path(csv_path).open("r", encoding="utf-8-sig", newline="") as handle:
         header = next(csv.reader(handle), [])
     types = {name: pa.string() for name in header}
-    missing = [str(c["name"]) for c in declared if str(c["name"]) not in types]
+    # A type is declared by the file's name for the column; a rename happens
+    # when the file lands in Projects, not here (D98).
+    missing = [column_source(c) for c in declared if column_source(c) not in types]
     if missing:
         raise UploadConversionError(
             f"Declared column(s) {', '.join(missing)} are not in the file's header "
             f"({', '.join(header)})."
         )
     for column in declared:
-        types[str(column["name"])] = arrow_type(column["type"])
+        types[column_source(column)] = arrow_type(column["type"])
     try:
         table = pcsv.read_csv(
             str(csv_path),
@@ -1094,10 +1180,10 @@ def check_declared_columns(
                 f"{where}.columns ({column['name']}).type",
                 fix=UPLOAD_TYPES_FIX,
             )
-        if names is not None and str(column["name"]) not in names:
+        if names is not None and column_source(column) not in names:
             result.error(
                 "unknown_upload_column",
-                f"Declared column `{column['name']}` is not in the file.",
+                f"Declared column `{column_source(column)}` is not in the file.",
                 f"{where}.columns ({column['name']}).name",
                 fix=f"Use one of the file's columns: {', '.join(names) or 'none'}.",
             )
@@ -1120,6 +1206,7 @@ def report_missing_upload(
     YAML, and the split there, which needs it, checks it again as an error.
     """
     check_declared_columns(upload, None, where, result)
+    check_column_changes(upload, str(upload.get("file_type", "")).lower(), None, where, result)
     declared = listed_column_names(upload)
     if uploads_elsewhere and upload.get("pending_transfer") is True:
         result.pend(
@@ -1212,7 +1299,8 @@ def upload_schemas(
             try:
                 with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
                     reader = csv.reader(handle)
-                    schemas[dest] = next(reader, [])
+                    file_names = next(reader, [])
+                    schemas[dest] = file_names
             except Exception as exc:
                 result.error(
                     "upload_read_error",
@@ -1222,6 +1310,8 @@ def upload_schemas(
                 )
                 schemas[dest] = []
             check_declared_columns(upload, schemas[dest], where, result)
+            check_column_changes(upload, file_type, schemas[dest], where, result)
+            schemas[dest] = landed_columns(upload, schemas[dest])
         elif file_type == "parquet" and upload.get("file_loc") and pyarrow_modules():
             file_path = resolve_file(base_dir, upload["file_loc"])
             if not file_path.exists():
@@ -1238,8 +1328,11 @@ def upload_schemas(
                 )
                 schemas[dest] = []
             check_declared_columns(upload, schemas[dest], where, result)
+            check_column_changes(upload, file_type, schemas[dest], where, result)
+            schemas[dest] = landed_columns(upload, schemas[dest])
         elif file_type in ("dbtable", "parquet"):
             check_declared_columns(upload, None, where, result)
+            check_column_changes(upload, file_type, None, where, result)
             schemas[dest] = listed_column_names(upload)
             if schemas[dest] is None:
                 # Unknown, not empty. An empty list would claim the table has no
@@ -5285,6 +5378,81 @@ class PendingTransferTests(MakeYamlTest):
         self.assertHasError(dbtable, "bad_pending_transfer")
 
 
+class UploadColumnChangeTests(MakeYamlTest):
+    """D98: a supporting table's columns renamed and dropped as it lands, and
+    every check reading the table as it will land."""
+
+    CODES = "    file_loc: codes.csv\n  - name: Unrelated"
+
+    def compile(self, codes_columns: str = "", unrelated_columns: str = "", file_type: str = "csv"):
+        (self.tmp / "codes.csv").write_text("Code,Label\nK50,Crohns\n", encoding="utf-8")
+        (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+        text = TableBindingTests.TEMPLATE.format(
+            extra_vars="", extra_uploads="", cohort_vars="    vars: {CodesTable: Codes}"
+        )
+        text = text.replace(self.CODES, f"    file_loc: codes.csv\n{codes_columns}  - name: Unrelated")
+        text = text.replace("    file_loc: unrelated.csv\n", f"    file_loc: unrelated.csv\n{unrelated_columns}")
+        if file_type == "dbtable":
+            text = text.replace("    file_type: csv\n    file_loc: codes.csv\n", "    file_type: dbtable\n")
+        return self.compile_template(text)
+
+    def test_a_recipe_reads_the_new_name_not_the_files(self):
+        # Renamed away, `c.Code` no longer exists in the table the recipe joins.
+        res = self.compile("    columns: [{name: ICD, from: Code}]\n")
+        self.assertHasError(res, "missing_input_column")
+        renamed_to_it = self.compile("    columns: [{name: Code, from: Label}, {name: Old, from: Code}]\n")
+        self.assertCompiles(renamed_to_it)
+
+    def test_a_dropped_column_is_gone_for_the_recipe(self):
+        res = self.compile("    columns: [{name: Code, drop: true}]\n")
+        self.assertHasError(res, "missing_input_column")
+        kept = self.compile("    columns: [{name: Label, drop: true}]\n")
+        self.assertCompiles(kept)
+
+    def test_a_renamed_table_is_suggested_by_its_new_names(self):
+        (self.tmp / "codes.csv").write_text("Code\n", encoding="utf-8")
+        text = TableBindingTests.TEMPLATE.format(
+            extra_vars="", extra_uploads="", cohort_vars=""
+        ).replace("    file_loc: unrelated.csv\n",
+                  "    file_loc: unrelated.csv\n    columns: [{name: Code, from: Something}]\n")
+        (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+        res = self.compile_template(text)
+        message = next(m.message for m in res.errors if m.code == "unbound_table_input")
+        self.assertIn("Unrelated (upload)", message)
+
+    def test_a_change_to_a_column_the_file_lacks_is_refused(self):
+        for columns in ("    columns: [{name: New, from: Nope}]\n", "    columns: [{name: Nope, drop: true}]\n"):
+            with self.subTest(columns=columns):
+                self.assertHasError(self.compile(columns), "unknown_upload_column")
+
+    def test_two_columns_ending_with_one_name_are_refused(self):
+        self.assertHasError(self.compile("    columns: [{name: Code, from: Label}]\n"), "duplicate_upload_column")
+
+    def test_a_dbtable_cannot_be_renamed_on_the_way(self):
+        res = self.compile("    columns: [{name: ICD, from: Code}]\n", file_type="dbtable")
+        self.assertHasError(res, "upload_rename_on_dbtable")
+
+    def test_the_key_survives_and_is_named_as_it_lands(self):
+        (self.tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey,Sex\n1,2,F\n", encoding="utf-8")
+        dropped = compile_yaml(*self.write_pair(uploaded_pk_template(
+            "    columns: [{name: DiagnosisEventKey, drop: true}]\n")))
+        self.assertHasError(dropped, "dropped_key_column")
+        renamed = compile_yaml(*self.write_pair(uploaded_pk_template(
+            "    columns: [{name: EventKey, from: DiagnosisEventKey}]\n")))
+        self.assertHasError(renamed, "renamed_key_column")
+
+    def test_a_declared_type_goes_on_the_files_column_at_the_split(self):
+        # The CSV becomes parquet under the file's names; the rename is Pullmanager's.
+        if not pyarrow_modules():
+            self.skipTest("converting a CSV needs pyarrow")
+        (self.tmp / "k.csv").write_text("Key\n12345678901\n", encoding="utf-8")
+        rows = convert_csv_to_parquet(self.tmp / "k.csv", self.tmp / "k.parquet",
+                                      [{"name": "PatientDurableKey", "from": "Key", "type": "BIGINT"}])
+        self.assertEqual(rows, 1)
+        schema = pyarrow_modules()[2].read_schema(str(self.tmp / "k.parquet"))
+        self.assertEqual(str(schema.field("Key").type), "int64")
+
+
 TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "saved_draft": SavedDraftTests,
     "loading": LoadingTests,
@@ -5318,6 +5486,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "project_db": ProjectDbTests,
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
+    "upload_column_changes": UploadColumnChangeTests,
 }
 
 
