@@ -14,17 +14,21 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `a9a577a` (28 Sep, 03:28), every planning
+- **Sources.** Every commit up to `00bfcd3` (28 Sep, 07:31), every planning
   document committed by then (most since deleted, recovered from git), the
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `a9a577a` (28 Sep, 03:28), after the tkinter app was built.
-  Earlier versions of this record stopped at `30ceff7` (25 Sep, 02:21),
-  `2e17998` (27 Sep, 12:13) and `b4dec41` (27 Sep, 16:30); everything after
-  each was added from the commits and the three design documents.
+- **Cut-off.** `00bfcd3` (28 Sep, 07:31), after the app's first VM run, its
+  fixes and the repository's tidying. Earlier versions of this record stopped
+  at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13), `b4dec41` (27 Sep,
+  16:30) and `a9a577a` (28 Sep, 03:28); everything after each was added from
+  the commits and the three design documents.
+- **Where things are.** `QMDs/` became `plan/` on 28 Sep (`3b6efb6`), and
+  `CLAUDE.md` moved to `.claude/CLAUDE.md`; commits before then name the old
+  paths, which is what Section 12's commands use.
 - **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
-  number (D1 to D102). Section 12 explains how to recover any deleted document.
+  number (D1 to D113). Section 12 explains how to recover any deleted document.
 - **Proprietary detail.** Server names, project database names and internal
   paths are left out on purpose. Scrub further before sharing anything.
 
@@ -111,7 +115,10 @@ three pulls were running at once ("running 3 queries fine", `bdd3cc6`);
 **[Guess]** IBD Ancestry, Celiac and a whole-cohort template, from the temp
 templates committed alongside. Artifacts had not yet been run on the VM.
 By 28 Sep 03:07 YAML Manager had become a tkinter app, Author and Run in one
-window (D92 to D101), tested on the Mac and not yet opened on the VM.
+window (D92 to D101). Its first VM run, that morning, was stopped by two bugs
+(D103, fixed within the hour); by 07:31 your notes on it were built (D104 to
+D110), the browser UI was retired and the repository tidied (D111 to D113),
+none of it yet on the VM.
 
 **The pain point.** Your note says you "identified a specific pain point,
 detailed it and then investigated all the reasons why it occurred". The record
@@ -133,29 +140,30 @@ recoverable, reproducible and hard to get wrong.
 
 ## 2. By The Numbers
 
-Four columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
-27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`) and the cut-off, 28 Sep
-03:28 (`a9a577a`). A blank means unchanged from the column before.
+Five columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
+27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`), 28 Sep 03:28 (`a9a577a`)
+and the cut-off, 28 Sep 07:31 (`00bfcd3`). A blank means unchanged from the
+column before.
 
-| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | Basis |
-| --- | --- | --- | --- | --- | --- |
-| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days | | git log |
-| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | git log |
-| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  | | **[Measured]** git log |
-| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
-| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
-| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | commit messages, design.md, then **[Measured]** |
-| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | decisions.md |
-| First decision record | 39 decisions, 22 Sep 22:47 | | |  | `ea74c3d` |
-| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | D47 |
-| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
-| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  | | **[Measured]** `YAMLs/datadictionary.yaml` |
-| VM software inventory | 1,375 lines | unchanged |  | | commit `38a4d55` |
-| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | D41 for the first two; **[Measured]** for the rest |
-| Defects listed in Section 8 | 35 | 45 | 46 | 51 | my compilation from commits and decisions |
-| One fix's effect | sample template went from 1,120 generated SQL files to 168 | | |  | `61befa4` |
-| First live pull | 8 sessions, 48 units, running | ran to the end |  | | see below; roadmap |
-| Pulls running at once | 1 | 3 |  | | `bdd3cc6` |
+| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | 28 Sep, 07:31 | Basis |
+| --- | --- | --- | --- | --- | --- | --- |
+| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days |  |  | git log |
+| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | 205 (18 more, each with a Claude co-author line) | git log |
+| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  |  |  | **[Measured]** git log |
+| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | about 26,500 lines, the browser UI's 3,822 removed: YAML Manager 5,982; the app's model 2,564 and Author view 1,973; `datascope.py` 53; runtime 6,948; its tests 5,604; bundle tooling 1,903; `viewparquets.py` 369; your utilities 1,069 | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | 798 in five suites (176, 467, 73, the app's model 59 and view 23), the browser UI's 21 retired with it | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | → 467 | commit messages, design.md, then **[Measured]** |
+| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | 113 | decisions.md |
+| First decision record | 39 decisions, 22 Sep 22:47 |  |  |  |  | `ea74c3d` |
+| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | still 3, now in `plan/`; the testing guide moved beside its scripts | D47 |
+| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | 3,174 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  |  | 20 tables, 3,162 lines: your ProcedureEventFact, VitalsFact and CoverageDim; now `recipes/datadictionary.yaml` | **[Measured]** `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines | unchanged |  |  | unchanged; now `recipes/DSVM Plugins.yaml` | commit `38a4d55` |
+| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | 1,183 KB, 54 files; no longer committed (D106) | D41 for the first two; **[Measured]** for the rest |
+| Defects listed in Section 8 | 35 | 45 | 46 | 51 | 56 | my compilation from commits and decisions |
+| One fix's effect | sample template went from 1,120 generated SQL files to 168 |  |  |  |  | `61befa4` |
+| First live pull | 8 sessions, 48 units, running | ran to the end |  |  |  | see below; roadmap |
+| Pulls running at once | 1 | 3 |  |  |  | `bdd3cc6` |
 
 How the first live pull's figures were reached:
 
@@ -860,6 +868,49 @@ alongside all night.
     Haiku 4.5 co-author line).
 - **Your verdict:** "I'm impressed with what's here." The VM has not seen it.
 
+### 28 Sep, Morning: The First VM Run, Your Notes Built, The Repository Tidied (18 commits)
+
+- **06:10 to 06:31, your notes** (`QMDs/response.md`, with screenshots, kept
+  in `c2c2922` before folding): the app "looks and runs substantially
+  better", YAML management "80% of the needed features/UX experience". Ideas
+  for adding a fact table in place, filters for any table (a medication
+  code list), a Make bundle button, the PK's key, the VM showing Pending
+  transfer, and dark mode. And a bug "currently stopping progress".
+- **06:40, the stopping bug fixed** (`182a3bc`, D103, docs `0affe75`). Two
+  bugs, both only in the saved file, which is why the app's Validate said
+  "Valid" while Run's failed (Section 8, #52, #53): the CSV header
+  `'DiagnosisCode'`, quotes and all, lost its quotes when saved; and an
+  upload beside the transfer YAML was looked for in `YAMLs/temp/` once the
+  transfer was saved as an intake. The launcher's settings moved into
+  `runs/`.
+- **Your answers.** "the upload paths shouldn't be hardcoded" (they were
+  not; Browse was, D104); `add_where` and `add_join` "in the same format" as
+  `where` and `join` (D105); "have it make a separate bundle_with_yamls, and
+  I'll just choose which to copy over", and ignore `dist/` (D106); yes to the
+  Row key, the VM side and the quote warning (D107 to D109).
+- **06:59 to 07:14, D104 to D110 decided and built** (`d95f991` to
+  `2af98d2`), seven commits in the roadmap's order, each with outcome tests:
+  `dist/` not committed, `bundle.py` and `bundle_with_yamls.py`, Make bundle
+  (D106); the VM side known from the extracted bundle, with nothing pending
+  there (D108); Browse relative (D104); `add_where` and `add_join`, where
+  lines by column and In supporting table, the join operator (D105); Add a
+  fact table inline, at the top (D110); the Row key, prefilled (D107); the
+  quoted-name warning (D109). One commit went in with a suite showing a
+  failure the test runner's summary hid (#54); it was sound, and the runner
+  now stops on any failure.
+- **07:20 to 07:28, the tidying, at your request** (`284ee26` to
+  `3b6efb6`): the core files to `recipes/`, found through `datascope.json`,
+  "so just update that config for wherever I move those core files" (D111);
+  the browser UI retired, "I think we should move entirely to this new tk
+  version, it's great", and `datascope.py` to open the app (D112); `QMDs/`
+  renamed `plan/`, `CLAUDE.md` into `.claude/`, runs into `cleanup/` (D113).
+  Building it caught the launcher reading `datascope.json` from where Python
+  started, not from its working folder (#55).
+- **07:31, your dictionary tables** (`319fc26`): ProcedureEventFact,
+  VitalsFact and CoverageDim, 326 lines, placed under `DataDictionary:`
+  where they had been pasted outside it (#56). `.env.example` removed
+  (`00bfcd3`), as D43 had decided.
+
 ---
 
 ## 6. The Work, By Role
@@ -1357,7 +1408,8 @@ design document.
 - **Who spotted them.** For #21 to #26 the dry run is documented as the source;
   who spotted each problem is **[Ask]**. #43 to #45 are from your notes.
 - **#43 to #46** were fixed on 27 Sep, between 12:19 and 12:26; #47 to #51 on
-  28 Sep, while the app was built.
+  28 Sep, while the app was built; #52 to #56 that morning, #52 and #53 from
+  the app's first VM run.
 
 | # | Defect | What it would have done | Surfaced by | Ref |
 | --- | --- | --- | --- | --- |
@@ -1412,10 +1464,15 @@ design document.
 | 49 | A second Tk in one process hung on the Mac | The view's tests hung when run together | The Author view's real-Tk tests | D101, `b6f01fe` |
 | 50 | A utility was committed without rebuilding the bundle | The committed bundle lacked it | Checking the bundle for your file | D102, `94aeeca` |
 | 51 | `batch_columns_unchecked` told you to list a missing PK file's columns, which changed nothing | Batching on a PK not yet here stayed unchecked whatever you did | Building D97 | D97, `d0b6340` |
+| 52 | makeYaml's own YAML writer wrote a string plain unless it held `: # { } [ ] %`, so `'DiagnosisCode'` read back as `DiagnosisCode` | A renamed quoted CSV header was lost on save; the split found no such column, and the pull stopped | Your first VM run, with screenshots | D103, `182a3bc` |
+| 53 | Saving a transfer YAML as an intake kept a `..`-needing upload path as written | An upload beside the transfer was looked for in `YAMLs/temp/`, and the pull stopped | Your first VM run | D103, `182a3bc` |
+| 54 | The test runner's one-line summary took a pipe's exit code, not the suites' | A commit went in with one suite showing a failure (a concurrent dictionary edit; the commit was sound) | Reading the output after the commit | `2fad9b8`; runner fixed |
+| 55 | The launcher read `datascope.json` from where Python started, not its working folder | Split and SQL folders under another folder's runs setting | The runtime tests, while moving the core files | D111, `fd81719` |
+| 56 | Three new dictionary tables pasted at the file's top level, outside `DataDictionary:` | Nothing could see them: 17 tables read, not 20 | Counting the tables before committing them | `319fc26` |
 
 ---
 
-## 9. Decision Index (D1 To D102)
+## 9. Decision Index (D1 To D113)
 
 One line each, paraphrasing the decision's title; the reasoning is in
 `decisions.md`.
@@ -1524,10 +1581,22 @@ One line each, paraphrasing the decision's title; the reasoning is in
 | 100 | A dbtable's columns are not renamed; keys use the names a table lands with |
 | 101 | The Author view is tested on a real Tk, withdrawn |
 | 102 | The committed bundle is built from the commit; `utils/` carries your utilities |
+| 103 | An upload path always reaches the same file; a string always reads back as itself |
+| 104 | Upload paths are written relative, never hardcoded |
+| 105 | Extra lines on any table: `add_where` and `add_join`; where lines by column |
+| 106 | `dist/` is not committed; two bundles, one with the queued YAMLs |
+| 107 | The PK's key is a "Row key", prefilled |
+| 108 | The VM side is where the app runs from an extracted bundle |
+| 109 | A column name with quotes in it is a warning |
+| 110 | A fact table is added inline, at the top of Fact Tables |
+| 111 | The core files live in `recipes/`, found through `datascope.json` |
+| 112 | The browser UI is retired; `datascope.py` opens the app |
+| 113 | The repository's top level: `plan/`, `.claude/CLAUDE.md`, runs in `cleanup/` |
 
 D84 to D91 were built on 27 Sep (`1aa3568` to `abb3c7e`). D92 to D98 were
 decided that afternoon and built overnight (`d20692c` to `95b38b9`); D99 to
-D102 record choices made while building them.
+D102 record choices made while building them. D103 to D113 came on 28 Sep's
+morning, each built the same hour it was decided.
 
 ---
 
@@ -1573,7 +1642,10 @@ Every planning document committed by the cut-off, and what became of it.
 | `artifact.md` | 25 Sep | The artifacts specification, and your answers to the assistant's questions | Your words | Folded into D72 to D75 and deleted (`9361c34`) |
 | `response.md` | 26 Sep | Notes from using YAML Manager and three pulls; this task; UI redesign ideas | Your words | Fixes folded into D84 to D91 (`2e17998`); the redesign into D92 to D98, and deleted (`b4dec41`) |
 | `images/paste-*.png` | 26 and 27 Sep | Screenshots for `response.md` | Yours | Current |
-| `TESTING_UPLOADS_AND_LABS.md` | 28 Sep | Guide to the lab collator and the parquet-upload test | Claude Haiku 4.5 (commit trailer), another session | Current; outside the three design documents, which `CLAUDE.md` asks to fold in **[Ask]** |
+| `TESTING_UPLOADS_AND_LABS.md` | 28 Sep | Guide to the lab collator and the parquet-upload test | Claude Haiku 4.5 (commit trailer), another session | Moved beside those scripts, `scripts/` (`3b6efb6`) |
+| `response.md` (second) | 28 Sep | Your notes on the app and its first VM run, six screenshots | Your words | Folded into D104 to D110 and deleted (`d95f991`); committed first, `c2c2922` |
+| `CLAUDE.md` | 23 Sep | Working method | Not recorded; reflowed by another session | Moved to `.claude/CLAUDE.md` (`3b6efb6`) |
+| `datascope.json` | 28 Sep | Where the core files and runs are | Claude (commit trailer), at your request | Current |
 
 **The keys research, in brief.** The brief (138 lines) asked the VM's AI three
 questions: are keys declared where SQL can read them (`INFORMATION_SCHEMA`,
@@ -1647,11 +1719,17 @@ resume line.
     another decided the app, and on the night of 27 to 28 Sep one built the
     app while another updated the docs and added your utilities. Was running
     them side by side deliberate, and how did you keep them apart?
-21. **The app on the VM.** How does it look under Windows' Tk, and does
-    adjusting a transfer YAML there work as it did on the Mac?
+21. **The app on the VM.** Partly answered: it "looks and runs substantially
+    better", and the first run found two bugs (#52, #53). Does the new
+    bundle's app, with the fixes, adjust and run a transfer YAML end to end?
 22. **Your utilities.** What are the transcription viewer and the lab
-    collator for, and should `TESTING_UPLOADS_AND_LABS.md` be folded into the
-    design documents, as `CLAUDE.md` asks of any new one?
+    collator for? The testing guide now sits beside them in `scripts/`.
+23. **The medication-codes pull.** Did In supporting table limit the
+    medication tables as you meant, and which pull was it for?
+24. **The new dictionary tables.** Where did ProcedureEventFact, VitalsFact
+    and CoverageDim's descriptions come from: the interactive dictionary, a
+    screenshot, or the VM's AI? (The roadmap grades facts as seen, counted
+    or said.)
 
 **Attribution, and my recommendation.**
 

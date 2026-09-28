@@ -1071,6 +1071,8 @@ eight times, for no cohort that reads it.
 
 ### D63. The VM folder: `bundle.py`, a root `pullmanager.py`, transfer YAMLs beside them
 
+**Amended by D106:** `dist/` is not committed, and a build with transfer YAMLs is `bundle_with_yamls.py`.
+
 **Context.** The working folder on the VM held `pullmanager_bundle.py`, the
 extracted folder and the transfer YAMLs. Starting the launcher meant
 `python pullmanager_runtime\pullmanager.py --gui`: a path into the managed
@@ -1098,6 +1100,8 @@ YAMLs and their `data\`, `runs\`, the extracted folder and
 (roadmap).
 
 ### D64. One command each side: `makebundle.py` on the Mac, `python bundle.py` on the VM
+
+**Amended by D106:** the bundle is a build product in `dist/`, not committed.
 
 **Context.** Building meant `python3 scripts/bundle_pullmanager.py`; on the VM,
 `--verify-bundle` and then `--extract`, two steps to compare one number. And
@@ -1459,6 +1463,8 @@ optional, rather than the rule applying to every variable, is open (roadmap).
 
 ### D79. Transfer YAMLs live at the repository root, and the bundle can carry them
 
+**Amended by D106 and D112:** transfer YAMLs travel in `bundle_with_yamls.py`; `yamlmgr.py` is gone, `datascope.py` opens the app.
+
 **Decision.**
 
 - `--export-transfer` writes `<project>_transfer.yaml` at the repository
@@ -1672,6 +1678,8 @@ already names each one and where it goes.
 
 ### D92. The Builder's logic moves into a Python model; every UI is a view of it
 
+**Retired by D112:** the browser UI is removed; the app is the one UI.
+
 **Context.** The browser UI is not decoupled from the engine. Python compiles
 and draws read-only panels, but the page's JavaScript (about 1,500 lines) holds
 the draft and every edit to it: the PK rules, where a variable comes from (a
@@ -1880,6 +1888,8 @@ combobox inside its own event (re-renders now wait until Tk is idle), and the
 second Tk.
 
 ### D102. The committed bundle is built from the commit; `utils/` carries your utilities
+
+**Amended by D106:** `dist/` is not committed, so a bundle is built from the working tree; the `utils/` rule stands.
 
 **Context.** A bundle built from the working tree swept in a file that was
 not yet committed, so the committed bundle could not be rebuilt from the

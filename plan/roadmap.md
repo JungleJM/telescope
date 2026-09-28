@@ -11,32 +11,17 @@ When an item here is built, delete it from this file and describe the result in 
 | Part | State |
 |------------------------------------|------------------------------------|
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
-| YAML Manager browser UI | Built; Mac only. **Frozen** (D92): no fixes; retired once the tkinter app satisfies |
-| The app: model, tkinter Author and Run (D92–D101) | Built and tested on the Mac: the model's tests, and the Author view's on a real Tk 8.6, withdrawn. Looked at by the user on the Mac. Not yet opened on the VM |
-| Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79), the queue (D91), the app and `utils/` (D93, D102) | Built and tested. Carrying transfer YAMLs, and `makebundle.py queue`, not yet used |
+| The app: model, tkinter Author and Run (D92–D110), opened by `datascope.py` (D112) | Built and tested on the Mac: the model's tests, and the Author view's on a real Tk 8.6, withdrawn. Used by the user on the Mac and once on the VM, where two bugs stopped a pull (fixed, D103); the fixes and D104–D110 since are not yet on the VM |
+| Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79), the queue (D91), the app and `utils/` (D93, D102); `bundle.py` and `bundle_with_yamls.py`, not committed (D106); the dictionary at `recipes/` (D111) | Built and tested. `bundle_with_yamls.py` and Make bundle not yet used; the move of the dictionary not yet extracted on the VM |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
-| Launcher, now the app's Run half | Opened on the VM (before the app); Validate, Export split and Preview work. Execute in its own console window (D68) is not yet tried there |
+| Launcher, now the app's Run half | Opened on the VM; Validate, Export split and Preview work. Execute in its own console window (D68) is not yet tried there |
 | Artifacts: parquets, `contents.md`, load scripts, viewer, stock HOW_TO.md, progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Not yet run on the VM |
 
 ## Known Bugs
 
 - **Execute sometimes ends mid-pull with exit code 1** (the IBD template, September 2026: `CrohnsPatients`, its first Cosmos session, during `upload_cohorts`, after the SneakPeek sessions finished). No summary, and the step left `running`. Every step catches Python errors, so it was either killed (Stop, or anything else on the VM: Windows gives 1) or an error outside the steps, whose traceback reached only the closing window. The log now keeps the traceback, or where a native crash happened; the next occurrence says which. The next Execute resumes it.
-
-------------------------------------------------------------------------
-
-## Next: Fixes, In Order
-
-From the user's notes of 28 September 2026 on the app and its first VM run, and their answers (D104–D110). The progress-stopping bug is already fixed (D103).
-
-1. **`dist/` ignored; `bundle.py` and `bundle_with_yamls.py`; `content_id.txt`; Make bundle in Exports (D106).** Changes how every later step is delivered, so first.
-2. **The VM side from the extracted bundle: no Pending there, a missing file an error (D108).** Confusing on the VM now.
-3. **Browse writes relative paths (D104).** Small; the rest of the uploads work builds on it.
-4. **`add_where` and `add_join`; where lines by column, Value or In supporting table; the join operator (D105).** The engine first, then the Builder; needed for the medication-codes pull.
-5. **Add a fact table inline, at the top (D110),** and the PK's dictionary table the same way.
-6. **Row key, prefilled (D107).**
-7. **`quoted_column_name` (D109).**
 
 ------------------------------------------------------------------------
 
@@ -73,7 +58,7 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
 8.  An upload of around 250,000 rows, timed: it now travels twice, file to Projects, then Projects to Cosmos.
 9.  During a large transfer, check whether other work on the Projects database waits on it. Pullmanager commits after every cohort (D55), but the driver runs with autocommit off, so one cohort's `OPENQUERY` into staging still sits inside an open transaction until that cohort commits. If it blocks others, open the Projects connection with autocommit on.
 10. An uploaded PK: a parquet list marked `type: pk`, batched by a column it carries. Its uniqueness check and batches should read `upload_<dest>`.
-11. **The app (D93).** On the next bundle, `python pullmanager.py` opens one window, Author and Run, under the VM's Tk. Open a transfer YAML in Author (no recipes: Prefabricated is empty and says why), change a value, Transfer to Run: an intake appears in `YAMLs\temp\`, the transfer YAML is written again beside `pullmanager.py`, and Run has it loaded. Check the layout and fonts under Windows, and that the mouse wheel scrolls the Builder. `python utils\transcription_viewer.py` (in the extracted folder) opens.
+11. **The app, on the new bundle (D93, D103–D111).** `python pullmanager.py` opens Author and Run under the VM's Tk. The extraction removes the old `YAMLs\datadictionary.yaml` and places `recipes\datadictionary.yaml` (20 tables). Open a transfer YAML in Author: no Pending transfer offered, a missing upload file an error; Browse writes a relative path; the HospitalICDCodes rename survives Save and Run's Validate passes; Transfer to Run writes the transfer and an intake in `YAMLs\temp\`. Try the medication codes: a CSV as a supporting table, then In supporting table on the medication table, and check the rows. Check the layout and fonts under Windows, and the mouse wheel. `python utils\transcription_viewer.py` (in the extracted folder) opens.
 12. **What a batch costs (D87).** Batching builds the PK once; what repeats per batch is every fact-table query, joined to that batch's PK rows. Whether fifty passes cost about one pull or about fifty depends on whether SQL Server seeks each fact table by `PatientDurableKey` or scans its date range on every pass, which nobody has measured. On `COSMOS_SneakPeek`, run one template three ways, unbatched, `chunk:` and `state` (every value), and compare each run's `duration` in the manifest. If the fact tables are scanned per pass, prefer fewer, larger batches (`chunk: 100000`) to many small ones.
 
 ------------------------------------------------------------------------
@@ -118,7 +103,7 @@ Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template add
 
 - **Tabs to come across** (D96): the Cohorts cards with their connections, Graph and Recipes.
 - **Dark mode, a nice-to-have.** The Mac's Tk follows the system's dark mode already; Windows' Tk 8.6 does not, and styling it by hand is not worth it unless the VM needs it.
-- **Retiring the browser UI** once the app satisfies (D92), and what `python3 yamlmgr.py` opens then. A later web UI would be designed on the model.
+- **A later web UI**, if one is wanted, is designed on the model (D92); the old one is retired (D112).
 - **Joins to Cosmos tables** in the table builder are written out by hand; picking them from the dictionary would need its keys (Needs Research, below).
 - **Typing in a column field re-checks the draft on each key**, since renames change what validation reads; a slower draft may lag. If it does, check only after a pause, as the other fields do.
 

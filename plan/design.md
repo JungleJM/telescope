@@ -15,7 +15,7 @@ When code and this document disagree, one of them is a bug. Fix whichever is wro
 ## The Pipeline
 
 ``` text
-Mac   template.yaml + recipes.yaml + datadictionary
+Mac   template + recipes/recipes.yaml + recipes/datadictionary.yaml
         └─► makeYaml --export-transfer  (validate)
               └─► <project>_transfer.yaml        recipes written out, nothing applied
 VM    <project>_transfer.yaml + datadictionary   no recipes file
@@ -42,7 +42,7 @@ The boundary between them is files. YAML Manager writes a plan; Pullmanager writ
 
 Two machines, one codebase, updated one way.
 
-- **Mac** (and the Linux dev box): development, and authoring, in the app's Author half (the browser UI is frozen, D92).
+- **Mac** (and the Linux dev box): development, and authoring, in the app's Author half (`python3 datascope.py`, D112).
 - **VM**: air-gapped Windows, the only place Cosmos and Projects are reachable. Runs pulls. Cannot pull from git. Cannot load a page served by Python on localhost, or a static HTML file opened from disk, and has no in-editor browser. Has tkinter, but no other Python desktop toolkit (the `shiny` and `tcltk` entries in its package list are R). Some programs are blocked: `ipconfig` in Windows PowerShell 5.1 fails with "Access is denied". Python runs, from VSCodium's terminal (PowerShell 7.6.5) and from the launcher. Cannot launch webUI pages, in general.
 
 ### Environments
@@ -67,19 +67,37 @@ sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3
 
 The artifact tests run the generated load scripts: the Python one under the running interpreter, the R one through `Rscript` when R has `arrow` (they skip otherwise). The Mac's R `arrow` is newer than the VM's, so the R check is close, not exact.
 
-Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All six suites pass under `python3.13` with nothing skipped.
+Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All five suites pass under `python3.13` with nothing skipped (`python3.13 datascope.py test`).
 
-`requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv: `python -m pip install -r requirements-vm.txt`. Every Python on the Mac has the packages, so whichever one an editor picks can run the tools: the VM's versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that fit in brew's 3.14, Apple's 3.9 and the project venvs.
+`recipes/requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv: `python -m pip install -r recipes/requirements-vm.txt`. Every Python on the Mac has the packages, so whichever one an editor picks can run the tools: the VM's versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that fit in brew's 3.14, Apple's 3.9 and the project venvs.
 
-**`YAMLs/DSVM Plugins.yaml` is the VM's installed software and package list.** Check it before depending on anything outside the standard library; if it is not listed, the VM does not have it and cannot get it.
+**`recipes/DSVM Plugins.yaml` is the VM's installed software and package list.** Check it before depending on anything outside the standard library; if it is not listed, the VM does not have it and cannot get it.
 
 Cosmos permissions are narrow: `VIEW DATABASE PERFORMANCE STATE` is denied and `sys.partitions` returns nothing, so row counts come from counting, never from metadata (D33).
 
 Dev box gotchas: an IDE Python console (Positron's `%run`) keeps a started `yamlmanager` server alive and holding port 8765 after the script "finishes"; run the server from a terminal instead. To reach it from another machine over Tailscale: `--public --browser-host <hostname> --no-open`. Real-Tk GUI testing without a display uses Xvfb (`brew install xorg-server`).
 
+### The Repository And `datascope.json`
+
+``` text
+datascope.py        the front door: the app, `test`, or a Pullmanager command (D112)
+datascope.json      where the core files are, and where runs go (D111)
+makebundle.py       builds dist/bundle.py and dist/bundle_with_yamls.py (D106)
+recipes/            the core files: datadictionary.yaml, recipes.yaml, template.yaml,
+                    DSVM Plugins.yaml, requirements-vm.txt
+YAMLs/              the pulls: temp/ (intakes, their csv/), manager_test_cases/
+plan/               design, decisions, roadmap; commemorating/ (the history)
+scripts/            makeYaml, the app's model and view, the bundler, pullmanager_src/
+cleanup/            disposable: the Python cache, runs/ (D113)
+dist/               bundles and content_id.txt; not committed (D106)
+.claude/CLAUDE.md   how to work in this repository
+```
+
+`datascope.json` says, relative to itself, where each core file is (`recipes`, `datadictionary`, `template`, `vm_plugins`) and where runs go (`runs`: `cleanup/runs` on the Mac). Moving a core file means editing its line. makeYaml (`core_path`, `runs_root`) and Pullmanager (`pullmanager/config.py`) each read it from the working folder; neither imports the other, and a test holds their defaults together. Without it, as on the VM, the core files are beside the code (`recipes/...` in the extracted tree) and runs are in the working folder's `runs/`. A name it cannot mean, or a file it cannot read, is `ConfigError`, saying what it may set.
+
 ### The Bundle
 
-Everything reaches the VM as one self-extracting file, `dist/bundle.py` (D63), built by `scripts/bundle_pullmanager.py` from `scripts/bundle_extractor.py` (the prelude) plus every file it carries.
+Everything reaches the VM as one self-extracting file (D63), `dist/bundle.py`, or `dist/bundle_with_yamls.py` when it carries transfer YAMLs (D106), built by `scripts/bundle_pullmanager.py` from `scripts/bundle_extractor.py` (the prelude) plus every file it carries.
 
 It carries the whole unit, not just the runtime:
 
@@ -92,11 +110,11 @@ pullmanager_runtime/                # the extracted tree (any name; this is --ex
   scripts/makeYaml.py               validator and splitter
   scripts/yamlmanager_model.py      the app's model (D92)
   scripts/yamlmanager_tk.py         the app's Author half (D93)
-  YAMLs/datadictionary.yaml
+  recipes/datadictionary.yaml       where makeYaml's default finds it (D111)
   .bundle-manifest.json
 ```
 
-Every file under `scripts/pullmanager_src/` ships, not only its Python: `stock/`, and `utils/`, where your own utilities go (D102). The app's model and Author view ship beside `makeYaml.py`, which they use. Recipes, the browser UI and a template to start from are not shipped (D49): the VM works from transfer YAMLs, and the app's Author half adjusts them there (D94). The committed `dist/bundle.py` is built from a clean checkout of its commit, so it carries exactly what is committed (D102). Transfer YAMLs named with `yaml=` travel too, under `root/` in the bundle: verified like every file and counted in the `content_id`, but written beside `pullmanager.py` rather than into the extracted tree (D79). Published paths reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its dictionary with no flags and no knowledge that it was bundled.
+Every file under `scripts/pullmanager_src/` ships, not only its Python: `stock/`, and `utils/`, where your own utilities go (D102). The app's model and Author view ship beside `makeYaml.py`, which they use. Recipes, the browser UI and a template to start from are not shipped (D49): the VM works from transfer YAMLs, and the app's Author half adjusts them there (D94). `dist/` is not committed (D106): a bundle is a build product, built from the working tree, so a file under `scripts/pullmanager_src/` travels as it is on disk, committed or not. Transfer YAMLs named with `yaml=` travel too, under `root/` in the bundle: verified like every file and counted in the `content_id`, but written beside `pullmanager.py` rather than into the extracted tree (D79). Published paths reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its dictionary with no flags and no knowledge that it was bundled.
 
 Guarantees:
 
@@ -117,10 +135,10 @@ Every bundled file is replaced on re-extraction. One that was edited on the VM i
 A file the previous bundle shipped and this one does not is removed, unless it was edited, in which case it too is kept as `.local`. `.local` copies are carried through later updates until you delete them.
 
 ``` text
-replaced   YAMLs/datadictionary.yaml  (your previous copy saved as YAMLs/datadictionary.yaml.local)
+replaced   recipes/datadictionary.yaml  (your previous copy saved as recipes/datadictionary.yaml.local)
+no longer shipped   YAMLs/datadictionary.yaml  (removed; it had not been edited)
 no longer shipped   YAMLs/recipes.yaml  (your edited copy kept as YAMLs/recipes.yaml.local)
-no longer shipped   scripts/yamlmanager.py  (removed; it had not been edited)
-kept       YAMLs/datadictionary.yaml.local  (set aside by an earlier update; delete it when done)
+kept       recipes/datadictionary.yaml.local  (set aside by an earlier update; delete it when done)
 ```
 
 Nothing a user authors is bundled.
@@ -137,17 +155,17 @@ On the Mac:
 python3 scripts/makeYaml.py --template YAMLs/temp/IBD_Ancestry_intake.yaml --export-transfer
                                  # writes IBD_Ancestry_transfer.yaml at the repository root
 python3 makebundle.py yaml=IBD_Ancestry,Celiac
-                                 # dist/bundle.py, carrying those transfer YAMLs (D79)
+                                 # dist/bundle_with_yamls.py, carrying those transfer YAMLs (D79, D106)
 python3 makebundle.py queue      # or export and carry every queued intake (D91)
-python3 makebundle.py            # or the runtime alone; prints its content_id (D64)
+python3 makebundle.py            # or dist/bundle.py, the runtime alone; prints its content_id (D64)
 python3 makebundle.py --tdd      # optional: the bundle's own tests
 ```
 
-Copy that one file to the VM, with any upload files the transfer YAMLs read (the build names them, at the paths they need beside the transfer YAML). The same sources and transfer YAMLs always produce the same `content_id`, so it tells you whether the VM has the latest. The bundle committed in `dist/bundle.py` is built without transfer YAMLs; a build with `yaml=` or `queue` overwrites it locally.
+Copy one of them to the VM, with any upload files the transfer YAMLs read that are not there already (the build names them, at the paths they need beside the transfer YAML). The same sources and transfer YAMLs always produce the same `content_id`, so it tells you whether the VM has the latest. Each build records its bundle's `content_id` in `dist/content_id.txt`, one line per bundle file. A build with transfer YAMLs never overwrites `dist/bundle.py`, the runtime alone.
 
-**The bundle queue** (D91) is `YAMLs/temp/bundle_queue.txt`, one intake's file name per line, in the order queued, each once. Saving an intake in the app adds it, and the app's Exports tab removes and adds (The App, below). `makebundle.py queue` exports each queued intake's transfer YAML to the repository root, as `--export-transfer` does, then carries them all, as `yaml=` does; it can be combined with `yaml=`. A queued intake that fails validation, or is no longer there, stops the build, with every such intake named (the first error of each); an empty queue says how to fill it. Upload files are not carried (D90): the build names each one to copy.
+**The bundle queue** (D91) is `YAMLs/temp/bundle_queue.txt`, one intake's file name per line, in the order queued, each once. Saving an intake in the app adds it, and the app's Exports tab removes and adds (The App, below). `makebundle.py queue`, or **Make bundle** in the app's Exports, exports each queued intake's transfer YAML to the repository root, as `--export-transfer` does, then carries them all in `dist/bundle_with_yamls.py`, as `yaml=` does; it can be combined with `yaml=`. A queued intake that fails validation, or is no longer there, stops the build, with every such intake named (the first error of each); an empty queue says how to fill it. Upload files are not carried (D90): the build names each one to copy.
 
-On the Mac, `python3.13 scripts/pullmanager_src/pullmanager.py`, at the root, opens the app, as `python pullmanager.py` does on the VM (D93). `python3 yamlmgr.py` opens the frozen browser UI (D79, D92).
+On the Mac, `python3 datascope.py` opens the app, as `python pullmanager.py` does on the VM (D93, D112); it runs from the repository root wherever it is started, and passes anything else it is given to `pullmanager.py`.
 
 ### Setting Up The VM Folder
 
@@ -171,7 +189,7 @@ The extracted tree is replaced on every update, so everything you author sits be
         parquets\             written by Artifacts: SneakPeek\, Cosmos\, uploads\ (D72)
         contents.md           what each table and column is (D73)
         load_parquets.R/.py, viewparquets.py, HOW_TO.md   (D75, D89)
-      .pullmanager-gui.json   the launcher's remembered paths (D103)
+      .pullmanager-gui.json   the launcher's remembered paths (D103); on the Mac in cleanup/runs/
 ```
 
 Typed paths resolve from the working directory, so the parent folder is plain `..\data\datadictionary.yaml`. Upload `file_loc` values resolve relative to the transfer YAML, so its upload files keep the same places relative to it as on the Mac (the export lists them). `YAMLMANAGER_DATA_DICTIONARY` sets the dictionary once.
@@ -205,10 +223,10 @@ The repair loop for a VM-side bug: read the file out of the bundle or the extrac
 | File | Role |
 |------------------------------------|------------------------------------|
 | template | The pull: project metadata, `cosmos_vars`, `run_vars`, `project_vars`, `multipliers`, `batching`, `upload_cohorts`, `cohorts` |
-| `YAMLs/recipes.yaml` | Reusable cohort and batching definitions, referenced by name. Mac only (D49) |
-| `YAMLs/datadictionary.yaml` | Source of truth for Cosmos tables, columns and types |
+| `recipes/recipes.yaml` | Reusable cohort and batching definitions, referenced by name. Mac only (D49) |
+| `recipes/datadictionary.yaml` | Source of truth for Cosmos tables, columns and types: 20 tables |
 
-Paths typed on the command line (`--template`, `--recipes`, `--datadictionary`) resolve from the working directory, like any command-line tool. Defaults resolve from the install. `--datadictionary` is honoured by every route: validation, the UI, pre-YAML, transfer and split export. A template that does not exist is a one-line error, not a traceback.
+Paths typed on the command line (`--template`, `--recipes`, `--datadictionary`) resolve from the working directory, like any command-line tool. Defaults are where `datascope.json` says, else beside the install (D111). `--datadictionary` is honoured by every route: validation, the UI, pre-YAML, transfer and split export. A template that does not exist is a one-line error, not a traceback.
 
 The recipes file is read only when the template refers to it: a cohort with `recipe:`, or a batching item that names a batching recipe (`sex`, `{state: {...}}`). A transfer YAML refers to none, so it needs no recipes file, and a missing or broken one cannot stop it. A template that does refer to recipes, with no recipes file, is refused with `recipes_not_found`, listing every reference and pointing at `--export-transfer`.
 
@@ -271,6 +289,7 @@ upload_cohorts:
 - **`pending_transfer: true`** says a missing file is expected (D97): it is reported as pending (`upload_pending_transfer`), a third kind of message beside errors and warnings (D99), not as a warning. Only a `csv` or `parquet` with a `file_loc` can be pending, and only `true` or `false` (`bad_pending_transfer`). The split still needs the file.
 - **Typed-in columns.** For a table nothing here can read (a `dbtable`, or a file not here), the names under `columns:`, with or without types, stand in for its schema (D97), so batching and bindings are checked against them. Without them its columns are unknown: batching is left unchecked (`batch_columns_unchecked`) and a binding lists it as a table that may fit. A missing file's declared types are still checked.
 - **Renaming and dropping** (D98). An entry with `from:` names the file's column, and `name` is what it lands as; `drop: true` leaves a column out; unlisted columns land as they are. Pullmanager applies them as the file lands in Projects, so the copy and its Cosmos temp have the new names, and validation reads the table as it will land: bindings, suggestions, batching and the uploaded PK's key all use the new names. A rename or drop of a column the file lacks is `unknown_upload_column`; two columns ending with one name, `duplicate_upload_column`; a dropped or renamed key, `dropped_key_column` or `renamed_key_column`; any of them on a `dbtable`, `upload_rename_on_dbtable` (D100). A declared type names the file's column.
+- A column whose name has quote characters in it (a CSV header written `'DiagnosisCode'`) is `quoted_column_name`, a warning whose fix is to rename it (D98, D109); one already renamed or dropped is not warned about.
 - Declarable types: `BIGINT`, `INT`, `SMALLINT`, `TINYINT`, `BIT`, `FLOAT`, `REAL`, `DECIMAL(p,s)`, `DATE`, `DATETIME`, `DATETIME2`, `VARCHAR(n)`, `NVARCHAR(n)`, `CHAR(n)`. Anything else is `bad_upload_type`; a declared column the file lacks is `unknown_upload_column`.
 
 With `pyarrow`, validation reads a parquet's own columns, so recipes bound to it are checked like any other table. An upload marked `type: pk` is the template's PK (only one PK per template); batching is checked against its file's columns. `split_after_build` multipliers on an uploaded PK are refused (`split_after_build_on_uploaded_pk`): batch by that column instead, which puts each group in a batch of one table rather than a table of its own, or split the list before uploading it and run one pull per group.
@@ -289,7 +308,7 @@ ERROR [missing_variable] at cohorts[0] (Patients): filter.where[1]: Cohort `Pati
 Checks:
 
 - Required variables and table inputs are bound (above).
-- Recipe references resolve.
+- Recipe references resolve. A table's `filter` may list `add_where` and `add_join`, lines appended to its own `where` and `join` (its recipe's, for a prefabricated table) when the template is read, so a template can narrow a recipe without replacing its lines (D105); anything but lines is `bad_added_lines`. A transfer YAML writes the recipe out with them appended.
 - Upload files exist, or are marked pending; their columns (CSV header, parquet schema, or the columns typed in), as renamed and dropped, carry what bound recipes read; declared upload columns exist and have a type an upload can take (Upload Files, above).
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
 - Every multiplier has at least one level (`multiplier_without_levels`, naming it): with none, the product of levels is empty and every cohort would vanish without a word (D84).
@@ -388,11 +407,12 @@ An `_sp` copy reads the `_sp` copies of the generated tables it joins: `##tesrun
 
 ### The App: Author
 
-One window with two halves, **Author** and **Run**, the same on the Mac and the VM (D93): `python pullmanager.py` on the VM, `python3.13 scripts/pullmanager_src/pullmanager.py` at the root on the Mac. Run is the launcher (below). If Author cannot open, Run still does, and says why in Author's tab. Standard library, tkinter, and makeYaml only.
+One window with two halves, **Author** and **Run**, the same on the Mac and the VM (D93): `python pullmanager.py` on the VM, `python3 datascope.py` on the Mac (D112). Run is the launcher (below). If Author cannot open, Run still does, and says why in Author's tab. Standard library, tkinter, and makeYaml only.
 
 **The model and its views** (D92). `scripts/yamlmanager_model.py` holds the draft (the template itself, a plain mapping) and every edit to it, and answers what a view shows; it has no tkinter and no HTML in it. `scripts/yamlmanager_tk.py` is the tkinter view: every value it shows is read from the model and every edit is a call to it, so another view (a web UI, say) would share every rule. An edit the model refuses raises `DraftError`, and the view shows its message in the status line.
 
-- **Workspace.** The working folder is makeYaml's `transfer_home`: the repository root on the Mac, the folder beside the extracted bundle on the VM. Intakes live in its `YAMLs/temp/`, transfer YAMLs in the folder itself. Recipes and the dictionary are makeYaml's defaults; with no recipes file (the VM) Prefabricated lists nothing and Save as Recipe says recipes are kept on the Mac.
+- **Workspace.** The working folder is makeYaml's `transfer_home`: the repository root on the Mac, the folder beside the extracted bundle on the VM. Intakes live in its `YAMLs/temp/`, transfer YAMLs in the folder itself. Recipes and the dictionary are where `datascope.json` says (D111); with no recipes file (the VM) Prefabricated lists nothing and Save as Recipe says recipes are kept on the Mac.
+- **The VM side** is where the app runs from an extracted bundle (D108), known from the `.bundle-manifest.json` beside the code, not from the system. There Pending transfer is not offered (the model refuses it), and a missing upload file is an error in Validate, as at the split; on the Mac it is a warning, or pending if marked so.
 - **Checking.** The model compiles the draft in process, as a transfer is checked (a missing file a warning, or pending), without saving it (`compile_yaml(template_data=...)`), and turns each message into its kind and the Builder field it points to, parsed from its context (`cohorts[2]` is a Fact Table or the PK, `upload_cohorts[1]` a Supporting Table or the PK, and so on). A crash in the check is an error, `compile_crashed`, and the draft is kept. The view checks 0.4 s after the last edit.
 - **makeYaml's analysis** records, for the view, every table's columns as it will land (`table_schemas`) and each upload file's own columns (`upload_file_columns`).
 
@@ -401,48 +421,19 @@ The top bar: **Project name**, a list of the intakes in `YAMLs/temp/` and the tr
 The **Builder** (D96) has its sections down the left, each marked when a message points into it, coloured by the worst:
 
 - **Project.** Pull from: Cosmos and Cosmos_SneakPeek, both on by default (both is `Dual`; one is that database; neither writes `cosmos_db: none` and is an error, D99). Project DB, and the dates as `YYYYMMDD`, filled from `template.yaml` where a draft has none (D83, D86). "Collect all patients matching criteria", on unless `smallset`: off enables Sample size (`stop_at_for_pk_table`) and Random sample (`random_pk_sample`).
-- **PK Table.** The one PK, from a prefabricated PK recipe, a table built from the dictionary, a parquet, a CSV, or a Projects table (`dbtable`). Choosing another replaces it, after asking. The PK is edited in place: its name; a file's location (Browse writes it relative to the draft's folder when it is under it), key columns, Pending transfer, and its columns as a Supporting Table's; a recipe or built PK's variables.
-- **Supporting Tables.** Every upload except the PK: name, destination, type (parquet first), file or Projects table, Pending transfer, and its columns. A file that can be read lists each column with what it lands as, an optional type and Drop (D98); one that cannot takes its column names typed in (D97), saying why.
+- **PK Table.** The one PK, from a prefabricated PK recipe, a table built from the dictionary, a parquet, a CSV, or a Projects table (`dbtable`). Choosing another replaces it, after asking. The PK is edited in place: its name; a file's location; its **Row key** (the columns that make each row one of its own, which the uniqueness check, chunk order, the random sample and controls follow), prefilled with `PatientDurableKey` when the file, or the columns typed in for it, has that column (D107); Pending transfer (Mac only); and its columns as a Supporting Table's. A recipe or built PK has its variables, and a recipe PK its filters, as a Fact Table's. A PK from the dictionary is chosen by its table and built in place.
+- **Supporting Tables.** Every upload except the PK: name, destination, type (parquet first), file or Projects table, Pending transfer (Mac only), and its columns. A file that can be read lists each column with what it lands as, an optional type and Drop (D98); one that cannot takes its column names typed in (D97), saying why.
 - **Multipliers.** `during_build` only: a name, and levels, each a strat and its variables (`ICD_Value: K51.%, K52.%`, `;` between variables).
 - **Splitters.** Each says which it is. **Separate tables** is a `split_after_build` multiplier: levels with a PK column (chosen from the PK's columns), values, and an optional role and row mult. **Pieces of one table** is batching: a PK column with values (blank: every value, D82) and Separate parquets, or a number of rows. A splitter by column needs the PK's columns; before there is a PK, or when its columns are unknown, the section says so and only rows can be added. Editing a batch writes it out in full, as a transfer YAML does, so one written as `sex` becomes its definition.
-- **Fact Tables.** Prefabricated (the non-PK recipes) or built from the dictionary (Edit, and Save as Recipe, D56), each with its position (a number and Enter moves it; the PK keeps its place), its variables, and its table inputs. A variable left blank says where its value comes from: "set by multiplier IBDType", "from the PK (K50.%)" or "from the PK's value"; one nothing supplies is marked required. A table input is bound from a list of the template's tables, those whose columns cover what it reads first, each with a ✓ and the columns it has, a ✗ and the ones it lacks, or a ? where its columns are unknown. Nothing is picked for you (D45).
+- **Fact Tables.** At the top, set apart by a coloured frame, **Add a fact table** (D110): Prefabricated (a non-PK recipe) or From data dictionary (a table), each with a Name; choosing a dictionary table opens its whole form in place. Below, each table, prefabricated or built from the dictionary (Edit opens its form inside its entry; Save as Recipe, D56), with its position (a number and Enter moves it; the PK keeps its place), its variables, and its table inputs. A variable left blank says where its value comes from: "set by multiplier IBDType", "from the PK (K50.%)" or "from the PK's value"; one nothing supplies is marked required. A table input is bound from a list of the template's tables, those whose columns cover what it reads first, each with a ✓ and the columns it has, a ✗ and the ones it lacks, or a ? where its columns are unknown. Nothing is picked for you (D45). A prefabricated table has **Filters added to this table** (D105): a where line by column, as a value (`=`; `IN` for several, separated by commas; `LIKE` with `%`) or **In supporting table** (`x.MedicationKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)`: `IN`, not a join, so a code listed twice cannot duplicate rows), and a join by column to another table of the template, with its type (what each keeps is said beside it) and operator, refused unless the two columns' types match. They are written as the table's `add_where` and `add_join`, each removable.
 
-The **table builder**, a window of its own, builds a PK or fact table from the dictionary: name, destination, description, granularity, Pull this cycle, and the table its rows come from, which brings every column, typed from the dictionary, under an alias of its initials. Columns are removed, added back, renamed, described and moved by number. A join to another table of the template is picked from lists and refused unless the two columns' types match (and says why); a join to a Cosmos table is written out. Where conditions are lines of SQL. A loaded table is edited in place, keeping what the builder does not show (`dedup_keys`, ...).
+The **table builder**, drawn in place (D110), builds a PK or fact table from the dictionary: name, destination, description, granularity, Pull this cycle, and the table its rows come from, which brings every column, typed from the dictionary, under an alias of its initials. Columns are removed, added back, renamed, described and moved by number. A join to another table of the template is picked from lists, with its type and operator, and refused unless the two columns' types match (and says why); a join to a Cosmos table is written out. Where lines are written by column, as a Fact Table's filters are, or typed as SQL. Add Table (or Save Changes) puts it into the draft; Cancel closes the form. A loaded table is edited in place, keeping what the builder does not show (`dedup_keys`, ...).
 
-**Validate** shows the pipeline's steps (Load, Recipes, Variables, Uploads, Columns, Ready for the VM: passed, failed, or pending), then every message: errors red, warnings yellow, pending transfers blue. Choosing one shows its fix; double-clicking it opens the Builder at its section with the entry marked "Validate points here". **Exports** has the bundle queue (Mac only), with Remove and Add, and the saved intake's pre-YAML, transfer YAML and manifest, or a queued intake's when chosen; an unsaved draft is told to save first. **YAML** shows the draft as it would be saved.
+**Validate** shows the pipeline's steps (Load, Recipes, Variables, Uploads, Columns, Ready for the VM: passed, failed, or pending), then every message: errors red, warnings yellow, pending transfers blue. Choosing one shows its fix; double-clicking it opens the Builder at its section with the entry marked "Validate points here". **Exports** has the bundle queue (Mac only), with Remove and Add, and **Make bundle**, which builds `dist/bundle_with_yamls.py` from the queue and shows its `content_id` until the next build (D106); then the saved intake's pre-YAML, transfer YAML and manifest, or a queued intake's when chosen; an unsaved draft is told to save first. **YAML** shows the draft as it would be saved.
 
-**Save** writes `YAMLs/temp/<project>_intake.yaml` (D95), never over a file this draft did not open (D85). Relative upload paths are rewritten to reach the same file from there, with `..` where they must (D103), so a transfer YAML opened at the root keeps its uploads. Retired test options are dropped. The draft is read back before it replaces anything, and the saved intake joins the bundle queue, once. **Transfer to Run** saves, exports the transfer YAML to the working folder, and loads it into Run, which it shows (D94). On the VM that is the whole of an adjustment: open the transfer YAML, change it, Transfer to Run.
+**Save** writes `YAMLs/temp/<project>_intake.yaml` (D95), never over a file this draft did not open (D85). Relative upload paths are rewritten to reach the same file from there, with `..` where they must (D103), so a transfer YAML opened at the root keeps its uploads. Browse writes a file relative to the draft's folder the same way (D104); a full path only where no relative one exists (another drive). Retired test options are dropped. The draft is read back before it replaces anything, and the saved intake joins the bundle queue, once. **Transfer to Run** saves, exports the transfer YAML to the working folder, and loads it into Run, which it shows (D94). On the VM that is the whole of an adjustment: open the transfer YAML, change it, Transfer to Run.
 
-### The Browser UI (frozen)
-
-Frozen (D92): no fixes, and not moved onto the model. It is retired once the app satisfies; its own copies of the save, recipe and PK rules stay as they were, and it does not show pending messages.
-
-`scripts/yamlmanager.py` serves an editing and preview dashboard, talking to the compiler only through `scripts/yamlmanager_backend.py` (`YAMLMANAGER_BACKEND_MODULE` can swap it). With no arguments it serves on `127.0.0.1:8765` and opens a browser. Any serving flag (`--host`, `--port`, `--public`, `--browser-host`, `--no-open`) implies serving; `--static` writes a file instead. `--port 0` picks a free port.
-
-`python3 yamlmgr.py`, at the root, runs it from the repository root, so its default paths resolve wherever it is started from (D79).
-
-It is not bundled; the VM cannot load it. Its Exports tab shows the pre-YAML, the transfer YAML (named for the project, with a Download button) and the pull manifest, all of the saved template. Every message shows its fix beneath it.
-
-The **Builder** tab assembles a template section by section: Project, Uploads, Multipliers, Batching, Cohorts and Exports (the same three exports as the Exports tab, of the saved template: Save & Refresh to see changes). Each section's title carries a one-line explanation taken from the comments in `YAMLs/template.yaml` (the comment on the key's line, else the lines just above it), with built-in text where a key has none; editing those comments changes the page.
-
-- **PK table.** One per template, marked with a checkbox on an upload or a custom table, or coming from a PK recipe (shown as a badge). Marking a second is refused, naming the one that exists. Uploads and Cohorts show the current PK table. An uploaded PK asks for its key columns.
-- **Multipliers.** `during_build` levels take variables (`ICD_Value: K51.%, K52.%`, `;` between variables); `split_after_build` levels take a PK column, values, and an optional role and row mult.
-- **Batching.** Each row is a batching recipe with optional values, and a **Separate parquets** checkbox, off unless ticked (D77). The checkbox shows what the split will do: a row naming a recipe shows the recipe's setting, and unticking a recipe's `true` writes `separate_parquets: false`. Listing values always adds a batch of the rest (D76).
-- **Variables.** Each recipe row has an input for every variable its SQL uses that the template does not already supply (`ICD_Value`; not `prefix`, `PKTable` or the Project dates). A value, or several separated by commas. Left blank, it says where the value comes from: "set by multiplier IBDType", "from the PK: K50.%", or, before the PK has one, "taken from the PK's value" (D78, D83). Only the PK, or a table with no PK, is marked red when nothing supplies it.
-- **Project defaults.** New Blank Template takes `cosmos_vars`, `run_vars` and `test_options` from `YAMLs/template.yaml`, so that file is where the defaults are edited; built-in values fill anything it leaves out: `PROJECTD93A5E7`, `Dual`, `19900101`, `20260601`, small set off (D86). A loaded template with no project database or dates gets them filled in the same way (D83); its own values are kept. The Cosmos DB list offers Dual first, and a new upload is parquet unless changed.
-- **Custom tables** also take a Description and Granularity, and a description per column, for `contents.md` (D74).
-- **Custom tables** are built from the data dictionary: name, destination and PK checkbox, with "Add Custom Table" (or "Save Changes" when editing a loaded one) ending that row; "Reset Form" sits by the heading. Each column shows its position: a number typed and Enter moves it there (1 the top, past the end the bottom). Under Joins, a note on what each join type does with rows that do not match.
-- **Save as Recipe**, on an added custom table, writes it into `recipes.yaml` (D56). A name already there is refused. A page opened as a file, not served, cannot write, and downloads the recipe instead.
-
-**Save & Refresh**, at the end of the tab bar, saves the Builder's draft and reloads every tab from it, so Validation, Graph, Exports and YAML show what was just built. It writes `YAMLs/temp/<project_folder>_intake.yaml`, whichever template the page opened with (D85, D95), and says so beside the path box. New Blank Template shows `YAMLs/temp/_intake.yaml` there, following the Project Folder as it is typed. A save never replaces a file the page did not open: a target that exists and is not the opened file is refused, saying to load it or change the Project Folder; changing a loaded temp's folder saves a new file and leaves the old. Relative upload paths are rewritten to reach the same file from `YAMLs/temp/`; one that would need `..` is kept as written, and the save message says where to put the file. Upload files for temps live in `YAMLs/temp/csv/`. The draft is written with makeYaml's writer, empty lists and mappings as `[]` and `{}` (D84) and a string quoted unless it reads back as itself (D103), and read back before it replaces anything. The saved intake joins the bundle queue, once.
-
-After it, the page comes back on the tab, Builder section and scroll position that were open, with a banner saying what was saved and, if the template has errors, each one with its location and fix. A compiler crash does not replace the page: it becomes a `compiler_crash` error naming the compiler function and line, and the Builder section it reads, and the page opens with the draft as saved. Only a failure to draw the page at all shows the failure page, which keeps the template's path. A page opened as a file, not served, cannot save.
-
-**Builder > Exports** starts with the bundle queue: each queued intake, marked if its file is gone, with Remove, and a dropdown adding any other intake in `YAMLs/temp/`. Choosing a queued intake shows its pre-YAML, transfer YAML ("to be bundled with bundle.py") and manifest in place of the opened template's.
-
-The **Cohorts** tab opens with a read-only line each for the multipliers (`IBDType: UC/Crohns, Race: black/white`) and the batching (`state: LA/MS/GA/NC, sex: Female/Male, chunk: 2000`). Each card shows its connections, colour-coded by source table. An `_sp` copy shows its original's, pointed at the `_sp` copies of generated tables (`Patients_sp`); uploads are shared.
-
-The page takes the full width of the window.
+The browser UI that came before it (`scripts/yamlmanager.py`) was retired (D112).
 
 ------------------------------------------------------------------------
 
@@ -801,7 +792,7 @@ Three tabs (D71):
 
 While the loaded pull's lock is live (checked every second, whoever started it), Export split, Execute and Artifacts are greyed; pressing Execute greys them at once. Validate and Preview SQL stay available: they write nothing a pull reads (D67).
 
-It is a front end, not a second implementation. Each button runs the same command a person would type, as a subprocess, so a long pull cannot freeze the window and Stop has a real process to end. All logic lives in `launcher.py` (finding pulls in `pulls.py`, the lock in `lock.py`), which has no tkinter in it; `gui.py` only wires widgets, into a frame the app gives it (`pullmanager/app.py`), leaving the window's title and closing to the app. Chosen paths are remembered in `runs/.pullmanager-gui.json` in the working directory, not inside the extracted tree; one at the working folder's top, where it used to be, is moved there (D103). Closing the app asks first if Author has unsaved changes or Run has a command running.
+It is a front end, not a second implementation. Each button runs the same command a person would type, as a subprocess, so a long pull cannot freeze the window and Stop has a real process to end. All logic lives in `launcher.py` (finding pulls in `pulls.py`, the lock in `lock.py`), which has no tkinter in it; `gui.py` only wires widgets, into a frame the app gives it (`pullmanager/app.py`), leaving the window's title and closing to the app. Chosen paths are remembered in `.pullmanager-gui.json` in the runs folder (`runs/` in the working directory, or where `datascope.json` says: `cleanup/runs/` on the Mac), not inside the extracted tree; one at the working folder's top, where it used to be, is moved there (D103, D111). The split and SQL folders left blank follow the same runs folder. Closing the app asks first if Author has unsaved changes or Run has a command running.
 
 ------------------------------------------------------------------------
 
@@ -844,12 +835,12 @@ Descriptions are read from the split, so a changed description reaches `contents
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ``` bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (167)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (461)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (72)
-python3 scripts/yamlmanager.py --tdd                        # browser UI (21), Mac only
-python3 scripts/yamlmanager_model.py --tdd                  # the app's model (42)
-python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (15), needs a display
+python3 datascope.py test                                  # all five, and which passed
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (176)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (467)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (73)
+python3 scripts/yamlmanager_model.py --tdd                  # the app's model (59)
+python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (23), needs a display
 ```
 
 Tests that read or write parquet need `pyarrow` and skip without it: they cover CSV conversion, uploads, and every session test (the runtime fixture's upload is parquet).
@@ -861,9 +852,9 @@ Tests that read or write parquet need `pyarrow` and skip without it: they cover 
 - **The model** is tested on its own, in a scratch workspace with its own recipes and dictionary: the Project settings (Pull from as `cosmos_db`, neither being an error, flat or grouped settings edited where they are), one PK of any kind, column renames and drops reaching validation, pending files, splitters of both kinds writing the keys makeYaml reads and refusing a column before there is a PK, each variable's source, binding candidates (fits first, never picked), order by number, messages pointing at their section, a crash kept as a message, saving (never over another file) and the transfer to the working folder, then the same transfer adjusted as on the VM with no recipes; the table builder (columns from the dictionary, removed, restored, renamed and moved; joins refused on differing or unknown types; editing in place; as the PK) and Save as Recipe.
 - **The Author view** is tested on a real Tk, withdrawn, and skips without a display (D101): every section built for every intake in `YAMLs/temp/`, typing into a field edits the draft, a column renamed in the view is renamed in the template, the check marks the section, a refused edit is said, the table builder adds a table, Transfer saves and hands the file on, splitters by whether there is a PK, the binding picker binds what is chosen, a message goes to its field, and the exports and queue. The runtime's GUI tests check the app's wiring against the fake tkinter: the launcher built inside Run without touching the window, a transfer from Author loaded into Run, and Run opening without Author.
 - **Bundle** tests also adjust a transfer YAML with the model inside an extracted tree, with no recipes: open, change, save an intake, export again beside `pullmanager.py`.
-- **The Builder's JavaScript** is not run by the UI tests. Changes to it are checked by extracting the page's scripts for `node --check`, and running the changed functions under node.
+- **Config** tests read a `datascope.json` that moves a core file and the runs folder, refuse a name nothing reads, check the repository's own finds every moved file, and hold makeYaml's and Pullmanager's defaults together; pulls are found, and settings saved, under a configured runs folder.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no recipes file, gives byte-identical session YAMLs and uploads, and the same manifest (bar `source`), as the template split with recipes, for the tiny template and for test cases `01` and `02`.
-- **UI** tests cover saving a recipe (comments and layout kept, a duplicate refused with the file unchanged, the entry placed inside `recipes:`), Save & Refresh (in the temp folder, named for the project; never over a file the page did not open; upload paths reaching the same file), a draft saved with an empty multiplier reopening with its error, a compiler crash still opening the Builder, the defaults read from `template.yaml`, `_sp` connections, the bundle queue, and the section notes. The page's changed JavaScript is checked with `node --check` and its pure functions (the temp name, column order) run under node.
+- **The app's later tests** cover the VM side (no pending, a missing file an error), Browse's relative paths, where lines by column and In supporting table reaching the transfer after the recipe's own, joins refused on differing or unknown types, the inline add panel and PK form, the Row key prefilled, Make bundle's `content_id` kept on screen, and the quoted-name warning.
 
 Fixtures:
 
@@ -877,7 +868,7 @@ Regenerate the split fixture after a change to split output:
 
 ``` bash
 python3 scripts/makeYaml.py --template YAMLs/manager_test_cases/01_valid_basic.yaml \
-  --recipes YAMLs/recipes.yaml --export-split --out-dir scripts/pullmanager_src/fixtures/split
+  --recipes recipes/recipes.yaml --export-split --out-dir scripts/pullmanager_src/fixtures/split
 ```
 
 The database layer is tested against a fake cursor, and the GUI against a fake tkinter. The fake Projects connection keeps each destination's rows per `_batch` label, carried across executions like the real database, so retry, chunk and refresh tests check what landed where. Statements apply in order and a failure stops at the one it matches, so a run can fail after landing rows. By default a rollback undoes nothing, the worst case; a transactional mode, where only committed work survives, checks D55's commit per cohort. It also answers `INFORMATION_SCHEMA`, `OBJECT_ID` and `SELECT INTO` for uploads. Neither fake proves the real thing: nothing here has run against Cosmos. Real Tk is exercised by the Author view's tests (Tk 8.6 with the Mac's `python3.13`, which the VM likely matches) and by hand: Tk 9 under Xvfb on the dev box.
