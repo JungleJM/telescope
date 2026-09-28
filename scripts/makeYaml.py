@@ -69,6 +69,9 @@ class CompileResult:
     ok: bool = True
     errors: list[Message] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
+    # Files marked `pending_transfer` that are not here yet (D97): expected,
+    # so neither an error nor a warning.
+    pending: list[Message] = field(default_factory=list)
     finished_yaml: dict[str, Any] = field(default_factory=dict)
     analysis: dict[str, Any] = field(default_factory=dict)
     graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
@@ -80,6 +83,9 @@ class CompileResult:
 
     def warn(self, code: str, message: str, context: str = "", fix: str = "") -> None:
         self.warnings.append(Message("WARN", code, message, context, fix))
+
+    def pend(self, code: str, message: str, context: str = "", fix: str = "") -> None:
+        self.pending.append(Message("PENDING", code, message, context, fix))
 
 
 @dataclass
@@ -1005,6 +1011,17 @@ def declared_upload_columns(upload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def listed_column_names(upload: dict[str, Any]) -> list[str] | None:
+    """The column names typed under `columns:` (or `schema:`), with or without
+    types: the schema of a table nothing here can read (D97). None if none."""
+    schema = upload.get("columns") or upload.get("schema") or []
+    if not isinstance(schema, list):
+        return None
+    names = [str(c.get("name")) if isinstance(c, dict) else str(c) for c in schema]
+    names = [n for n in names if n and n != "None"]
+    return names or None
+
+
 def pyarrow_modules():
     """(pyarrow, pyarrow.csv, pyarrow.parquet), or None where it is not installed."""
     try:
@@ -1093,22 +1110,39 @@ def report_missing_upload(
     base_dir: Path,
     result: CompileResult,
     uploads_elsewhere: bool,
-) -> None:
-    """A missing upload file: an error where the pull is prepared, else a warning.
+) -> list[str] | None:
+    """A missing upload file: an error where the pull is prepared, else a warning,
+    or pending if it is marked `pending_transfer` (D97). Returns the columns it
+    declares, which stand in for the file's until it arrives, or None.
 
     A transfer YAML (and the UI that builds one) is made on the Mac, where a
     file may not have arrived yet; it is supplied on the VM beside the transfer
     YAML, and the split there, which needs it, checks it again as an error.
     """
+    check_declared_columns(upload, None, where, result)
+    declared = listed_column_names(upload)
+    if uploads_elsewhere and upload.get("pending_transfer") is True:
+        result.pend(
+            "upload_pending_transfer",
+            f"Upload file pending transfer to the VM: {upload.get('file_loc')}."
+            + (" Its columns are checked against the ones listed under `columns:`." if declared
+               else " Its columns cannot be checked until it arrives."),
+            f"{where}.file_loc",
+            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the transfer "
+            "YAML; the split there checks it."
+            + ("" if declared else " To check its columns now, list them under `columns:`."),
+        )
+        return declared
     if uploads_elsewhere:
         result.warn(
             "missing_upload_file",
             f"Upload file not here yet: {file_path}. Its columns cannot be checked until it is.",
             f"{where}.file_loc",
             fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the transfer "
-            "YAML; the split there checks it. Or correct `file_loc` if the path is wrong.",
+            "YAML; the split there checks it. Or correct `file_loc` if the path is wrong. "
+            "If it will only exist on the VM, mark it `pending_transfer: true`.",
         )
-        return
+        return declared
     result.error(
         "missing_upload_file",
         f"Upload file not found: {file_path}",
@@ -1116,6 +1150,29 @@ def report_missing_upload(
         fix=f"Correct `file_loc`; a relative path is read from {base_dir}. Or "
         "copy the file to where it points.",
     )
+    return declared
+
+
+def check_pending_transfer(upload: dict[str, Any], file_type: str, where: str, result: CompileResult) -> None:
+    """`pending_transfer` is true or false, and only on a table read from a file (D97)."""
+    if "pending_transfer" not in upload:
+        return
+    value = upload["pending_transfer"]
+    if not isinstance(value, bool):
+        result.error(
+            "bad_pending_transfer",
+            f"`pending_transfer: {value}` is not true or false.",
+            f"{where}.pending_transfer",
+            fix="Write `pending_transfer: true` if the file will only exist on the VM, else remove it.",
+        )
+    elif file_type not in ("csv", "parquet") or not upload.get("file_loc"):
+        result.error(
+            "bad_pending_transfer",
+            "`pending_transfer` marks a file that will only exist on the VM, but this table "
+            "is not read from a file.",
+            f"{where}.pending_transfer",
+            fix="Remove `pending_transfer`; it applies to a csv or parquet with a `file_loc`.",
+        )
 
 
 def upload_schemas(
@@ -1136,6 +1193,7 @@ def upload_schemas(
         where = f"{upload.get('_source', 'upload_cohorts')} ({upload.get('name')})"
         file_type = str(upload.get("file_type", "")).lower()
         suffix = Path(str(upload.get("file_loc") or "")).suffix.lower()
+        check_pending_transfer(upload, file_type, where, result)
         if (file_type, suffix) in (("parquet", ".csv"), ("csv", ".parquet")):
             actual = suffix.lstrip(".")
             result.error(
@@ -1149,8 +1207,7 @@ def upload_schemas(
         if file_type == "csv" and upload.get("file_loc"):
             file_path = resolve_file(base_dir, upload["file_loc"])
             if not file_path.exists():
-                report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
-                schemas[dest] = None
+                schemas[dest] = report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
                 continue
             try:
                 with file_path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -1168,8 +1225,7 @@ def upload_schemas(
         elif file_type == "parquet" and upload.get("file_loc") and pyarrow_modules():
             file_path = resolve_file(base_dir, upload["file_loc"])
             if not file_path.exists():
-                report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
-                schemas[dest] = None
+                schemas[dest] = report_missing_upload(upload, file_path, where, base_dir, result, uploads_elsewhere)
                 continue
             try:
                 schemas[dest] = list(pyarrow_modules()[2].read_schema(str(file_path)).names)
@@ -1184,12 +1240,8 @@ def upload_schemas(
             check_declared_columns(upload, schemas[dest], where, result)
         elif file_type in ("dbtable", "parquet"):
             check_declared_columns(upload, None, where, result)
-            schema = upload.get("columns") or upload.get("schema") or []
-            if schema and isinstance(schema[0], dict):
-                schemas[dest] = [str(c.get("name")) for c in schema if c.get("name")]
-            elif schema:
-                schemas[dest] = [str(c) for c in schema]
-            else:
+            schemas[dest] = listed_column_names(upload)
+            if schemas[dest] is None:
                 # Unknown, not empty. An empty list would claim the table has no
                 # columns, so binding a recipe to it reported every column it
                 # reads as missing -- when the truth is only that nothing
@@ -1978,7 +2030,7 @@ def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], coh
             "cannot be checked against it.",
             "batching",
             fix="They are checked when the split runs where the file is. To check them "
-            "now, list the PK's columns under its `columns:`.",
+            "now, list the PK's columns under its `columns:` (D97).",
         )
     for item in normalized:
         where = f"{item.get('_source', 'batching')} ({item.get('name')})"
@@ -2355,6 +2407,11 @@ def build_report(result: CompileResult) -> str:
                 lines.append(f"  - Fix: {msg.fix}")
     else:
         lines.append("- None")
+    if result.pending:
+        lines.append("")
+        lines.append("## Pending Transfer")
+        for msg in result.pending:
+            lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
     lines.append("")
     lines.append("## Expanded Cohorts")
     for cohort in result.finished_yaml.get("cohorts", []) or []:
@@ -5179,6 +5236,55 @@ class SavedDraftTests(MakeYamlTest):
         self.assertHasError(res, "multiplier_without_levels")
 
 
+class PendingTransferTests(MakeYamlTest):
+    """D97: a file that will only exist on the VM, and columns typed in for it."""
+
+    PK_COLUMNS = "    columns: [PatientDurableKey, DiagnosisEventKey, Sex]\n"
+
+    def transfer(self, extra_upload: str = "", extra: str = "batching:\n  - sex\n") -> CompileResult:
+        template, recipes = self.write_pair(uploaded_pk_template(extra_upload) + extra)
+        self.template = template
+        self.recipes_path = recipes
+        return build_transfer(template, recipes, write=True)
+
+    def test_a_marked_file_is_pending_not_a_warning_and_travels_marked(self):
+        res = self.transfer("    pending_transfer: true\n")
+        self.assertCompiles(res)
+        self.assertEqual([m.code for m in res.pending], ["upload_pending_transfer"])
+        self.assertFalse(has_warning(res, "missing_upload_file"))
+        doc = load_yaml(res.output_path)
+        self.assertIs(doc["upload_cohorts"][0]["pending_transfer"], True)
+
+    def test_an_unmarked_missing_file_is_still_a_warning(self):
+        res = self.transfer()
+        self.assertHasWarning(res, "missing_upload_file")
+        self.assertEqual(res.pending, [])
+
+    def test_typed_columns_check_batching_before_the_file_exists(self):
+        res = self.transfer("    pending_transfer: true\n" + self.PK_COLUMNS)
+        self.assertCompiles(res)
+        self.assertFalse(has_warning(res, "batch_columns_unchecked"))
+        wrong = self.transfer("    pending_transfer: true\n    columns: [PatientDurableKey, DiagnosisEventKey]\n")
+        self.assertHasError(wrong, "missing_batch_column")
+
+    def test_typed_types_are_checked_before_the_file_exists(self):
+        res = self.transfer("    columns:\n      - {name: PatientDurableKey, type: HUGEINT}\n")
+        self.assertHasError(res, "bad_upload_type")
+
+    def test_the_split_still_needs_the_file(self):
+        self.transfer("    pending_transfer: true\n" + self.PK_COLUMNS)
+        split = write_split_artifacts(self.template, self.recipes_path, output_dir=self.tmp / "split")
+        self.assertHasError(split, "missing_upload_file")
+
+    def test_only_a_file_can_be_pending_and_only_true_or_false(self):
+        not_bool = self.transfer("    pending_transfer: yes please\n")
+        self.assertHasError(not_bool, "bad_pending_transfer")
+        text = uploaded_pk_template().replace("file_type: csv\n    file_loc: pks.csv",
+                                             "file_type: dbtable\n    pending_transfer: true")
+        dbtable = compile_yaml(*self.write_pair(text))
+        self.assertHasError(dbtable, "bad_pending_transfer")
+
+
 TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "saved_draft": SavedDraftTests,
     "loading": LoadingTests,
@@ -5211,6 +5317,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "description_fields": DescriptionFieldTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
+    "pending_transfer": PendingTransferTests,
 }
 
 
@@ -5286,7 +5393,7 @@ def warn_retired_options(raw: dict[str, Any], result: CompileResult) -> None:
 
 
 def print_messages(result: CompileResult) -> None:
-    for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings)):
+    for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings), ("PEND ", result.pending)):
         for msg in messages:
             where = f" at {msg.context}" if msg.context else ""
             print(f"{label} [{msg.code}]{where}: {msg.message}")
