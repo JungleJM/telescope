@@ -2024,3 +2024,48 @@ apart from the tables below. It offers **Prefabricated** (a recipe) and
 table opens the whole form in place (name, destination, description,
 granularity, columns, joins, where), not in a window of its own. The PK
 Table's "Table from the dictionary" opens the same way.
+
+### D111. The core files live in `recipes/`, found through `datascope.json`
+
+**Context.** `YAMLs/` held two kinds of file: the core ones the tools read
+(the data dictionary, recipes, the template, the VM's package list) and the
+pulls' own (intakes, test templates). The user wants `YAMLs/` for the pulls,
+and the core files somewhere they can be moved without editing code.
+
+**Decision.**
+
+- `datadictionary.yaml`, `recipes.yaml`, `template.yaml` and
+  `DSVM Plugins.yaml` move to `recipes/` at the root, with
+  `requirements-vm.txt`, which pins the same list.
+- `datascope.json`, at the root, says where each is, relative to itself, and
+  where runs go: `recipes`, `datadictionary`, `template`, `vm_plugins`,
+  `runs`. Moving a file means editing that one line. makeYaml and Pullmanager
+  each read it (neither imports the other; a test holds their defaults
+  together). Without it, the defaults are the `recipes/` paths, beside the
+  code, and `runs/` in the working folder: the extracted bundle's layout.
+- The bundle publishes the dictionary at `recipes/datadictionary.yaml`. An
+  extracted tree's old `YAMLs/datadictionary.yaml` is removed by the next
+  extraction, or kept as `.local` if it was edited (D42).
+
+### D112. The browser UI is retired; `datascope.py` opens the app
+
+**Retires the browser UI (D92), amends D79** (`yamlmgr.py`).
+
+**Decision.**
+
+- `scripts/yamlmanager.py`, `yamlmanager_backend.py`, `yamlmgr.py` and
+  `UI/` are removed. The app (D93) is the one UI.
+- `python3 datascope.py`, at the root, opens the app; `python3 datascope.py
+  test` runs every suite; anything else goes to `pullmanager.py` as typed.
+
+### D113. The repository's top level: `plan/`, `.claude/CLAUDE.md`, runs in `cleanup/`
+
+**Decision.**
+
+- `QMDs/` is renamed `plan/`.
+- `CLAUDE.md` moves to `.claude/CLAUDE.md`, which Claude Code reads there.
+- On the Mac, `datascope.json` sends runs to `cleanup/runs/`, beside the
+  Python cache, since everything in `cleanup/` is disposable output. The VM
+  has no `datascope.json` and keeps `runs/` in its working folder.
+- `TESTING_UPLOADS_AND_LABS.md` moves beside the scripts it describes, in
+  `scripts/`.
