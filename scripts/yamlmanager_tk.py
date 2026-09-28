@@ -121,6 +121,7 @@ class AuthorView:
         self._file_paths: dict[str, Path] = {}
         self.section_key = "project"
         self.highlight: model.FieldRef | None = None
+        self.inline_builder: model.TableBuilder | None = None  # the table being built in place (D110)
 
         self._build_top()
         self._build_tabs()
@@ -319,6 +320,7 @@ class AuthorView:
         if getattr(self, "exports_panel", None) is not None:
             self.exports_panel.chosen = None
         self.highlight = None
+        self.inline_builder = None
         self._setting_name = True
         self.name_var.set(self.draft.project_name)
         self._setting_name = False
@@ -751,8 +753,12 @@ def build_pk(view: AuthorView, parent: Any) -> None:
             column_editor(view, box, index)
         else:
             if pk.kind == "dictionary":
-                ttk.Button(box, text="Edit in the table builder",
-                           command=lambda: open_table_builder(view, index)).pack(anchor="w", pady=(6, 0))
+                editing = view.inline_builder
+                if editing is not None and editing.index == index:
+                    TableBuilderPanel(view, editing, box)
+                else:
+                    ttk.Button(box, text="Edit",
+                               command=lambda: open_table_builder(view, index)).pack(anchor="w", pady=(6, 0))
             var_editor(view, box, index)
             if pk.kind == "recipe":
                 filter_editor(view, box, index)
@@ -793,9 +799,18 @@ def choose_pk(view: AuthorView, parent: Any, replacing: bool) -> None:
         ttk.Button(form, text="Use as PK", command=lambda: confirm() and view.edit(
             lambda: draft.set_pk_recipe(recipe.get(), name.get()), rerender=True)).grid(row=2, column=1, sticky="w", pady=6)
     elif kind == "dictionary":
-        note(form, "Build the table in the table builder; it becomes the PK when you add it.").pack(anchor="w")
-        ttk.Button(form, text="Open the table builder",
-                   command=lambda: confirm() and open_table_builder(view, None, pk=True)).pack(anchor="w", pady=6)
+        builder = view.inline_builder
+        if builder is not None and builder.pk and builder.index is None:
+            TableBuilderPanel(view, builder, form)
+            return
+        table, name = tk.StringVar(), tk.StringVar()
+        keep(form, table, name)
+        tables = model.TableBuilder(draft).tables()
+        pick = ttk.Combobox(form, textvariable=table, values=tables, state="readonly", width=34)
+        grid_row(form, 0, "Rows from", pick, "A table in the data dictionary: the form opens here.")
+        grid_row(form, 1, "Name", ttk.Entry(form, textvariable=name, width=30))
+        pick.bind("<<ComboboxSelected>>", lambda e: confirm() and open_table_builder(
+            view, None, pk=True, table=table.get(), name=name.get()))
     else:
         name, location, keys = tk.StringVar(), tk.StringVar(), tk.StringVar()
         pending = tk.BooleanVar(value=False)
@@ -879,10 +894,16 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
 # =============================================================================
 
 
-def open_table_builder(view: AuthorView, index: int | None, pk: bool = False) -> None:
-    """A window over model.TableBuilder; Add puts the table into the draft."""
+def open_table_builder(view: AuthorView, index: int | None, pk: bool = False,
+                       table: str = "", name: str = "") -> None:
+    """Open model.TableBuilder inline (D110): in Fact Tables' add panel, or
+    the PK Table's; Add puts the table into the draft."""
     try:
         builder = model.TableBuilder(view.draft, index, pk=pk)
+        if table:
+            builder.set_from_table(table)
+        if name:
+            builder.name = name
     except model.DraftError as exc:
         view.say(str(exc), "error")
         return
@@ -890,26 +911,49 @@ def open_table_builder(view: AuthorView, index: int | None, pk: bool = False) ->
         messagebox.showwarning("Table builder", "The data dictionary could not be read, so there are no "
                                f"tables to build from ({view.ws.dictionary_path}).")
         return
-    view._last_builder = TableBuilderWindow(view, builder)
+    view.inline_builder = builder
+    if builder.pk and index is None:
+        view._pk_kind = "dictionary"  # the PK section shows the dictionary form
+    view.tabs.select(view.builder_tab)
+    view.show_section("pk" if builder.pk else "fact")
 
 
-class TableBuilderWindow:
-    def __init__(self, view: AuthorView, builder: model.TableBuilder):
+def shaded_box(parent: Any, title: str) -> ttk.Frame:
+    """A frame set apart by a coloured border: where something is added (D110)."""
+    outer = tk.Frame(parent, highlightthickness=2, highlightbackground=COLOURS["pending"],
+                     highlightcolor=COLOURS["pending"], bd=0)
+    outer.pack(fill="x", pady=(4, 10))
+    inner = ttk.Frame(outer, padding=10)
+    inner.pack(fill="x")
+    ttk.Label(inner, text=title, font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(0, 6))
+    return inner
+
+
+class TableBuilderPanel:
+    """The table builder, drawn in place inside a section (D110)."""
+
+    def __init__(self, view: AuthorView, builder: model.TableBuilder, parent: Any):
         self.view = view
         self.b = builder
-        self.win = tk.Toplevel(view.root)
-        self.win.title(("Edit " if builder.index is not None else "New ") + ("PK table" if builder.pk else "fact table"))
-        self.win.geometry("1100x800")
-        self.body = ScrollFrame(self.win)
-        self.body.pack(fill="both", expand=True)
-        bar = ttk.Frame(self.win, padding=8)
-        bar.pack(fill="x", side="bottom")
-        self.message = note(bar, "")
-        self.message.pack(side="left")
-        ttk.Button(bar, text="Cancel", command=self.win.destroy).pack(side="right")
+        view._last_builder = self
+        self.win = ttk.Frame(parent)
+        self.win.pack(fill="x", pady=(6, 0))
+        title = ("Editing " if builder.index is not None else "New ") + ("PK table" if builder.pk else "fact table")
+        ttk.Label(self.win, text=title, foreground=COLOURS["muted"]).pack(anchor="w")
+        self.frame = ttk.Frame(self.win)
+        self.frame.pack(fill="x")
+        bar = ttk.Frame(self.win, padding=(0, 8, 0, 0))
+        bar.pack(fill="x")
         ttk.Button(bar, text="Save Changes" if builder.index is not None else "Add Table",
-                   command=self.commit).pack(side="right", padx=6)
+                   command=self.commit).pack(side="left")
+        ttk.Button(bar, text="Cancel", command=self.cancel).pack(side="left", padx=6)
+        self.message = note(bar, "")
+        self.message.pack(side="left", padx=6)
         self.render()
+
+    def cancel(self) -> None:
+        self.view.inline_builder = None
+        self.view.render_soon()
 
     def say(self, text: str, kind: str = "error") -> None:
         self.message.configure(text=text, foreground=COLOURS.get(kind, kind))
@@ -924,9 +968,10 @@ class TableBuilderWindow:
         self.render()
 
     def render(self) -> None:
-        self.body.clear()
+        for child in self.frame.winfo_children():
+            child.destroy()
         b = self.b
-        parent = self.body.inner
+        parent = self.frame
         form = ttk.Frame(parent)
         form.pack(fill="x")
         fields = (("Name", "name"), ("Destination", "dest_table"), ("Description", "description"),
@@ -1049,7 +1094,7 @@ class TableBuilderWindow:
         except model.DraftError as exc:
             self.say(str(exc))
             return
-        self.win.destroy()
+        self.view.inline_builder = None
         self.view.changed(rerender=True)
 
 
@@ -1289,6 +1334,7 @@ def build_fact(view: AuthorView, parent: Any) -> None:
     heading(parent, "Fact Tables",
             "The tables pulled for the PK: prefabricated recipes, or tables built from the dictionary. "
             "Each is joined to its PK. A variable left blank comes from where it says.")
+    add_fact_panel(view, parent)
     facts = draft.fact_tables()
     for position, (index, cohort) in enumerate(facts, start=1):
         what = f"recipe {cohort['recipe']}" if cohort.get("recipe") else "built from the dictionary"
@@ -1304,13 +1350,16 @@ def build_fact(view: AuthorView, parent: Any) -> None:
         spot_entry.pack(side="left", padx=(4, 12))
         ttk.Label(head, text="Name").pack(side="left")
         text_field(view, head, cohort.get("name"), lambda v, i=index: draft.rename_table(i, v)).pack(side="left", padx=6)
-        if not cohort.get("recipe"):
+        editing = view.inline_builder is not None and view.inline_builder.index == index
+        if not cohort.get("recipe") and not editing:
             ttk.Button(head, text="Edit", command=lambda i=index: open_table_builder(view, i)).pack(side="left", padx=4)
             if view.ws.has_recipes:
                 ttk.Button(head, text="Save as Recipe", command=lambda i=index: save_as_recipe(view, i)).pack(side="left")
         ttk.Button(head, text="Remove", command=lambda i=index: view.edit(
             lambda: draft.remove_fact_table(i), rerender=True)).pack(side="right")
         note(box, "Type a position and press Enter to move it; the PK keeps its place.").pack(anchor="w")
+        if editing:
+            TableBuilderPanel(view, view.inline_builder, box)
         var_editor(view, box, index)
         binding_editor(view, box, index)
         if cohort.get("recipe"):
@@ -1318,20 +1367,43 @@ def build_fact(view: AuthorView, parent: Any) -> None:
     if not facts:
         note(parent, "No fact tables.").pack(anchor="w")
 
-    add = ttk.LabelFrame(parent, text="Add a fact table", padding=10)
-    add.pack(fill="x", pady=(10, 0))
+def add_fact_panel(view: AuthorView, parent: Any) -> None:
+    """At the top, set apart: a prefabricated table, or one from the data
+    dictionary, whose whole form opens here when its table is chosen (D110)."""
+    draft = view.draft
+    inner = shaded_box(parent, "Add a fact table")
+    builder = view.inline_builder
+    if builder is not None and not builder.pk and builder.index is None:
+        TableBuilderPanel(view, builder, inner)
+        return
+    prefab = ttk.Frame(inner)
+    prefab.pack(fill="x", pady=2)
     names = view.ws.fact_recipes()
+    ttk.Label(prefab, text="Prefabricated", width=20).pack(side="left")
     if names:
         recipe, name = tk.StringVar(value=names[0]), tk.StringVar()
-        keep(add, recipe, name)
-        ttk.Label(add, text="Prefabricated").pack(side="left")
-        ttk.Combobox(add, textvariable=recipe, values=names, state="readonly", width=28).pack(side="left", padx=6)
-        ttk.Entry(add, textvariable=name, width=20).pack(side="left")
-        ttk.Button(add, text="Add", command=lambda: view.edit(
+        keep(prefab, recipe, name)
+        ttk.Combobox(prefab, textvariable=recipe, values=names, state="readonly", width=34).pack(side="left", padx=4)
+        ttk.Label(prefab, text="Name").pack(side="left", padx=(8, 4))
+        ttk.Entry(prefab, textvariable=name, width=22).pack(side="left")
+        ttk.Button(prefab, text="Add", command=lambda: view.edit(
             lambda: draft.add_prefab(recipe.get(), name.get()), rerender=True)).pack(side="left", padx=6)
     else:
-        note(add, view.ws.recipes_problem() or "recipes.yaml has no fact recipes.", "warning").pack(side="left")
-    ttk.Button(add, text="New table from the dictionary", command=lambda: open_table_builder(view, None)).pack(side="right")
+        note(prefab, view.ws.recipes_problem() or "recipes.yaml has no fact recipes.", "warning").pack(side="left")
+    dictionary = ttk.Frame(inner)
+    dictionary.pack(fill="x", pady=2)
+    table, table_name = tk.StringVar(), tk.StringVar()
+    keep(dictionary, table, table_name)
+    ttk.Label(dictionary, text="From data dictionary", width=20).pack(side="left")
+    pick = ttk.Combobox(dictionary, textvariable=table, values=model.TableBuilder(draft).tables(),
+                        state="readonly", width=34)
+    pick.pack(side="left", padx=4)
+    ttk.Label(dictionary, text="Name").pack(side="left", padx=(8, 4))
+    ttk.Entry(dictionary, textvariable=table_name, width=22).pack(side="left")
+    pick.bind("<<ComboboxSelected>>", lambda e: open_table_builder(view, None, table=table.get(),
+                                                                   name=table_name.get()))
+    note(inner, "Choosing a dictionary table opens its whole form here.").pack(anchor="w")
+    ttk.Separator(parent).pack(fill="x", pady=(0, 6))
 
 
 def save_as_recipe(view: AuthorView, index: int) -> None:
@@ -1646,10 +1718,12 @@ class SectionViewTests(ViewTest):
         self.open("Celiac_intake.yaml")
         before = len(self.view.draft.fact_tables())
         open_table_builder(self.view, None)
+        self.root.update()
         window = self.view._last_builder
         window.act(lambda: window.b.set_from_table("EncounterFact"))
         window.b.name = "Visits"
         window.commit()
+        self.root.update()
         names = [c.get("name") for _, c in self.view.draft.fact_tables()]
         self.assertEqual(len(names), before + 1)
         self.assertEqual(names[-1], "Visits")
@@ -1785,6 +1859,52 @@ class ValidateAndExportViewTests(ViewTest):
         self.assertIn("Save the draft", text)
 
 
+class InlineBuilderTests(ViewTest):
+    """D110: a fact table is added in place, at the top of Fact Tables."""
+
+    def test_the_add_panel_comes_first_and_a_dictionary_table_opens_its_form_there(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("fact")
+        self.root.update()
+        order = [str(w.cget("text")) for w in widgets(self.view.body.inner)
+                 if isinstance(w, (ttk.Label, ttk.LabelFrame))]
+        self.assertLess(order.index("Add a fact table"), next(i for i, l in enumerate(order) if l.startswith("1. ")))
+        pick = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
+                    and "EncounterFact" in w.cget("values"))
+        pick.set("EncounterFact")
+        pick.event_generate("<<ComboboxSelected>>")
+        self.root.update()
+        panel = self.view._last_builder
+        self.assertEqual(panel.b.from_table, "EncounterFact")
+        self.assertTrue(panel.win.winfo_ismapped())
+        self.assertFalse([w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel)])
+        panel.b.name = "Visits"
+        panel.commit()
+        self.root.update()
+        self.assertEqual(self.view.draft.fact_tables()[-1][1]["name"], "Visits")
+        self.assertIsNone(self.view.inline_builder)
+
+    def test_cancel_closes_the_form_and_adds_nothing(self):
+        self.open("Celiac_intake.yaml")
+        before = len(self.view.draft.doc["cohorts"])
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
+        self.view._last_builder.cancel()
+        self.root.update()
+        self.assertIsNone(self.view.inline_builder)
+        self.assertEqual(len(self.view.draft.doc["cohorts"]), before)
+
+    def test_a_pk_from_the_dictionary_is_built_in_the_pk_section(self):
+        self.open("Celiac_intake.yaml")
+        open_table_builder(self.view, None, pk=True, table="PatientDim", name="People")
+        self.root.update()
+        self.assertEqual(self.view.section_key, "pk")
+        self.view._last_builder.commit()
+        self.root.update()
+        pk = self.view.draft.pk()
+        self.assertEqual((pk.kind, pk.name), ("dictionary", "People"))
+
+
 class FilterViewTests(ViewTest):
     """D105: where lines by column and joins, for prefabricated tables too."""
 
@@ -1826,9 +1946,9 @@ class FilterViewTests(ViewTest):
 
     def test_the_builder_offers_the_join_operator(self):
         self.open("Celiac_intake.yaml")
-        open_table_builder(self.view, None)
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
         window = self.view._last_builder
-        window.act(lambda: window.b.set_from_table("EncounterFact"))
         combos = [w for w in widgets(window.win) if isinstance(w, ttk.Combobox)]
         self.assertTrue(any(tuple(w.cget("values")) == model.JOIN_OPERATORS for w in combos))
 
@@ -1837,7 +1957,8 @@ def run_tdd(verbosity: int = 2) -> int:
     loader = unittest.TestLoader()
     suite = unittest.TestSuite([loader.loadTestsFromTestCase(case)
                                 for case in (SectionViewTests, SplitAndFactViewTests,
-                                             ValidateAndExportViewTests, FilterViewTests)])
+                                             ValidateAndExportViewTests, FilterViewTests,
+                                             InlineBuilderTests)])
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     if _TEST_ROOT and _TEST_ROOT[0] is not None:
         _TEST_ROOT[0].destroy()
