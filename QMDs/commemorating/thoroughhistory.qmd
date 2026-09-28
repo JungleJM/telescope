@@ -1,7 +1,7 @@
 ---
 title: "Designing Telescope to Peer Through the Cosmos"
 subtitle: "A thorough history: the raw record, to be whittled into a portfolio piece"
-date: 2026-09-27
+date: 2026-09-28
 format:
   html:
     toc: true
@@ -14,17 +14,17 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `b4dec41` (27 Sep, 16:30), every planning
+- **Sources.** Every commit up to `a9a577a` (28 Sep, 03:28), every planning
   document committed by then (most since deleted, recovered from git), the
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `b4dec41`, which decided D92 to D98 (the tkinter app). Building
-  them had not begun at the cut-off. Earlier versions of this record stopped
-  at `30ceff7` (25 Sep, 02:21) and at `2e17998` (27 Sep, 12:13); everything
-  after each was added from the commits and the three design documents.
+- **Cut-off.** `a9a577a` (28 Sep, 03:28), after the tkinter app was built.
+  Earlier versions of this record stopped at `30ceff7` (25 Sep, 02:21),
+  `2e17998` (27 Sep, 12:13) and `b4dec41` (27 Sep, 16:30); everything after
+  each was added from the commits and the three design documents.
 - **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
-  number (D1 to D98). Section 12 explains how to recover any deleted document.
+  number (D1 to D102). Section 12 explains how to recover any deleted document.
 - **Proprietary detail.** Server names, project database names and internal
   paths are left out on purpose. Scrub further before sharing anything.
 
@@ -110,6 +110,8 @@ A second run of it, on the bundle with Artifacts, followed. By 26 Sep 04:12
 three pulls were running at once ("running 3 queries fine", `bdd3cc6`);
 **[Guess]** IBD Ancestry, Celiac and a whole-cohort template, from the temp
 templates committed alongside. Artifacts had not yet been run on the VM.
+By 28 Sep 03:07 YAML Manager had become a tkinter app, Author and Run in one
+window (D92 to D101), tested on the Mac and not yet opened on the VM.
 
 **The pain point.** Your note says you "identified a specific pain point,
 detailed it and then investigated all the reasons why it occurred". The record
@@ -131,29 +133,29 @@ recoverable, reproducible and hard to get wrong.
 
 ## 2. By The Numbers
 
-Three columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
-27 Sep 12:13 (`2e17998`, where it stopped next) and the cut-off, 27 Sep 16:30
-(`b4dec41`). A blank in the last column means unchanged.
+Four columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
+27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`) and the cut-off, 28 Sep
+03:28 (`a9a577a`). A blank means unchanged from the column before.
 
-| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | Basis |
-| --- | --- | --- | --- | --- |
-| Telescope elapsed time | 8 days | 10 days, from 17 Sep | | git log |
-| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | git log |
-| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 | | **[Measured]** git log |
-| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
-| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
-| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | commit messages, design.md, then **[Measured]** |
-| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | decisions.md |
-| First decision record | 39 decisions, 22 Sep 22:47 | | | `ea74c3d` |
-| Design documents consolidated | 7 → 3 | still 3 | still 3 | D47 |
-| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
-| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged | | **[Measured]** `YAMLs/datadictionary.yaml` |
-| VM software inventory | 1,375 lines | unchanged | | commit `38a4d55` |
-| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | D41 for the first two; **[Measured]** for the rest |
-| Defects listed in Section 8 | 35 | 45 | 46 | my compilation from commits and decisions |
-| One fix's effect | sample template went from 1,120 generated SQL files to 168 | | | `61befa4` |
-| First live pull | 8 sessions, 48 units, running | ran to the end | | see below; roadmap |
-| Pulls running at once | 1 | 3 | | `bdd3cc6` |
+| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | Basis |
+| --- | --- | --- | --- | --- | --- |
+| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days | | git log |
+| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | git log |
+| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  | | **[Measured]** git log |
+| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | commit messages, design.md, then **[Measured]** |
+| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | decisions.md |
+| First decision record | 39 decisions, 22 Sep 22:47 | | |  | `ea74c3d` |
+| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | D47 |
+| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  | | **[Measured]** `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines | unchanged |  | | commit `38a4d55` |
+| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | D41 for the first two; **[Measured]** for the rest |
+| Defects listed in Section 8 | 35 | 45 | 46 | 51 | my compilation from commits and decisions |
+| One fix's effect | sample template went from 1,120 generated SQL files to 168 | | |  | `61befa4` |
+| First live pull | 8 sessions, 48 units, running | ran to the end |  | | see below; roadmap |
+| Pulls running at once | 1 | 3 |  | | `bdd3cc6` |
 
 How the first live pull's figures were reached:
 
@@ -810,7 +812,53 @@ added three files:
     to be replaced. **[My view]** They were not wasted: D84's writer fix, the
     `multiplier_without_levels` error and the PK parquet are in makeYaml and
     the runtime, which the new app keeps.
-- **After the cut-off.** Building the app began; its order is in the roadmap.
+- **16:33, the first of the app's ten steps** (`d20692c`): drafts become
+  intakes, `YAMLs/temp/<project>_intake.yaml` (D95); your five temps renamed.
+
+### 28 Sep: The App Built, Overnight (12 commits)
+
+Built in the roadmap's order, one commit per step, each with its outcome
+tests confirmed to fail with the change taken out, all pushed at 03:07 after
+a last smoke test of the whole window on the Mac's Tk. Another session worked
+alongside all night.
+
+- **00:46, the other session** (`45e58d6`): the docs brought up to D84 to D91
+  as built, and this record extended to `b4dec41`.
+- **00:47 to 00:51, the engine changes:**
+  - `pending_transfer: true` (D97, `d0b6340`): a third kind of message,
+    pending, beside errors and warnings (D99); columns typed in for a table
+    nothing here can read stand in for its schema. It also fixed a message
+    that told you to list a PK's columns when doing so changed nothing
+    (Section 8, #51).
+  - Renaming and dropping an upload's columns as it lands (D98, `14e713d`),
+    in validation and in Pullmanager; a `dbtable` refused, keys named as they
+    land (D100).
+- **00:59 and 01:01, the model** (`7e29ccd`, `9227649`): the Builder's logic,
+  out of the page's JavaScript and into `yamlmanager_model.py`, with its own
+  tests (42): the draft and every edit, where each variable comes from, the
+  tables that fit a binding, each message's kind and field, save and
+  transfer, and the dictionary table builder and Save as Recipe. It opened
+  all five of your intakes and checked each in under 0.15 seconds.
+  - The first build of the bundle for this step swept in a file another
+    session had just made and not committed, your `transcription_viewer.py`.
+    It was caught before pushing, and the committed bundle has been built
+    from a clean checkout since (Section 8, #47; D102).
+- **02:52, the app's shell** (`2f953e4`): one window, Author and Run;
+  `python pullmanager.py` opens it; the launcher builds inside the Run tab.
+- **02:59 to 03:07, the Author view** (`68dafda`, `b6f01fe`, `95b38b9`):
+  Project, PK Table, Supporting Tables and the table builder; Multipliers,
+  Splitters and Fact Tables with the binding picker; Validate, Exports and
+  YAML. Its tests (15) build it on a real Tk, withdrawn (D101), which found
+  two hangs a fake tkinter could not (Section 8, #48, #49).
+- **03:10 to 03:28, your utilities:**
+  - `utils/transcription_viewer.py`, committed by the other session
+    (`fffa0e4`). You had put it under `scripts/pullmanager_src/` so it would
+    reach the VM, which it does; its bundle was rebuilt (`94aeeca`, #50),
+    and `utils/` became the home for your VM utilities (D102).
+  - A lab collator, a parquet-upload test generator and a guide to both,
+    `TESTING_UPLOADS_AND_LABS.md` (`a9a577a`, by the other session, with a
+    Haiku 4.5 co-author line).
+- **Your verdict:** "I'm impressed with what's here." The VM has not seen it.
 
 ---
 
@@ -1308,7 +1356,8 @@ design document.
   recorded as a misreading that "could lose data", not as having done so.
 - **Who spotted them.** For #21 to #26 the dry run is documented as the source;
   who spotted each problem is **[Ask]**. #43 to #45 are from your notes.
-- **#43 to #46** were fixed on 27 Sep, between 12:19 and 12:26.
+- **#43 to #46** were fixed on 27 Sep, between 12:19 and 12:26; #47 to #51 on
+  28 Sep, while the app was built.
 
 | # | Defect | What it would have done | Surfaced by | Ref |
 | --- | --- | --- | --- | --- |
@@ -1358,10 +1407,15 @@ design document.
 | 44 | New Blank Template kept the old path; saving a temp could overwrite another | A blank draft could replace a real one | Your Builder notes | D85, `b41cb5f` |
 | 45 | `_sp` cards on the Cohorts tab lost their connection colours | Dependencies not shown for SneakPeek copies | Your Builder notes | `4292ac0` |
 | 46 | A multiplier with no levels made no cohorts at all | Every table of the pull silently gone | Fixing #43: even read correctly as `[]`, the product of its levels is empty | D84, `1aa3568` |
+| 47 | A bundle built from the working tree carried a file not yet committed | The committed bundle could not be rebuilt from the repository | Its file count (50, expected 49), before pushing | D102, `7e29ccd` |
+| 48 | Re-rendering a section destroyed a combobox inside its own selection event | The window hung when a table input was bound | The Author view's real-Tk tests | D101, `b6f01fe` |
+| 49 | A second Tk in one process hung on the Mac | The view's tests hung when run together | The Author view's real-Tk tests | D101, `b6f01fe` |
+| 50 | A utility was committed without rebuilding the bundle | The committed bundle lacked it | Checking the bundle for your file | D102, `94aeeca` |
+| 51 | `batch_columns_unchecked` told you to list a missing PK file's columns, which changed nothing | Batching on a PK not yet here stayed unchecked whatever you did | Building D97 | D97, `d0b6340` |
 
 ---
 
-## 9. Decision Index (D1 To D98)
+## 9. Decision Index (D1 To D102)
 
 One line each, paraphrasing the decision's title; the reasoning is in
 `decisions.md`.
@@ -1466,9 +1520,14 @@ One line each, paraphrasing the decision's title; the reasoning is in
 | 96 | The Builder's layout: the PK first, and splitting made explicit |
 | 97 | `pending_transfer: true` marks a file that will exist only on the VM |
 | 98 | A supporting table's columns can be renamed and dropped |
+| 99 | Pending is a third kind of message; no database is `none` |
+| 100 | A dbtable's columns are not renamed; keys use the names a table lands with |
+| 101 | The Author view is tested on a real Tk, withdrawn |
+| 102 | The committed bundle is built from the commit; `utils/` carries your utilities |
 
 D84 to D91 were built on 27 Sep (`1aa3568` to `abb3c7e`). D92 to D98 were
-decided at the cut-off; building them came after.
+decided that afternoon and built overnight (`d20692c` to `95b38b9`); D99 to
+D102 record choices made while building them.
 
 ---
 
@@ -1512,8 +1571,9 @@ Every planning document committed by the cut-off, and what became of it.
 | `response/responses.md` | 25 Sep | Responses to D65 to D68; readout request | Your words | Folded into D69 to D71 (`d46b666`) |
 | `commemorating/` | 25 Sep | This task | | Current |
 | `artifact.md` | 25 Sep | The artifacts specification, and your answers to the assistant's questions | Your words | Folded into D72 to D75 and deleted (`9361c34`) |
-| `response.md` | 26 Sep | Notes from using YAML Manager and three pulls; this task; UI redesign ideas | Your words | Fixes folded into D84 to D91 (`2e17998`); the rest current |
+| `response.md` | 26 Sep | Notes from using YAML Manager and three pulls; this task; UI redesign ideas | Your words | Fixes folded into D84 to D91 (`2e17998`); the redesign into D92 to D98, and deleted (`b4dec41`) |
 | `images/paste-*.png` | 26 and 27 Sep | Screenshots for `response.md` | Yours | Current |
+| `TESTING_UPLOADS_AND_LABS.md` | 28 Sep | Guide to the lab collator and the parquet-upload test | Claude Haiku 4.5 (commit trailer), another session | Current; outside the three design documents, which `CLAUDE.md` asks to fold in **[Ask]** |
 
 **The keys research, in brief.** The brief (138 lines) asked the VM's AI three
 questions: are keys declared where SQL can read them (`INFORMATION_SCHEMA`,
@@ -1584,8 +1644,14 @@ resume line.
     was frozen, and did the VM run the bundle with the PK parquet, Artifacts'
     progress and the viewer?
 20. **Two sessions at once.** On 27 Sep one session built the fixes while
-    another decided the app. Was running them side by side deliberate, and
-    how did you keep them apart?
+    another decided the app, and on the night of 27 to 28 Sep one built the
+    app while another updated the docs and added your utilities. Was running
+    them side by side deliberate, and how did you keep them apart?
+21. **The app on the VM.** How does it look under Windows' Tk, and does
+    adjusting a transfer YAML there work as it did on the Mac?
+22. **Your utilities.** What are the transcription viewer and the lab
+    collator for, and should `TESTING_UPLOADS_AND_LABS.md` be folded into the
+    design documents, as `CLAUDE.md` asks of any new one?
 
 **Attribution, and my recommendation.**
 

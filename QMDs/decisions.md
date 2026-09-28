@@ -1829,3 +1829,67 @@ had not seen it.
 - Validation refuses a `from:` the file lacks (when the file can be read),
   two columns ending with one name, and dropping a column the table's key or
   a binding needs, each with its fix.
+
+### D99. Pending is a third kind of message; no database is `none`
+
+**Context.** Building D96 and D97 needed two small choices the decisions did
+not make: how makeYaml says "pending", and what "Pull from" with neither
+database writes.
+
+**Decision.**
+
+- makeYaml's result has a third list beside errors and warnings, `pending`
+  (printed `PEND`), for a file marked `pending_transfer` that is not here.
+  It is not a warning, so a draft whose only notes are pending files is clean.
+- With both "Pull from" toggles off, the app writes `cosmos_db: none`. Left
+  blank it would read as `Dual` (D86) and pull both, silently. makeYaml
+  refuses `none` as it refuses any other unknown value, and the app says "no
+  database is chosen" in place of that message.
+
+### D100. A dbtable's columns are not renamed; keys use the names a table lands with
+
+**Context.** D98's renames happen as a file lands in Projects. A `dbtable` is
+copied inside the database with `SELECT *`, where nothing on the Mac or in
+Pullmanager sees its columns.
+
+**Decision.**
+
+- `from:` or `drop:` on a `dbtable` is an error (`upload_rename_on_dbtable`)
+  whose fix is to rename in the table itself, or upload it as a parquet.
+- `key_columns`, bindings and batching name columns as they land. A key named
+  by its old name is `renamed_key_column`; a dropped key is
+  `dropped_key_column`. Both errors, with the fix.
+- A declared type still names the file's column, since the CSV is converted
+  under its own names at the split and renamed only as it lands.
+
+### D101. The Author view is tested on a real Tk, withdrawn
+
+**Context.** The launcher is tested against a fake tkinter (D44), which checks
+wiring and nothing of Tk. The Author view has far more widgets, and the Mac's
+`python3.13` has Tk 8.6, likely the VM's.
+
+**Decision.** `yamlmanager_tk.py --tdd` builds the view on a real Tk with its
+window withdrawn, types into its fields and reads the model back. Without a
+display the tests skip. One Tk serves every test: on the Mac a second Tk in
+one process can hang. The app's wiring (Author's transfer reaching Run, Run
+opening without Author) is tested with the launcher's fake tkinter.
+
+**Consequences.** Layout and look are still only checked by eye. Building the
+view this way found two hangs no fake would have: a re-render destroying a
+combobox inside its own event (re-renders now wait until Tk is idle), and the
+second Tk.
+
+### D102. The committed bundle is built from the commit; `utils/` carries your utilities
+
+**Context.** A bundle built from the working tree swept in a file that was
+not yet committed, so the committed bundle could not be rebuilt from the
+repository. The file, `utils/transcription_viewer.py`, was meant to ship:
+everything under `scripts/pullmanager_src/` is bundled.
+
+**Decision.**
+
+- The committed `dist/bundle.py` is built from a clean checkout of the
+  commit it goes with, so what it carries is exactly what is committed.
+- `scripts/pullmanager_src/utils/` is where your own VM utilities go, and it
+  ships in every bundle. A file there that is not committed is committed
+  (after asking), never left out.
