@@ -1126,6 +1126,18 @@ class Draft:
 
     # ----------------------------------------------------------- validation
 
+    def location_for(self, chosen: str | Path) -> str:
+        """A file chosen by Browse, as `file_loc`: relative to the draft's
+        folder, with `..` where it must (D104). Only where no relative path
+        exists (another drive) is it written in full."""
+        path = Path(chosen)
+        if not path.is_absolute():
+            return path.as_posix()
+        try:
+            return Path(os.path.relpath(path.resolve(), self.base_path().parent.resolve())).as_posix()
+        except ValueError:
+            return str(path)
+
     def base_path(self) -> Path:
         """The file a relative `file_loc` is read from: the opened file, else
         where it will be saved."""
@@ -2210,6 +2222,28 @@ class SaveRecipeTests(ModelTest):
         self.assertIn("Mac", message)
 
 
+class LocationTests(ModelTest):
+    """D104: Browse writes a path relative to the draft, never the machine's."""
+
+    def test_a_file_beside_the_transfer_is_written_relative_from_the_intake(self):
+        draft = self.draft()
+        chosen = self.home / "IBD_meds.parquet"
+        self.assertEqual(draft.location_for(chosen), "../../IBD_meds.parquet")
+        self.assertEqual(draft.location_for(self.home / "YAMLs" / "temp" / "csv" / "c.csv"), "csv/c.csv")
+
+    def test_it_reaches_the_file_it_names(self):
+        draft = self.draft()
+        chosen = self.home / "data" / "x.parquet"
+        written = draft.location_for(chosen)
+        self.assertEqual((draft.base_path().parent / written).resolve(), chosen.resolve())
+
+    def test_another_drive_is_written_in_full(self):
+        from unittest import mock
+        draft = self.draft()
+        with mock.patch.object(os.path, "relpath", side_effect=ValueError("different drives")):
+            self.assertEqual(draft.location_for(self.home / "x.csv"), str(self.home / "x.csv"))
+
+
 class VmSideTests(ModelTest):
     """D108: running from an extracted bundle, no file is pending."""
 
@@ -2289,7 +2323,8 @@ def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests):
+                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
+                 LocationTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1

@@ -466,14 +466,9 @@ def entry_box(view: AuthorView, parent: Any, title: str, section: str, index: in
 
 
 def relative_location(view: AuthorView, chosen: str) -> str:
-    """A chosen file as the template writes it: relative to the draft's folder
-    when it is under it, as the transfer export copies those (D85)."""
-    base = view.draft.base_path().parent
-    path = Path(chosen)
-    try:
-        return path.resolve().relative_to(base.resolve()).as_posix()
-    except ValueError:
-        return str(path)
+    """A chosen file as the template writes it: relative to the draft's
+    folder, `..` and all (D104)."""
+    return view.draft.location_for(chosen)
 
 
 def pick_file(view: AuthorView, kind: str) -> str:
@@ -498,7 +493,7 @@ def location_row(view: AuthorView, parent: Any, row: int, kind: str, value: str,
         ttk.Button(holder, text="Browse", command=browse).pack(side="left", padx=4)
     label = "Projects table" if kind == "dbtable" else "File"
     hint = ("A table already in the project database." if kind == "dbtable"
-            else "Relative to the draft's folder (YAMLs/temp/ for an intake).")
+            else "Relative to the draft's folder: Browse writes it so (D104).")
     grid_row(parent, row, label, holder, hint)
 
 
