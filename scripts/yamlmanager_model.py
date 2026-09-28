@@ -1299,6 +1299,349 @@ class Draft:
 
 
 # =============================================================================
+# The table builder: a PK or fact table from the data dictionary
+# =============================================================================
+
+
+def type_family(sql_type: Any) -> str:
+    """A dictionary or SQL type's family, for matching join columns."""
+    text = str(sql_type or "").lower()
+    if re.search(r"char|text|string", text):
+        return "string"
+    if re.search(r"date|time", text):
+        return "datetime"
+    if re.search(r"bool|bit|flag", text):
+        return "boolean"
+    if re.search(r"bigint|integer|int|numeric|decimal|float|double|real", text):
+        return "number"
+    return re.sub(r"\s*\(.*", "", text).strip() or "unknown"
+
+
+def types_compatible(left: Any, right: Any) -> bool:
+    a, b = type_family(left), type_family(right)
+    return a != "unknown" and b != "unknown" and a == b
+
+
+def sql_type_for_dictionary(dictionary_type: Any) -> str:
+    """The column type a cohort declares for a dictionary type."""
+    text = str(dictionary_type or "").lower()
+    if "bigint" in text:
+        return "BIGINT"
+    if re.search(r"integer|int", text):
+        return "INT"
+    if re.search(r"date|time", text):
+        return "DATETIME2(7)"
+    if re.search(r"bool|bit|flag", text):
+        return "BIT"
+    if re.search(r"numeric|decimal|float|double|real", text):
+        return "FLOAT"
+    if re.search(r"char|text|string", text):
+        return "VARCHAR(400)"
+    return str(dictionary_type or "")
+
+
+def alias_for(table: str) -> str:
+    """`DiagnosisEventFact` is `def`: the first letter of each word."""
+    words = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", str(table or ""))
+    return "".join(w[0] for w in words).lower() or str(table or "")[:3].lower() or "t"
+
+
+JOIN_TYPES = ("INNER", "LEFT", "RIGHT", "FULL")
+JOIN_OPERATORS = ("=", "<>", "<", "<=", ">", ">=")
+
+
+class TableBuilder:
+    """One table being built from the dictionary, before it joins the draft.
+
+    It is the PK or a fact table depending on where it is committed; a
+    loaded table is edited in place. Its columns come from the chosen table,
+    in an order set by number; its joins reach the template's other tables.
+    """
+
+    def __init__(self, draft: Draft, index: int | None = None, pk: bool = False):
+        self.draft = draft
+        self.index = index
+        self.pk = pk
+        self.dictionary = draft.ws.dictionary()
+        cohort = draft._cohort(index) if index is not None else {}
+        if index is not None:
+            self.pk = draft.cohort_is_pk(cohort)
+        self.name = str(cohort.get("name") or "")
+        self.dest_table = str(cohort.get("dest_table") or "")
+        self.description = str(cohort.get("description") or "")
+        self.granularity = str(cohort.get("granularity") or "")
+        self.pull_this_cycle = cohort.get("pull_this_cycle") is not False
+        filt = cohort.get("filter") or {}
+        self.from_table, self.alias = self._parse_from(filt.get("from"))
+        self.joins: list[Any] = list(copy.deepcopy(filt.get("join") or []))
+        self.wheres: list[str] = [str(w) for w in filt.get("where") or []]
+        self.extra = {k: copy.deepcopy(v) for k, v in cohort.items()
+                      if k not in ("name", "dest_table", "description", "granularity", "pull_this_cycle",
+                                   "filter", "columns", "type", "recipe")}
+        self.columns: list[dict[str, Any]] = []
+        for column in cohort.get("columns") or []:
+            if isinstance(column, dict):
+                column = dict(column)
+                source = str(column.get("source") or "")
+                column.setdefault("name", source.split(".")[-1] if source else "")
+                self.columns.append(column)
+
+    def _parse_from(self, value: Any) -> tuple[str, str]:
+        text = str((value[0] if isinstance(value, list) and value else value) or "").strip()
+        match = re.match(r"^(.+?)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)$", text, re.I)
+        if match and match.group(1).strip() in self.dictionary:
+            return match.group(1).strip(), match.group(2)
+        return (text, alias_for(text)) if text in self.dictionary else ("", "")
+
+    # ------------------------------------------------------------ columns
+
+    def tables(self) -> list[str]:
+        return sorted(self.dictionary)
+
+    def dictionary_columns(self, table: str | None = None) -> dict[str, Any]:
+        entry = self.dictionary.get(table or self.from_table) or {}
+        columns = entry.get("columns") if isinstance(entry, dict) else None
+        return columns if isinstance(columns, dict) else {}
+
+    def _column_from(self, column: str) -> dict[str, Any]:
+        meta = self.dictionary_columns().get(column) or {}
+        out: dict[str, Any] = {"source": f"{self.alias}.{column}", "name": column,
+                               "type": sql_type_for_dictionary(meta.get("type"))}
+        if meta.get("nullable") is not None:
+            out["nullable"] = bool(meta["nullable"])
+        return out
+
+    @staticmethod
+    def source_column(column: dict[str, Any]) -> str:
+        return str(column.get("source") or "").split(".")[-1] or str(column.get("name") or "")
+
+    def set_from_table(self, table: str) -> None:
+        """Choose the table the rows come from: every column of it, joins cleared."""
+        if table not in self.dictionary:
+            raise DraftError(f"{table} is not in the data dictionary.")
+        if table == self.from_table:
+            return
+        self.from_table = table
+        self.alias = alias_for(table)
+        self.columns = [self._column_from(c) for c in self.dictionary_columns()]
+        self.joins = []
+
+    def set_alias(self, alias: str) -> None:
+        alias = alias.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", alias):
+            raise DraftError(f"`{alias}` cannot be an alias: letters, digits and _ only.")
+        for column in self.columns:
+            if str(column.get("source") or "").startswith(f"{self.alias}."):
+                column["source"] = f"{alias}.{self.source_column(column)}"
+        self.alias = alias
+
+    def removed_columns(self) -> list[str]:
+        chosen = {self.source_column(c) for c in self.columns}
+        return [c for c in self.dictionary_columns() if c not in chosen]
+
+    def remove_column(self, index: int) -> None:
+        del self.columns[index]
+
+    def restore_column(self, column: str) -> None:
+        if column not in self.dictionary_columns():
+            raise DraftError(f"{self.from_table} has no column {column}.")
+        self.columns.append(self._column_from(column))
+
+    def move_column(self, index: int, position: int) -> int:
+        """To `position`, 1 the top; past the end is the bottom. Returns where it went."""
+        column = self.columns.pop(index)
+        to = min(max(int(position) - 1, 0), len(self.columns))
+        self.columns.insert(to, column)
+        return to
+
+    def set_column(self, index: int, **fields: Any) -> None:
+        """name (its output name), description (for contents.md)."""
+        column = self.columns[index]
+        for key in ("name", "description"):
+            if key in fields:
+                value = str(fields[key]).strip()
+                if value:
+                    column[key] = value
+                else:
+                    column.pop(key, None)
+        if not column.get("name"):
+            column["name"] = self.source_column(column)
+
+    # -------------------------------------------------------------- joins
+
+    def join_tables(self) -> list[tuple[str, str, list[tuple[str, str]]]]:
+        """The template's other tables a join can reach: (name, kind, [(column, type)])."""
+        out = []
+        for i, cohort in enumerate(self.draft.doc["cohorts"]):
+            if i == self.index or not isinstance(cohort, dict):
+                continue
+            merged = self.draft._merged_cohort(i) or cohort
+            name = str(merged.get("dest_table") or merged.get("name") or "")
+            columns = [(str(c.get("name") or str(c.get("source") or "").split(".")[-1]), str(c.get("type") or ""))
+                       for c in merged.get("columns") or [] if isinstance(c, dict)]
+            if name:
+                out.append((name, "recipe" if cohort.get("recipe") else "table", columns))
+        for index, upload in enumerate(self.draft.doc["upload_cohorts"]):
+            if not isinstance(upload, dict):
+                continue
+            name = str(upload.get("dest_table") or upload.get("name") or "")
+            types = {my.column_source(c): str(c.get("type") or "") for c in upload.get("columns") or [] if isinstance(c, dict)}
+            columns = [(row.name, types.get(row.source, "")) for row in self.draft.column_rows(index) if not row.dropped]
+            if name:
+                out.append((name, "upload", columns))
+        return out
+
+    def join_check(self, base: int, table: str, column: str) -> tuple[bool, str]:
+        """Whether a join of this table's column `base` to `table.column` matches types."""
+        if not (0 <= base < len(self.columns)):
+            return False, "Choose a column of this table."
+        other = next((t for t in self.join_tables() if t[0] == table), None)
+        if other is None:
+            return False, "No such table in this template."
+        right = dict(other[2]).get(column)
+        if right is None:
+            return False, f"{table} has no column {column}."
+        left = self.columns[base].get("type") or ""
+        if not right:
+            return False, f"{table}.{column} has no declared type, so the match cannot be checked."
+        if types_compatible(left, right):
+            return True, f"{type_family(left)} match"
+        return False, f"{left} vs {right}"
+
+    def add_join(self, base: int, table: str, column: str, join_type: str = "INNER", operator: str = "=") -> None:
+        """A join to another table of the template, refused unless the types match."""
+        ok, text = self.join_check(base, table, column)
+        if not ok:
+            raise DraftError(f"Not joined: {text}.")
+        if join_type not in JOIN_TYPES or operator not in JOIN_OPERATORS:
+            raise DraftError(f"A join is {'/'.join(JOIN_TYPES)} with {' '.join(JOIN_OPERATORS)}.")
+        self.joins.append({"join_type": join_type, "base_alias": self.alias,
+                           "base_column": self.source_column(self.columns[base]), "operator": operator,
+                           "table": table, "alias": alias_for(table), "column": column})
+
+    def add_join_text(self, text: str) -> None:
+        """A join written out, for a Cosmos table: `INNER JOIN PatientDim AS p ON ...`."""
+        if text.strip():
+            self.joins.append(text.strip())
+
+    def remove_join(self, index: int) -> None:
+        del self.joins[index]
+
+    @staticmethod
+    def join_line(join: Any) -> str:
+        if isinstance(join, str):
+            return join
+        return (f"{join.get('join_type', 'INNER')} JOIN {{{{prefix}}}}_{join['table']} AS {join['alias']} "
+                f"ON {join['base_alias']}.{join['base_column']} {join.get('operator', '=')} "
+                f"{join['alias']}.{join['column']}")
+
+    def add_where(self, text: str = "") -> int:
+        self.wheres.append(text.strip())
+        return len(self.wheres) - 1
+
+    def set_where(self, index: int, text: str) -> None:
+        self.wheres[index] = text.strip()
+
+    def remove_where(self, index: int) -> None:
+        del self.wheres[index]
+
+    # ------------------------------------------------------------- finish
+
+    def build(self) -> dict[str, Any]:
+        """The table as the template writes it."""
+        name = self.name.strip() or "CustomTable"
+        cohort: dict[str, Any] = {"name": name, "dest_table": self.dest_table.strip() or name,
+                                  "type": "PK" if self.pk else "fact",
+                                  "pull_this_cycle": self.pull_this_cycle}
+        if self.description.strip():
+            cohort["description"] = self.description.strip()
+        if self.granularity.strip():
+            cohort["granularity"] = self.granularity.strip()
+        cohort.update(copy.deepcopy(self.extra))
+        cohort["columns"] = [
+            {k: c[k] for k in ("source", "name", "type", "nullable", "description") if c.get(k) not in (None, "")}
+            for c in self.columns
+        ]
+        filt: dict[str, Any] = {}
+        if self.from_table:
+            filt["from"] = [f"{self.from_table} as {self.alias}"]
+        joins = [self.join_line(j) for j in self.joins]
+        if joins:
+            filt["join"] = joins
+        wheres = [w for w in self.wheres if w]
+        if wheres:
+            filt["where"] = wheres
+        cohort["filter"] = filt
+        return cohort
+
+    def commit(self) -> int:
+        """Put the table into the draft: in place if it was loaded, else as the
+        PK or a new fact table. Returns its place in `cohorts`."""
+        if not self.from_table:
+            raise DraftError("Choose the table its rows come from first.")
+        cohort = self.build()
+        if self.index is not None:
+            if self.pk and not self.draft.cohort_is_pk(self.draft._cohort(self.index)):
+                pk = self.draft.pk()
+                if pk is not None:
+                    raise DraftError(f"The PK is already {pk.name}; a template has one PK.")
+            self.draft.doc["cohorts"][self.index] = cohort
+            self.draft._changed()
+            return self.index
+        if self.pk:
+            self.draft.set_pk_table(cohort)
+            return 0
+        return self.draft.add_fact_table(cohort)
+
+
+def save_recipe(recipes_path: Path, cohort: dict[str, Any]) -> tuple[bool, str]:
+    """Add a table to recipes.yaml as a recipe, keeping the file's comments and
+    layout (D56). A name already there is refused; the result is read back
+    before it replaces the file, so a bad write cannot break it."""
+    recipe = copy.deepcopy(cohort)
+    recipe.pop("recipe", None)
+    name = str(recipe.get("name") or "").strip()
+    if not name:
+        return False, "The table needs a Name before it can be saved as a recipe."
+    if not recipes_path.is_file():
+        return False, (f"There is no {recipes_path.name} here: recipes are kept on the Mac (D49), "
+                       "so a table is saved as a recipe there.")
+    try:
+        text = recipes_path.read_text(encoding="utf-8")
+        existing = my.load_yaml(recipes_path) or {}
+    except Exception as exc:  # noqa: BLE001 - said to the view
+        return False, f"Could not read {recipes_path.name}: {exc}"
+    names = {str(r.get("name")) for r in existing.get("recipes") or [] if isinstance(r, dict)}
+    if name in names:
+        return False, f"A recipe named {name} is already in {recipes_path.name}. Rename the table and save again."
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if re.match(r"^recipes:\s*(#.*)?$", line)), None)
+    if start is None:
+        lines += ["", "recipes:"]
+        end, indent = len(lines), "  "
+    else:
+        end = next((i for i in range(start + 1, len(lines))
+                    if lines[i] and not lines[i][0].isspace() and not lines[i].startswith("#")), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        item = next((line for line in lines[start + 1:end] if line.lstrip().startswith("- ")), "  - ")
+        indent = item[: len(item) - len(item.lstrip())]
+    entry = [indent + line if line else line for line in my.dump_yaml_text([recipe]).rstrip().splitlines()]
+    updated = "\n".join(lines[:end] + entry + lines[end:]) + "\n"
+    temp = recipes_path.with_name(recipes_path.name + ".tmp")
+    try:
+        temp.write_text(updated, encoding="utf-8")
+        check = my.load_yaml(temp) or {}
+        if name not in {str(r.get("name")) for r in check.get("recipes") or [] if isinstance(r, dict)}:
+            raise ValueError("the saved file did not read back with the new recipe")
+        os.replace(temp, recipes_path)
+    except Exception as exc:  # noqa: BLE001 - said to the view
+        temp.unlink(missing_ok=True)
+        return False, f"Could not save to {recipes_path.name}: {exc}. The file is unchanged."
+    return True, f"Saved {name} to {recipes_path.name}."
+
+
+# =============================================================================
 # Exports and the bundle queue (D91)
 # =============================================================================
 
@@ -1400,6 +1743,22 @@ recipes:
 """
 
 
+DICTIONARY = """
+DataDictionary:
+  EncounterFact:
+    description: Encounters.
+    columns:
+      EncounterKey: {type: bigint, nullable: false}
+      PatientDurableKey: {type: bigint, nullable: false}
+      DateKey: {type: integer, nullable: true}
+      Department: {type: string, nullable: true}
+  PatientDim:
+    columns:
+      DurableKey: {type: bigint, nullable: false}
+      Sex: {type: string, nullable: true}
+"""
+
+
 class ModelTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -1407,10 +1766,11 @@ class ModelTest(unittest.TestCase):
         self.home = Path(self._tmp.name)
         (self.home / "YAMLs" / "temp").mkdir(parents=True)
         (self.home / "YAMLs" / "recipes.yaml").write_text(RECIPES, encoding="utf-8")
+        (self.home / "YAMLs" / "datadictionary.yaml").write_text(DICTIONARY, encoding="utf-8")
         self.ws = Workspace(
             home=self.home,
             recipes_path=self.home / "YAMLs" / "recipes.yaml",
-            dictionary_path=self.home / "YAMLs" / "no_dictionary.yaml",
+            dictionary_path=self.home / "YAMLs" / "datadictionary.yaml",
             defaults_path=self.home / "YAMLs" / "template.yaml",
         )
 
@@ -1712,10 +2072,121 @@ class SaveTests(ModelTest):
         self.assertTrue(vm.validate().ok, [m.text for m in vm.validate().of_kind("error")])
 
 
+class TableBuilderTests(ModelTest):
+    def encounters(self, draft: Draft, pk: bool = False) -> TableBuilder:
+        builder = TableBuilder(draft, pk=pk)
+        builder.name = "Visits"
+        builder.set_from_table("EncounterFact")
+        return builder
+
+    def test_a_table_takes_every_column_of_its_source_typed(self):
+        builder = self.encounters(self.draft())
+        self.assertEqual(builder.alias, "ef")
+        self.assertEqual(builder.columns[0], {"source": "ef.EncounterKey", "name": "EncounterKey",
+                                              "type": "BIGINT", "nullable": False})
+        self.assertEqual(builder.columns[3]["type"], "VARCHAR(400)")
+
+    def test_columns_are_removed_restored_renamed_and_ordered_by_number(self):
+        builder = self.encounters(self.draft())
+        builder.remove_column(3)
+        self.assertEqual(builder.removed_columns(), ["Department"])
+        builder.restore_column("Department")
+        builder.set_column(3, name="Dept", description="Where it happened")
+        self.assertEqual(builder.move_column(3, 1), 0)
+        self.assertEqual([c["name"] for c in builder.columns], ["Dept", "EncounterKey", "PatientDurableKey", "DateKey"])
+        builder.set_alias("e")
+        self.assertEqual(builder.columns[0]["source"], "e.Department")
+
+    def test_committed_it_is_a_fact_table_the_check_accepts(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        builder = self.encounters(draft)
+        builder.add_join(1, "Patients", "PatientDurableKey")
+        builder.add_where("ef.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}")
+        index = builder.commit()
+        cohort = draft.doc["cohorts"][index]
+        self.assertEqual(cohort["filter"]["from"], ["EncounterFact as ef"])
+        self.assertEqual(cohort["filter"]["join"],
+                         ["INNER JOIN {{prefix}}_Patients AS p ON ef.PatientDurableKey = p.PatientDurableKey"])
+        validation = draft.validate()
+        self.assertTrue(validation.ok, [m.text for m in validation.of_kind("error")])
+
+    def test_a_join_whose_types_differ_is_refused(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        builder = self.encounters(draft)
+        self.assertEqual(builder.join_check(3, "Patients", "PatientDurableKey"), (False, "VARCHAR(400) vs BIGINT"))
+        with self.assertRaises(DraftError):
+            builder.add_join(3, "Patients", "PatientDurableKey")
+
+    def test_an_upload_column_without_a_type_cannot_be_checked(self):
+        self.codes_csv()
+        draft = self.draft()
+        draft.add_supporting("csv", "Codes", "csv/codes.csv")
+        builder = self.encounters(draft)
+        ok, text = builder.join_check(0, "Codes", "Code")
+        self.assertFalse(ok)
+        self.assertIn("no declared type", text)
+        draft.set_column_type(0, "Code", "BIGINT")
+        self.assertTrue(self.encounters(draft).join_check(0, "Codes", "Code")[0])
+
+    def test_a_loaded_table_is_edited_in_place_keeping_what_the_builder_does_not_show(self):
+        draft = self.draft()
+        index = self.encounters(draft).commit()
+        draft.doc["cohorts"][index]["dedup_keys"] = ["EncounterKey"]
+        again = TableBuilder(draft, index)
+        self.assertEqual((again.from_table, again.alias, len(again.columns)), ("EncounterFact", "ef", 4))
+        again.remove_column(3)
+        self.assertEqual(again.commit(), index)
+        self.assertEqual(len(draft.doc["cohorts"]), 1)
+        self.assertEqual(draft.doc["cohorts"][index]["dedup_keys"], ["EncounterKey"])
+        self.assertEqual(len(draft.doc["cohorts"][index]["columns"]), 3)
+
+    def test_as_the_pk_it_replaces_the_pk_there_was(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        self.encounters(draft, pk=True).commit()
+        pk = draft.pk()
+        self.assertEqual((pk.kind, pk.name), ("dictionary", "Visits"))
+        self.assertEqual(len(draft.doc["cohorts"]), 1)
+
+    def test_nothing_is_committed_without_a_source_table(self):
+        with self.assertRaises(DraftError):
+            TableBuilder(self.draft()).commit()
+
+
+class SaveRecipeTests(ModelTest):
+    def test_the_recipe_joins_the_list_and_the_file_keeps_its_comments(self):
+        self.ws.recipes_path.write_text("# my recipes\n" + RECIPES + "# the end\n", encoding="utf-8")
+        table = TableBuilder(self.draft())
+        table.name = "Visits"
+        table.set_from_table("EncounterFact")
+        ok, message = save_recipe(self.ws.recipes_path, table.build())
+        self.assertTrue(ok, message)
+        text = self.ws.recipes_path.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("# my recipes\n"))
+        self.assertIn("Visits", [r["name"] for r in my.load_yaml(self.ws.recipes_path)["recipes"]])
+        self.assertIn("Visits", self.ws.fact_recipes())
+
+    def test_a_name_already_there_is_refused_and_the_file_unchanged(self):
+        before = self.ws.recipes_path.read_text(encoding="utf-8")
+        ok, message = save_recipe(self.ws.recipes_path, {"name": "Codes", "columns": []})
+        self.assertFalse(ok)
+        self.assertIn("already", message)
+        self.assertEqual(self.ws.recipes_path.read_text(encoding="utf-8"), before)
+
+    def test_without_a_recipes_file_it_says_where_recipes_live(self):
+        ok, message = save_recipe(self.home / "none.yaml", {"name": "X"})
+        self.assertFalse(ok)
+        self.assertIn("Mac", message)
+
+
 def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
-    for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests, SaveTests):
+    for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
+                 SaveTests, TableBuilderTests, SaveRecipeTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1
