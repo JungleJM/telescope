@@ -28,6 +28,7 @@ from pathlib import Path
 
 from .lock import LockInfo
 from .manifest import Manifest, ManifestError
+from . import config
 from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
 
 # Windows can give Execute a console window of its own; elsewhere it runs
@@ -37,7 +38,7 @@ CAN_OPEN_CONSOLE = hasattr(subprocess, "CREATE_NEW_CONSOLE")
 SETTINGS_FILENAME = ".pullmanager-gui.json"
 # Where it lives in the working folder: under runs/, with everything else the
 # app makes, not loose beside your files. Once it was at the folder's top.
-SETTINGS_FOLDER = "runs"
+SETTINGS_FOLDER = "runs"  # the default; datascope.json's runs folder where it names one
 # What an older launcher saved as if chosen: it meant "the default" (D57).
 OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 
@@ -91,9 +92,12 @@ class Paths:
     datadictionary: str = ""
     split_dir: str = ""
     sql_dir: str = ""
+    # The runs folder, relative to the working folder: datascope.json's, filled
+    # in by the window from its own working folder (D111). Not remembered.
+    runs: str = config.RUNS_DEFAULT
 
     def run_dir(self) -> Path:
-        return Path(RUNS_DIR) / run_folder_name(_require(self.template, "transfer YAML"))
+        return Path(self.runs or config.RUNS_DEFAULT) / run_folder_name(_require(self.template, "transfer YAML"))
 
     def split_folder(self) -> Path:
         chosen = self.split_dir.strip()
@@ -419,7 +423,7 @@ def settings_path(directory: Path | None = None) -> Path:
 
     Not inside the extracted bundle, which is replaced on every update.
     """
-    return Path(directory or Path.cwd()) / SETTINGS_FOLDER / SETTINGS_FILENAME
+    return config.runs_dir(Path(directory or Path.cwd())) / SETTINGS_FILENAME
 
 
 def move_old_settings(directory: Path | None = None) -> None:
@@ -449,7 +453,7 @@ def load_settings(directory: Path | None = None) -> Paths:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return Paths()
-    known = {f for f in Paths.__dataclass_fields__}
+    known = {f for f in Paths.__dataclass_fields__} - {"runs"}
     chosen = {k: str(v) for k, v in data.items() if k in known}
     for key, old_default in OLD_DEFAULT_FOLDERS.items():
         if chosen.get(key, "").strip() == old_default:
@@ -460,5 +464,6 @@ def load_settings(directory: Path | None = None) -> Paths:
 def save_settings(paths: Paths, directory: Path | None = None) -> Path:
     path = settings_path(directory)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(paths), indent=2) + "\n", encoding="utf-8")
+    remembered = {k: v for k, v in asdict(paths).items() if k != "runs"}
+    path.write_text(json.dumps(remembered, indent=2) + "\n", encoding="utf-8")
     return path

@@ -28,6 +28,7 @@ from bundle_extractor import (  # noqa: E402
     safe_relpath,
 )
 from bundle_pullmanager import (  # noqa: E402
+    RECIPES_PATH,
     COMPANION_FILES,
     SOURCE_ROOT,
     build,
@@ -136,11 +137,13 @@ class BuildTests(BundleTestCase):
         self.assertIn("stock/viewparquets.py", published)
 
     def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
-        # makeYaml resolves YAMLs/ as a sibling of scripts/, so the published
-        # layout has to preserve that or its defaults break once extracted.
+        # makeYaml's defaults are beside the code (D111): the dictionary must be
+        # published where its default looks, or it breaks once extracted.
+        import makeYaml
+
         published = {p for _, p, _policy in COMPANION_FILES}
         self.assertIn("scripts/makeYaml.py", published)
-        self.assertTrue(any(p.startswith("YAMLs/") for p in published))
+        self.assertIn(makeYaml.CORE_DEFAULTS["datadictionary"], published)
 
     def test_rebuild_is_byte_identical(self):
         self.assertEqual(render_bundle(), render_bundle())
@@ -177,6 +180,8 @@ class ExtractionPolicyTests(BundleTestCase):
             "YAMLs/recipes.yaml",
             "YAMLs/template.yaml",
             "YAMLs/template.yaml.example",
+            "recipes/recipes.yaml",
+            "recipes/template.yaml",
             "scripts/yamlmanager.py",
             "scripts/yamlmanager_backend.py",
         ):
@@ -220,19 +225,19 @@ class ExtractionPolicyTests(BundleTestCase):
         # Changed upstream, never touched here: not an edit, nothing to keep.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        self.pretend_previous_release_shipped(target, "YAMLs/datadictionary.yaml", "# last release\n")
+        self.pretend_previous_release_shipped(target, "recipes/datadictionary.yaml", "# last release\n")
         extract(self.bundle, target)
-        self.assertFalse((target / "YAMLs/datadictionary.yaml.local").exists())
+        self.assertFalse((target / "recipes/datadictionary.yaml.local").exists())
         self.assertEqual(
-            (target / "YAMLs/datadictionary.yaml").read_bytes(),
-            SOURCES["YAMLs/datadictionary.yaml"].read_bytes(),
+            (target / "recipes/datadictionary.yaml").read_bytes(),
+            SOURCES["recipes/datadictionary.yaml"].read_bytes(),
         )
 
     def test_a_kept_copy_survives_the_next_update(self):
-        target = self.extract_twice("YAMLs/datadictionary.yaml", "# edited on the VM\n")
+        target = self.extract_twice("recipes/datadictionary.yaml", "# edited on the VM\n")
         extract(self.bundle, target)
         self.assertEqual(
-            (target / "YAMLs/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            (target / "recipes/datadictionary.yaml.local").read_text(encoding="utf-8"),
             "# edited on the VM\n",
         )
 
@@ -242,7 +247,7 @@ class ExtractionPolicyTests(BundleTestCase):
         # is why your templates belong beside the tree rather than in it.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        stray = target / "YAMLs" / "UCPatients.yaml"
+        stray = target / "recipes" / "UCPatients.yaml"
         stray.write_text("# my pull\n", encoding="utf-8")
         extract(self.bundle, target)
         self.assertFalse(stray.exists())
@@ -257,11 +262,11 @@ class ExtractionPolicyTests(BundleTestCase):
         self.assertEqual((mine / "UCPatients.yaml").read_text(encoding="utf-8"), "# my pull\n")
 
     def test_a_replaced_file_is_updated_but_the_old_one_is_kept(self):
-        target = self.extract_twice("YAMLs/datadictionary.yaml", "# edited on the VM\n")
-        shipped = (SOURCES["YAMLs/datadictionary.yaml"]).read_bytes()
-        self.assertEqual((target / "YAMLs/datadictionary.yaml").read_bytes(), shipped)
+        target = self.extract_twice("recipes/datadictionary.yaml", "# edited on the VM\n")
+        shipped = (SOURCES["recipes/datadictionary.yaml"]).read_bytes()
+        self.assertEqual((target / "recipes/datadictionary.yaml").read_bytes(), shipped)
         self.assertEqual(
-            (target / "YAMLs/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            (target / "recipes/datadictionary.yaml.local").read_text(encoding="utf-8"),
             "# edited on the VM\n",
         )
 
@@ -551,7 +556,7 @@ class EndToEndTests(BundleTestCase):
 
     def test_runtime_reads_a_freshly_generated_split_manifest(self):
         template = REPO_ROOT / "YAMLs" / "manager_test_cases" / "01_valid_basic.yaml"
-        recipes = REPO_ROOT / "YAMLs" / "recipes.yaml"
+        recipes = RECIPES_PATH
         self.assertTrue(template.is_file(), f"fixture template missing: {template}")
 
         split_dir = self.tmp / "split"
@@ -581,7 +586,7 @@ class EndToEndTests(BundleTestCase):
         export = self.run_python(
             str(REPO_ROOT / "scripts" / "makeYaml.py"),
             "--template", str(work / "01_valid_basic.yaml"),
-            "--recipes", str(REPO_ROOT / "YAMLs" / "recipes.yaml"),
+            "--recipes", str(RECIPES_PATH),
             "--export-transfer", "--out", str(work / "Basic_transfer.yaml"),
         )
         self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
@@ -615,7 +620,7 @@ class EndToEndTests(BundleTestCase):
         export = self.run_python(
             str(REPO_ROOT / "scripts" / "makeYaml.py"),
             "--template", str(work / "02_valid_multipliers_batching.yaml"),
-            "--recipes", str(REPO_ROOT / "YAMLs" / "recipes.yaml"),
+            "--recipes", str(RECIPES_PATH),
             "--export-transfer", "--out", str(work / "IBD_transfer.yaml"),
         )
         self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
@@ -662,7 +667,7 @@ class EndToEndTests(BundleTestCase):
 
     def test_runtime_reads_a_batch_product_manifest(self):
         template = REPO_ROOT / "YAMLs" / "manager_test_cases" / "02_valid_multipliers_batching.yaml"
-        recipes = REPO_ROOT / "YAMLs" / "recipes.yaml"
+        recipes = RECIPES_PATH
         split_dir = self.tmp / "split"
         gen = self.run_python(
             str(REPO_ROOT / "scripts" / "makeYaml.py"),

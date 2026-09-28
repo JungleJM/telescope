@@ -443,3 +443,42 @@ class SettingsPlaceTests(unittest.TestCase):
         (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
         self.assertEqual(launcher.load_settings(self.work).template, "New_transfer.yaml")
         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
+
+
+class ConfigTests(unittest.TestCase):
+    """D111: the runtime reads datascope.json as makeYaml does."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.home = Path(self._tmp.name)
+
+    def test_its_defaults_are_makeyamls(self):
+        import importlib.util
+        from .. import config
+
+        spec = importlib.util.spec_from_file_location("makeyaml_for_config", locate_tools().make_yaml)
+        make_yaml = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = make_yaml
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(make_yaml)
+        self.assertEqual(config.CORE_DEFAULTS, make_yaml.CORE_DEFAULTS)
+        self.assertEqual(config.RUNS_DEFAULT, str(make_yaml.RUNS_DIR))
+        self.assertEqual(config.CONFIG_NAME, make_yaml.CONFIG_NAME)
+
+    def test_pulls_are_found_under_the_runs_folder_it_names(self):
+        from .. import pulls
+
+        (self.home / "datascope.json").write_text('{"runs": "cleanup/runs"}', encoding="utf-8")
+        manifest = self.home / "cleanup" / "runs" / "IBD" / "split" / "pullmanifest.yaml"
+        dump_yaml(SAMPLE_MANIFEST, manifest)
+        self.assertEqual(pulls.resolve("IBD", self.home).resolve(), manifest.resolve())
+        command, folder = pulls.execute_command(manifest, self.home)
+        self.assertEqual((command, folder), ("python pullmanager.py --execute IBD", self.home.resolve()))
+        self.assertTrue((launcher.save_settings(launcher.Paths(template="IBD_transfer.yaml"), self.home)
+                         ).is_relative_to(self.home / "cleanup" / "runs"))
+
+    def test_without_it_runs_are_in_the_working_folder(self):
+        from .. import config
+
+        self.assertEqual(config.runs_dir(self.home), self.home / "runs")

@@ -63,14 +63,20 @@ CONTENT_ID_NAME = "content_id.txt"
 # VM works from transfer YAMLs, which carry their recipes written out in full,
 # and it cannot open the browser UI anyway; the app's Author half adjusts
 # them there (D94). Nothing the user authors is bundled.
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+import makeYaml  # noqa: E402  the core files' places (D111)
+
 COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
     # The app's Author half (D93): the model and its tkinter view, beside the
     # makeYaml they use, where the launcher finds them.
     (REPO_ROOT / "scripts" / "yamlmanager_model.py", "scripts/yamlmanager_model.py", "replace"),
     (REPO_ROOT / "scripts" / "yamlmanager_tk.py", "scripts/yamlmanager_tk.py", "replace"),
-    # Authored on the Mac and flowing one way, so the shipped copy wins.
-    (REPO_ROOT / "YAMLs" / "datadictionary.yaml", "YAMLs/datadictionary.yaml", "replace"),
+    # Authored on the Mac and flowing one way, so the shipped copy wins. Read
+    # from where datascope.json says; published where makeYaml's default
+    # finds it in the extracted tree (D111).
+    (makeYaml.core_path("datadictionary"), "recipes/datadictionary.yaml", "replace"),
 )
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to
@@ -90,7 +96,7 @@ QUEUE_HEADER = (
     "# Temps queued for the bundle, one per line (D91). YAML Manager's Save & Refresh\n"
     "# adds to it and its Builder > Exports edits it; python3 makebundle.py queue carries it.\n"
 )
-RECIPES_PATH = REPO_ROOT / "YAMLs" / "recipes.yaml"
+RECIPES_PATH = makeYaml.core_path("recipes")
 
 BUNDLE_FORMAT_VERSION = 1
 FUTURE_IMPORT = "from __future__ import annotations"

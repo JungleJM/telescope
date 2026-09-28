@@ -13,12 +13,13 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import config
 from .lock import LockInfo, age_words, clock_time, live_lock
 from .manifest import Manifest, ManifestError
 from .models import DONE, FAILED, PENDING, RUNNING, SKIPPED
 from .yaml_io import load_yaml
 
-RUNS_DIR = "runs"
+RUNS_DIR = "runs"  # the default; datascope.json may say otherwise (D111)
 SPLIT_DIR = "split"
 LOGS_DIR = "logs"
 MANIFEST_FILENAME = "pullmanifest.yaml"
@@ -103,7 +104,7 @@ def is_manifest_file(path: Path) -> bool:
 
 def manifest_in(home: Path, name: str) -> Path | None:
     """`<home>/runs/<name>/split/pullmanifest.yaml`, matching the name in any case."""
-    runs = home / RUNS_DIR
+    runs = config.runs_dir(home)
     if not runs.is_dir():
         return None
     # Listed rather than looked up, so the folder's own spelling comes back.
@@ -146,7 +147,7 @@ def not_found_message(argument: str, name: str, cwd: Path) -> str:
     looked = " and ".join(str(home) for home in home_folders(cwd))
     lines = [
         f"No pull named {argument!r}: looked for "
-        f"{Path(RUNS_DIR) / name / SPLIT_DIR / MANIFEST_FILENAME} in {looked}."
+        f"{config.runs_setting(cwd) / name / SPLIT_DIR / MANIFEST_FILENAME} in {looked}."
     ]
     pulls = find_pulls(cwd)
     if pulls:
@@ -212,7 +213,7 @@ def find_pulls(cwd: Path | None = None) -> list[Pull]:
     pulls: list[Pull] = []
     seen: set[Path] = set()
     for home in home_folders(cwd):
-        runs = home / RUNS_DIR
+        runs = config.runs_dir(home)
         if not runs.is_dir():
             continue
         for folder in sorted(runs.iterdir(), key=lambda p: p.name.lower()):
@@ -233,13 +234,13 @@ def execute_command(manifest: Path, cwd: Path | None = None,
     """
     manifest = Path(manifest).resolve()
     split, run_dir = manifest.parent, manifest.parent.parent
-    if (
-        manifest.name == MANIFEST_FILENAME
-        and split.name == SPLIT_DIR
-        and run_dir.parent.name == RUNS_DIR
-    ):
-        return f"python pullmanager.py {option} {run_dir.name}", run_dir.parent.parent
     here = Path(cwd or Path.cwd()).resolve()
+    if manifest.name == MANIFEST_FILENAME and split.name == SPLIT_DIR:
+        for home in [here, *home_folders(here)]:
+            if config.runs_dir(home).resolve() == run_dir.parent:
+                return f"python pullmanager.py {option} {run_dir.name}", Path(home).resolve()
+        if run_dir.parent.name == RUNS_DIR:
+            return f"python pullmanager.py {option} {run_dir.name}", run_dir.parent.parent
     return f'python pullmanager.py {option} "{shown(manifest, here)}"', here
 
 
@@ -261,7 +262,7 @@ def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:",
     pulls = find_pulls(here)
     if not pulls:
         return [
-            f"No pulls under {Path(RUNS_DIR)}{os.sep} yet. Export a transfer YAML's split "
+            f"No pulls under {config.runs_setting(here)}{os.sep} yet. Export a transfer YAML's split "
             "first (Export split in the launcher).",
         ]
     width = max(len(p.name) for p in pulls)

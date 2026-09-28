@@ -68,9 +68,10 @@ def dictionary_path() -> Path | None:
     if chosen:
         return Path(chosen)
     try:
+        from . import config
         from .launcher import locate_tools
 
-        return locate_tools().make_yaml.parent.parent / "YAMLs" / "datadictionary.yaml"
+        return config.core_path("datadictionary", locate_tools().make_yaml.parent.parent)
     except Exception:
         return None
 

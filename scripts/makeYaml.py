@@ -35,6 +35,18 @@ EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 TRANSFER_SUFFIX = "_transfer"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 RUNS_DIR = Path("runs")
+# Where the core files and runs are (D111): datascope.json in the working
+# folder, each path relative to it. Without it, these defaults: the core files
+# beside the code (the extracted bundle's layout), runs in the working folder.
+# Pullmanager keeps the same defaults (pullmanager/config.py); a test holds them.
+CONFIG_NAME = "datascope.json"
+CORE_DEFAULTS = {
+    "recipes": "recipes/recipes.yaml",
+    "datadictionary": "recipes/datadictionary.yaml",
+    "template": "recipes/template.yaml",
+    "vm_plugins": "recipes/DSVM Plugins.yaml",
+}
+CONFIG_KEYS = (*CORE_DEFAULTS, "runs")
 # Dropped from a template's file name to name its run folder (D57).
 RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_intake", "_temp")
 
@@ -379,6 +391,49 @@ def transfer_home() -> Path:
     return root.parent if (root / ".bundle-manifest.json").is_file() else root
 
 
+class ConfigError(RuntimeError):
+    """datascope.json cannot be read, or names what it cannot mean."""
+
+
+def config_file() -> Path:
+    return transfer_home() / CONFIG_NAME
+
+
+def read_config() -> dict[str, str]:
+    """datascope.json's paths, or {} where there is none (D111)."""
+    path = config_file()
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"{path} could not be read: {exc}. Fix it, or remove it to use the defaults.") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} must be a mapping of names to paths.")
+    unknown = sorted(set(data) - set(CONFIG_KEYS))
+    if unknown:
+        raise ConfigError(f"{path} names {', '.join(unknown)}, which nothing reads. "
+                          f"It may set: {', '.join(CONFIG_KEYS)}.")
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def core_path(key: str) -> Path:
+    """A core file (recipes, datadictionary, template, vm_plugins): where
+    datascope.json says, else its default beside the code (D111)."""
+    config = read_config()
+    if key in config:
+        return config_file().parent / config[key]
+    return project_root() / CORE_DEFAULTS[key]
+
+
+def runs_root() -> Path:
+    """Where runs go: datascope.json's `runs`, else `runs/` in the working folder."""
+    config = read_config()
+    if "runs" in config:
+        return config_file().parent / config["runs"]
+    return transfer_home() / RUNS_DIR
+
+
 def run_folder_name(template_path: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the template's file name without
     `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
@@ -396,16 +451,17 @@ def run_folder_name(template_path: str | Path) -> str:
 
 
 def default_split_dir(template_path: str | Path) -> Path:
-    """Where a split goes without `--out-dir`: `runs/<project>/split` (D57)."""
-    return project_root() / RUNS_DIR / run_folder_name(template_path) / "split"
+    """Where a split goes without `--out-dir`: `runs/<project>/split` (D57),
+    in the runs folder datascope.json names (D111)."""
+    return runs_root() / run_folder_name(template_path) / "split"
 
 
 def default_template_path() -> Path:
-    return project_root() / "YAMLs" / "template.yaml"
+    return core_path("template")
 
 
 def default_recipes_path() -> Path:
-    return project_root() / "YAMLs" / "recipes.yaml"
+    return core_path("recipes")
 
 
 YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
@@ -1957,7 +2013,7 @@ def public_batching(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def default_datadictionary_path() -> Path:
-    return project_root() / "YAMLs" / "datadictionary.yaml"
+    return core_path("datadictionary")
 
 
 # Dictionary types are abstract and annotated ("bigint (foreign key to ...)");
@@ -5432,6 +5488,44 @@ class SavedDraftTests(MakeYamlTest):
         self.assertHasError(res, "multiplier_without_levels")
 
 
+class ConfigTests(MakeYamlTest):
+    """D111: datascope.json says where the core files and runs are."""
+
+    def home(self, config: dict | None) -> Path:
+        home = self.tmp / "home"
+        home.mkdir(exist_ok=True)
+        if config is not None:
+            (home / CONFIG_NAME).write_text(json.dumps(config), encoding="utf-8")
+        return home
+
+    def test_without_it_the_core_files_are_beside_the_code_and_runs_in_the_home(self):
+        home = self.home(None)
+        with mock.patch(f"{__name__}.transfer_home", return_value=home), \
+                mock.patch(f"{__name__}.project_root", return_value=self.tmp / "code"):
+            self.assertEqual(default_datadictionary_path(), self.tmp / "code" / "recipes" / "datadictionary.yaml")
+            self.assertEqual(runs_root(), home / "runs")
+
+    def test_a_moved_file_is_found_through_it(self):
+        home = self.home({"recipes": "elsewhere/my_recipes.yaml", "runs": "cleanup/runs"})
+        with mock.patch(f"{__name__}.transfer_home", return_value=home):
+            self.assertEqual(default_recipes_path(), home / "elsewhere" / "my_recipes.yaml")
+            self.assertEqual(default_split_dir("IBD_transfer.yaml"), home / "cleanup" / "runs" / "IBD" / "split")
+            self.assertEqual(default_template_path(), project_root() / CORE_DEFAULTS["template"])
+
+    def test_a_name_nothing_reads_is_refused(self):
+        home = self.home({"recipe": "x.yaml"})
+        with mock.patch(f"{__name__}.transfer_home", return_value=home):
+            with self.assertRaises(ConfigError) as caught:
+                default_recipes_path()
+        self.assertIn("recipes", str(caught.exception))
+
+    def test_the_repositorys_own_says_where_the_moved_files_are(self):
+        # The files moved to recipes/ (D113); the repository's config finds them.
+        for key in CORE_DEFAULTS:
+            with self.subTest(key=key):
+                self.assertTrue(core_path(key).is_file(), core_path(key))
+
+
 class AddedLinesTests(MakeYamlTest):
     """D105: extra where and join lines on a table, a recipe's included."""
 
@@ -5645,6 +5739,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
     "added_lines": AddedLinesTests,
+    "config": ConfigTests,
     "upload_column_changes": UploadColumnChangeTests,
 }
 

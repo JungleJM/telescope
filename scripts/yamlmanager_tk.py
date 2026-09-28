@@ -1640,10 +1640,12 @@ class ViewTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         shutil.copytree(REPO_YAMLS / "temp", self.tmp / "YAMLs" / "temp",
                         ignore=shutil.ignore_patterns("bundle_queue.txt"))
-        for name in ("recipes.yaml", "datadictionary.yaml", "template.yaml"):
-            shutil.copy(REPO_YAMLS / name, self.tmp / "YAMLs" / name)
-        self.ws = model.Workspace(self.tmp, self.tmp / "YAMLs" / "recipes.yaml",
-                                  self.tmp / "YAMLs" / "datadictionary.yaml", self.tmp / "YAMLs" / "template.yaml")
+        # The core files, from wherever datascope.json says (D111).
+        (self.tmp / "recipes").mkdir()
+        for key in ("recipes", "datadictionary", "template"):
+            shutil.copy(model.my.core_path(key), self.tmp / "recipes" / f"{key}.yaml")
+        self.ws = model.Workspace(self.tmp, self.tmp / "recipes" / "recipes.yaml",
+                                  self.tmp / "recipes" / "datadictionary.yaml", self.tmp / "recipes" / "template.yaml")
         frame = ttk.Frame(self.root)
         frame.pack()
         self.transferred: list[Path] = []

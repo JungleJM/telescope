@@ -14,7 +14,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import launcher, pulls
+from . import config, launcher, pulls
 from .launcher import LauncherError, Options, Paths
 from .lock import LockInfo, clear_lock_of, live_lock
 
@@ -180,7 +180,8 @@ class LauncherApp:
     # ------------------------------------------------------------ settings
 
     def paths(self) -> Paths:
-        return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS})
+        return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS},
+                     runs=str(config.runs_setting(self.workdir)))
 
     def options(self) -> Options:
         return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()))
