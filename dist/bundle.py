@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "875f2fc82c0ba3914748eba73b9fffccb1a1ae3beaedaee80e8acfb40b5afb0c",
+  "content_id": "02ba63f6fcef6cda73c5f20fb17af41e4d871706c35a51f59565a3b1bac24e8a",
   "file_count": 53,
   "files": [
     {
@@ -585,8 +585,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/launcher.py",
       "policy": "replace",
-      "sha256": "5d63c12e9487c4cb19ebd3c25364dda421506a0974e90eb80fc54eacc34d9694",
-      "size": 15345
+      "sha256": "eace5103125c71a10c48709eb1c1cca8f904266416a46610864ee1953e619849",
+      "size": 16389
     },
     {
       "path": "pullmanager/loaders.py",
@@ -717,8 +717,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "pullmanager/tests/test_launcher.py",
       "policy": "replace",
-      "sha256": "5e73f6c793cb366ed8e649cc5f5846d0423ccb9a7940e037afa212526048135e",
-      "size": 18604
+      "sha256": "52f23c332d6a30ddf13db9da12ee0446b17d3a048d73a53bcf8bb1bd72ba6414",
+      "size": 20149
     },
     {
       "path": "pullmanager/tests/test_lock.py",
@@ -795,14 +795,14 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "192d8e6775c8ced9ab4433d21c56891f846d21fcdbc56b4029b086e89ba47c5a",
-      "size": 242658
+      "sha256": "d621d3d30efdb575618521931be571a2fd6796d7783607bbe550cb6b47e70756",
+      "size": 244999
     },
     {
       "path": "scripts/yamlmanager_model.py",
       "policy": "replace",
-      "sha256": "9e826f1ea738a6a686d90f071748509698cf29395098f95bca34e40a5fc91afd",
-      "size": 99245
+      "sha256": "44654ce647ed01c66fd955870a73f588818032884e09ed4202dfced1f8c66068",
+      "size": 102030
     },
     {
       "path": "scripts/yamlmanager_tk.py",
@@ -6516,7 +6516,7 @@ if __name__ == "__main__":
 #     return 0
 #
 # === END FILE: pullmanager/gui.py ===
-# === BEGIN FILE: pullmanager/launcher.py SHA256: 5d63c12e9487c4cb19ebd3c25364dda421506a0974e90eb80fc54eacc34d9694 SIZE: 15345 ===
+# === BEGIN FILE: pullmanager/launcher.py SHA256: eace5103125c71a10c48709eb1c1cca8f904266416a46610864ee1953e619849 SIZE: 16389 ===
 # """Logic behind the desktop launcher, with no tkinter in it.
 #
 # The launcher is a front end over the command line, not a second
@@ -6554,6 +6554,9 @@ if __name__ == "__main__":
 # CAN_OPEN_CONSOLE = hasattr(subprocess, "CREATE_NEW_CONSOLE")
 #
 # SETTINGS_FILENAME = ".pullmanager-gui.json"
+# # Where it lives in the working folder: under runs/, with everything else the
+# # app makes, not loose beside your files. Once it was at the folder's top.
+# SETTINGS_FOLDER = "runs"
 # # What an older launcher saved as if chosen: it meant "the default" (D57).
 # OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 #
@@ -6931,15 +6934,34 @@ if __name__ == "__main__":
 #
 #
 # def settings_path(directory: Path | None = None) -> Path:
-#     """Remembered choices live in the working directory, beside your files.
+#     """Remembered choices live in the working directory's runs/ folder.
 #
 #     Not inside the extracted bundle, which is replaced on every update.
 #     """
-#     return Path(directory or Path.cwd()) / SETTINGS_FILENAME
+#     return Path(directory or Path.cwd()) / SETTINGS_FOLDER / SETTINGS_FILENAME
+#
+#
+# def move_old_settings(directory: Path | None = None) -> None:
+#     """A settings file at the working folder's top, where it used to be, moves
+#     to runs/; if one is already there, that one is kept and the old removed."""
+#     old = Path(directory or Path.cwd()) / SETTINGS_FILENAME
+#     if not old.is_file():
+#         return
+#     new = settings_path(directory)
+#     try:
+#         if not new.is_file():
+#             new.parent.mkdir(parents=True, exist_ok=True)
+#             new.write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+#         old.unlink()
+#     except OSError:
+#         pass  # remembering choices is a convenience; the old file still loads
 #
 #
 # def load_settings(directory: Path | None = None) -> Paths:
+#     move_old_settings(directory)
 #     path = settings_path(directory)
+#     if not path.is_file():
+#         path = Path(directory or Path.cwd()) / SETTINGS_FILENAME  # could not be moved
 #     if not path.is_file():
 #         return Paths()
 #     try:
@@ -6956,6 +6978,7 @@ if __name__ == "__main__":
 #
 # def save_settings(paths: Paths, directory: Path | None = None) -> Path:
 #     path = settings_path(directory)
+#     path.parent.mkdir(parents=True, exist_ok=True)
 #     path.write_text(json.dumps(asdict(paths), indent=2) + "\n", encoding="utf-8")
 #     return path
 #
@@ -12294,7 +12317,7 @@ if __name__ == "__main__":
 #         self.assertIsNotNone(app.run)
 #
 # === END FILE: pullmanager/tests/test_gui.py ===
-# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 5e73f6c793cb366ed8e649cc5f5846d0423ccb9a7940e037afa212526048135e SIZE: 18604 ===
+# === BEGIN FILE: pullmanager/tests/test_launcher.py SHA256: 52f23c332d6a30ddf13db9da12ee0446b17d3a048d73a53bcf8bb1bd72ba6414 SIZE: 20149 ===
 # """The launcher's controller: commands, the subprocess runner, and status rows."""
 #
 # from __future__ import annotations
@@ -12684,7 +12707,7 @@ if __name__ == "__main__":
 #         # The extracted bundle is replaced on update, so remembered choices
 #         # kept inside it would be lost every time.
 #         path = save_settings(Paths(template="x"), self.tmp)
-#         self.assertEqual(path.parent, self.tmp)
+#         self.assertEqual(path.parent, self.tmp / "runs")  # in the working folder's runs/
 #
 #     def test_absent_or_corrupt_settings_give_defaults(self):
 #         self.assertEqual(load_settings(self.tmp), Paths())
@@ -12713,6 +12736,33 @@ if __name__ == "__main__":
 #             '{"template": "a.yaml", "from_a_later_version": 1}', encoding="utf-8"
 #         )
 #         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
+#
+#
+# class SettingsPlaceTests(unittest.TestCase):
+#     """Remembered paths live in runs/, not loose in the working folder."""
+#
+#     def setUp(self):
+#         self._tmp = tempfile.TemporaryDirectory()
+#         self.addCleanup(self._tmp.cleanup)
+#         self.work = Path(self._tmp.name)
+#
+#     def test_saved_under_runs(self):
+#         launcher.save_settings(launcher.Paths(template="A_transfer.yaml"), self.work)
+#         self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
+#         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
+#         self.assertEqual(launcher.load_settings(self.work).template, "A_transfer.yaml")
+#
+#     def test_an_old_file_at_the_top_is_moved_and_still_read(self):
+#         (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
+#         self.assertEqual(launcher.load_settings(self.work).template, "Old_transfer.yaml")
+#         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
+#         self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
+#
+#     def test_a_newer_file_in_runs_wins_and_the_old_is_removed(self):
+#         launcher.save_settings(launcher.Paths(template="New_transfer.yaml"), self.work)
+#         (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
+#         self.assertEqual(launcher.load_settings(self.work).template, "New_transfer.yaml")
+#         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
 #
 # === END FILE: pullmanager/tests/test_launcher.py ===
 # === BEGIN FILE: pullmanager/tests/test_lock.py SHA256: fc59457624bc01f81b1968761ea4e9dcb7f115517760821f6bacd13c883f9250 SIZE: 12756 ===
@@ -16216,7 +16266,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 192d8e6775c8ced9ab4433d21c56891f846d21fcdbc56b4029b086e89ba47c5a SIZE: 242658 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: d621d3d30efdb575618521931be571a2fd6796d7783607bbe550cb6b47e70756 SIZE: 244999 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -16554,6 +16604,13 @@ if __name__ == "__main__":
 #     return _simple_yaml_dump(data)
 #
 #
+# # A string is written plain only when it reads back as the same string; any
+# # other is quoted. A plain `'DiagnosisCode'` read back without its quotes, so
+# # a CSV header that has them lost them on save (D103).
+# PLAIN_STRING_RE = re.compile(r"^[A-Za-z_/\\][A-Za-z0-9_ ./\\()'-]*$")
+# YAML_SPECIAL_WORDS = {"true", "false", "yes", "no", "on", "off", "y", "n", "null", "~"}
+#
+#
 # def _format_scalar(value: Any) -> str:
 #     if value is None:
 #         return ""
@@ -16562,9 +16619,12 @@ if __name__ == "__main__":
 #     if isinstance(value, (int, float)):
 #         return str(value)
 #     text = str(value)
-#     if text == "" or any(ch in text for ch in [":", "#", "{", "}", "[", "]", "%"]):
-#         return json.dumps(text)
-#     return text
+#     plain = (
+#         PLAIN_STRING_RE.match(text) is not None
+#         and text == text.strip()
+#         and text.lower() not in YAML_SPECIAL_WORDS
+#     )
+#     return text if plain else json.dumps(text)
 #
 #
 # # =============================================================================
@@ -19465,45 +19525,67 @@ if __name__ == "__main__":
 #     return template_path.parent / f"{clean}{TRANSFER_SUFFIX}.yaml"
 #
 #
+# def repoint_file_loc(file_loc: str, from_dir: Path, to_dir: Path) -> str:
+#     """A relative `file_loc` read from `from_dir`, as it reaches the same file
+#     from `to_dir`; `..` where it must (D103). Absolute is kept. Across drives,
+#     where no relative path exists, the absolute path."""
+#     loc = Path(file_loc)
+#     if loc.is_absolute():
+#         return file_loc
+#     target = (from_dir / loc).resolve()
+#     try:
+#         return Path(os.path.relpath(target, to_dir.resolve())).as_posix()
+#     except ValueError:
+#         return str(target)
+#
+#
 # def place_uploads(
 #     transfer: dict[str, Any],
 #     template_dir: Path,
 #     out_dir: Path,
 #     result: CompileResult,
 #     write: bool,
-# ) -> list[str]:
-#     """Keep every upload at its `file_loc`, relative to the transfer YAML.
+# ) -> list[tuple[str, Path]]:
+#     """Keep every upload reachable from the transfer YAML.
 #
-#     `file_loc` is never rewritten: it is what the VM resolves, relative to the
-#     transfer YAML. Written beside the template, the files are already in place.
-#     Written elsewhere, each is copied into the output folder at the same
-#     relative path, so that folder is the unit to carry across. A `file_loc`
-#     that leaves the template's folder (`..`) or is absolute cannot be copied
-#     that way; it is left as written, with a warning.
+#     Written beside the template, the files are already in place. Written
+#     elsewhere, a `file_loc` inside the template's folder is kept and the file
+#     copied into the output folder at the same relative path, so that folder is
+#     the unit to carry across. One that leaves the template's folder (`..`) is
+#     rewritten to reach the same file from the output folder (D103): kept as
+#     written, it would point somewhere else. If it still leaves that folder, or
+#     is absolute, it is not copied, with a warning.
 #
-#     Returns each upload as `file_loc`, the path the VM will look for.
+#     Returns each upload as (its `file_loc` in the transfer, the file it means).
 #     """
-#     listed: list[str] = []
+#     listed: list[tuple[str, Path]] = []
 #     same_place = out_dir.resolve() == template_dir.resolve()
 #     for idx, upload in enumerate(transfer.get("upload_cohorts", []) or []):
 #         if not isinstance(upload, dict) or not upload.get("file_loc"):
 #             continue
 #         file_loc = str(upload["file_loc"])
-#         listed.append(file_loc)
+#         source = resolve_file(template_dir, file_loc)
 #         if same_place:
+#             listed.append((file_loc, source))
 #             continue
 #         rel = Path(file_loc)
+#         if not rel.is_absolute() and ".." in rel.parts:
+#             file_loc = repoint_file_loc(file_loc, template_dir, out_dir)
+#             upload["file_loc"] = file_loc
+#             rel = Path(file_loc)
+#         listed.append((file_loc, source))
 #         if rel.is_absolute() or ".." in rel.parts:
 #             result.warn(
 #                 "upload_not_copied",
-#                 f"`{file_loc}` is outside the template's folder, so it was not copied "
-#                 "beside the transfer YAML.",
+#                 f"`{file_loc}` is outside the transfer YAML's folder, so it was not copied "
+#                 "beside it.",
 #                 f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
 #                 fix="Put the file at that path relative to the transfer YAML on the VM, "
 #                 "or move it under the template's folder and point `file_loc` there.",
 #             )
 #             continue
-#         source = resolve_file(template_dir, file_loc)
+#         if (out_dir / rel).resolve() == source.resolve():
+#             continue  # a `..` path that lands inside the output folder: already there
 #         if not source.is_file():
 #             continue  # already warned: it is supplied on the VM (missing_upload_file)
 #         if write:
@@ -19575,13 +19657,9 @@ if __name__ == "__main__":
 #         out_path = Path(output_dir) / out_path.name
 #     if write:
 #         out_path.parent.mkdir(parents=True, exist_ok=True)
-#     result.analysis["transfer_uploads"] = place_uploads(
-#         transfer, template_path.parent, out_path.parent, result, write
-#     )
-#     result.analysis["transfer_uploads_missing"] = [
-#         loc for loc in result.analysis["transfer_uploads"]
-#         if not resolve_file(template_path.parent, loc).is_file()
-#     ]
+#     placed = place_uploads(transfer, template_path.parent, out_path.parent, result, write)
+#     result.analysis["transfer_uploads"] = [loc for loc, _ in placed]
+#     result.analysis["transfer_uploads_missing"] = [loc for loc, source in placed if not source.is_file()]
 #     result.finished_yaml = transfer
 #     result.output_path = str(out_path)
 #     if write:
@@ -21105,7 +21183,7 @@ if __name__ == "__main__":
 #         (self.tmp / "data" / "codes.csv").unlink()
 #         self.assertCompiles(compile_yaml(out, self.no_recipes))
 #
-#     def test_an_upload_outside_the_template_folder_is_left_with_a_warning(self):
+#     def test_an_upload_outside_the_template_folder_still_reaches_its_file_with_a_warning(self):
 #         shared = self.tmp.parent / f"{self.tmp.name}_shared"
 #         shared.mkdir()
 #         self.addCleanup(shutil.rmtree, shared, True)
@@ -21118,9 +21196,10 @@ if __name__ == "__main__":
 #         res = build_transfer(template, self.recipes, output_path=out, write=True)
 #         self.assertCompiles(res)
 #         self.assertHasWarning(res, "upload_not_copied")
-#         self.assertEqual(
-#             load_yaml(out)["upload_cohorts"][0]["file_loc"], f"../{shared.name}/codes.csv"
-#         )
+#         # Rewritten to reach the same file from the transfer's folder (D103).
+#         written = load_yaml(out)["upload_cohorts"][0]["file_loc"]
+#         self.assertEqual(written, f"../../{shared.name}/codes.csv")
+#         self.assertTrue((out.parent / written).resolve().samefile(shared / "codes.csv"))
 #
 #     def test_a_missing_upload_warns_and_the_transfer_is_still_written(self):
 #         # The file arrives on the VM later; the split there checks it.
@@ -21529,6 +21608,17 @@ if __name__ == "__main__":
 #
 # class SavedDraftTests(MakeYamlTest):
 #     """A template saved by the UI reads back as it was written (D84)."""
+#
+#     def test_every_string_reads_back_as_itself(self):
+#         # D103: `'DiagnosisCode'`, a CSV header with its quotes, read back
+#         # without them, and the split then could not find the column.
+#         values = ["'DiagnosisCode'", '"q"', "true", "Yes", "null", "~", "20260601", "3.5", "-x",
+#                   "K50.%", "a: b", " lead", "trail ", "&a", "*r", "!t", "|", ">", "@x", "`x", "?x",
+#                   "a #b", "", "0x1F", "1e3", ".5", "O'Brien", "IBD Ancestry",
+#                   r"\\epic-nas\data\Project D1\x.parquet", "Z:/a b/c.csv", "csv/Codes.csv"]
+#         path = self.tmp / "strings.yaml"
+#         path.write_text(dump_yaml_text({"v": values}), encoding="utf-8")
+#         self.assertEqual(load_yaml(path)["v"], values)
 #
 #     DRAFT = {
 #         "project_folder": "Test Run",
@@ -21962,7 +22052,7 @@ if __name__ == "__main__":
 #     raise SystemExit(main())
 #
 # === END FILE: scripts/makeYaml.py ===
-# === BEGIN FILE: scripts/yamlmanager_model.py SHA256: 9e826f1ea738a6a686d90f071748509698cf29395098f95bca34e40a5fc91afd SIZE: 99245 ===
+# === BEGIN FILE: scripts/yamlmanager_model.py SHA256: 44654ce647ed01c66fd955870a73f588818032884e09ed4202dfced1f8c66068 SIZE: 102030 ===
 # #!/usr/bin/env python3
 # """YAML Manager's model: the draft template and every edit to it (D92).
 #
@@ -23229,11 +23319,18 @@ if __name__ == "__main__":
 #
 #     @staticmethod
 #     def _repoint_uploads(doc: dict[str, Any], source_dir: Path, target_dir: Path) -> list[str]:
-#         """Keep each relative `file_loc` pointing at the same file from the new
-#         folder. One that would need `..` is kept as written, with a note."""
+#         """Keep each relative `file_loc` reaching the same file from the new
+#         folder, with `..` where it must: a transfer YAML opened at the root and
+#         saved as an intake in YAMLs/temp/ keeps its uploads (D103)."""
 #         notes: list[str] = []
 #         if source_dir.resolve() == target_dir.resolve():
 #             return notes
+#         for upload in doc.get("upload_cohorts") or []:
+#             loc = upload.get("file_loc") if isinstance(upload, dict) else None
+#             if not loc or Path(str(loc)).is_absolute():
+#                 continue
+#             upload["file_loc"] = my.repoint_file_loc(str(loc), source_dir, target_dir)
+#         return notes
 #         for upload in doc.get("upload_cohorts") or []:
 #             loc = upload.get("file_loc") if isinstance(upload, dict) else None
 #             if not loc or Path(str(loc)).is_absolute():
@@ -24147,11 +24244,53 @@ if __name__ == "__main__":
 #         self.assertIn("Mac", message)
 #
 #
+# class VmFlowTests(ModelTest):
+#     """D103: on the VM a transfer YAML at the root, whose uploads sit beside it,
+#     is opened, saved as an intake in YAMLs/temp/ and exported again."""
+#
+#     def test_uploads_beside_a_transfer_still_resolve_after_save_and_export(self):
+#         draft = self.codes_draft()
+#         draft.bind(1, "CodesTable", "Codes")
+#         self.assertTrue(draft.save().ok)
+#         ok, message, transfer = draft.export_transfer()
+#         self.assertTrue(ok, message)
+#         # The file sits beside the transfer, as on the VM.
+#         (self.home / "csv").mkdir(exist_ok=True)
+#         (self.home / "csv" / "codes.csv").write_text("Code,Label\nK50,x\n", encoding="utf-8")
+#         (self.home / "YAMLs" / "temp" / "csv" / "codes.csv").unlink()
+#         (self.home / "YAMLs" / "temp" / "Test_Run_intake.yaml").unlink()
+#         vm = Draft.open(Workspace(self.home, self.home / "none.yaml", self.ws.dictionary_path,
+#                                   self.ws.defaults_path), transfer)
+#         self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "csv/codes.csv")
+#         vm.project_db = "PROJECTD2"
+#         self.assertTrue(vm.save().ok)
+#         self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "../../csv/codes.csv")
+#         self.assertNotIn("missing_upload_file", [m.code for m in vm.validate().messages])
+#         ok, message, again = vm.export_transfer()
+#         self.assertTrue(ok, message)
+#         written = my.load_yaml(again)["upload_cohorts"][0]["file_loc"]
+#         self.assertEqual(written, "csv/codes.csv")
+#         self.assertTrue((again.parent / written).is_file())
+#
+#     def test_a_quoted_csv_header_keeps_its_quotes_through_a_save(self):
+#         # The VM's HospitalICDCodes.csv has the header 'DiagnosisCode', quotes
+#         # and all: renamed, the save lost them and the split refused it.
+#         self.codes_csv(header="'DiagnosisCode',Label")
+#         draft = self.draft()
+#         index = draft.add_supporting("csv", "Codes", "csv/codes.csv")
+#         draft.rename_column(index, "'DiagnosisCode'", "DiagnosisCode")
+#         self.assertTrue(draft.save().ok)
+#         again = Draft.open(self.ws, draft.path)
+#         self.assertEqual(again.doc["upload_cohorts"][0]["columns"],
+#                          [{"name": "DiagnosisCode", "from": "'DiagnosisCode'"}])
+#         self.assertNotIn("unknown_upload_column", [m.code for m in again.validate().messages])
+#
+#
 # def run_tdd(verbosity: int = 2) -> int:
 #     suite = unittest.TestSuite()
 #     loader = unittest.TestLoader()
 #     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-#                  SaveTests, TableBuilderTests, SaveRecipeTests):
+#                  SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests):
 #         suite.addTests(loader.loadTestsFromTestCase(case))
 #     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
 #     return 0 if result.wasSuccessful() else 1

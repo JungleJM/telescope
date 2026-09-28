@@ -387,7 +387,7 @@ class SettingsTests(TempDirTestCase):
         # The extracted bundle is replaced on update, so remembered choices
         # kept inside it would be lost every time.
         path = save_settings(Paths(template="x"), self.tmp)
-        self.assertEqual(path.parent, self.tmp)
+        self.assertEqual(path.parent, self.tmp / "runs")  # in the working folder's runs/
 
     def test_absent_or_corrupt_settings_give_defaults(self):
         self.assertEqual(load_settings(self.tmp), Paths())
@@ -416,3 +416,30 @@ class SettingsTests(TempDirTestCase):
             '{"template": "a.yaml", "from_a_later_version": 1}', encoding="utf-8"
         )
         self.assertEqual(load_settings(self.tmp).template, "a.yaml")
+
+
+class SettingsPlaceTests(unittest.TestCase):
+    """Remembered paths live in runs/, not loose in the working folder."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = Path(self._tmp.name)
+
+    def test_saved_under_runs(self):
+        launcher.save_settings(launcher.Paths(template="A_transfer.yaml"), self.work)
+        self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
+        self.assertFalse((self.work / ".pullmanager-gui.json").exists())
+        self.assertEqual(launcher.load_settings(self.work).template, "A_transfer.yaml")
+
+    def test_an_old_file_at_the_top_is_moved_and_still_read(self):
+        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
+        self.assertEqual(launcher.load_settings(self.work).template, "Old_transfer.yaml")
+        self.assertFalse((self.work / ".pullmanager-gui.json").exists())
+        self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
+
+    def test_a_newer_file_in_runs_wins_and_the_old_is_removed(self):
+        launcher.save_settings(launcher.Paths(template="New_transfer.yaml"), self.work)
+        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
+        self.assertEqual(launcher.load_settings(self.work).template, "New_transfer.yaml")
+        self.assertFalse((self.work / ".pullmanager-gui.json").exists())

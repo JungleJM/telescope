@@ -35,6 +35,9 @@ from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
 CAN_OPEN_CONSOLE = hasattr(subprocess, "CREATE_NEW_CONSOLE")
 
 SETTINGS_FILENAME = ".pullmanager-gui.json"
+# Where it lives in the working folder: under runs/, with everything else the
+# app makes, not loose beside your files. Once it was at the folder's top.
+SETTINGS_FOLDER = "runs"
 # What an older launcher saved as if chosen: it meant "the default" (D57).
 OLD_DEFAULT_FOLDERS = {"split_dir": "split", "sql_dir": "sql"}
 
@@ -412,15 +415,34 @@ def try_manifest_rows(manifest_path: Path) -> tuple[list[StatusRow], str]:
 
 
 def settings_path(directory: Path | None = None) -> Path:
-    """Remembered choices live in the working directory, beside your files.
+    """Remembered choices live in the working directory's runs/ folder.
 
     Not inside the extracted bundle, which is replaced on every update.
     """
-    return Path(directory or Path.cwd()) / SETTINGS_FILENAME
+    return Path(directory or Path.cwd()) / SETTINGS_FOLDER / SETTINGS_FILENAME
+
+
+def move_old_settings(directory: Path | None = None) -> None:
+    """A settings file at the working folder's top, where it used to be, moves
+    to runs/; if one is already there, that one is kept and the old removed."""
+    old = Path(directory or Path.cwd()) / SETTINGS_FILENAME
+    if not old.is_file():
+        return
+    new = settings_path(directory)
+    try:
+        if not new.is_file():
+            new.parent.mkdir(parents=True, exist_ok=True)
+            new.write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+        old.unlink()
+    except OSError:
+        pass  # remembering choices is a convenience; the old file still loads
 
 
 def load_settings(directory: Path | None = None) -> Paths:
+    move_old_settings(directory)
     path = settings_path(directory)
+    if not path.is_file():
+        path = Path(directory or Path.cwd()) / SETTINGS_FILENAME  # could not be moved
     if not path.is_file():
         return Paths()
     try:
@@ -437,5 +459,6 @@ def load_settings(directory: Path | None = None) -> Paths:
 
 def save_settings(paths: Paths, directory: Path | None = None) -> Path:
     path = settings_path(directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(asdict(paths), indent=2) + "\n", encoding="utf-8")
     return path

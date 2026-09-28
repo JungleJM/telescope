@@ -1264,11 +1264,18 @@ class Draft:
 
     @staticmethod
     def _repoint_uploads(doc: dict[str, Any], source_dir: Path, target_dir: Path) -> list[str]:
-        """Keep each relative `file_loc` pointing at the same file from the new
-        folder. One that would need `..` is kept as written, with a note."""
+        """Keep each relative `file_loc` reaching the same file from the new
+        folder, with `..` where it must: a transfer YAML opened at the root and
+        saved as an intake in YAMLs/temp/ keeps its uploads (D103)."""
         notes: list[str] = []
         if source_dir.resolve() == target_dir.resolve():
             return notes
+        for upload in doc.get("upload_cohorts") or []:
+            loc = upload.get("file_loc") if isinstance(upload, dict) else None
+            if not loc or Path(str(loc)).is_absolute():
+                continue
+            upload["file_loc"] = my.repoint_file_loc(str(loc), source_dir, target_dir)
+        return notes
         for upload in doc.get("upload_cohorts") or []:
             loc = upload.get("file_loc") if isinstance(upload, dict) else None
             if not loc or Path(str(loc)).is_absolute():
@@ -2182,11 +2189,53 @@ class SaveRecipeTests(ModelTest):
         self.assertIn("Mac", message)
 
 
+class VmFlowTests(ModelTest):
+    """D103: on the VM a transfer YAML at the root, whose uploads sit beside it,
+    is opened, saved as an intake in YAMLs/temp/ and exported again."""
+
+    def test_uploads_beside_a_transfer_still_resolve_after_save_and_export(self):
+        draft = self.codes_draft()
+        draft.bind(1, "CodesTable", "Codes")
+        self.assertTrue(draft.save().ok)
+        ok, message, transfer = draft.export_transfer()
+        self.assertTrue(ok, message)
+        # The file sits beside the transfer, as on the VM.
+        (self.home / "csv").mkdir(exist_ok=True)
+        (self.home / "csv" / "codes.csv").write_text("Code,Label\nK50,x\n", encoding="utf-8")
+        (self.home / "YAMLs" / "temp" / "csv" / "codes.csv").unlink()
+        (self.home / "YAMLs" / "temp" / "Test_Run_intake.yaml").unlink()
+        vm = Draft.open(Workspace(self.home, self.home / "none.yaml", self.ws.dictionary_path,
+                                  self.ws.defaults_path), transfer)
+        self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "csv/codes.csv")
+        vm.project_db = "PROJECTD2"
+        self.assertTrue(vm.save().ok)
+        self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "../../csv/codes.csv")
+        self.assertNotIn("missing_upload_file", [m.code for m in vm.validate().messages])
+        ok, message, again = vm.export_transfer()
+        self.assertTrue(ok, message)
+        written = my.load_yaml(again)["upload_cohorts"][0]["file_loc"]
+        self.assertEqual(written, "csv/codes.csv")
+        self.assertTrue((again.parent / written).is_file())
+
+    def test_a_quoted_csv_header_keeps_its_quotes_through_a_save(self):
+        # The VM's HospitalICDCodes.csv has the header 'DiagnosisCode', quotes
+        # and all: renamed, the save lost them and the split refused it.
+        self.codes_csv(header="'DiagnosisCode',Label")
+        draft = self.draft()
+        index = draft.add_supporting("csv", "Codes", "csv/codes.csv")
+        draft.rename_column(index, "'DiagnosisCode'", "DiagnosisCode")
+        self.assertTrue(draft.save().ok)
+        again = Draft.open(self.ws, draft.path)
+        self.assertEqual(again.doc["upload_cohorts"][0]["columns"],
+                         [{"name": "DiagnosisCode", "from": "'DiagnosisCode'"}])
+        self.assertNotIn("unknown_upload_column", [m.code for m in again.validate().messages])
+
+
 def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-                 SaveTests, TableBuilderTests, SaveRecipeTests):
+                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1

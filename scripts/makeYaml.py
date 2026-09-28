@@ -335,6 +335,13 @@ def dump_yaml_text(data: Any) -> str:
     return _simple_yaml_dump(data)
 
 
+# A string is written plain only when it reads back as the same string; any
+# other is quoted. A plain `'DiagnosisCode'` read back without its quotes, so
+# a CSV header that has them lost them on save (D103).
+PLAIN_STRING_RE = re.compile(r"^[A-Za-z_/\\][A-Za-z0-9_ ./\\()'-]*$")
+YAML_SPECIAL_WORDS = {"true", "false", "yes", "no", "on", "off", "y", "n", "null", "~"}
+
+
 def _format_scalar(value: Any) -> str:
     if value is None:
         return ""
@@ -343,9 +350,12 @@ def _format_scalar(value: Any) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     text = str(value)
-    if text == "" or any(ch in text for ch in [":", "#", "{", "}", "[", "]", "%"]):
-        return json.dumps(text)
-    return text
+    plain = (
+        PLAIN_STRING_RE.match(text) is not None
+        and text == text.strip()
+        and text.lower() not in YAML_SPECIAL_WORDS
+    )
+    return text if plain else json.dumps(text)
 
 
 # =============================================================================
@@ -3246,45 +3256,67 @@ def transfer_output_path(template: dict[str, Any], template_path: Path) -> Path:
     return template_path.parent / f"{clean}{TRANSFER_SUFFIX}.yaml"
 
 
+def repoint_file_loc(file_loc: str, from_dir: Path, to_dir: Path) -> str:
+    """A relative `file_loc` read from `from_dir`, as it reaches the same file
+    from `to_dir`; `..` where it must (D103). Absolute is kept. Across drives,
+    where no relative path exists, the absolute path."""
+    loc = Path(file_loc)
+    if loc.is_absolute():
+        return file_loc
+    target = (from_dir / loc).resolve()
+    try:
+        return Path(os.path.relpath(target, to_dir.resolve())).as_posix()
+    except ValueError:
+        return str(target)
+
+
 def place_uploads(
     transfer: dict[str, Any],
     template_dir: Path,
     out_dir: Path,
     result: CompileResult,
     write: bool,
-) -> list[str]:
-    """Keep every upload at its `file_loc`, relative to the transfer YAML.
+) -> list[tuple[str, Path]]:
+    """Keep every upload reachable from the transfer YAML.
 
-    `file_loc` is never rewritten: it is what the VM resolves, relative to the
-    transfer YAML. Written beside the template, the files are already in place.
-    Written elsewhere, each is copied into the output folder at the same
-    relative path, so that folder is the unit to carry across. A `file_loc`
-    that leaves the template's folder (`..`) or is absolute cannot be copied
-    that way; it is left as written, with a warning.
+    Written beside the template, the files are already in place. Written
+    elsewhere, a `file_loc` inside the template's folder is kept and the file
+    copied into the output folder at the same relative path, so that folder is
+    the unit to carry across. One that leaves the template's folder (`..`) is
+    rewritten to reach the same file from the output folder (D103): kept as
+    written, it would point somewhere else. If it still leaves that folder, or
+    is absolute, it is not copied, with a warning.
 
-    Returns each upload as `file_loc`, the path the VM will look for.
+    Returns each upload as (its `file_loc` in the transfer, the file it means).
     """
-    listed: list[str] = []
+    listed: list[tuple[str, Path]] = []
     same_place = out_dir.resolve() == template_dir.resolve()
     for idx, upload in enumerate(transfer.get("upload_cohorts", []) or []):
         if not isinstance(upload, dict) or not upload.get("file_loc"):
             continue
         file_loc = str(upload["file_loc"])
-        listed.append(file_loc)
+        source = resolve_file(template_dir, file_loc)
         if same_place:
+            listed.append((file_loc, source))
             continue
         rel = Path(file_loc)
+        if not rel.is_absolute() and ".." in rel.parts:
+            file_loc = repoint_file_loc(file_loc, template_dir, out_dir)
+            upload["file_loc"] = file_loc
+            rel = Path(file_loc)
+        listed.append((file_loc, source))
         if rel.is_absolute() or ".." in rel.parts:
             result.warn(
                 "upload_not_copied",
-                f"`{file_loc}` is outside the template's folder, so it was not copied "
-                "beside the transfer YAML.",
+                f"`{file_loc}` is outside the transfer YAML's folder, so it was not copied "
+                "beside it.",
                 f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
                 fix="Put the file at that path relative to the transfer YAML on the VM, "
                 "or move it under the template's folder and point `file_loc` there.",
             )
             continue
-        source = resolve_file(template_dir, file_loc)
+        if (out_dir / rel).resolve() == source.resolve():
+            continue  # a `..` path that lands inside the output folder: already there
         if not source.is_file():
             continue  # already warned: it is supplied on the VM (missing_upload_file)
         if write:
@@ -3356,13 +3388,9 @@ def build_transfer(
         out_path = Path(output_dir) / out_path.name
     if write:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-    result.analysis["transfer_uploads"] = place_uploads(
-        transfer, template_path.parent, out_path.parent, result, write
-    )
-    result.analysis["transfer_uploads_missing"] = [
-        loc for loc in result.analysis["transfer_uploads"]
-        if not resolve_file(template_path.parent, loc).is_file()
-    ]
+    placed = place_uploads(transfer, template_path.parent, out_path.parent, result, write)
+    result.analysis["transfer_uploads"] = [loc for loc, _ in placed]
+    result.analysis["transfer_uploads_missing"] = [loc for loc, source in placed if not source.is_file()]
     result.finished_yaml = transfer
     result.output_path = str(out_path)
     if write:
@@ -4886,7 +4914,7 @@ batching:
         (self.tmp / "data" / "codes.csv").unlink()
         self.assertCompiles(compile_yaml(out, self.no_recipes))
 
-    def test_an_upload_outside_the_template_folder_is_left_with_a_warning(self):
+    def test_an_upload_outside_the_template_folder_still_reaches_its_file_with_a_warning(self):
         shared = self.tmp.parent / f"{self.tmp.name}_shared"
         shared.mkdir()
         self.addCleanup(shutil.rmtree, shared, True)
@@ -4899,9 +4927,10 @@ batching:
         res = build_transfer(template, self.recipes, output_path=out, write=True)
         self.assertCompiles(res)
         self.assertHasWarning(res, "upload_not_copied")
-        self.assertEqual(
-            load_yaml(out)["upload_cohorts"][0]["file_loc"], f"../{shared.name}/codes.csv"
-        )
+        # Rewritten to reach the same file from the transfer's folder (D103).
+        written = load_yaml(out)["upload_cohorts"][0]["file_loc"]
+        self.assertEqual(written, f"../../{shared.name}/codes.csv")
+        self.assertTrue((out.parent / written).resolve().samefile(shared / "codes.csv"))
 
     def test_a_missing_upload_warns_and_the_transfer_is_still_written(self):
         # The file arrives on the VM later; the split there checks it.
@@ -5310,6 +5339,17 @@ class FixTests(unittest.TestCase):
 
 class SavedDraftTests(MakeYamlTest):
     """A template saved by the UI reads back as it was written (D84)."""
+
+    def test_every_string_reads_back_as_itself(self):
+        # D103: `'DiagnosisCode'`, a CSV header with its quotes, read back
+        # without them, and the split then could not find the column.
+        values = ["'DiagnosisCode'", '"q"', "true", "Yes", "null", "~", "20260601", "3.5", "-x",
+                  "K50.%", "a: b", " lead", "trail ", "&a", "*r", "!t", "|", ">", "@x", "`x", "?x",
+                  "a #b", "", "0x1F", "1e3", ".5", "O'Brien", "IBD Ancestry",
+                  r"\\epic-nas\data\Project D1\x.parquet", "Z:/a b/c.csv", "csv/Codes.csv"]
+        path = self.tmp / "strings.yaml"
+        path.write_text(dump_yaml_text({"v": values}), encoding="utf-8")
+        self.assertEqual(load_yaml(path)["v"], values)
 
     DRAFT = {
         "project_folder": "Test Run",
