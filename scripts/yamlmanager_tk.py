@@ -639,7 +639,7 @@ def build_pk(view: AuthorView, parent: Any) -> None:
             grid_row(form, 3, "Key columns", text_field(view, form, ", ".join(pk.key_columns),
                                                         lambda v: draft.update_pk(key_columns=v), 40),
                      "The columns that identify a row, separated by commas.")
-            if pk.kind in model.FILE_KINDS:
+            if pk.kind in model.FILE_KINDS and not view.ws.vm_side:
                 grid_row(form, 4, "", check_field(view, form, "Pending transfer to the VM", pk.pending_transfer,
                                                   lambda on: draft.update_pk(pending_transfer=on), rerender=True),
                          "The file will only exist on the VM (D97).")
@@ -703,7 +703,7 @@ def choose_pk(view: AuthorView, parent: Any, replacing: bool) -> None:
         grid_row(form, 2, "Key columns", ttk.Entry(form, textvariable=keys, width=40),
                  "The columns that identify a row.")
         row = 3
-        if kind in model.FILE_KINDS:
+        if kind in model.FILE_KINDS and not view.ws.vm_side:
             grid_row(form, row, "", ttk.Checkbutton(form, text="Pending transfer to the VM", variable=pending))
             row += 1
         ttk.Button(form, text="Use as PK", command=lambda: confirm() and view.edit(
@@ -737,7 +737,7 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
         location = upload.get("source_table") if kind == "dbtable" else upload.get("file_loc")
         location_row(view, form, 3, kind, str(location or ""),
                      lambda v, i=index: draft.update_supporting(i, location=v))
-        if kind in model.FILE_KINDS:
+        if kind in model.FILE_KINDS and not view.ws.vm_side:
             grid_row(form, 4, "", check_field(
                 view, form, "Pending transfer to the VM", upload.get("pending_transfer") is True,
                 lambda on, i=index: draft.update_supporting(i, pending_transfer=on), rerender=True),
@@ -758,7 +758,8 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
     ttk.Entry(add, textvariable=location, width=36).pack(side="left", padx=4)
     ttk.Button(add, text="Browse", command=lambda: location.set(
         pick_file(view, kind.get()) or location.get())).pack(side="left")
-    ttk.Checkbutton(add, text="Pending transfer", variable=pending).pack(side="left", padx=8)
+    if not view.ws.vm_side:
+        ttk.Checkbutton(add, text="Pending transfer", variable=pending).pack(side="left", padx=8)
     ttk.Button(add, text="Add", command=lambda: view.edit(
         lambda: draft.add_supporting(kind.get(), name.get(), location.get(),
                                      pending.get() and kind.get() in model.FILE_KINDS),
@@ -1680,6 +1681,17 @@ class ValidateAndExportViewTests(ViewTest):
         self.view.exports_panel.refresh()
         shown = [str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label)]
         self.assertIn(f"content_id: {content_id}", shown)
+
+    def test_on_the_vm_side_no_pending_checkbox_is_offered(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("supporting")
+        texts = lambda: [str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Checkbutton)]
+        self.assertTrue(any("Pending transfer" in t for t in texts()))
+        self.ws.vm_side = True
+        self.view.render()
+        self.assertFalse(any("Pending transfer" in t for t in texts()))
+        self.view.show_section("pk")
+        self.assertFalse(any("Pending transfer" in t for t in texts()))
 
     def test_an_unsaved_draft_says_to_save_first(self):
         self.open("Celiac_intake.yaml")

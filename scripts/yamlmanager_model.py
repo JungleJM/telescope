@@ -88,6 +88,9 @@ class Workspace:
     recipes_path: Path
     dictionary_path: Path
     defaults_path: Path
+    # Running from an extracted bundle: the VM side (D108). There a file is
+    # where it will be read, so none is pending and a missing one is an error.
+    vm_side: bool = False
     _recipes_cache: tuple[float, dict[str, Any], str] | None = field(default=None, repr=False)
 
     @classmethod
@@ -97,6 +100,7 @@ class Workspace:
             recipes_path=my.default_recipes_path(),
             dictionary_path=my.default_datadictionary_path(),
             defaults_path=my.default_template_path(),
+            vm_side=(my.project_root() / ".bundle-manifest.json").is_file(),
         )
 
     @property
@@ -553,7 +557,7 @@ class Draft:
         self._place_location(upload, kind, location)
         upload["key_columns"] = split_list(key_columns)
         if pending_transfer and kind in FILE_KINDS:
-            upload["pending_transfer"] = True
+            self._set_pending(upload, True)
         upload["push_this_cycle"] = True
         self._drop_pk()
         self.doc["upload_cohorts"].insert(0, upload)
@@ -613,8 +617,10 @@ class Draft:
         elif location:
             entry["file_loc"] = location
 
-    @staticmethod
-    def _set_pending(entry: dict[str, Any], pending: bool) -> None:
+    def _set_pending(self, entry: dict[str, Any], pending: bool) -> None:
+        if pending and self.ws.vm_side:
+            raise DraftError("Pending transfer is for the Mac: here on the VM the file must be "
+                             "where the transfer YAML reads it (D108).")
         if pending:
             if str(entry.get("file_type", "")).lower() not in FILE_KINDS:
                 raise DraftError("Only a parquet or CSV file can be pending transfer (D97).")
@@ -1138,7 +1144,8 @@ class Draft:
                 template_path=self.base_path(),
                 recipes_path=self.ws.recipes_path,
                 datadictionary_path=self.ws.dictionary_path,
-                uploads_elsewhere=True,
+                # On the Mac a file may arrive later; on the VM it must be here (D108).
+                uploads_elsewhere=not self.ws.vm_side,
                 template_data=self.doc,
             )
         except Exception as exc:  # noqa: BLE001 - a crash is a message, never lost work
@@ -2203,6 +2210,39 @@ class SaveRecipeTests(ModelTest):
         self.assertIn("Mac", message)
 
 
+class VmSideTests(ModelTest):
+    """D108: running from an extracted bundle, no file is pending."""
+
+    def vm(self) -> Workspace:
+        self.ws.vm_side = True
+        return self.ws
+
+    def test_a_missing_file_is_an_error_on_the_vm_and_a_warning_on_the_mac(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
+        self.assertEqual([m.code for m in draft.validate().of_kind("pending")], ["upload_pending_transfer"])
+        self.vm()
+        codes = [m.code for m in draft.validate().of_kind("error")]
+        self.assertIn("missing_upload_file", codes)
+
+    def test_pending_cannot_be_set_on_the_vm(self):
+        self.vm()
+        draft = self.draft()
+        with self.assertRaises(DraftError):
+            draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
+        with self.assertRaises(DraftError):
+            draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", pending_transfer=True)
+
+    def test_an_extracted_bundle_is_the_vm_side(self):
+        from unittest import mock
+        with mock.patch.object(my, "project_root", return_value=self.home):
+            self.assertFalse(Workspace.default().vm_side)
+            (self.home / ".bundle-manifest.json").write_text("{}", encoding="utf-8")
+            self.assertTrue(Workspace.default().vm_side)
+
+
 class VmFlowTests(ModelTest):
     """D103: on the VM a transfer YAML at the root, whose uploads sit beside it,
     is opened, saved as an intake in YAMLs/temp/ and exported again."""
@@ -2249,7 +2289,7 @@ def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests):
+                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1
