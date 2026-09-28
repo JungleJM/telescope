@@ -743,9 +743,9 @@ def build_pk(view: AuthorView, parent: Any) -> None:
             grid_row(form, 1, "Recipe", ttk.Label(form, text=pk.recipe))
         if pk.where == "upload_cohorts":
             location_row(view, form, 2, pk.kind, pk.location, lambda v: draft.update_pk(location=v))
-            grid_row(form, 3, "Key columns", text_field(view, form, ", ".join(pk.key_columns),
-                                                        lambda v: draft.update_pk(key_columns=v), 40),
-                     "The columns that identify a row, separated by commas.")
+            grid_row(form, 3, "Row key", text_field(view, form, ", ".join(pk.key_columns),
+                                                    lambda v: draft.update_pk(key_columns=v), 40),
+                     "The columns that make each row one of its own: checked unique before any batch; chunks, the random sample and controls follow it (D107).")
             if pk.kind in model.FILE_KINDS and not view.ws.vm_side:
                 grid_row(form, 4, "", check_field(view, form, "Pending transfer to the VM", pk.pending_transfer,
                                                   lambda on: draft.update_pk(pending_transfer=on), rerender=True),
@@ -822,8 +822,8 @@ def choose_pk(view: AuthorView, parent: Any, replacing: bool) -> None:
             ttk.Button(holder, text="Browse",
                        command=lambda: location.set(pick_file(view, kind) or location.get())).pack(side="left", padx=4)
         grid_row(form, 1, "Projects table" if kind == "dbtable" else "File", holder)
-        grid_row(form, 2, "Key columns", ttk.Entry(form, textvariable=keys, width=40),
-                 "The columns that identify a row.")
+        grid_row(form, 2, "Row key", ttk.Entry(form, textvariable=keys, width=40),
+                 "Blank: PatientDurableKey, if the file has it. " + "The columns that make each row one of its own: checked unique before any batch; chunks, the random sample and controls follow it (D107).")
         row = 3
         if kind in model.FILE_KINDS and not view.ws.vm_side:
             grid_row(form, row, "", ttk.Checkbutton(form, text="Pending transfer to the VM", variable=pending))

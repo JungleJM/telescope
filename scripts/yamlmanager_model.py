@@ -64,6 +64,8 @@ NO_DATABASE = "none"
 FILE_KINDS = ("parquet", "csv")
 UPLOAD_KINDS = ("parquet", "csv", "dbtable")
 AUTOMATIC_VARS = ("prefix", "PKTable")
+# The row key a patient list nearly always has (D107).
+USUAL_ROW_KEY = "PatientDurableKey"
 
 
 class DraftError(ValueError):
@@ -601,6 +603,17 @@ class Draft:
         self._drop_pk()
         self.doc["upload_cohorts"].insert(0, upload)
         self._changed()
+        self._prefill_row_key()
+
+    def _prefill_row_key(self) -> None:
+        """An uploaded PK with no row key takes PatientDurableKey when its
+        file, or the columns typed in for it, has that column (D107)."""
+        pk = self.pk()
+        if pk is None or pk.where != "upload_cohorts" or pk.key_columns:
+            return
+        if USUAL_ROW_KEY in (self.pk_columns() or []):
+            self.doc["upload_cohorts"][pk.index]["key_columns"] = [USUAL_ROW_KEY]
+            self._changed()
 
     def update_pk(self, **fields: Any) -> None:
         """Change the PK in place: name, location, key_columns, pending_transfer."""
@@ -623,6 +636,8 @@ class Draft:
             if "pending_transfer" in fields:
                 self._set_pending(entry, bool(fields["pending_transfer"]))
         self._changed()
+        if "location" in fields:
+            self._prefill_row_key()
 
     def clear_pk(self) -> None:
         self._drop_pk()
@@ -818,6 +833,7 @@ class Draft:
         else:
             upload.pop("columns", None)
         self._changed()
+        self._prefill_row_key()
 
     # ---------------------------------------------------------- multipliers
 
@@ -2344,6 +2360,38 @@ class SaveRecipeTests(ModelTest):
         self.assertIn("Mac", message)
 
 
+class RowKeyTests(ModelTest):
+    """D107: an uploaded PK's row key, prefilled from its file."""
+
+    def pks(self, header: str) -> None:
+        (self.home / "YAMLs" / "temp" / "pks.csv").write_text(f"{header}\n1,F\n", encoding="utf-8")
+
+    def test_a_list_with_patientdurablekey_gets_it_as_its_row_key(self):
+        self.pks("PatientDurableKey,Sex")
+        draft = self.draft()
+        draft.set_pk_upload("csv", "ClientPK", "pks.csv")
+        self.assertEqual(draft.pk().key_columns, ["PatientDurableKey"])
+
+    def test_a_key_given_is_kept(self):
+        self.pks("PatientDurableKey,EncounterKey")
+        draft = self.draft()
+        draft.set_pk_upload("csv", "ClientPK", "pks.csv", "EncounterKey")
+        self.assertEqual(draft.pk().key_columns, ["EncounterKey"])
+
+    def test_a_list_without_it_is_left_for_you(self):
+        self.pks("MRN,Sex")
+        draft = self.draft()
+        draft.set_pk_upload("csv", "ClientPK", "pks.csv")
+        self.assertEqual(draft.pk().key_columns, [])
+        self.assertIn("uploaded_pk_missing_keys", [m.code for m in draft.validate().of_kind("error")])
+
+    def test_typed_columns_on_a_pending_list_prefill_it_too(self):
+        draft = self.draft()
+        draft.set_pk_upload("csv", "ClientPK", "later.csv", pending_transfer=True)
+        draft.set_listed_columns(0, "PatientDurableKey, Sex")
+        self.assertEqual(draft.pk().key_columns, ["PatientDurableKey"])
+
+
 class LocationTests(ModelTest):
     """D104: Browse writes a path relative to the draft, never the machine's."""
 
@@ -2504,7 +2552,7 @@ def run_tdd(verbosity: int = 2) -> int:
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
                  SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
-                 LocationTests, FilterLineTests):
+                 LocationTests, FilterLineTests, RowKeyTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1
