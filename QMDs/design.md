@@ -65,7 +65,7 @@ On the Mac, use `python3.13` for anything run on the VM (the launcher, the runti
 sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3 pyarrow==22.0.0 pandas==2.2.3
 ```
 
-The artifact tests run the generated load scripts: the Python ones under the running interpreter (the examine script needs pandas), the R ones through `Rscript` when R has `arrow` (they skip otherwise). The Mac's R `arrow` is newer than the VM's, so the R check is close, not exact.
+The artifact tests run the generated load scripts: the Python one under the running interpreter, the R one through `Rscript` when R has `arrow` (they skip otherwise). The Mac's R `arrow` is newer than the VM's, so the R check is close, not exact.
 
 Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All four suites pass under `python3.13` with nothing skipped.
 
@@ -87,12 +87,13 @@ It carries the whole unit, not just the runtime:
 pullmanager_runtime/                # the extracted tree (any name; this is --extract's default)
   pullmanager.py                    Pullmanager entry point
   pullmanager/                      runtime package and its tests
+  stock/                            HOW_TO.md and viewparquets.py, copied into each run folder (D89)
   scripts/makeYaml.py               validator and splitter
   YAMLs/datadictionary.yaml
   .bundle-manifest.json
 ```
 
-Recipes, the browser UI and a template to start from are not shipped (D49): the VM works from transfer YAMLs, and cannot open the UI. Transfer YAMLs named with `yaml=` travel too, under `root/` in the bundle: verified like every file and counted in the `content_id`, but written beside `pullmanager.py` rather than into the extracted tree (D79). Published paths reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its dictionary with no flags and no knowledge that it was bundled.
+Every file in `scripts/pullmanager_src/stock/` ships, not only its Python. Recipes, the browser UI and a template to start from are not shipped (D49): the VM works from transfer YAMLs, and cannot open the UI. Transfer YAMLs named with `yaml=` travel too, under `root/` in the bundle: verified like every file and counted in the `content_id`, but written beside `pullmanager.py` rather than into the extracted tree (D79). Published paths reproduce the repo's `scripts/` beside `YAMLs/` shape, so `makeYaml` finds its dictionary with no flags and no knowledge that it was bundled.
 
 Guarantees:
 
@@ -130,15 +131,18 @@ No `.env` ships and none is needed. Both hosts are DNS aliases with defaults (`C
 On the Mac:
 
 ``` bash
-python3 scripts/makeYaml.py --template YAMLs/IBD_Ancestry_temp.yaml --export-transfer
+python3 scripts/makeYaml.py --template YAMLs/temp/IBD_Ancestry_temp.yaml --export-transfer
                                  # writes IBD_Ancestry_transfer.yaml at the repository root
 python3 makebundle.py yaml=IBD_Ancestry,Celiac
                                  # dist/bundle.py, carrying those transfer YAMLs (D79)
+python3 makebundle.py queue      # or export and carry every queued temp (D91)
 python3 makebundle.py            # or the runtime alone; prints its content_id (D64)
 python3 makebundle.py --tdd      # optional: the bundle's own tests
 ```
 
-Copy that one file to the VM, with any upload files the transfer YAMLs read (the build names them, at the paths they need beside the transfer YAML). The same sources and transfer YAMLs always produce the same `content_id`, so it tells you whether the VM has the latest. The bundle committed in `dist/bundle.py` is built without transfer YAMLs; a build with `yaml=` overwrites it locally.
+Copy that one file to the VM, with any upload files the transfer YAMLs read (the build names them, at the paths they need beside the transfer YAML). The same sources and transfer YAMLs always produce the same `content_id`, so it tells you whether the VM has the latest. The bundle committed in `dist/bundle.py` is built without transfer YAMLs; a build with `yaml=` or `queue` overwrites it locally.
+
+**The bundle queue** (D91) is `YAMLs/temp/bundle_queue.txt`, one temp's file name per line, in the order queued, each once. YAML Manager's Save & Refresh adds the temp it saves, and its Builder > Exports removes and adds (The Browser UI, below). `makebundle.py queue` exports each queued temp's transfer YAML to the repository root, as `--export-transfer` does, then carries them all, as `yaml=` does; it can be combined with `yaml=`. A queued temp that fails validation, or is no longer there, stops the build, with every such temp named (the first error of each); an empty queue says how to fill it. Upload files are not carried (D90): the build names each one to copy.
 
 `python3 yamlmgr.py`, at the root, opens YAML Manager (D79).
 
@@ -162,7 +166,7 @@ The extracted tree is replaced on every update, so everything you author sits be
         logs\                 execute-<date>-<time>.log, one per Execute (D68)
         parquets\             written by Artifacts: SneakPeek\, Cosmos\, uploads\ (D72)
         contents.md           what each table and column is (D73)
-        load_parquets.R/.py, examine_parquets.R/.py, HOW_TO.md   (D75)
+        load_parquets.R/.py, viewparquets.py, HOW_TO.md   (D75, D89)
     .pullmanager-gui.json     the launcher's remembered paths
 ```
 
@@ -276,6 +280,7 @@ Checks:
 - Recipe references resolve.
 - Upload files exist; their columns (CSV header, parquet schema) carry what bound recipes read; declared upload columns exist and have a type an upload can take (Upload Files, above).
 - Zero or one upload cohort is `type: pk`, and it declares `key_columns`.
+- Every multiplier has at least one level (`multiplier_without_levels`, naming it): with none, the product of levels is empty and every cohort would vanish without a word (D84).
 - Multiplier definitions are well formed. Each `split_after_build` level says which PK rows are its own (`column` and `values`, or `where`; `split_level_without_condition`) and splits the PK only (`split_after_build_target`). `role` is `control` or absent; `row_mult` needs `role: control`, is a positive number, and needs exactly one case level beside it; a sampled control's PK needs a key (D59). `role` and `row_mult` on a `during_build` level are refused.
 - Dedup names the cohort's own columns: every `dedup_keys` and `dedup_order_by` name is one of its `columns` (`bad_dedup_column`, whose fix lists them; a list written inside `dedup_order_by` is told it takes plain names). `dedup_order` and `order_by` are refused (`old_dedup_order`) (D58).
 - `random_pk_sample` under `smallset` needs the PK's key, from `dedup_keys` or `key_column` (`random_sample_without_key`) (D60).
@@ -350,7 +355,7 @@ What this means for a join check, still to plan (roadmap, Needs Research): relat
 
 ### Choosing The Cosmos Database
 
-`cosmos_vars.cosmos_db` in the template, never VM configuration:
+`cosmos_vars.cosmos_db` in the template, never VM configuration. A template that names none pulls from both, as `Dual` (D86); the project database and dates have no such default (D83).
 
 | Setting | Connects to | Cohorts rendered |
 |------------------------|------------------------|------------------------|
@@ -383,14 +388,20 @@ The **Builder** tab assembles a template section by section: Project, Uploads, M
 - **Multipliers.** `during_build` levels take variables (`ICD_Value: K51.%, K52.%`, `;` between variables); `split_after_build` levels take a PK column, values, and an optional role and row mult.
 - **Batching.** Each row is a batching recipe with optional values, and a **Separate parquets** checkbox, off unless ticked (D77). The checkbox shows what the split will do: a row naming a recipe shows the recipe's setting, and unticking a recipe's `true` writes `separate_parquets: false`. Listing values always adds a batch of the rest (D76).
 - **Variables.** Each recipe row has an input for every variable its SQL uses that the template does not already supply (`ICD_Value`; not `prefix`, `PKTable` or the Project dates). A value, or several separated by commas. Left blank, it says where the value comes from: "set by multiplier IBDType", "from the PK: K50.%", or, before the PK has one, "taken from the PK's value" (D78, D83). Only the PK, or a table with no PK, is marked red when nothing supplies it.
-- **Project defaults.** A template with no project database or dates gets `PROJECTD93A5E7`, `19900101` and `20260601` in the Builder (D83); a template's own values are kept.
+- **Project defaults.** New Blank Template takes `cosmos_vars`, `run_vars` and `test_options` from `YAMLs/template.yaml`, so that file is where the defaults are edited; built-in values fill anything it leaves out: `PROJECTD93A5E7`, `Dual`, `19900101`, `20260601`, small set off (D86). A loaded template with no project database or dates gets them filled in the same way (D83); its own values are kept. The Cosmos DB list offers Dual first, and a new upload is parquet unless changed.
 - **Custom tables** also take a Description and Granularity, and a description per column, for `contents.md` (D74).
-- **Custom tables** are built from the data dictionary: name, destination and PK checkbox, with "Add Custom Table" (or "Save Changes" when editing a loaded one) ending that row; "Reset Form" sits by the heading. Under Joins, a note on what each join type does with rows that do not match.
+- **Custom tables** are built from the data dictionary: name, destination and PK checkbox, with "Add Custom Table" (or "Save Changes" when editing a loaded one) ending that row; "Reset Form" sits by the heading. Each column shows its position: a number typed and Enter moves it there (1 the top, past the end the bottom). Under Joins, a note on what each join type does with rows that do not match.
 - **Save as Recipe**, on an added custom table, writes it into `recipes.yaml` (D56). A name already there is refused. A page opened as a file, not served, cannot write, and downloads the recipe instead.
 
-**Save & Refresh**, at the end of the tab bar, saves the Builder's draft and reloads every tab from it, so Validation, Graph, Exports and YAML show what was just built. It writes `<project_folder>_temp.yaml` beside the template the page opened with, so upload paths relative to the template still resolve, and the template itself is never overwritten; saving again from a `_temp.yaml` overwrites that file. The draft is written with the YAML library and read back before it replaces anything. The tab that was open stays open. A page opened as a file, not served, cannot save.
+**Save & Refresh**, at the end of the tab bar, saves the Builder's draft and reloads every tab from it, so Validation, Graph, Exports and YAML show what was just built. It writes `YAMLs/temp/<project_folder>_temp.yaml`, whichever template the page opened with (D85), and says so beside the path box. New Blank Template shows `YAMLs/temp/_temp.yaml` there, following the Project Folder as it is typed. A save never replaces a file the page did not open: a target that exists and is not the opened file is refused, saying to load it or change the Project Folder; changing a loaded temp's folder saves a new file and leaves the old. Relative upload paths are rewritten to reach the same file from `YAMLs/temp/`; one that would need `..` is kept as written, and the save message says where to put the file. Upload files for temps live in `YAMLs/temp/csv/`. The draft is written with the YAML library, empty lists and mappings as `[]` and `{}` (D84), and read back before it replaces anything. The saved temp joins the bundle queue, once.
 
-The **Cohorts** tab opens with a read-only line each for the multipliers (`IBDType: UC/Crohns, Race: black/white`) and the batching (`state: LA/MS/GA/NC, sex: Female/Male, chunk: 2000`).
+After it, the page comes back on the tab, Builder section and scroll position that were open, with a banner saying what was saved and, if the template has errors, each one with its location and fix. A compiler crash does not replace the page: it becomes a `compiler_crash` error naming the compiler function and line, and the Builder section it reads, and the page opens with the draft as saved. Only a failure to draw the page at all shows the failure page, which keeps the template's path. A page opened as a file, not served, cannot save.
+
+**Builder > Exports** starts with the bundle queue: each queued temp, marked if its file is gone, with Remove, and a dropdown adding any other temp in `YAMLs/temp/`. Choosing a queued temp shows its pre-YAML, transfer YAML ("to be bundled with bundle.py") and manifest in place of the opened template's.
+
+The **Cohorts** tab opens with a read-only line each for the multipliers (`IBDType: UC/Crohns, Race: black/white`) and the batching (`state: LA/MS/GA/NC, sex: Female/Male, chunk: 2000`). Each card shows its connections, colour-coded by source table. An `_sp` copy shows its original's, pointed at the `_sp` copies of generated tables (`Patients_sp`); uploads are shared.
+
+The page takes the full width of the window.
 
 ------------------------------------------------------------------------
 
@@ -554,6 +565,9 @@ runtime:
   temp_prefix: tesrun                          # tesrun2 if another pull held tesrun (D50)
   cosmos_created: {Cosmos: "2026-09-17T19:34:56.450"}
 
+# on the pk phase of a generated PK (D87)
+outputs: {pk_parquet: {file: parquets/Cosmos/Patients.parquet, rows: 4242}}
+
 # on the pk phase of a sampled control (D59)
 outputs: {control_sample: {matched_to: CrohnsblackPatients, row_mult: 4.0,
           per_batch: {b1of3-Male: {cases: 812, controls: 3248}}}}
@@ -628,7 +642,7 @@ When the session opens, before anything runs: capture `@@SERVERNAME`, check the 
 
 2.  **Uploads** (D54, D61). A non-PK upload lands in Projects once per pull, as `upload_<dest>` with its types (Uploads, below), committed, by the first session to reach it; the manifest records it (`uploads_landed`) and later sessions use that copy. Its Cosmos temp is created with the copy's types, read back from `INFORMATION_SCHEMA`, and filled from the copy through the client (there is no linked server from Cosmos back to Projects), but only in a session whose cohorts read it. An uploaded PK lands and goes up in every session. Resuming, the copies are kept and the files are not read; a copy that is missing stops the phase, pointing at `--repull`.
 
-3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first (Multipliers). Not rerun on a resume.
+3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first (Multipliers). Then a generated PK is written whole to parquet, where Artifacts puts it (`runs/<project>/parquets/<Cosmos|SneakPeek>/<pk>.parquet`), before any run starts (D87); a failure to write it warns and the pull goes on. An uploaded PK is a file already and is not written. Not rerun on a resume.
 
 4.  **Runs.** For a batched run, the PK temp is emptied and refilled with that batch's whole PK rows, selected from the **Projects copy** with a parameterized predicate, then uploaded. The cohort SQL runs unchanged: it only ever joins the PK temp. On a resume an unbatched run refills it with the whole Projects copy the same way, as does an unbatched sampled control, whose temp still holds every row the PK query built. Each run then:
 
@@ -761,11 +775,14 @@ runs/<project>/
     Cosmos/       tables from COSMOS
     uploads/      the uploads, copied from the split's parquet
   contents.md     every table and column (D73)
-  load_parquets.R, load_parquets.py, examine_parquets.R, examine_parquets.py
-  HOW_TO.md       which to use when (D75)
+  load_parquets.R, load_parquets.py
+  viewparquets.py a window for looking at the parquets (D89)
+  HOW_TO.md       what each file is, and how to use it (D89)
 ```
 
 **Parquets** (`artifacts.py`, D72). The manifest decides what is finished, never what exists in Projects: a PK table once its PK phase is done, a run's table once every run that fills it is. The rest are listed as not packaged, with why. Each table is read from Projects in 50,000-row chunks and written with pyarrow, typed from its own `INFORMATION_SCHEMA` columns (BIGINT is `int64`, DATE `date32`, DATETIME2 `timestamp[us]`, text `string`; a type the driver cannot hand back, such as `DATETIMEOFFSET`, is read as text). `_batch` is dropped. A dimension with `separate_parquets` gives one file per value (`OtherDiagnoses_LA.parquet`, `OtherDiagnoses_LA_sp.parquet`): a run's table chosen by its `_batch` labels, the PK, which has no `_batch`, by the dimension's own predicate. An upload with no parquet in the split (a `dbtable`) is listed as not packaged; it is in Projects as `upload_<dest>`.
+
+It reports as it goes (D88): `writing <file> ...` as each parquet starts, then `wrote <file> (rows, size, seconds)`; an upload is `copied`. A table that fails is recorded with its error (`FAILED <table>: ...`), its partial file removed, and the next table packaged on a fresh cursor; a file is written to `.tmp` and renamed only when whole. The run ends with every file written, relative to the run folder (rows and size for each parquet), the failures, and `Artifacts finished in <time>: N table(s) in M parquet file(s), R rows, K left out, F failed`. It exits 1 if any table failed, saying to run it again once the cause is fixed.
 
 **contents.md** (`contents.py`, D73) opens with the pull: its project database, which Cosmos databases, when it last finished, the Cosmos refresh dates, whether it was a test sample (`smallset`, its limit, and whether the sample was hashed), each file's rows, and what was left out. Then per table:
 
@@ -775,7 +792,9 @@ runs/<project>/
 
 Descriptions are read from the split, so a changed description reaches `contents.md` through a new split.
 
-**Load scripts** (`loaders.py`, D75), at the run folder's root. `load_parquets` opens every parquet without reading it (`arrow::open_dataset()`, `pyarrow.dataset`); `examine_parquets` reads them into memory (R data frames; pandas with Arrow types, so an integer column with gaps stays integer). Each table becomes a variable named for its file. R sets `arrow.int64_downcast = FALSE`, so 64-bit keys are `integer64` in every table and joins match. Each script names the parquets folder in `PARQUETS`; moved, that line changes. `HOW_TO.md` says which to use when, how to run them in RStudio and VSCodium, and how tables join.
+**Load scripts** (`loaders.py`, D75), at the run folder's root. `load_parquets.R` and `.py` open every parquet without reading it (`arrow::open_dataset()`, `pyarrow.dataset`). Each table becomes a variable named for its file. R sets `arrow.int64_downcast = FALSE`, so 64-bit keys are `integer64` in every table and joins match. Each script names the parquets folder in `PARQUETS`; moved, that line changes.
+
+**The stock files** (D89) are copied from `scripts/pullmanager_src/stock/`, where the user edits them; the bundle carries them, so an edit reaches the VM with the next bundle. `viewparquets.py` is a tkinter window that opens parquets in tabs, pages through them and sorts; it reads them with pyarrow (duckdb or pandas if present), and its Open dialog starts in the `parquets` folder beside it. `HOW_TO.md` says what each file is, how to look at the data with the viewer, how to load it in RStudio and VSCodium, and how tables join. Its leading `<!-- stock HOW_TO.md ... -->` note is dropped from the copy, and `{project}` and `{parquets}` are filled in by plain replacement, so other braces stay as written.
 
 ------------------------------------------------------------------------
 
@@ -784,21 +803,21 @@ Descriptions are read from the split, so a changed description reaches `contents
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ``` bash
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (149)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (447)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (66)
-python3 scripts/yamlmanager.py --tdd                        # browser UI (9), Mac only
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (153)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (453)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (71)
+python3 scripts/yamlmanager.py --tdd                        # browser UI (21), Mac only
 ```
 
 Tests that read or write parquet need `pyarrow` and skip without it: they cover CSV conversion, uploads, and every session test (the runtime fixture's upload is parquet).
 
-- **makeYaml** keeps its tests inline, one `TestCase` per `--tdd` group (`TEST_GROUPS`), so the file stays self-contained.
+- **makeYaml** keeps its tests inline, including that a saved draft's empty lists and mappings read back empty, not null, one `TestCase` per `--tdd` group (`TEST_GROUPS`), so the file stays self-contained.
 - **Runtime** tests live in `pullmanager/tests/test_*.py`, discovered by name, and ship in the bundle. After extraction, `--tdd` proves the delivery with no network and no repo. Tests needing repo fixtures skip cleanly there.
-- **Bundle** tests cover tampering, determinism, extraction safety, `.local` preservation (including files a bundle stops shipping), transfer YAMLs carried with `yaml=` (placed beside `pullmanager.py`, a different copy kept as `.local`, verified, in the content_id), and the VM pathway from one copied file: export a transfer YAML on the Mac, extract, split it with no recipes present, dry run.
-- **Artifacts** tests package the runtime fixture against a fake Projects connection and read the parquets back (types, `_batch` dropped, left-out tables, separated files, SneakPeek folders), check `contents.md`, and run the generated load scripts: Python for real, R through `Rscript` when R has `arrow`.
+- **Bundle** tests cover the queue (every queued temp exported and carried; a temp that does not validate, or is gone, stops the build naming it; an empty queue), the stock files carried, tampering, determinism, extraction safety, `.local` preservation (including files a bundle stops shipping), transfer YAMLs carried with `yaml=` (placed beside `pullmanager.py`, a different copy kept as `.local`, verified, in the content_id), and the VM pathway from one copied file: export a transfer YAML on the Mac, extract, split it with no recipes present, dry run.
+- **Artifacts** tests package the runtime fixture against a fake Projects connection and read the parquets back (types, `_batch` dropped, left-out tables, separated files, SneakPeek folders), check `contents.md`, check the progress lines and the summary, package every other table when one fails (exit 1, no partial file), copy the viewer and the stock `HOW_TO.md` with the pull filled in, and run the generated load scripts: Python for real, R through `Rscript` when R has `arrow`. The session tests check the PK parquet: written where Artifacts puts it, before any run, and a failure to write it only warns.
 - **The Builder's JavaScript** is not run by the UI tests. Changes to it are checked by extracting the page's scripts for `node --check`, and running the changed functions under node.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no recipes file, gives byte-identical session YAMLs and uploads, and the same manifest (bar `source`), as the template split with recipes, for the tiny template and for test cases `01` and `02`.
-- **UI** tests cover saving a recipe (comments and layout kept, a duplicate refused with the file unchanged, the entry placed inside `recipes:`), Save & Refresh (named for the project, beside the template, never over it) and the section notes.
+- **UI** tests cover saving a recipe (comments and layout kept, a duplicate refused with the file unchanged, the entry placed inside `recipes:`), Save & Refresh (in the temp folder, named for the project; never over a file the page did not open; upload paths reaching the same file), a draft saved with an empty multiplier reopening with its error, a compiler crash still opening the Builder, the defaults read from `template.yaml`, `_sp` connections, the bundle queue, and the section notes. The page's changed JavaScript is checked with `node --check` and its pure functions (the temp name, column order) run under node.
 
 Fixtures:
 

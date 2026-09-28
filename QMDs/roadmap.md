@@ -13,44 +13,16 @@ When an item here is built, delete it from this file and describe the result in 
 | YAML Manager: validation, dictionary, table binding, pre-YAML, split, manifest | Built and tested |
 | YAML Manager browser UI | Built; Mac only. **Frozen** (D92): no fixes; retired once the tkinter app satisfies |
 | The app: model, tkinter Author and Run (D92–D98) | Decided; not started. Next, below |
-| Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79) | Built and tested. Carrying transfer YAMLs is not yet used on the VM |
+| Bundle: build, verify, extract, `.local` preservation, carried transfer YAMLs (D79), the queue (D91) | Built and tested. Carrying transfer YAMLs, and `makebundle.py queue`, not yet used |
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
 | Launcher (`pullmanager.py`) | Opened on the VM; Validate, Export split and Preview work. Execute in its own console window (D68) is not yet tried there |
-| Artifacts: parquets, `contents.md`, load scripts (D72–D75) | Built and tested against a fake Projects connection; the Python scripts run and the R ones run under R `arrow` 25. Not yet run on the VM |
+| Artifacts: parquets, `contents.md`, load scripts, viewer, stock HOW_TO.md, progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Not yet run on the VM |
 
 ## Known Bugs
 
 - **Execute sometimes ends mid-pull with exit code 1** (the IBD template, September 2026: `CrohnsPatients`, its first Cosmos session, during `upload_cohorts`, after the SneakPeek sessions finished). No summary, and the step left `running`. Every step catches Python errors, so it was either killed (Stop, or anything else on the VM: Windows gives 1) or an error outside the steps, whose traceback reached only the closing window. The log now keeps the traceback, or where a native crash happened; the next occurrence says which. The next Execute resumes it.
-
-------------------------------------------------------------------------
-
-## Next: Fixes, In Order
-
-From the user's notes of 27 September 2026 (the YAML Manager and Artifacts).
-
-1. **Save keeps empty lists; `multiplier_without_levels`; a failed refresh
-   keeps the page (D84).** Every Save & Refresh wrote the nulls, and the crash
-   lost the user's place.
-2. **Temps in `YAMLs/temp/`, New Blank, never overwrite (D85).** A blank draft
-   could replace a real temp, and fix 8 reads this folder. Move the existing
-   temps and `YAMLs/csv/` there.
-3. **Defaults (D86), the transfer label, full width, the Builder section kept
-   on Save & Refresh.** Cheap, and felt every session. With them, the
-   CLAUDE.md rule for installing the VM's package versions, and its allow
-   entry.
-4. **`_sp` cards show their connections** on the Cohorts tab, with the same
-   colours: the analysis is keyed by the template's names, which `_sp` copies
-   are not.
-5. **Column order by number** in the custom table's columns, in place of Up
-   and Down; Enter moves the column.
-6. **The PK parquet at the PK phase (D87).**
-7. **Artifacts reports as it goes (D88).**
-8. **`viewparquets.py` and the stock `HOW_TO.md` (D89).**
-9. **The bundle queue (D91).** Builds on fix 2's folder.
-
-Then rebuild the bundle.
 
 ------------------------------------------------------------------------
 
@@ -81,7 +53,8 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
     - While it runs, Export split, Execute and Artifacts are grey, and `python pullmanager.py --running` says it is executing.
     - Each session ends with its warnings, then one column-width table.
     - A batch with no values (`state`, D82): each run shows `values_found` and `v3of51 (LA)` as it goes, and `SELECT StateOrProvinceAbbreviation, COUNT(*)` on a destination's PK matches the whole PK.
-    - `--artifacts IBD_Ancestry` once it finishes: the parquets open with `load_parquets.R` and `.py`; `PatientDurableKey` is `integer64` in R `arrow` 11 (checked only on 25); `contents.md` reads right.
+    - `--artifacts IBD_Ancestry` once it finishes: each file says when it starts, then its rows, size and time, and the run ends with the list of files; the parquets open with `load_parquets.R` and `.py`, and in `viewparquets.py` under the VM's Tk; `PatientDurableKey` is `integer64` in R `arrow` 11 (checked only on 25); `contents.md` and `HOW_TO.md` read right.
+    - The PK's parquet appears in `runs/<project>/parquets/` as soon as its PK phase is done, before the first run (D87), and the pk phase's `pk_parquet` output gives its rows.
 3.  Two pulls at once: Celiac and an IBD template, exported from the Mac, validated, split, previewed and executed side by side. Each keeps its own run folder, lock, log and temp prefix; the launcher greys only the loaded one's buttons; `--running` lists both.
 4.  The IBD Ancestry pull, once it finishes (D58–D61):
     - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult` times the same on the black PK, and the PK phase's `control_sample` output agrees.
