@@ -1096,6 +1096,22 @@ def landed_columns(upload: dict[str, Any], file_names: list[str]) -> list[str]:
     return [renames.get(name, name) for name in file_names if name not in dropped]
 
 
+def check_quoted_names(upload: dict[str, Any], file_names: list[str], where: str, result: CompileResult) -> None:
+    """A column whose name has quotes in it (`'DiagnosisCode'`), not renamed (D109)."""
+    renames, dropped = column_changes(upload)
+    for name in file_names:
+        if any(q in name for q in ("'", '"')) and name not in renames and name not in dropped:
+            clean = name.strip("'\"")
+            result.warn(
+                "quoted_column_name",
+                f"Column `{name}` has quote characters in its name, so a recipe reading `{clean}` "
+                "will not find it.",
+                f"{where}.columns ({name})",
+                fix=f"Rename it in the app's Supporting Tables (it lands as `{clean}`), or write "
+                f"`columns: [{{name: {clean}, from: \"{name}\"}}]`, or save the file without them.",
+            )
+
+
 def check_column_changes(
     upload: dict[str, Any], file_type: str, file_names: list[str] | None, where: str, result: CompileResult
 ) -> None:
@@ -1357,6 +1373,7 @@ def upload_schemas(
                 )
                 schemas[dest] = []
             file_columns[dest] = list(schemas[dest] or [])
+            check_quoted_names(upload, file_columns[dest], where, result)
             check_declared_columns(upload, schemas[dest], where, result)
             check_column_changes(upload, file_type, schemas[dest], where, result)
             schemas[dest] = landed_columns(upload, schemas[dest])
@@ -1376,6 +1393,7 @@ def upload_schemas(
                 )
                 schemas[dest] = []
             file_columns[dest] = list(schemas[dest] or [])
+            check_quoted_names(upload, file_columns[dest], where, result)
             check_declared_columns(upload, schemas[dest], where, result)
             check_column_changes(upload, file_type, schemas[dest], where, result)
             schemas[dest] = landed_columns(upload, schemas[dest])
@@ -5553,6 +5571,20 @@ class UploadColumnChangeTests(MakeYamlTest):
 
     def test_two_columns_ending_with_one_name_are_refused(self):
         self.assertHasError(self.compile("    columns: [{name: Code, from: Label}]\n"), "duplicate_upload_column")
+
+    def test_a_quoted_column_name_warns_until_it_is_renamed(self):
+        # D109: the VM's HospitalICDCodes.csv had the header 'DiagnosisCode'.
+        (self.tmp / "codes.csv").write_text("'Code',Label\nK50,x\n", encoding="utf-8")
+        text = TableBindingTests.TEMPLATE.format(extra_vars="", extra_uploads="", cohort_vars="")
+        (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+        res = self.compile_template(text)
+        warning = next(m for m in res.warnings if m.code == "quoted_column_name")
+        self.assertIn("`'Code'`", warning.message)
+        self.assertIn("from:", warning.fix)
+        renamed = text.replace("    file_loc: codes.csv\n",
+                               "    file_loc: codes.csv\n    columns: [{name: Code, from: \"'Code'\"}]\n")
+        again = self.compile_template(renamed)
+        self.assertNotIn("quoted_column_name", [m.code for m in again.warnings])
 
     def test_a_dbtable_cannot_be_renamed_on_the_way(self):
         res = self.compile("    columns: [{name: ICD, from: Code}]\n", file_type="dbtable")
