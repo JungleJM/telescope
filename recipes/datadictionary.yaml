@@ -2834,3 +2834,329 @@ DataDictionary:
           Primary key for the terminology concept dimension row. Referenced by
           other terminology tables such as DiagnosisTerminologyDim and
           TerminologyConceptSetDim.
+
+
+  ProcedureEventFact:
+    description: >
+      Procedure event fact table. Rows represent documented procedures
+      associated with encounters, with code, modifiers, quantity, and
+      timing fields. Use ProcedureDurableKey to link to ProcedureDim
+      when needed for code-level detail.
+    granularity: >
+      One row per documented procedure event per encounter
+      (procedure-event-level fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the procedure event record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the procedure event record has been inferred rather than
+          directly sourced; useful for lineage and data quality checks.
+      AgeAtProcedureDateKey:
+        type: bigint
+        nullable: true
+        description: >
+          Age key representing patient age at the time of the procedure.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real procedure event rows.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the procedure event. Many analyses use
+          DISTINCT EncounterKey when counting procedures per encounter.
+      FirstModifier:
+        type: string
+        nullable: true
+        description: >
+          First procedure modifier code, when present (e.g., -26, -TC).
+      FourthModifier:
+        type: string
+        nullable: true
+        description: >
+          Fourth procedure modifier code, when present.
+      IsUnsuccessfulAttempt:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the procedure was attempted but not successfully completed.
+          Use this flag when distinguishing completed procedures from attempts.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the procedure event.
+      ProcedureCode:
+        type: string
+        nullable: true
+        description: >
+          Procedure code value as captured for the event (e.g., CPT, HCPCS,
+          internal code), interpreted together with ProcedureCodeSet.
+      ProcedureCodeSet:
+        type: string
+        nullable: true
+        description: >
+          Code set for ProcedureCode (e.g., CPT, HCPCS, internal). Use this
+          when grouping procedures by coding system.
+      ProcedureDurableKey:
+        type: bigint (foreign key to ProcedureDim)
+        nullable: true
+        description: >
+          Durable key linking the event to the procedure dimension record
+          for additional code-level attributes.
+      ProcedureEndDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing procedure end date when documented. Join to
+          DateDim for calendar attributes if needed for presentation.
+      ProcedureEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the procedure ended, de-identified and time-shifted.
+      ProcedureEventKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the procedure event fact record.
+      ProcedureStartDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing procedure start date. Prefer DateKey filtering
+          rather than joining to DateDim for performance.
+      ProcedureStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the procedure started, de-identified and time-shifted.
+      Quantity:
+        type: integer
+        nullable: true
+        description: >
+          Quantity associated with the procedure event (for example, number of
+          units or repeats). Interpret in context of the specific procedure.
+      SecondModifier:
+        type: string
+        nullable: true
+        description: >
+          Second procedure modifier code, when present.
+      SourceComboKey:
+        type: bigint (foreign key to ProcedureEventSourceBridge/SourceDim)
+        nullable: true
+        description: >
+          Composite source key for the procedure event, used to identify
+          origin system and mapping lineage.
+      ThirdModifier:
+        type: string
+        nullable: true
+        description: >
+          Third procedure modifier code, when present.
+      Type:
+        type: string
+        nullable: true
+        description: >
+          Procedure event type category (e.g., professional, facility,
+          surgical), depending on local configuration.
+
+  VitalsFact:
+    description: >
+      Vitals fact table. Rows represent individual vital sign measurements
+      (e.g., blood pressure, heart rate, weight, height) associated with
+      encounters and patients. Numeric values are de-identified and may be
+      unit-normalized. Placeholder rows with nonpositive primary keys should
+      be excluded from most analyses.
+    granularity: >
+      One row per vital sign measurement per encounter (vital-measurement-level
+      fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the vitals record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the vitals record has been inferred rather than directly
+          sourced; useful for lineage and data quality checks.
+      BodyMassIndex:
+        type: numeric
+        nullable: true
+        description: >
+          BMI value associated with the measurement. May be source-calculated
+          or derived using height and weight; use CalculatedBodyMassIndex_X
+          to distinguish source vs derived in some implementations.
+      CalculatedBodyMassIndex_X:
+        type: numeric
+        nullable: true
+        description: >
+          BMI calculated by source logic or derived mapping, separate from
+          raw BodyMassIndex when both are present.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real vitals rows.
+      DateKey:
+        type: integer (DateKey)
+        nullable: false
+        description: >
+          DateKey representing when the vital sign was taken. Use this
+          for filtering by date without joining to DateDim.
+      DiastolicBloodPressure:
+        type: numeric
+        nullable: true
+        description: >
+          Diastolic blood pressure measurement (e.g., mmHg) for this vitals row.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the vitals measurement. Some vitals may be
+          recorded outside a specific encounter and have NULL EncounterKey.
+      HeadCircumference:
+        type: numeric
+        nullable: true
+        description: >
+          Head circumference measurement (often pediatric) for this vitals row.
+      Height:
+        type: numeric
+        nullable: true
+        description: >
+          Height measurement (e.g., centimeters or inches). Unit-normalization
+          may occur in Cosmos de-identification.
+      LastKnownHeight_X:
+        type: numeric
+        nullable: true
+        description: >
+          Derived last-known height for the patient at the time of measurement,
+          used when explicit height is missing for a vitals row.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the vitals measurement.
+      PulseRate:
+        type: numeric
+        nullable: true
+        description: >
+          Heart rate/pulse measurement (beats per minute).
+      RespirationRate:
+        type: numeric
+        nullable: true
+        description: >
+          Respiration rate measurement (breaths per minute).
+      SourceComboKey:
+        type: bigint (foreign key to VitalsSourceBridge/SourceDim)
+        nullable: true
+        description: >
+          Composite source key describing origin of the vitals record.
+      SpO2:
+        type: numeric
+        nullable: true
+        description: >
+          Oxygen saturation (SpO2) measurement, typically as percentage.
+      SystolicBloodPressure:
+        type: numeric
+        nullable: true
+        description: >
+          Systolic blood pressure measurement (e.g., mmHg) for this vitals row.
+      TakenInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the vital sign was taken, de-identified and
+          time-shifted. Often used for intra-encounter ordering.
+      Temperature:
+        type: numeric
+        nullable: true
+        description: >
+          Body temperature measurement (e.g., degrees Celsius or Fahrenheit),
+          potentially unit-normalized in Cosmos.
+      VitalsKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the vitals fact record. Guard on VitalsKey > 0
+          when excluding placeholder rows.
+      Weight:
+        type: numeric
+        nullable: true
+        description: >
+          Weight measurement (e.g., kilograms or pounds). De-identified and
+          possibly unit-normalized.
+
+  CoverageDim:
+    description: >
+      Coverage dimension table. Represents coverage and payor concepts such
+      as financial class, payor vs coverage flags, and self-pay. Referenced
+      from encounter- and admission-level facts via CoverageComboKey_X
+      through CoverageBridgeX.
+    granularity: >
+      One row per coverage/payor concept (coverage-level dimension).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the coverage record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the coverage record has been inferred rather than directly
+          sourced; used for lineage and data quality checks.
+      CoverageFinancialClass:
+        type: string
+        nullable: true
+        description: >
+          Financial class category associated with this coverage (e.g.,
+          commercial, Medicare, Medicaid, self-pay surrogate).
+      CoverageKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the coverage dimension row. Used in CoverageBridgeX to
+          form composite keys referenced by encounter and admission facts.
+      IsCoverage:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the record represents a coverage concept rather than a
+          pure payor-only concept in mixed configurations.
+      IsPayor:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the record represents a payor concept. Some records may
+          serve as both payor and coverage depending on local mapping.
+      IsSelfPay:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Flag indicating self-pay. When true, this coverage concept represents
+          a self-pay situation for encounters/admissions linked via
+          CoverageComboKey_X.
+      ReferenceFinancialClass:
+        type: string
+        nullable: true
+        description: >
+          Reference or normalized financial class value for this coverage
+          concept, used to harmonize financial classes across organizations.
+      ReferencePayer:
+        type: string
+        nullable: true
+        description: >
+          Reference or normalized payer name associated with this coverage
+          concept, used for cross-organization payer grouping.
