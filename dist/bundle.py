@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "236fb4c83ed9b5d6946e977ec50e647e96dc43bc9e914d3239846a25385e0505",
+  "content_id": "172172a5c48caf3ce844628a3ef75659adaac5c216c3175b33d284dc7aa6de6f",
   "file_count": 49,
   "files": [
     {
@@ -789,8 +789,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/makeYaml.py",
       "policy": "replace",
-      "sha256": "11779de7b1c531b41817dbac5260c1e4e85b1dd4a9ac58238c1c31c9d5e1a30a",
-      "size": 241808
+      "sha256": "192d8e6775c8ced9ab4433d21c56891f846d21fcdbc56b4029b086e89ba47c5a",
+      "size": 242658
     },
     {
       "path": "stock/HOW_TO.md",
@@ -16035,7 +16035,7 @@ if __name__ == "__main__":
 #     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
 #
 # === END FILE: pullmanager/yaml_io.py ===
-# === BEGIN FILE: scripts/makeYaml.py SHA256: 11779de7b1c531b41817dbac5260c1e4e85b1dd4a9ac58238c1c31c9d5e1a30a SIZE: 241808 ===
+# === BEGIN FILE: scripts/makeYaml.py SHA256: 192d8e6775c8ced9ab4433d21c56891f846d21fcdbc56b4029b086e89ba47c5a SIZE: 242658 ===
 # #!/usr/bin/env python3
 # """
 # Compile human-authored YAML Manager templates into VM-facing YAML artifacts.
@@ -16896,7 +16896,12 @@ if __name__ == "__main__":
 #                 fix="Rename the variable. To choose the prefix, set top-level `temp_prefix:`.",
 #             )
 #     table_schemas: dict[str, list[str] | None] = {table: cols for table, cols in analysis["output_columns"].items()}
-#     table_schemas.update(upload_schemas(template, uploads, result, base_dir, uploads_elsewhere))
+#     file_columns: dict[str, list[str]] = {}
+#     table_schemas.update(upload_schemas(template, uploads, result, base_dir, uploads_elsewhere, file_columns))
+#     # What a UI shows (D92): every table's columns as it will land, and an
+#     # upload file's own columns, before renames and drops.
+#     analysis["table_schemas"] = dict(table_schemas)
+#     analysis["upload_file_columns"] = file_columns
 #     uploaded_pk_table = find_uploaded_pk_table(template, result)
 #     generated_pk = [c for c in cohorts if str(c.get("type", "")).lower() == "pk"]
 #     if uploaded_pk_table and generated_pk:
@@ -17306,8 +17311,10 @@ if __name__ == "__main__":
 #     result: CompileResult,
 #     base_dir: Path,
 #     uploads_elsewhere: bool = False,
+#     file_columns: dict[str, list[str]] | None = None,
 # ) -> dict[str, list[str] | None]:
 #     schemas: dict[str, list[str] | None] = {}
+#     file_columns = {} if file_columns is None else file_columns
 #     seen: set[int] = set()
 #     for upload in uploads.values():
 #         ident = id(upload)
@@ -17347,6 +17354,7 @@ if __name__ == "__main__":
 #                     fix="Save the file as a UTF-8 CSV with a header row.",
 #                 )
 #                 schemas[dest] = []
+#             file_columns[dest] = list(schemas[dest] or [])
 #             check_declared_columns(upload, schemas[dest], where, result)
 #             check_column_changes(upload, file_type, schemas[dest], where, result)
 #             schemas[dest] = landed_columns(upload, schemas[dest])
@@ -17365,6 +17373,7 @@ if __name__ == "__main__":
 #                     fix="Check the file is parquet, e.g. written by arrow::write_parquet in R.",
 #                 )
 #                 schemas[dest] = []
+#             file_columns[dest] = list(schemas[dest] or [])
 #             check_declared_columns(upload, schemas[dest], where, result)
 #             check_column_changes(upload, file_type, schemas[dest], where, result)
 #             schemas[dest] = landed_columns(upload, schemas[dest])
@@ -18568,24 +18577,30 @@ if __name__ == "__main__":
 #     report_path: str | Path | None = None,
 #     datadictionary_path: str | Path | None = None,
 #     uploads_elsewhere: bool = False,
+#     template_data: dict[str, Any] | None = None,
 # ) -> CompileResult:
 #     """Validate and render a template.
 #
 #     `uploads_elsewhere` makes a missing upload file a warning: set where the
 #     output is a plan that travels (a transfer YAML, the UI), never for a split.
+#     `template_data` is a template not yet saved (the app's draft, D92): it is
+#     compiled as if it were at `template_path`, which need not exist.
 #     """
 #     result = CompileResult()
 #     template_path = Path(template_path) if template_path else default_template_path()
 #     recipes_path = Path(recipes_path) if recipes_path else default_recipes_path()
-#     missing = missing_template_message(template_path)
-#     if missing:
-#         result.error("template_not_found", missing, str(template_path), fix=MISSING_TEMPLATE_FIX)
-#         return result
-#     try:
-#         raw = load_yaml(template_path)
-#     except Exception as exc:
-#         result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
-#         return result
+#     if template_data is not None:
+#         raw = copy.deepcopy(template_data)
+#     else:
+#         missing = missing_template_message(template_path)
+#         if missing:
+#             result.error("template_not_found", missing, str(template_path), fix=MISSING_TEMPLATE_FIX)
+#             return result
+#         try:
+#             raw = load_yaml(template_path)
+#         except Exception as exc:
+#             result.error("yaml_load_error", str(exc), str(template_path), fix=YAML_SYNTAX_FIX)
+#             return result
 #     if raw is not None and not isinstance(raw, dict):
 #         result.error(
 #             "invalid_template",
