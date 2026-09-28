@@ -1893,3 +1893,38 @@ everything under `scripts/pullmanager_src/` is bundled.
 - `scripts/pullmanager_src/utils/` is where your own VM utilities go, and it
   ships in every bundle. A file there that is not committed is committed
   (after asking), never left out.
+
+### D103. An upload path always reaches the same file; a string always reads back as itself
+
+**Amends the transfer export's rule that `file_loc` is never rewritten
+(Outputs, in design.md) for paths that leave the template's folder.**
+
+**Context.** On the VM, a transfer YAML opened at the root and saved as an
+intake in `YAMLs/temp/` stopped the pull twice over. Its uploads, beside the
+transfer, were written relative to the root; the save kept any path needing
+`..` as written, so `IBD_meds.parquet` was then looked for in `YAMLs/temp/`.
+And a CSV header with quotes in it, `'DiagnosisCode'`, renamed in the app,
+was written plain by makeYaml's own YAML writer and read back without its
+quotes, so the split found no such column. Author's Validate, checking the
+draft in memory, said both were fine.
+
+**Decision.**
+
+- Saving an intake rewrites every relative `file_loc` to reach the same file
+  from `YAMLs/temp/`, with `..` where it must (`../../IBD_meds.parquet`).
+- The transfer export, written to another folder, rewrites a `file_loc` that
+  leaves the template's folder to reach the same file from the transfer's
+  folder (`IBD_meds.parquet` again, at the root). Kept as written it would
+  point somewhere else. One inside the template's folder is still kept and
+  its file copied beside the transfer; one still outside, or absolute, is
+  not copied, with the warning `upload_not_copied`.
+- makeYaml's writer writes a string plain only when it reads back as the
+  same string, and quotes it otherwise: quotes, `true`, `null`, numbers,
+  leading or trailing spaces, and YAML's special first characters.
+- The launcher's remembered paths move from the working folder's top to
+  `runs/.pullmanager-gui.json`, where everything else the app makes lives; a
+  file at the old place is moved there when it is first read.
+
+**Consequences.** A transfer written elsewhere may now differ from the
+template in an upload's `file_loc`, where before it could differ from the
+file it meant.
