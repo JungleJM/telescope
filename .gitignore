@@ -10,3 +10,5 @@ cleanup/
 .DS_Store
 # Splits and dry-run SQL, one folder per project (D57).
 /runs/
+# Bundles and their content_id are build products (D106).
+/dist/

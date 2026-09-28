@@ -1344,6 +1344,7 @@ class ExportsPanel:
         self.view = view
         self.frame = view.exports_tab
         self.chosen: Path | None = None
+        self.last_bundle: tuple[bool, list[str], str] | None = None  # shown until the next build
 
     def refresh(self) -> None:
         for child in self.frame.winfo_children():
@@ -1365,6 +1366,18 @@ class ExportsPanel:
                 ttk.Button(row, text="Remove", command=lambda n=item["name"]: self.queue("remove", n)).pack(side="right")
             if not state["queue"]:
                 note(queue, "Nothing queued. Saving an intake queues it.").pack(anchor="w")
+            make = ttk.Frame(queue)
+            make.pack(fill="x", pady=(8, 0))
+            ttk.Button(make, text="Make bundle", command=self.make_bundle).pack(side="left")
+            note(make, "Writes dist/bundle_with_yamls.py with every queued intake's transfer YAML; "
+                       "dist/bundle.py, the runtime alone, is left as it is (D106).").pack(side="left", padx=8)
+            if self.last_bundle is not None:
+                ok, lines, content_id = self.last_bundle
+                if ok:
+                    ttk.Label(queue, text=f"content_id: {content_id}", foreground=COLOURS["pass"],
+                              font=("Courier", 11, "bold")).pack(anchor="w", pady=(6, 0))
+                note(queue, "\n".join(line for line in lines if not line.startswith("content_id")),
+                     "muted" if ok else "error").pack(anchor="w")
             if state["addable"]:
                 add = ttk.Frame(queue)
                 add.pack(fill="x", pady=(6, 0))
@@ -1390,6 +1403,14 @@ class ExportsPanel:
             box.configure(state="disabled")
             box.grid(row=1, column=column, sticky="nsew", padx=3)
         panes.rowconfigure(1, weight=1)
+
+    def make_bundle(self) -> None:
+        self.view.say("Making the bundle...")
+        self.view.root.update_idletasks()
+        self.last_bundle = model.make_bundle(self.view.ws)
+        ok, lines, _ = self.last_bundle
+        self.view.say(lines[-1] if ok else lines[0], "pass" if ok else "error")
+        self.refresh()
 
     def show(self, path: Path) -> None:
         self.chosen = path
@@ -1638,6 +1659,27 @@ class ValidateAndExportViewTests(ViewTest):
         if model.queue_available():
             self.view.exports_panel.queue("add", "Celiac_intake.yaml")
             self.assertEqual(model.queue_state(self.ws)["queue"][0]["name"], "Celiac_intake.yaml")
+
+    def test_make_bundle_shows_its_content_id_and_keeps_it(self):
+        if not model.queue_available():
+            self.skipTest("the bundle builder is not here")
+        import bundle_pullmanager as bp
+        from unittest import mock
+
+        self.open("Celiac_intake.yaml")
+        model.queue_add("Celiac_intake.yaml", self.ws.temp_dir)
+        dist = self.tmp / "dist"
+        with mock.patch.object(bp, "DEFAULT_OUTPUT", dist / "bundle.py"), \
+                mock.patch.object(bp, "WITH_YAMLS_OUTPUT", dist / "bundle_with_yamls.py"):
+            self.view.exports_panel.make_bundle()
+        ok, lines, content_id = self.view.exports_panel.last_bundle
+        self.assertTrue(ok, lines)
+        self.assertTrue((dist / "bundle_with_yamls.py").is_file())
+        self.assertFalse((dist / "bundle.py").exists())
+        self.assertIn(f"bundle_with_yamls.py {content_id}", (dist / "content_id.txt").read_text(encoding="utf-8"))
+        self.view.exports_panel.refresh()
+        shown = [str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label)]
+        self.assertIn(f"content_id: {content_id}", shown)
 
     def test_an_unsaved_draft_says_to_save_first(self):
         self.open("Celiac_intake.yaml")

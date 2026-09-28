@@ -1700,6 +1700,20 @@ def queue_remove(name: str, folder: Path) -> bool:
     return bool(module and module.queue_remove(name, folder))
 
 
+def make_bundle(workspace: Workspace) -> tuple[bool, list[str], str]:
+    """Build dist/bundle_with_yamls.py with every queued intake's transfer
+    YAML (D106). Returns (ok, what was done or why not, content_id)."""
+    module = _queue_module()
+    if module is None:
+        return False, ["Bundles are made on the Mac, beside makebundle.py."], ""
+    try:
+        _, manifest, said = module.build_bundle([], True, queue_folder=workspace.temp_dir,
+                                                export_dir=workspace.home)
+    except module.BundleError as exc:
+        return False, [str(exc)], ""
+    return True, said, str(manifest["content_id"])
+
+
 def queue_state(workspace: Workspace) -> dict[str, Any]:
     """The queued intakes, and the ones that could join (D91)."""
     module = _queue_module()

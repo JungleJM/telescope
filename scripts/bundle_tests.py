@@ -832,6 +832,29 @@ class QueueTests(unittest.TestCase):
         self.assertIn("root/Celiac_transfer.yaml", published)
         self.assertIn("root/IBD_Ancestry_transfer.yaml", published)
 
+    def test_the_queue_builds_its_own_bundle_and_leaves_the_runtimes_alone(self):
+        # D106: bundle_with_yamls.py carries the pulls; bundle.py stays the runtime.
+        import bundle_pullmanager as bp
+        from unittest import mock
+
+        dist = self.tmp / "dist"
+        with mock.patch.object(bp, "DEFAULT_OUTPUT", dist / "bundle.py"), \
+                mock.patch.object(bp, "WITH_YAMLS_OUTPUT", dist / "bundle_with_yamls.py"):
+            plain, plain_manifest, _ = bp.build_bundle([], False)
+            plain_bytes = plain.read_bytes()
+            queued, queued_manifest, said = bp.build_bundle([], True, queue_folder=self.temps,
+                                                            export_dir=self.out)
+        self.assertEqual(plain.name, "bundle.py")
+        self.assertEqual(queued.name, "bundle_with_yamls.py")
+        self.assertEqual(plain.read_bytes(), plain_bytes)
+        published = {s["path"] for s in read_bundle(queued)[0]}
+        self.assertIn("root/Celiac_transfer.yaml", published)
+        self.assertNotIn("root/Celiac_transfer.yaml", {s["path"] for s in read_bundle(plain)[0]})
+        ids = (dist / "content_id.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(ids, [f"bundle.py {plain_manifest['content_id']}",
+                               f"bundle_with_yamls.py {queued_manifest['content_id']}"])
+        self.assertIn(f"content_id: {queued_manifest['content_id']}", said)
+
     def test_a_queued_temp_that_does_not_validate_stops_the_build_naming_it(self):
         from bundle_pullmanager import export_queue
 

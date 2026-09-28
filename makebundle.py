@@ -2,6 +2,7 @@
 """Build dist/bundle.py, the one file that carries Pullmanager to the VM.
 
     python3 makebundle.py          # build it, and print its content_id
+    python3 makebundle.py queue    # dist/bundle_with_yamls.py, with the queued YAMLs (D106)
     python3 makebundle.py --tdd    # the bundle's own tests
 
 A shortcut for scripts/bundle_pullmanager.py, which it runs with the same

@@ -43,6 +43,11 @@ REPO_ROOT = SCRIPTS_DIR.parent
 SOURCE_ROOT = SCRIPTS_DIR / "pullmanager_src"
 EXTRACTOR_PATH = SCRIPTS_DIR / "bundle_extractor.py"
 DEFAULT_OUTPUT = REPO_ROOT / "dist" / "bundle.py"
+# A build carrying transfer YAMLs goes beside it, so the runtime-only bundle is
+# never overwritten by one with project pulls in it; you choose which to copy.
+WITH_YAMLS_OUTPUT = REPO_ROOT / "dist" / "bundle_with_yamls.py"
+# Each build's content_id, one line per bundle file (D106).
+CONTENT_ID_NAME = "content_id.txt"
 
 # The VM needs more than the runtime. The split step runs there, so makeYaml
 # and the data dictionary it validates against travel too. Published paths are
@@ -345,6 +350,46 @@ def build(
     return output, manifest
 
 
+def record_content_id(output: Path, content_id: str) -> Path:
+    """Write `<bundle file> <content_id>` into content_id.txt beside the bundle,
+    replacing that file's line and keeping the others'."""
+    path = output.parent / CONTENT_ID_NAME
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    kept = [line for line in lines if line.split(" ", 1)[0] != output.name and line.strip()]
+    path.write_text("\n".join(sorted(kept + [f"{output.name} {content_id}"])) + "\n", encoding="utf-8")
+    return path
+
+
+def build_bundle(names: list[str], queue: bool, output: Path | None = None,
+                 root: Path = SOURCE_ROOT, queue_folder: Path | None = None,
+                 export_dir: Path | None = None) -> tuple[Path, dict, list[str]]:
+    """Export and carry what is asked (named transfer YAMLs, the queue), into
+    bundle_with_yamls.py if any are carried, else bundle.py; record its
+    content_id. Returns (bundle, manifest, lines saying what was done)."""
+    said: list[str] = []
+    transfers = [find_transfer(name) for name in transfer_names(names)]
+    if queue:
+        for temp, transfer in export_queue(queue_folder or TEMP_DIR, export_dir):
+            shown = temp.relative_to(REPO_ROOT).as_posix() if temp.is_relative_to(REPO_ROOT) else str(temp)
+            said.append(f"Exported {transfer.name} from {shown}")
+            if transfer not in transfers:
+                transfers.append(transfer)
+    if output is None:
+        output = WITH_YAMLS_OUTPUT if transfers else DEFAULT_OUTPUT
+    output, manifest = build(output, root, transfers)
+    record_content_id(output, manifest["content_id"])
+    size_kb = output.stat().st_size / 1024
+    said.append(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")
+    said.append(f"content_id: {manifest['content_id']}")
+    for transfer in transfers:
+        said.append(f"Carries {transfer.name}: extracted beside pullmanager.py on the VM.")
+        for upload in upload_locations(transfer):
+            said.append(f"  It reads {upload}: copy that to the VM at the same path beside it, "
+                        "unless it is there already.")
+    said.append(f"Copy {output.name} to the VM and run `python {output.name}` there.")
+    return output, manifest, said
+
+
 def upload_locations(transfer: Path) -> list[str]:
     """The `file_loc` of each upload a transfer YAML reads, which travel separately."""
     text = transfer.read_text(encoding="utf-8")
@@ -356,7 +401,9 @@ def main(argv: list[str] | None = None) -> int:
         prog="bundle_pullmanager.py",
         description="Build the single-file Pullmanager bundle.",
     )
-    parser.add_argument("--out", default=str(DEFAULT_OUTPUT), help="Bundle output path.")
+    parser.add_argument("--out", default=None,
+                        help="Bundle output path. Default: dist/bundle.py, or dist/bundle_with_yamls.py "
+                             "when transfer YAMLs are carried (D106).")
     parser.add_argument("--src", default=str(SOURCE_ROOT), help="Source tree to bundle.")
     parser.add_argument("--verify", metavar="BUNDLE", help="Verify an existing bundle and exit.")
     parser.add_argument(
@@ -389,23 +436,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content_id: {manifest['content_id']}")
             return 0
 
-        queued = [token for token in args.yaml if token == "queue"]
+        queued = "queue" in args.yaml
         named = [token for token in args.yaml if token != "queue"]
-        transfers = [find_transfer(name) for name in transfer_names(named)]
-        if queued:
-            for temp, transfer in export_queue():
-                print(f"Exported {transfer.name} from {temp.relative_to(REPO_ROOT).as_posix()}")
-                if transfer not in transfers:
-                    transfers.append(transfer)
-        output, manifest = build(Path(args.out), Path(args.src), transfers)
-        size_kb = output.stat().st_size / 1024
-        print(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")
-        print(f"content_id: {manifest['content_id']}")
-        for transfer in transfers:
-            print(f"Carries {transfer.name}: extracted beside pullmanager.py on the VM.")
-            for upload in upload_locations(transfer):
-                print(f"  It reads {upload}: copy that to the VM at the same path beside it.")
-        print(f"Copy {output.name} to the VM and run `python {output.name}` there.")
+        _, _, said = build_bundle(named, queued, Path(args.out) if args.out else None, Path(args.src))
+        for line in said:
+            print(line)
     except BundleError as exc:
         print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
         return 2
