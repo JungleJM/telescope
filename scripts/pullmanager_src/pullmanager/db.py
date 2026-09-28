@@ -4,7 +4,7 @@ pyodbc is imported lazily so the rest of the package -- planning, rendering,
 the dry run -- works on a machine without a driver.
 
 The behaviours here were harvested from the old generator rather than invented;
-see "Connections" in QMDs/design.md.
+see "Connections" in plan/design.md.
 """
 
 from __future__ import annotations

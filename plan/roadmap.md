@@ -217,4 +217,4 @@ What is left:
 
 One correction is already known: our dictionary has `DiagnosisEventFact.DiagnosisKey` pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the interactive dictionary says `DiagnosisDim.DiagnosisKey`.
 
-`QMDs/keys_research/` keeps only the example page, which design.md reads. The brief and the AI's answer are summarized above and in design.md.
+`plan/keys_research/` keeps only the example page, which design.md reads. The brief and the AI's answer are summarized above and in design.md.
