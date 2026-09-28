@@ -507,7 +507,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
 
 BUNDLE_MANIFEST_JSON = r'''{
   "bundle_format_version": 1,
-  "content_id": "ee14727da885dc7db42257ffb2d17bf6389083e2e4e19f1a5cfd73b4ad42ed08",
+  "content_id": "73d9201ca2125543e33e1c2d5ca323763c40fcd33a29d7638b309e8b01125172",
   "file_count": 52,
   "files": [
     {
@@ -807,8 +807,8 @@ BUNDLE_MANIFEST_JSON = r'''{
     {
       "path": "scripts/yamlmanager_tk.py",
       "policy": "replace",
-      "sha256": "c11b3761c63f56290241be105ab00f19081ed87b52a90781c4cbc79faf09cf67",
-      "size": 51720
+      "sha256": "4ed5e9a83a2c7a1037a4ddd6f57451ab81c9440cb1f9e29d14334023a2d18b03",
+      "size": 72010
     },
     {
       "path": "stock/HOW_TO.md",
@@ -24157,7 +24157,7 @@ if __name__ == "__main__":
 #     print(__doc__)
 #
 # === END FILE: scripts/yamlmanager_model.py ===
-# === BEGIN FILE: scripts/yamlmanager_tk.py SHA256: c11b3761c63f56290241be105ab00f19081ed87b52a90781c4cbc79faf09cf67 SIZE: 51720 ===
+# === BEGIN FILE: scripts/yamlmanager_tk.py SHA256: 4ed5e9a83a2c7a1037a4ddd6f57451ab81c9440cb1f9e29d14334023a2d18b03 SIZE: 72010 ===
 # """YAML Manager's Author half, in tkinter (D93).
 #
 # A view over yamlmanager_model (D92): every value shown is read from the
@@ -24385,8 +24385,20 @@ if __name__ == "__main__":
 #     def changed(self, rerender: bool = False) -> None:
 #         self.update_title()
 #         if rerender:
-#             self.render()
+#             self.render_soon()
 #         self.schedule_check()
+#
+#     def render_soon(self) -> None:
+#         """Render once Tk is idle: never from inside the event of a widget the
+#         render destroys (a combobox's own selection, say)."""
+#         if not getattr(self, "_render_queued", False):
+#             self._render_queued = True
+#             self.root.after_idle(self._render_now)
+#
+#     def _render_now(self) -> None:
+#         self._render_queued = False
+#         if self.body.winfo_exists():
+#             self.render()
 #
 #     def say(self, text: str, kind: str = "muted") -> None:
 #         self.status.configure(text=text, foreground=COLOURS.get(kind, kind))
@@ -24399,6 +24411,8 @@ if __name__ == "__main__":
 #     def check(self) -> None:
 #         """Validate the draft and show the result everywhere it shows (D96)."""
 #         self._pending_check = None
+#         if not self.nav.winfo_exists():
+#             return
 #         validation = self.draft.validation()
 #         counts = {kind: len(validation.of_kind(kind)) for kind in ("error", "warning", "pending")}
 #         if validation.ok and not counts["warning"] and not counts["pending"]:
@@ -25098,10 +25112,297 @@ if __name__ == "__main__":
 #         self.view.changed(rerender=True)
 #
 #
+# # =============================================================================
+# # Multipliers
+# # =============================================================================
+#
+#
+# def build_multipliers(view: AuthorView, parent: Any) -> None:
+#     draft = view.draft
+#     heading(parent, "Multipliers",
+#             "Each level becomes its own set of tables, built with its own variables and named with its "
+#             "strat (UCPatients, CrohnsPatients). Multipliers stack: two of two levels make four sets.")
+#     for index, mult in draft.multipliers():
+#         box = entry_box(view, parent, f"Multiplier: {mult.get('name')}", "multipliers", index)
+#         head = ttk.Frame(box)
+#         head.pack(fill="x")
+#         ttk.Label(head, text="Name").pack(side="left")
+#         text_field(view, head, mult.get("name"), lambda v, i=index: draft.rename_multiplier(i, v)).pack(side="left", padx=6)
+#         ttk.Button(head, text="Remove multiplier", command=lambda i=index: view.edit(
+#             lambda: draft.remove_multiplier(i), rerender=True)).pack(side="right")
+#         levels = ttk.Frame(box)
+#         levels.pack(fill="x", pady=(6, 0))
+#         ttk.Label(levels, text="Strat", foreground=COLOURS["muted"]).grid(row=0, column=0, sticky="w")
+#         ttk.Label(levels, text="Variables (; between them)", foreground=COLOURS["muted"]).grid(row=0, column=1, sticky="w")
+#         for row, level in enumerate(mult.get("levels") or [], start=1):
+#             text_field(view, levels, level.get("strat"), lambda v, i=index, li=row - 1: draft.set_level(i, li, strat=v),
+#                        width=16).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=1)
+#             text_field(view, levels, model.level_vars_text(level.get("vars")),
+#                        lambda v, i=index, li=row - 1: draft.set_level(i, li, vars_text=v),
+#                        width=60).grid(row=row, column=1, sticky="w")
+#             ttk.Button(levels, text="Remove", command=lambda i=index, li=row - 1: view.edit(
+#                 lambda: draft.remove_level(i, li), rerender=True)).grid(row=row, column=2, padx=6)
+#         ttk.Button(box, text="Add level", command=lambda i=index: view.edit(
+#             lambda: draft.add_level(i), rerender=True)).pack(anchor="w", pady=(6, 0))
+#         note(box, "For example: strat UC, variables ICD_Value: K51.%, K52.%").pack(anchor="w")
+#     if not draft.multipliers():
+#         note(parent, "No multipliers.").pack(anchor="w")
+#     add = ttk.Frame(parent)
+#     add.pack(fill="x", pady=(10, 0))
+#     name = tk.StringVar()
+#     keep(add, name)
+#     ttk.Entry(add, textvariable=name, width=24).pack(side="left")
+#     ttk.Button(add, text="Add multiplier", command=lambda: view.edit(
+#         lambda: draft.add_multiplier(name.get()), rerender=True)).pack(side="left", padx=6)
+#     note(add, "A name, such as IBDType.").pack(side="left")
+#
+#
+# # =============================================================================
+# # Splitters
+# # =============================================================================
+#
+#
+# def build_splitters(view: AuthorView, parent: Any) -> None:
+#     draft = view.draft
+#     heading(parent, "Splitters",
+#             "Two ways to split, and each splitter says which it is. Separate tables: each level gets its "
+#             "own PK, pulled in its own session, and its own tables (blackPatients, whitePatients), with an "
+#             "optional control sampled against its case. Pieces of one table: the pull runs in batches, by "
+#             "a PK column or by a number of rows, and the rows land in one table.")
+#     columns = draft.pk_columns()
+#     if draft.pk() is None:
+#         note(parent, "Choose a PK Table first: splitting by a column needs the PK's columns. "
+#                      "A chunk of rows works without one.", "warning").pack(anchor="w", pady=(0, 6))
+#     elif columns is None:
+#         note(parent, "The PK's columns are not known here: type them under PK Table to split by one.",
+#              "warning").pack(anchor="w", pady=(0, 6))
+#     column_values = columns or []
+#     for splitter in draft.splitters():
+#         if splitter.kind == "separate":
+#             separate_box(view, parent, splitter, column_values)
+#         else:
+#             pieces_box(view, parent, splitter, column_values)
+#     if not draft.splitters():
+#         note(parent, "No splitters.").pack(anchor="w")
+#     add_splitter(view, parent, column_values)
+#
+#
+# def separate_box(view: AuthorView, parent: Any, splitter: model.Splitter, columns: list[str]) -> None:
+#     draft = view.draft
+#     index = splitter.index
+#     box = entry_box(view, parent, f"Separate tables: {splitter.name}", "splitters", index)
+#     head = ttk.Frame(box)
+#     head.pack(fill="x")
+#     ttk.Label(head, text="Name").pack(side="left")
+#     text_field(view, head, splitter.name, lambda v: draft.rename_multiplier(index, v)).pack(side="left", padx=6)
+#     ttk.Button(head, text="Remove splitter", command=lambda: view.edit(
+#         lambda: draft.remove_splitter("multipliers", index), rerender=True)).pack(side="right")
+#     grid = ttk.Frame(box)
+#     grid.pack(fill="x", pady=(6, 0))
+#     for col, text in enumerate(("Strat", "PK column", "Values (% is a wildcard)", "Role", "Row mult")):
+#         ttk.Label(grid, text=text, foreground=COLOURS["muted"]).grid(row=0, column=col, sticky="w", padx=3)
+#     for row, level in enumerate(splitter.levels, start=1):
+#         li = row - 1
+#         text_field(view, grid, level.get("strat"), lambda v, li=li: draft.set_separate_level(index, li, strat=v),
+#                    width=14).grid(row=row, column=0, padx=3, pady=1)
+#         choice_field(view, grid, columns, str(level.get("column") or ""),
+#                      lambda v, li=li: draft.set_separate_level(index, li, column=v), width=22
+#                      ).grid(row=row, column=1, padx=3)
+#         text_field(view, grid, model.value_text(level.get("values")),
+#                    lambda v, li=li: draft.set_separate_level(index, li, values=v), width=30).grid(row=row, column=2, padx=3)
+#         choice_field(view, grid, ["", "control"], str(level.get("role") or ""),
+#                      lambda v, li=li: draft.set_separate_level(index, li, role=v), width=9
+#                      ).grid(row=row, column=3, padx=3)
+#         text_field(view, grid, level.get("row_mult") or "",
+#                    lambda v, li=li: draft.set_separate_level(index, li, row_mult=v), width=6).grid(row=row, column=4, padx=3)
+#         ttk.Button(grid, text="Remove", command=lambda li=li: view.edit(
+#             lambda: draft.remove_level(index, li), rerender=True)).grid(row=row, column=5, padx=3)
+#     add = ttk.Frame(box)
+#     add.pack(fill="x", pady=(6, 0))
+#     strat, column, values = tk.StringVar(), tk.StringVar(value=columns[0] if columns else ""), tk.StringVar()
+#     keep(add, strat, column, values)
+#     ttk.Entry(add, textvariable=strat, width=14).pack(side="left")
+#     pick = ttk.Combobox(add, textvariable=column, values=columns, width=22, state="readonly")
+#     pick.pack(side="left", padx=4)
+#     ttk.Entry(add, textvariable=values, width=30).pack(side="left")
+#     button = ttk.Button(add, text="Add level", command=lambda: view.edit(
+#         lambda: draft.add_separate_level(index, strat.get(), column.get(), values.get()), rerender=True))
+#     button.pack(side="left", padx=6)
+#     if not columns:
+#         pick.state(["disabled"])
+#         button.state(["disabled"])
+#     note(box, "A control (role control, row mult n) keeps n times its case's rows per batch, "
+#               "matched on the batching columns (D59).").pack(anchor="w")
+#
+#
+# def pieces_box(view: AuthorView, parent: Any, splitter: model.Splitter, columns: list[str]) -> None:
+#     draft = view.draft
+#     index = splitter.index
+#     if splitter.problem:
+#         box = entry_box(view, parent, f"Pieces: {splitter.name}", "splitters", index)
+#         note(box, splitter.problem, "error").pack(anchor="w")
+#     elif splitter.rows is not None or not splitter.column:
+#         box = entry_box(view, parent, "Pieces of one table: by rows", "splitters", index)
+#         row = ttk.Frame(box)
+#         row.pack(fill="x")
+#         ttk.Label(row, text="Rows per piece").pack(side="left")
+#         text_field(view, row, splitter.rows or "", lambda v: draft.set_pieces(index, rows=v), width=10).pack(side="left", padx=6)
+#         note(box, "Each piece is this many PK rows, in the order of the PK's key; the pieces run in turn.").pack(anchor="w")
+#     else:
+#         box = entry_box(view, parent, f"Pieces of one table: by {splitter.column}", "splitters", index)
+#         form = ttk.Frame(box)
+#         form.pack(fill="x")
+#         grid_row(form, 0, "PK column", choice_field(view, form, columns or [splitter.column], splitter.column,
+#                                                     lambda v: draft.set_pieces(index, column=v), rerender=True))
+#         grid_row(form, 1, "Values", text_field(view, form, model.value_text(splitter.values),
+#                                                lambda v: draft.set_pieces(index, values=v or None), width=40),
+#                  "Blank: every value the PK has, each a piece (D82). Listed: one piece each, "
+#                  "and one piece of the rest.")
+#         grid_row(form, 2, "", check_field(view, form, "Separate parquets", splitter.separate_parquets,
+#                                           lambda on: draft.set_pieces(index, separate_parquets=on)),
+#                  "Artifacts writes one parquet per value instead of one per table.")
+#     ttk.Button(box, text="Remove splitter", command=lambda: view.edit(
+#         lambda: draft.remove_splitter("batching", index), rerender=True)).pack(anchor="e")
+#
+#
+# def add_splitter(view: AuthorView, parent: Any, columns: list[str]) -> None:
+#     draft = view.draft
+#     box = ttk.LabelFrame(parent, text="Add a splitter", padding=10)
+#     box.pack(fill="x", pady=(10, 0))
+#     kind = tk.StringVar(value=getattr(view, "_splitter_kind", "column"))
+#     keep(box, kind)
+#     kinds = ttk.Frame(box)
+#     kinds.pack(anchor="w")
+#     for value, label in (("separate", "Separate tables"), ("column", "Pieces of one table, by a PK column"),
+#                          ("chunk", "Pieces of one table, by rows")):
+#         ttk.Radiobutton(kinds, text=label, value=value, variable=kind, command=lambda: (
+#             setattr(view, "_splitter_kind", kind.get()), view.render())).pack(side="left", padx=(0, 12))
+#     form = ttk.Frame(box)
+#     form.pack(fill="x", pady=(8, 0))
+#     chosen = kind.get()
+#     if chosen == "chunk":
+#         rows = tk.StringVar(value="100000")
+#         keep(form, rows)
+#         ttk.Label(form, text="Rows per piece").pack(side="left")
+#         ttk.Entry(form, textvariable=rows, width=10).pack(side="left", padx=6)
+#         ttk.Button(form, text="Add", command=lambda: view.edit(lambda: draft.add_chunk(rows.get()), rerender=True)).pack(side="left")
+#         return
+#     if not columns:
+#         note(form, "Choose a PK Table first; this splits by one of its columns.", "warning").pack(anchor="w")
+#         return
+#     if chosen == "separate":
+#         name = tk.StringVar()
+#         keep(form, name)
+#         ttk.Label(form, text="Name").pack(side="left")
+#         ttk.Entry(form, textvariable=name, width=20).pack(side="left", padx=6)
+#         ttk.Button(form, text="Add", command=lambda: view.edit(lambda: draft.add_separate(name.get()), rerender=True)).pack(side="left")
+#         note(form, "Then add a level for each group: its PK column and values.").pack(side="left", padx=8)
+#         return
+#     column, values = tk.StringVar(value=columns[0]), tk.StringVar()
+#     separate = tk.BooleanVar(value=False)
+#     keep(form, column, values, separate)
+#     ttk.Label(form, text="PK column").pack(side="left")
+#     ttk.Combobox(form, textvariable=column, values=columns, state="readonly", width=24).pack(side="left", padx=6)
+#     ttk.Label(form, text="Values").pack(side="left")
+#     ttk.Entry(form, textvariable=values, width=26).pack(side="left", padx=6)
+#     ttk.Checkbutton(form, text="Separate parquets", variable=separate).pack(side="left")
+#     ttk.Button(form, text="Add", command=lambda: view.edit(lambda: draft.add_pieces_by_column(
+#         column.get(), values.get() or None, separate.get()), rerender=True)).pack(side="left", padx=6)
+#     note(box, "Values blank: every value the PK has.").pack(anchor="w")
+#
+#
+# # =============================================================================
+# # Fact Tables
+# # =============================================================================
+#
+#
+# def candidate_label(candidate: model.Candidate) -> str:
+#     if not candidate.known:
+#         return f"{candidate.table} ({candidate.kind}) ? columns not known here"
+#     if candidate.fits:
+#         return f"{candidate.table} ({candidate.kind}) ✓ {', '.join(candidate.matched)}"
+#     return f"{candidate.table} ({candidate.kind}) ✗ lacks {', '.join(candidate.missing)}"
+#
+#
+# def binding_editor(view: AuthorView, parent: Any, index: int) -> None:
+#     """Each table input with the tables that could fill it, those that fit
+#     first, each saying which needed columns it has. Never picked (D45)."""
+#     for binding in view.draft.bindings(index):
+#         row = ttk.Frame(parent)
+#         row.pack(fill="x", pady=(6, 0))
+#         needs = f" needs {', '.join(binding.columns)}" if binding.columns else ""
+#         ttk.Label(row, text=f"{binding.var} (as {binding.alias}){needs}").pack(side="left")
+#         labels = ["(not bound)"] + [candidate_label(c) for c in binding.candidates]
+#         tables = [""] + [c.table for c in binding.candidates]
+#         current = labels[tables.index(binding.bound)] if binding.bound in tables else (
+#             binding.bound or "(not bound)")
+#         choice_field(view, row, labels, current,
+#                      lambda label, i=index, b=binding, ls=labels, ts=tables: view.draft.bind(i, b.var, ts[ls.index(label)]),
+#                      width=60, rerender=True).pack(side="left", padx=8)
+#         if not binding.bound:
+#             note(row, "choose the table it reads", "error").pack(side="left")
+#
+#
+# def build_fact(view: AuthorView, parent: Any) -> None:
+#     draft = view.draft
+#     heading(parent, "Fact Tables",
+#             "The tables pulled for the PK: prefabricated recipes, or tables built from the dictionary. "
+#             "Each is joined to its PK. A variable left blank comes from where it says.")
+#     facts = draft.fact_tables()
+#     for position, (index, cohort) in enumerate(facts, start=1):
+#         what = f"recipe {cohort['recipe']}" if cohort.get("recipe") else "built from the dictionary"
+#         box = entry_box(view, parent, f"{position}. {cohort.get('name') or cohort.get('recipe')} ({what})", "fact", index)
+#         head = ttk.Frame(box)
+#         head.pack(fill="x")
+#         ttk.Label(head, text="Position").pack(side="left")
+#         spot = tk.StringVar(value=str(position))
+#         spot_entry = ttk.Entry(head, textvariable=spot, width=4)
+#         keep(spot_entry, spot)
+#         spot_entry.bind("<Return>", lambda e, i=index, v=spot: v.get().strip().isdigit() and view.edit(
+#             lambda: draft.move_fact_table(i, int(v.get())), rerender=True))
+#         spot_entry.pack(side="left", padx=(4, 12))
+#         ttk.Label(head, text="Name").pack(side="left")
+#         text_field(view, head, cohort.get("name"), lambda v, i=index: draft.rename_table(i, v)).pack(side="left", padx=6)
+#         if not cohort.get("recipe"):
+#             ttk.Button(head, text="Edit", command=lambda i=index: open_table_builder(view, i)).pack(side="left", padx=4)
+#             if view.ws.has_recipes:
+#                 ttk.Button(head, text="Save as Recipe", command=lambda i=index: save_as_recipe(view, i)).pack(side="left")
+#         ttk.Button(head, text="Remove", command=lambda i=index: view.edit(
+#             lambda: draft.remove_fact_table(i), rerender=True)).pack(side="right")
+#         note(box, "Type a position and press Enter to move it; the PK keeps its place.").pack(anchor="w")
+#         var_editor(view, box, index)
+#         binding_editor(view, box, index)
+#     if not facts:
+#         note(parent, "No fact tables.").pack(anchor="w")
+#
+#     add = ttk.LabelFrame(parent, text="Add a fact table", padding=10)
+#     add.pack(fill="x", pady=(10, 0))
+#     names = view.ws.fact_recipes()
+#     if names:
+#         recipe, name = tk.StringVar(value=names[0]), tk.StringVar()
+#         keep(add, recipe, name)
+#         ttk.Label(add, text="Prefabricated").pack(side="left")
+#         ttk.Combobox(add, textvariable=recipe, values=names, state="readonly", width=28).pack(side="left", padx=6)
+#         ttk.Entry(add, textvariable=name, width=20).pack(side="left")
+#         ttk.Button(add, text="Add", command=lambda: view.edit(
+#             lambda: draft.add_prefab(recipe.get(), name.get()), rerender=True)).pack(side="left", padx=6)
+#     else:
+#         note(add, view.ws.recipes_problem() or "recipes.yaml has no fact recipes.", "warning").pack(side="left")
+#     ttk.Button(add, text="New table from the dictionary", command=lambda: open_table_builder(view, None)).pack(side="right")
+#
+#
+# def save_as_recipe(view: AuthorView, index: int) -> None:
+#     ok, message = model.save_recipe(view.ws.recipes_path, view.draft.doc["cohorts"][index])
+#     view.say(message, "pass" if ok else "error")
+#
+#
 # SECTION_BUILDERS: dict[str, Callable[[AuthorView, Any], None]] = {
 #     "project": build_project,
 #     "pk": build_pk,
 #     "supporting": build_supporting,
+#     "multipliers": build_multipliers,
+#     "splitters": build_splitters,
+#     "fact": build_fact,
 # }
 #
 #
@@ -25116,13 +25417,20 @@ if __name__ == "__main__":
 # REPO_YAMLS = SCRIPT_DIR.parent / "YAMLs"
 #
 #
+# _TEST_ROOT: list[Any] = []
+#
+#
 # def tk_root() -> Any:
-#     try:
-#         root = tk.Tk()
-#     except tk.TclError:
-#         return None
-#     root.withdraw()
-#     return root
+#     """One Tk for every test: a second Tk in one process can hang on the Mac."""
+#     if not _TEST_ROOT:
+#         try:
+#             root = tk.Tk()
+#         except tk.TclError:
+#             root = None
+#         if root is not None:
+#             root.withdraw()
+#         _TEST_ROOT.append(root)
+#     return _TEST_ROOT[0]
 #
 #
 # def widgets(parent: Any) -> list[Any]:
@@ -25134,17 +25442,12 @@ if __name__ == "__main__":
 #
 #
 # class ViewTest(unittest.TestCase):
-#     # One Tk for the whole class: a new Tk per test can hang on the Mac.
+#     # One Tk for every test (tk_root).
 #     root: Any = None
 #
 #     @classmethod
 #     def setUpClass(cls):
 #         cls.root = tk_root()
-#
-#     @classmethod
-#     def tearDownClass(cls):
-#         if cls.root is not None:
-#             cls.root.destroy()
 #
 #     def setUp(self):
 #         if self.root is None:
@@ -25249,9 +25552,55 @@ if __name__ == "__main__":
 #         self.assertIn("PROJECTD456", self.transferred[0].read_text(encoding="utf-8"))
 #
 #
+# class SplitAndFactViewTests(ViewTest):
+#     def test_the_splitter_kinds_are_offered_by_whether_there_is_a_pk(self):
+#         self.view.show_section("splitters")
+#         text = " ".join(str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label))
+#         self.assertIn("Choose a PK Table first", text)
+#         self.open("Celiac_intake.yaml")
+#         self.view.show_section("splitters")
+#         combos = [w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)]
+#         self.assertTrue(any("PatientDurableKey" in w.cget("values") for w in combos))
+#
+#     def test_a_splitter_added_in_the_view_says_its_kind(self):
+#         self.open("Celiac_intake.yaml")
+#         self.view.edit(lambda: self.view.draft.add_pieces_by_column("Sex"), rerender=True)
+#         self.view.edit(lambda: self.view.draft.add_separate("Race"), rerender=True)
+#         self.view.show_section("splitters")
+#         self.root.update()
+#         titles = [w.cget("text") for w in widgets(self.view.body.inner) if isinstance(w, ttk.LabelFrame)]
+#         self.assertIn("Pieces of one table: by Sex", titles)
+#         self.assertIn("Separate tables: Race", titles)
+#
+#     def test_the_binding_picker_binds_what_is_chosen(self):
+#         self.open("AllCohort_intake.yaml")
+#         self.view.show_section("fact")
+#         index = next(i for i, c in self.view.draft.fact_tables() if c.get("name") == "OtherHospitalizations")
+#         self.view.draft.bind(index, "HospitalICDTable", "")
+#         self.view.render()
+#         picker = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
+#                       and w.cget("values") and str(w.cget("values")[0]) == "(not bound)")
+#         choice = next(v for v in picker.cget("values") if str(v).startswith("HospitalICDTable"))
+#         picker.set(choice)
+#         picker.event_generate("<<ComboboxSelected>>")
+#         self.root.update()
+#         self.assertEqual(self.view.draft.doc["cohorts"][index]["vars"]["HospitalICDTable"], "HospitalICDTable")
+#
+#     def test_a_fact_table_moves_by_number(self):
+#         self.open("Celiac_intake.yaml")
+#         names = [c.get("name") for _, c in self.view.draft.fact_tables()]
+#         last = self.view.draft.fact_tables()[-1][0]
+#         self.view.edit(lambda: self.view.draft.move_fact_table(last, 1), rerender=True)
+#         self.assertEqual([c.get("name") for _, c in self.view.draft.fact_tables()], [names[-1]] + names[:-1])
+#
+#
 # def run_tdd(verbosity: int = 2) -> int:
-#     suite = unittest.TestLoader().loadTestsFromTestCase(SectionViewTests)
+#     loader = unittest.TestLoader()
+#     suite = unittest.TestSuite([loader.loadTestsFromTestCase(case)
+#                                 for case in (SectionViewTests, SplitAndFactViewTests)])
 #     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
+#     if _TEST_ROOT and _TEST_ROOT[0] is not None:
+#         _TEST_ROOT[0].destroy()
 #     return 0 if result.wasSuccessful() else 1
 #
 #
