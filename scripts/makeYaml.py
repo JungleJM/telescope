@@ -593,7 +593,14 @@ def cohort_label(cohort: dict[str, Any]) -> str:
     return f"{source} ({name})" if source else str(name)
 
 
-def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result: CompileResult) -> list[dict[str, Any]]:
+def import_recipes(
+    template: dict[str, Any],
+    recipes_doc: dict[str, Any],
+    result: CompileResult,
+    dictionary: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """The template's cohorts with their recipes written in and, given the
+    dictionary, each dictionary column's type filled from it (D115)."""
     recipes = recipe_index(recipes_doc)
     imported: list[dict[str, Any]] = []
     for idx, cohort in enumerate(template.get("cohorts", []) or []):
@@ -639,6 +646,7 @@ def import_recipes(template: dict[str, Any], recipes_doc: dict[str, Any], result
                 f"`dest_table` defaulted to cohort name `{merged['name']}`.",
                 cohort_label(merged),
             )
+        fill_column_types(merged, dictionary)
         imported.append(merged)
     return imported
 
@@ -2016,25 +2024,6 @@ def default_datadictionary_path() -> Path:
     return core_path("datadictionary")
 
 
-# Dictionary types are abstract and annotated ("bigint (foreign key to ...)");
-# cohorts declare T-SQL. Compare families, not literals. Widening is accepted
-# because it cannot lose data; narrowing is not.
-TYPE_FAMILIES: dict[str, set[str]] = {
-    "bigint": {"BIGINT"},
-    "integer": {"INT", "SMALLINT", "TINYINT", "BIGINT"},
-    # Cosmos keeps many flags as tinyint. BIT is refused: it turns any value
-    # above 1 into 1 without a word.
-    "tinyint": {"TINYINT", "SMALLINT", "INT", "BIGINT"},
-    "string": {"VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "TEXT", "NTEXT"},
-    "boolean": {"BIT"},
-    "numeric": {"DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY", "SMALLMONEY"},
-    "float": {"FLOAT"},
-    "datetime": {"DATETIME", "DATETIME2", "SMALLDATETIME", "DATE"},
-    "date/datetime": {"DATE", "DATETIME", "DATETIME2", "SMALLDATETIME"},
-    "date": {"DATE", "DATETIME", "DATETIME2"},
-    "time": {"TIME"},
-}
-
 # `PatientDim AS p`, `INNER JOIN X AS y ON ...`, `BirthFact as bf`
 _ALIAS_PATTERN = re.compile(
     # Braces are allowed so an unsubstituted `{{prefix}}_{{PKTable}}` still
@@ -2044,16 +2033,6 @@ _ALIAS_PATTERN = re.compile(
 )
 # Only a bare `alias.Column` source can be resolved to a dictionary entry.
 _SIMPLE_SOURCE = re.compile(r"^(?P<alias>\w+)\.(?P<column>\w+)$")
-
-
-def dictionary_family(raw_type: Any) -> str:
-    """`bigint (foreign key to PatientDim.DurableKey)` -> `bigint`."""
-    return str(raw_type or "").split("(")[0].strip().lower()
-
-
-def tsql_base_type(declared: Any) -> str:
-    """`VARCHAR(400)` -> `VARCHAR`."""
-    return str(declared or "").split("(")[0].strip().upper()
 
 
 def is_generated_reference(table: str) -> bool:
@@ -2081,6 +2060,96 @@ def cohort_aliases(cohort: dict[str, Any]) -> dict[str, str]:
             table = match.group("table").strip("[]")
             aliases[match.group("alias")] = table
     return aliases
+
+
+# The dictionary's abstract types, as the T-SQL a cohort declares (D115). A
+# string with no recorded length is Unicode, as Cosmos text is, and kept
+# under 1000 wide.
+ABSTRACT_SQL_TYPES: dict[str, str] = {
+    "string": "NVARCHAR(900)",
+    "text": "NVARCHAR(900)",
+    "integer": "INT",
+    "boolean": "BIT",
+    "numeric": "FLOAT",
+    "datetime": "DATETIME2(7)",
+    "date/datetime": "DATETIME2(7)",
+}
+# Types a dictionary page shows, written as the page writes them.
+PAGE_SQL_TYPES = {
+    "bigint", "int", "smallint", "tinyint", "bit", "float", "real", "date",
+    "time", "datetime2", "smalldatetime", "money", "smallmoney",
+    "uniqueidentifier",
+}
+SIZED_SQL_TYPES = {"nvarchar", "varchar", "nchar", "char", "decimal", "numeric", "datetime2"}
+_DICTIONARY_TYPE = re.compile(
+    r"^(?P<base>[a-z0-9/]+)\s*(?:\(\s*(?P<size>\d+(?:\s*,\s*\d+)?|max)\s*\))?",
+    re.IGNORECASE,
+)
+
+
+def dictionary_sql_type(raw_type: Any) -> str | None:
+    """`nvarchar(300)` -> `NVARCHAR(300)`, `tinyint (flag)` -> `TINYINT`,
+    `string` -> `NVARCHAR(900)`; None for a type it does not know."""
+    match = _DICTIONARY_TYPE.match(str(raw_type or "").strip())
+    if not match:
+        return None
+    base, size = match.group("base").lower(), match.group("size")
+    if size and base in SIZED_SQL_TYPES:
+        return f"{base.upper()}({re.sub(r'\s+', '', size).upper()})"
+    if base in ABSTRACT_SQL_TYPES:
+        return ABSTRACT_SQL_TYPES[base]
+    if base in PAGE_SQL_TYPES:
+        return base.upper()
+    if base in ("nvarchar", "varchar", "nchar", "char"):
+        return ABSTRACT_SQL_TYPES["string"]
+    return None
+
+
+def dictionary_column(
+    column: dict[str, Any], aliases: dict[str, str], dictionary: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The dictionary's entry for a plain `alias.Column` source, if it has one."""
+    match = _SIMPLE_SOURCE.match(str(column.get("source") or "").strip())
+    if not match:
+        return None
+    table = aliases.get(match.group("alias"))
+    if table is None or is_generated_reference(table) or table not in dictionary:
+        return None
+    entry = ((dictionary[table] or {}).get("columns") or {}).get(match.group("column"))
+    return entry if isinstance(entry, dict) else None
+
+
+def fill_column_types(cohort: dict[str, Any], dictionary: dict[str, Any] | None) -> None:
+    """Each dictionary column's type, from the dictionary (D115).
+
+    The dictionary wins, silently: a type a template or recipe still declares
+    on such a column is a stale copy. Columns it cannot type keep theirs.
+    """
+    if not dictionary:
+        return
+    aliases = cohort_aliases(cohort)
+    for column in cohort.get("columns") or []:
+        if not isinstance(column, dict):
+            continue
+        entry = dictionary_column(column, aliases, dictionary)
+        sql_type = dictionary_sql_type(entry.get("type")) if entry else None
+        if sql_type:
+            column["type"] = sql_type
+
+
+def check_column_types(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """A column the dictionary could not type must declare one."""
+    for cohort in cohorts:
+        for column in cohort.get("columns") or []:
+            if isinstance(column, dict) and column.get("source") and not column.get("type"):
+                result.error(
+                    "column_type_missing",
+                    f"`{column['source']}` has no type, and the data dictionary cannot "
+                    "supply one.",
+                    f"{cohort_label(cohort)}: columns ({column.get('name')}).type",
+                    fix="Add `type:` to the column. The dictionary types only a plain "
+                    "`alias.Column` on a table it lists, with a type it knows.",
+                )
 
 
 def validate_data_dictionary(
@@ -2160,27 +2229,14 @@ def validate_data_dictionary(
                 )
                 continue
 
-            declared = column.get("type")
-            if not declared:
-                continue
-            family = dictionary_family((dd_columns[column_name] or {}).get("type"))
-            accepted = TYPE_FAMILIES.get(family)
-            if accepted is None:
+            raw = (dd_columns[column_name] or {}).get("type")
+            if dictionary_sql_type(raw) is None:
                 result.warn(
-                    "dd_unknown_family",
-                    f"Data dictionary type `{family}` for `{table}.{column_name}` is "
-                    f"not a family this checker knows, so `{declared}` was not verified.",
+                    "dd_unknown_type",
+                    f"Data dictionary type `{raw}` for `{table}.{column_name}` is not one "
+                    f"the fill-in knows, so the column keeps its declared type.",
                     f"{label}: columns ({column.get('name')}).type",
-                )
-                continue
-            if tsql_base_type(declared) not in accepted:
-                dd_type = (dd_columns[column_name] or {}).get("type")
-                result.error(
-                    "dd_type_mismatch",
-                    f"`{source}` is declared `{declared}`, but the data dictionary "
-                    f"says `{table}.{column_name}` is `{dd_type}`.",
-                    f"{label}: columns ({column.get('name')}).type",
-                    fix=f"Change `type` to a type compatible with `{dd_type}`.",
+                    fix="Write the type as the dictionary page shows it, e.g. `nvarchar(300)`.",
                 )
 
 
@@ -2695,7 +2751,8 @@ def compile_yaml(
     if recipes_doc is None:
         return result
 
-    cohorts = import_recipes(template, recipes_doc, result)
+    dictionary = load_datadictionary(datadictionary_path, result)
+    cohorts = import_recipes(template, recipes_doc, result, dictionary)
     check_dedup(cohorts, result)
     check_random_sample(template, cohorts, result)
     cohorts = expand_multipliers(template, cohorts, result)
@@ -2712,9 +2769,10 @@ def compile_yaml(
         # Checked after rendering so template variables are already substituted,
         # and before expansion so each real cohort reports once rather than once
         # per multiplier and Cosmos variant.
-        validate_data_dictionary(
-            rendered_cohorts, load_datadictionary(datadictionary_path, result), result
-        )
+        validate_data_dictionary(rendered_cohorts, dictionary, result)
+        if not result.errors:
+            # After the dictionary's own errors, which say why better.
+            check_column_types(rendered_cohorts, result)
         rendered_cohorts = expand_batching(template, recipes_doc, rendered_cohorts, result)
         rendered_cohorts = expand_cosmos(template, rendered_cohorts, result)
 
@@ -3473,7 +3531,8 @@ def build_transfer(
     # top level beside the originals, and the lifted copy wins, so a setting
     # edited by hand on the VM in its section would silently do nothing.
     body = copy.deepcopy(load_yaml(template_path) or {})
-    body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet)]
+    dictionary = load_datadictionary(datadictionary_path, quiet)
+    body["cohorts"] = [public_cohort(c) for c in import_recipes(template, recipes_doc, quiet, dictionary)]
     if body.get("batching"):
         body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
     body.pop("example_cohorts", None)
@@ -3639,6 +3698,13 @@ def summarize_result(result: CompileResult) -> str:
     if result.warnings:
         bits.append("warnings=" + json.dumps([m.to_dict() for m in result.warnings]))
     return "; ".join(bits) or "ok"
+
+
+def give_dictionary(root: Path) -> None:
+    """A pretend repository's dictionary, where its columns take their types (D115)."""
+    target = root / default_datadictionary_path().relative_to(project_root())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(default_datadictionary_path(), target)
 
 
 class MakeYamlTest(unittest.TestCase):
@@ -4309,6 +4375,9 @@ class DataDictionaryTests(MakeYamlTest):
                 "Weight": {"type": "numeric", "nullable": True},
                 "IsValid": {"type": "tinyint (flag)", "nullable": False},
                 "Height": {"type": "float", "nullable": True},
+                "Note": {"type": "nvarchar(300)", "nullable": True},
+                "Amount": {"type": "decimal(10, 2)", "nullable": True},
+                "Odd": {"type": "geography", "nullable": True},
             }
         }
     }
@@ -4345,72 +4414,94 @@ class DataDictionaryTests(MakeYamlTest):
         # fails to bind at runtime.
         self.assertIn("unknown_alias", self.codes(self.check(self.cohort("q.DurableKey"))))
 
-    def test_type_family_mismatch_is_an_error(self):
-        self.assertIn(
-            "dd_type_mismatch", self.codes(self.check(self.cohort("p.Sex", "BIGINT")))
-        )
+    def filled(self, source, declared=None, dictionary=None):
+        column = {"source": source, "name": "C"}
+        if declared:
+            column["type"] = declared
+        cohort = {"dest_table": "T", "columns": [column], "filter": {"from": "PatientDim AS p"}}
+        fill_column_types(cohort, self.DICT if dictionary is None else dictionary)
+        return column.get("type")
 
-    def test_families_accept_their_members(self):
+    def test_a_dictionary_column_takes_the_dictionary_type(self):
         cases = [
             ("p.DurableKey", "BIGINT"),
-            ("p.Sex", "VARCHAR(400)"),
-            ("p.Sex", "NVARCHAR(50)"),
+            ("p.Sex", "NVARCHAR(900)"),  # a string with no recorded length
             ("p.IsCurrent", "BIT"),
-            ("p.BirthDate", "DATETIME2(7)"),
             ("p.StartDateKey", "INT"),
             ("p.Weight", "FLOAT"),
             ("p.IsValid", "TINYINT"),
-            ("p.IsValid", "INT"),
             ("p.Height", "FLOAT"),
+            ("p.BirthDate", "DATETIME2(7)"),
+            ("p.Note", "NVARCHAR(300)"),  # a page's own type, as written
+            ("p.Amount", "DECIMAL(10,2)"),
         ]
-        for source, declared in cases:
-            with self.subTest(source=source, declared=declared):
-                self.assertEqual(self.codes(self.check(self.cohort(source, declared))), [])
+        for source, expected in cases:
+            with self.subTest(source=source):
+                self.assertEqual(self.filled(source), expected)
 
-    def test_widening_is_accepted_but_narrowing_is_not(self):
-        # An integer fits in a BIGINT; a bigint does not fit in an INT.
-        self.assertEqual(self.codes(self.check(self.cohort("p.StartDateKey", "BIGINT"))), [])
-        self.assertIn(
-            "dd_type_mismatch", self.codes(self.check(self.cohort("p.DurableKey", "INT")))
-        )
+    def test_a_declared_type_is_replaced_by_the_dictionary_silently(self):
+        # A template's copy goes stale when the dictionary is corrected (D115).
+        self.assertEqual(self.filled("p.IsValid", "BIT"), "TINYINT")
+        self.assertEqual(self.filled("p.Note", "FLOAT"), "NVARCHAR(300)")
+        column = {"source": "p.IsValid", "name": "C", "type": "BIT"}
+        cohort = {"dest_table": "T", "columns": [column], "filter": {"from": "PatientDim AS p"}}
+        fill_column_types(cohort, self.DICT)
+        self.assertEqual(self.codes(self.check(cohort)), [])
 
-    def test_a_tinyint_flag_is_not_narrowed_to_bit(self):
-        # BIT would turn a stored 2 into 1 without an error.
-        self.assertIn(
-            "dd_type_mismatch", self.codes(self.check(self.cohort("p.IsValid", "BIT")))
-        )
+    def test_a_column_the_dictionary_cannot_type_keeps_its_own(self):
+        self.assertEqual(self.filled("CAST(p.Sex AS INT)", "INT"), "INT")
+        self.assertEqual(self.filled("p.Odd", "VARBINARY(16)"), "VARBINARY(16)")  # unknown type
+        column = {"source": "pk.PatientDurableKey", "name": "C", "type": "BIGINT"}
+        cohort = {"dest_table": "T", "columns": [column],
+                  "filter": {"from": "##tesrun_PK AS pk"}}
+        fill_column_types(cohort, self.DICT)
+        self.assertEqual(column["type"], "BIGINT")
 
-    def test_a_float_is_not_narrowed(self):
-        for declared in ("REAL", "DECIMAL(10,2)"):
-            with self.subTest(declared=declared):
-                self.assertIn(
-                    "dd_type_mismatch",
-                    self.codes(self.check(self.cohort("p.Height", declared))),
-                )
-
-    def test_the_real_dictionary_refuses_a_float_reference_range(self):
-        # The Infant_RSV pull failed on Cosmos (8114, nvarchar to float) because
-        # the dictionary called ReferenceValueHigh_X numeric; it is nvarchar(300).
+    def test_a_column_nobody_types_is_an_error(self):
+        cohort = {"dest_table": "T", "columns": [{"source": "CAST(p.Sex AS INT)", "name": "C"}],
+                  "filter": {"from": "PatientDim AS p"}}
+        fill_column_types(cohort, self.DICT)
         res = CompileResult()
-        dictionary = load_datadictionary(None, res)
-        cohort = {
-            "dest_table": "T",
-            "columns": [
-                {"source": "l.ReferenceValueHigh_X", "name": "H", "type": "FLOAT"},
-                {"source": "l.ReferenceValueLow_X", "name": "L", "type": "FLOAT"},
-            ],
-            "filter": {"from": "LabComponentResultFact AS l"},
-        }
-        mismatches = [m for m in self.check(cohort, dictionary).errors
-                      if m.code == "dd_type_mismatch"]
-        self.assertEqual(len(mismatches), 2)
+        check_column_types([cohort], res)
+        self.assertEqual([m.code for m in res.errors], ["column_type_missing"])
 
-    def test_length_is_not_checked(self):
-        # The dictionary carries no lengths, so VARCHAR(50) and VARCHAR(400)
-        # are indistinguishable to it.
-        for declared in ("VARCHAR(50)", "VARCHAR(4000)"):
-            with self.subTest(declared=declared):
-                self.assertEqual(self.codes(self.check(self.cohort("p.Sex", declared))), [])
+    def test_the_transfer_carries_the_dictionary_type_not_a_stale_copy(self):
+        # The Infant_RSV pull failed on Cosmos (8114, nvarchar to float): the
+        # template held FLOAT for ReferenceValueHigh_X, which is text.
+        labs = """  - name: Labs
+    type: fact
+    columns:
+      - source: l.PatientDurableKey
+        name: PatientDurableKey
+        type: VARCHAR(10)
+      - source: l.ReferenceValueHigh_X
+        name: ReferenceValueHigh_X
+        type: FLOAT
+      - source: l._IsDeleted
+        name: _IsDeleted
+        type: BIT
+    filter:
+      from: LabComponentResultFact AS l
+"""
+        template, recipes = self.write_pair(extra=labs)
+        out = self.tmp / "out" / "Test_Run_transfer.yaml"
+        res = build_transfer(template, recipes, output_path=out, write=True)
+        self.assertCompiles(res)
+        written = {c["name"]: c for c in load_yaml(out)["cohorts"]}
+        types = {c["name"]: c["type"] for c in written["Labs"]["columns"]}
+        self.assertEqual(types["PatientDurableKey"], "BIGINT")
+        self.assertTrue(types["ReferenceValueHigh_X"].startswith("NVARCHAR("), types)
+        self.assertEqual(types["_IsDeleted"], "TINYINT")
+        # A recipe's columns are typed from the dictionary too.
+        self.assertTrue(all(c.get("type") for c in written["Patients"]["columns"]))
+
+    def test_every_dictionary_type_is_one_the_fill_in_knows(self):
+        # Otherwise a column on it is left untyped, and the pull stops.
+        res = CompileResult()
+        for table, entry in (load_datadictionary(None, res) or {}).items():
+            for column, meta in ((entry or {}).get("columns") or {}).items():
+                with self.subTest(table=table, column=column):
+                    self.assertIsNotNone(dictionary_sql_type((meta or {}).get("type")))
 
     def test_generated_temps_are_skipped(self):
         cohort = self.cohort("pk.PatientDurableKey")
@@ -5089,6 +5180,7 @@ batching:
         # Where makebundle.py yaml=<project> looks for it.
         root = self.tmp / "repo"
         root.mkdir()
+        give_dictionary(root)
         out = io.StringIO()
         with mock.patch(f"{__name__}.project_root", return_value=root), contextlib.redirect_stdout(out):
             code = main(["--template", str(self.template), "--recipes", str(self.recipes),
@@ -5310,6 +5402,7 @@ class RunFolderTests(MakeYamlTest):
             self.tmp, "Celiac_transfer.yaml", tiny_template().replace("Test Run", "Celiac")
         )
         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+        give_dictionary(self.tmp / "repo")
         with mock.patch(f"{__name__}.project_root", return_value=self.tmp / "repo"):
             for template in (first, second):
                 self.assertCompiles(write_split_artifacts(template, recipes))

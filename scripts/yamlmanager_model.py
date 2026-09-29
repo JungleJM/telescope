@@ -1099,7 +1099,8 @@ class Draft:
         """The template's cohort with its recipe written in, as makeYaml reads it."""
         cohort = self._cohort(index)
         template = {"cohorts": [cohort]}
-        merged = my.import_recipes(template, self.ws.recipes_doc(), my.CompileResult())
+        merged = my.import_recipes(template, self.ws.recipes_doc(), my.CompileResult(),
+                                   self.ws.dictionary())
         return merged[0] if merged else None
 
     def var_rows(self, index: int) -> list[VarRow]:
@@ -1511,23 +1512,9 @@ def types_compatible(left: Any, right: Any) -> bool:
 
 
 def sql_type_for_dictionary(dictionary_type: Any) -> str:
-    """The column type a cohort declares for a dictionary type."""
-    text = str(dictionary_type or "").lower()
-    if "bigint" in text:
-        return "BIGINT"
-    if "tinyint" in text:
-        return "TINYINT"
-    if re.search(r"integer|int", text):
-        return "INT"
-    if re.search(r"date|time", text):
-        return "DATETIME2(7)"
-    if re.search(r"bool|bit|flag", text):
-        return "BIT"
-    if re.search(r"numeric|decimal|float|double|real", text):
-        return "FLOAT"
-    if re.search(r"char|text|string", text):
-        return "VARCHAR(400)"
-    return str(dictionary_type or "")
+    """The column type a cohort declares for a dictionary type: the one the
+    export fills in (D115)."""
+    return my.dictionary_sql_type(dictionary_type) or str(dictionary_type or "")
 
 
 def alias_for(table: str) -> str:
@@ -2253,19 +2240,13 @@ class SaveTests(ModelTest):
 
 
 class TableBuilderTests(ModelTest):
-    def test_every_dictionary_type_gets_a_type_validation_accepts(self):
-        # A column the builder adds must pass the dictionary check it is then
-        # validated by: a tinyint flag as TINYINT, not BIT.
+    def test_the_builder_declares_the_type_the_export_fills_in(self):
         res = my.CompileResult()
-        dictionary = my.load_datadictionary(None, res)
-        for table, entry in dictionary.items():
+        for table, entry in (my.load_datadictionary(None, res) or {}).items():
             for column, meta in ((entry or {}).get("columns") or {}).items():
                 raw = (meta or {}).get("type")
-                accepted = my.TYPE_FAMILIES.get(my.dictionary_family(raw))
-                if accepted is None:
-                    continue
                 with self.subTest(table=table, column=column, type=raw):
-                    self.assertIn(my.tsql_base_type(sql_type_for_dictionary(raw)), accepted)
+                    self.assertEqual(sql_type_for_dictionary(raw), my.dictionary_sql_type(raw))
 
     def encounters(self, draft: Draft, pk: bool = False) -> TableBuilder:
         builder = TableBuilder(draft, pk=pk)
@@ -2278,7 +2259,7 @@ class TableBuilderTests(ModelTest):
         self.assertEqual(builder.alias, "ef")
         self.assertEqual(builder.columns[0], {"source": "ef.EncounterKey", "name": "EncounterKey",
                                               "type": "BIGINT", "nullable": False})
-        self.assertEqual(builder.columns[3]["type"], "VARCHAR(400)")
+        self.assertEqual(builder.columns[3]["type"], "NVARCHAR(900)")
 
     def test_columns_are_removed_restored_renamed_and_ordered_by_number(self):
         builder = self.encounters(self.draft())
@@ -2310,7 +2291,7 @@ class TableBuilderTests(ModelTest):
         draft = self.draft()
         draft.set_pk_recipe("Patients")
         builder = self.encounters(draft)
-        self.assertEqual(builder.join_check(3, "Patients", "PatientDurableKey"), (False, "VARCHAR(400) vs BIGINT"))
+        self.assertEqual(builder.join_check(3, "Patients", "PatientDurableKey"), (False, "NVARCHAR(900) vs BIGINT"))
         with self.assertRaises(DraftError):
             builder.add_join(3, "Patients", "PatientDurableKey")
 
