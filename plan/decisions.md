@@ -2584,3 +2584,109 @@ its tables are listed under it.
 lab results. The counts were already gathered for the Cosmos/Projects check and
 thrown away.
 
+
+### D138. Smaller choices made building D134 and D135
+
+Confirmed by the user once built (29 September 2026):
+
+1. **The first group shares the PK's connection.** A new connection opens only
+   when the group changes, so a template with no groups runs exactly as before,
+   and the first group saves one reload of the PK.
+2. **Groups run in the order `table_groups` lists them**, then the tables in no
+   group, last.
+3. **Add table to group offers only tables in no group.** A table in another
+   group is refused ("remove it from there first"), not moved.
+4. **Duplicate puts the copy in the original's group**, right after it.
+5. **Save as recipe set** saves a prefabricated table as the template has it
+   (its bindings to its siblings, its variables and filters). A table built from
+   the dictionary is saved as a recipe too, in the same write, because a set
+   names recipes. A name already in `recipes.yaml` is refused, and the file is
+   left unchanged.
+6. **Artifacts packages a finished group's tables while another group is
+   unfinished.** Before, every table waited for every run, and only the
+   session's first run was read, which would have missed every group but the
+   first.
+7. **The temp prefix stays the session's** on every group connection.
+
+### D139. A multiplied table read by its written name is a warning
+
+**Context.** Building D134 found that under multipliers each level's copy of a
+table is named for its level (`UCOrders`), while SQL written as
+`{{prefix}}_Orders` still names `##<prefix>_Orders`, which is never made. The run
+fails at Execute. The PK is reached through `{{PKTable}}`, which is the level's
+own, unless it too is written by name. The real fix is the renderer owning temp
+names (roadmap: Generated-table dependencies). None of the six queued pulls
+combines multipliers with such a read.
+
+**Decision.** Until then, validation warns (`multiplied_table_read_by_name`),
+once per pair, naming the reader, what it reads and the level's real name; for
+the PK the fix is `{{prefix}}_{{PKTable}}`. A warning, not an error: the user's
+choice, so a template is never stopped by a check that may be wrong about it.
+
+### D140. Run lists finished and stopped pulls in a dropdown of their own; Execute records how it ended
+
+**Amends D126.**
+
+**Context.** Start run listed every transfer YAML with how it last ran, so the
+pulls to start and the pulls already run were mixed in one list, and a pull that
+crashed (exit code 1), one the user stopped and one closed with its window read
+alike: `stopped mid-run`.
+
+**Decision.** Three dropdowns, in this order:
+
+1. **Running pulls**, as before.
+2. **Finished and stopped pulls**: every pull that has run and is not running,
+   each with one of: `(finished)`, every session done and nothing failed;
+   `(finished with errors)`, Execute ended by itself but a run, phase or session
+   failed or was left pending; `(stopped by user)`, ended by Stop or Ctrl+C;
+   `(stopped with errors)`, it did not end by itself (an unexpected error, a
+   killed process, a closed window). A finished pull stays here; Re-pull
+   everything runs it again.
+3. **Start run**: the transfer YAMLs with no pull yet.
+
+Choosing any loads the pull. To tell the stops apart, Execute writes
+`last_execute: {started_at, ended_at, exit_code, how}` into the manifest as it
+ends, on the unexpected-error path too. A hard kill writes nothing, and a
+manifest still `running` with no lock held reads as stopped with errors.
+
+### D141. Artifacts runs by itself after a clean pull
+
+**Amends D72 and D67.**
+
+**Decision.** When Execute ends with every session finished and nothing failed,
+it runs Artifacts in the same process, still holding the lock, printing to the
+same console, log and Pull Log tab. A pull with any failure is not packaged, and
+says so, pointing at Retry failed or Artifacts. The Artifacts button and
+`--artifacts` stay for packaging by hand. If Artifacts fails, Execute's exit code
+is still 0, since the pull is safe in Projects, with a loud line naming the
+tables not written and saying to run Artifacts again.
+
+**Why.** Infant_RSV looked stopped because only the PK's parquet appeared until
+Artifacts was run by hand.
+
+### D142. The run folder: parquets, manifest and latest log at the top, the machinery in `pull_files/`
+
+**Amends D57, D68, D72 and D87.**
+
+**Decision.**
+
+``` text
+runs/<project>/
+  cosmos_parquets/
+  sneakpeek_parquets/
+  uploads_parquets/
+  pullmanifest.yaml
+  execute-<date>-<time>.log     the latest Execute's log
+  <project>_transfer.yaml       the copy the split was made from
+  contents.md, HOW_TO.md, load_parquets.py, load_parquets.R
+  older_logs/                   every earlier log, moved there when an Execute starts
+  pull_files/
+    split/                      sessions/, uploads/
+    sql/
+```
+
+Names use underscores, not spaces. The manifest's paths stay relative to itself
+(`pull_files/split/sessions/...`). The PK's parquet (D87) goes to its database's
+parquet folder with the rest. Run folders in the old layout are not moved or
+read specially: a pull that needs redoing is split again, which starts it over
+(the user: few runs have succeeded so far).

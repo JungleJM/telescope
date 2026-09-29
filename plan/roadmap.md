@@ -17,6 +17,7 @@ When an item here is built, delete it from this file and describe the result in 
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
 | Execute's progress lines: each step's start and end, timed, as it happens (D136); each table's rows in the summary, the manifest and the Status tab (D137) | Built and tested on the Mac; in the next bundle |
+| Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; in the next bundle. Not yet run on the VM: the first live group is the question of what a group costs (below) |
 | Launcher, now the app's Run half; its two dropdowns (D126) | Opened on the VM; Validate, Export split, Preview and Execute used there. The dropdowns not yet |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself goes in the next bundle |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; `stock.yaml` not yet |
@@ -41,16 +42,13 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 
 ------------------------------------------------------------------------
 
-## Next, Once The Pulls Run: Table Groups And Recipe Sets
+## Next: Fixes, In Order
 
-The first feature after the remade pulls succeed on the VM (D134, D135). In order:
+Agreed after Infant_RSV (29 September 2026). One commit each, with its outcome tests.
 
-1.  **A table that reads one later in the order is an error**, naming both, grouped or not (D134). It stands alone, and groups rely on it.
-2.  **Table groups at run time**: a Cosmos connection per group inside the session, the PK temp refilled from Projects and the supporting tables it reads loaded; groups outside batches; the ungrouped tables one group; a table reading another group's an error; progress naming the group; a failed group retried alone. The split, the manifest, the dry run and the status all show groups.
-3.  **Table groups in the app**: their own section after Fact Tables, each fact table saying its group; Splitters' Separate tables renamed Separate PK per level.
-4.  **Recipe sets**: `recipe_sets:` in `recipes.yaml`, adding one as a group with its bindings set, and Save as recipe set.
-
-Before building 2, from Crohns_PatientsFromUpload's progress lines (D136): how long its upload's second leg took, Projects to Cosmos. A group repeats only that, so it is what each group adds.
+1.  **Finished and stopped pulls** (D140): Execute records how it ended (`last_execute`); Run's three dropdowns, Running pulls, Finished and stopped pulls, Start run, with `(finished)`, `(finished with errors)`, `(stopped by user)` and `(stopped with errors)`. First because it defines "finished", which 2 needs, and makes every later VM report easier to read.
+2.  **Artifacts after a clean pull** (D141), on exactly the "finished" of 1.
+3.  **The run folder** (D142): the largest, touching makeYaml's split, Pullmanager's paths, Artifacts, the launcher and the test fixtures; after 2 has settled where Artifacts writes.
 
 ------------------------------------------------------------------------
 
@@ -96,27 +94,9 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
 
 ### Project Folder Layout
 
-Pulls will run several at a time, so each should get its own folder, named by `project_folder`. The user's sketch:
+The layout is decided (D142, Next: Fixes, In Order). Still open:
 
-``` text
-<project_folder>/
-  load_parquets.py        load every parquet into R or Python, out of memory
-  contents.yaml           each cohort pulled, with its description, and its
-                          columns with type and description
-  server/
-    <pull>.yaml           the template that was run, renamed for the project
-    Manifest.yaml         the live status document
-    yamls/                the split YAMLs
-    sql/                  Cosmos and Projects SQL, grouped by session
-  parquets/
-    SneakPeek/            exported as soon as the SneakPeek cohorts finish
-    Cosmos/
-```
-
-Most of it is built inside `runs/<project>/` (D57, D72 to D75): `split/`, `sql/`, `logs/`, `parquets/SneakPeek|Cosmos|uploads/`, `contents.md` and the load scripts. What remains of the sketch:
-
-- The renames (`server/`, `Manifest.yaml`, `server/yamls/`): cheap, since manifest paths are already relative to the manifest. Worth doing only if the flat layout gets in the way.
-- Packaging SneakPeek as soon as its sessions finish, before the Cosmos ones run. Artifacts already packages only finished tables, so running it mid-pull would do this, except that it refuses while the pull is executing (D67). A `--artifacts` that waits on the lock, or runs from Execute when the last SneakPeek session ends, would.
+- Packaging SneakPeek as soon as its sessions finish, before the Cosmos ones run. Artifacts packages only finished tables, so running it mid-pull would do this, except that it refuses while the pull is executing (D67). D141 packages at the end of a clean pull; a `--artifacts` that waits on the lock, or runs from Execute when the last SneakPeek session ends, would package earlier.
 - Big reference files live in a `data/` folder in the parent directory; templates reference them relative to the template.
 
 ### After Artifacts
@@ -144,7 +124,8 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Finish checking the dictionary against the pages.** Most tables are checked (D130). The dictionary's foot lists the rest (ProblemListFact, TerminologyConceptDim, VitalsFact, CoverageDim, and the parts only partly seen), and the tables a checked foreign key points at that it lacks (DateDim, DiagnosisDim, the bridges...): screenshot one before a pull joins it. Until a table is checked, its unsized strings are `NVARCHAR(900)`.
-- **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names.
+- **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names. Under multipliers a fact table read this way names the base table, not its level's copy (`UCOrders`), and fails at Execute; validation warns meanwhile (D139).
+- **What a table group costs.** From Crohns_PatientsFromUpload's progress lines (D136): how long its upload's second leg took, Projects to Cosmos. A group repeats about that, so it is what each group adds (D134).
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.
 - **`split_after_build` on an uploaded PK** is refused (D54). It could be supported by splitting the rows as the copy lands, if a list ever needs it.
