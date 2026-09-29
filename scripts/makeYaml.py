@@ -2551,6 +2551,57 @@ def tables_read(cohort: dict[str, Any], marker: str, names: set[str]) -> list[st
     return found
 
 
+def made_name(cohort: dict[str, Any]) -> str:
+    return str(cohort.get("dest_table") or cohort.get("name"))
+
+
+def unmultiplied_name(cohort: dict[str, Any]) -> str:
+    """Its name before a multiplier level's strat was put in front, as SQL writes it."""
+    dest = made_name(cohort)
+    strat = str(cohort.get("_group_key") or "") or "".join(
+        str(level.get("strat") or "") for level in cohort.get("multiplier_levels") or []
+        if isinstance(level, dict))
+    return dest[len(strat):] if strat and dest.startswith(strat) else dest
+
+
+def check_multiplied_reads(cohorts: list[dict[str, Any]], marker: str, result: CompileResult) -> None:
+    """A multiplied table read by its written name reads a temp that is never made.
+
+    Under multipliers each level's copy is `<strat><table>` (`UCOrders`), but
+    SQL written as `{{prefix}}_Orders` still names `##<prefix>_Orders`, so the
+    run fails at Execute. Until the renderer owns these names (roadmap:
+    Generated-table dependencies), a warning, not a refusal (D138). The PK is
+    reached through `{{PKTable}}`, which is the level's own.
+    """
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for cohort in cohorts:
+        if isinstance(cohort, dict):
+            owner = cohort.get("session_pk") or (
+                made_name(cohort) if str(cohort.get("type", "")).lower() == "pk" else "")
+            sessions.setdefault(str(owner), []).append(cohort)
+    said: set[tuple[str, str]] = set()
+    for members in sessions.values():
+        made = {made_name(c) for c in members}
+        renamed = {unmultiplied_name(c): c for c in members if unmultiplied_name(c) not in made}
+        for cohort in members:
+            for read in tables_read(cohort, marker, set(renamed)):
+                pair = (unmultiplied_name(cohort), read)
+                if pair in said:
+                    continue
+                said.add(pair)
+                is_pk = str(renamed[read].get("type", "")).lower() == "pk"
+                result.warn(
+                    "multiplied_table_read_by_name",
+                    f"`{pair[0]}` reads `{{{{prefix}}}}_{read}`, but under multipliers each level's "
+                    f"copy is named for its level (`{made_name(renamed[read])}`), so "
+                    f"`##..._{read}` is never made and the run fails at Execute.",
+                    f"{cohort_label(cohort)}.filter",
+                    fix="Read it as `{{prefix}}_{{PKTable}}`." if is_pk else
+                    "Pull it without multipliers for now (one template per level); the renderer "
+                    "does not yet name a level's copy for you.",
+                )
+
+
 def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: CompileResult) -> None:
     """A table that reads another fact table must come after it (D134).
 
@@ -2564,13 +2615,7 @@ def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: Compil
     for cohort in cohorts:
         if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() != "pk":
             sessions.setdefault(str(cohort.get("session_pk") or ""), []).append(cohort)
-    def base(cohort: dict[str, Any]) -> str:
-        """Its name before a multiplier level's strat was put in front, as SQL writes it."""
-        dest = str(cohort.get("dest_table") or cohort.get("name"))
-        strat = str(cohort.get("_group_key") or "") or "".join(
-            str(level.get("strat") or "") for level in cohort.get("multiplier_levels") or []
-            if isinstance(level, dict))
-        return dest[len(strat):] if strat and dest.startswith(strat) else dest
+    base = unmultiplied_name
 
     for members in sessions.values():
         position: dict[str, int] = {}
@@ -3146,6 +3191,7 @@ def compile_yaml(
             rendered_cohorts, dictionary, find_uploaded_pk_table(template, CompileResult()) or pk_cohort_name(rendered_cohorts), result
         )
         check_table_order(rendered_cohorts, temp_marker(template), result)
+        check_multiplied_reads(rendered_cohorts, temp_marker(template), result)
         if not result.errors:
             # After the dictionary's own errors, which say why better.
             check_column_types(rendered_cohorts, result)
@@ -6166,6 +6212,33 @@ class TableOrderTests(MakeYamlTest):
         )
         res = self.compile_template(extra=extra)
         self.assertEqual(len([m for m in res.errors if m.code == "table_read_before_built"]), 1, summarize_result(res))
+
+    MULTIPLIED = (
+        "multipliers:\n  - name: IBDType\n    stage: during_build\n    levels:\n"
+        "      - strat: UC\n        vars: {ICD_Value: [K51]}\n"
+        "      - strat: Crohns\n        vars: {ICD_Value: [K50]}\n"
+    )
+
+    def test_a_multiplied_table_read_by_its_written_name_warns_once(self):
+        # D138: each level's copy is UCOrders, CrohnsOrders; `{{prefix}}_Orders`
+        # names a temp nobody makes. Warned, not refused, until the renderer
+        # names it (roadmap: Generated-table dependencies).
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + self.MULTIPLIED)
+        self.assertCompiles(res)
+        found = [m for m in res.warnings if m.code == "multiplied_table_read_by_name"
+                 and "`Admins`" in m.message]
+        self.assertEqual(len(found), 1, summarize_result(res))
+        self.assertIn("`Admins` reads `{{prefix}}_Orders`", found[0].message)
+
+    def test_the_pk_read_by_its_written_name_warns_with_the_fix(self):
+        res = self.compile_template(extra=self.fact("Visits") + self.MULTIPLIED)
+        found = [m for m in res.warnings if m.code == "multiplied_table_read_by_name"]
+        self.assertEqual(len(found), 1, summarize_result(res))
+        self.assertIn("{{PKTable}}", found[0].fix)
+
+    def test_without_multipliers_nothing_is_said(self):
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders"))
+        self.assertNotIn("multiplied_table_read_by_name", [m.code for m in res.warnings])
 
 
 class TableGroupTests(MakeYamlTest):
