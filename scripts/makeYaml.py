@@ -454,9 +454,10 @@ def run_folder_name(template_path: str | Path) -> str:
 
 
 def default_split_dir(template_path: str | Path) -> Path:
-    """Where a split goes without `--out-dir`: `runs/<project>/split` (D57),
-    in the runs folder datascope.json names (D111)."""
-    return runs_root() / run_folder_name(template_path) / "split"
+    """Where a split goes without `--out-dir`: the run folder, `runs/<project>`
+    (D57), in the runs folder datascope.json names (D111). The manifest sits at
+    its top, the sessions and uploads under `pull_files/split/` (D142)."""
+    return runs_root() / run_folder_name(template_path)
 
 
 def default_template_path() -> Path:
@@ -3637,7 +3638,10 @@ def split_phase_document(
     return doc
 
 
-UPLOAD_STAGING_DIR = "uploads"
+# Under the folder the manifest is written to (D142); the manifest's paths
+# are relative to it, so they name these folders.
+SPLIT_FILES_DIR = "pull_files/split"
+UPLOAD_STAGING_DIR = f"{SPLIT_FILES_DIR}/uploads"
 
 
 def stage_upload_files(
@@ -3785,10 +3789,22 @@ def write_split_artifacts(
     )
     if result.errors:
         return result
-    manifest = result.analysis.get("split_plan", {})
+    manifest = copy.deepcopy(result.analysis.get("split_plan", {}))
+    # The manifest at the run folder's top, what it runs under pull_files/split.
+    for session in manifest.get("sessions", []) or []:
+        for phase in (session.get("phases", {}) or {}).values():
+            if phase and phase.get("yaml"):
+                phase["yaml"] = f"{SPLIT_FILES_DIR}/{phase['yaml']}"
+        for run in session.get("runs", []) or []:
+            if run.get("yaml"):
+                run["yaml"] = f"{SPLIT_FILES_DIR}/{run['yaml']}"
     manifest_path = out_dir / "pullmanifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     dump_yaml(manifest, manifest_path)
+    # The template the split was made from, beside its manifest (D142).
+    source = Path(template_path) if template_path else default_template_path()
+    if source.is_file() and source.resolve() != (out_dir / source.name).resolve():
+        shutil.copyfile(source, out_dir / source.name)
 
     for session in manifest.get("sessions", []) or []:
         phases = session.get("phases", {}) or {}
@@ -5342,11 +5358,12 @@ upload_cohorts:
         out = self.tmp / "split"
         res = write_split_artifacts(*self.write_pair(extra=self.extra()), output_dir=out)
         self.assertCompiles(res)
-        self.assertTrue((out / "uploads" / "codes.parquet").is_file())
-        self.assertFalse((out / "uploads" / "codes.csv").exists())
+        self.assertTrue((out / UPLOAD_STAGING_DIR / "codes.parquet").is_file())
+        self.assertFalse((out / UPLOAD_STAGING_DIR / "codes.csv").exists())
         session = load_yaml(out / "pullmanifest.yaml")["sessions"][0]
         upload = load_yaml(out / session["phases"]["upload_cohorts"]["yaml"])["upload_cohorts"][0]
-        self.assertEqual((upload["file_type"], upload["file_loc"]), ("parquet", "uploads/codes.parquet"))
+        self.assertEqual((upload["file_type"], upload["file_loc"]), ("parquet", f"{UPLOAD_STAGING_DIR}/codes.parquet"))
+        self.assertTrue((out / upload["file_loc"]).is_file(), "it resolves from the manifest")
 
     def test_a_bad_value_stops_the_split(self):
         self.write_codes("Code,Label\nK50,Crohns\n")
@@ -5546,7 +5563,8 @@ batching:
         res = write_split_artifacts(template, recipes, output_dir=out)
         self.assertCompiles(res)
         tree: dict[str, Any] = {}
-        for path in sorted(out.rglob("*")):
+        for path in sorted((out / SPLIT_FILES_DIR).rglob("*")):
+            # The template's own copy beside the manifest is named for it.
             if path.is_file():
                 tree[path.relative_to(out).as_posix()] = path.read_bytes()
         manifest = load_yaml(out / "pullmanifest.yaml")
@@ -5885,9 +5903,15 @@ class RunFolderTests(MakeYamlTest):
         runs = self.tmp / "repo" / "runs"
         self.assertEqual(sorted(p.name for p in runs.iterdir()), ["Celiac", "IBD_Ancestry"])
         for project, folder in (("IBD_Ancestry", "Test Run"), ("Celiac", "Celiac")):
-            manifest = load_yaml(runs / project / "split" / "pullmanifest.yaml")
-            setup = load_yaml(runs / project / "split" / manifest["sessions"][0]["phases"]["setup"]["yaml"])
+            manifest = load_yaml(runs / project / "pullmanifest.yaml")
+            setup_yaml = manifest["sessions"][0]["phases"]["setup"]["yaml"]
+            setup = load_yaml(runs / project / setup_yaml)
             self.assertEqual(setup["project_folder"], folder)
+            # D142: the manifest at the top, what it runs under pull_files/split,
+            # and the template it was made from beside it.
+            self.assertTrue(setup_yaml.startswith("pull_files/split/sessions/"), setup_yaml)
+        self.assertTrue((runs / "IBD_Ancestry" / first.name).is_file())
+        self.assertTrue((runs / "Celiac" / second.name).is_file())
 
 
 class DedupTests(MakeYamlTest):
@@ -6118,7 +6142,7 @@ class ConfigTests(MakeYamlTest):
         home = self.home({"recipes": "elsewhere/my_recipes.yaml", "runs": "cleanup/runs"})
         with mock.patch(f"{__name__}.transfer_home", return_value=home):
             self.assertEqual(default_recipes_path(), home / "elsewhere" / "my_recipes.yaml")
-            self.assertEqual(default_split_dir("IBD_transfer.yaml"), home / "cleanup" / "runs" / "IBD" / "split")
+            self.assertEqual(default_split_dir("IBD_transfer.yaml"), home / "cleanup" / "runs" / "IBD")
             self.assertEqual(default_template_path(), project_root() / CORE_DEFAULTS["template"])
 
     def test_a_name_nothing_reads_is_refused(self):
@@ -6278,7 +6302,7 @@ class TableGroupTests(MakeYamlTest):
             ("Patients__run", None, ["OtherDx"]),
         ])
         # Applied, so a run document cannot apply it again.
-        self.assertNotIn("table_groups", load_yaml(out_dir / "sessions/Patients/runs/Meds.yaml"))
+        self.assertNotIn("table_groups", load_yaml(out_dir / SPLIT_FILES_DIR / "sessions/Patients/runs/Meds.yaml"))
 
     def test_groups_are_outside_batches(self):
         batching = "batching:\n  - sex: {values: [Female]}\n"

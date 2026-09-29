@@ -204,7 +204,7 @@ class RunningPullTests(GuiTestCase):
     def setUp(self):
         super().setUp()
         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
-        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
         # Execute must not open a real window: on Windows it holds the folder open.
         self.app.console = FakeConsole()
@@ -301,7 +301,7 @@ class RunningPullTests(GuiTestCase):
         self.assertEqual(set(self.states().values()), {"normal"})
 
     def test_another_projects_pull_greys_nothing_here(self):
-        other = self.work / "runs" / "Celiac" / "split" / "pullmanifest.yaml"
+        other = self.work / "runs" / "Celiac" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, other)
         self.lock(other)
         self.app.watch_pull()
@@ -351,9 +351,9 @@ class ConsoleTests(GuiTestCase):
     def setUp(self):
         super().setUp()
         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
-        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
-        self.logs = self.manifest.parent.parent / "logs"
+        self.logs = self.manifest.parent
         self.app.console = self.console = FakeConsole()
         self.messagebox.askokcancel.return_value = True
         self.messagebox.askyesno.return_value = True
@@ -497,7 +497,7 @@ class StatusTests(GuiTestCase):
     def setUp(self):
         super().setUp()
         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
-        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
 
     def test_shows_one_row_per_session_phase_and_run(self):
         dump_yaml(SAMPLE_MANIFEST, self.manifest)

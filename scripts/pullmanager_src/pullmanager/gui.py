@@ -285,8 +285,8 @@ class LauncherApp:
         except LauncherError:
             self.loaded_line.configure(text="Nothing loaded: choose a pull above.")
         else:
-            self.loaded_line.configure(text=f"Loaded {Path(self.vars['template'].get()).name}: its split goes to "
-                                            f"{run_dir / 'split'}, its SQL to {run_dir / 'sql'}")
+            self.loaded_line.configure(text=f"Loaded {Path(self.vars['template'].get()).name}: its run folder is "
+                                            f"{run_dir}, the split and SQL in {run_dir / pulls.PULL_FILES_DIR}")
         self.dictionary_line.configure(text=self.dictionary_found())
 
     def dictionary_found(self) -> str:

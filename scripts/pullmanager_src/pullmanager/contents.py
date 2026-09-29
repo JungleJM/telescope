@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .artifacts import BATCH_COLUMN, Plan, TableSpec
+from .artifacts import BATCH_COLUMN, COSMOS_DIR, SNEAKPEEK_DIR, Plan, TableSpec
 from .manifest import Manifest
 from .normalize import normalize_bool, normalize_dedup_keys
 from .server_sql import test_option
@@ -163,7 +163,9 @@ def specific_to(pk: dict[str, Any]) -> list[str]:
 
 def pull_summary(manifest: Manifest, plan: Plan) -> list[str]:
     project = manifest.project
-    folders = sorted({spec.folder for spec in plan.tables if spec.kind != "upload"})
+    # The database each folder holds, as it has always been said (D142).
+    said = {COSMOS_DIR: "Cosmos", SNEAKPEEK_DIR: "SneakPeek"}
+    folders = sorted({said.get(spec.folder, spec.folder) for spec in plan.tables if spec.kind != "upload"})
     finished = [
         str(node.data.get("finished_at")) for _, node in manifest.iter_nodes()
         if node.data.get("finished_at")
@@ -210,7 +212,7 @@ def table_section(spec: TableSpec, pk: dict[str, Any], dictionary: dict[str, Any
     for part in spec.parts:
         title = part.path.stem if part.path is not None else spec.dest
         lines += ["", f"## {title}", ""]
-        lines.append(f"- **File:** `parquets/{spec.folder}/{title}.parquet` ({part.rows:,} rows)")
+        lines.append(f"- **File:** `{spec.folder}/{title}.parquet` ({part.rows:,} rows)")
         if spec.kind == "upload":
             lines.append("- **Granularity:** " + (tidy(cohort.get("granularity")) or NO_GRANULARITY))
             lines.append("- **Description:** " + (tidy(cohort.get("description")) or NO_DESCRIPTION)

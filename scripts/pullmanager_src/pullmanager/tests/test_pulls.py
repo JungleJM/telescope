@@ -39,7 +39,7 @@ class PullsTestCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def make_pull(self, name: str, data: dict | None = None, home: Path | None = None) -> Path:
-        path = (home or self.work) / "runs" / name / "split" / "pullmanifest.yaml"
+        path = (home or self.work) / "runs" / name / "pullmanifest.yaml"
         path.parent.mkdir(parents=True, exist_ok=True)
         dump_yaml(data or SAMPLE_MANIFEST, path)
         return path
@@ -55,7 +55,7 @@ class ResolveTests(PullsTestCase):
             "ibd_ancestry",
             "IBD_Ancestry_transfer.yaml",
             str(self.work / "IBD_Ancestry_transfer.yaml"),
-            "runs/IBD_Ancestry/split/pullmanifest.yaml",
+            "runs/IBD_Ancestry/pullmanifest.yaml",
             "runs/IBD_Ancestry",
         ):
             with self.subTest(name=name):
@@ -85,7 +85,7 @@ class ResolveTests(PullsTestCase):
     def test_a_mistyped_path_says_the_manifest_is_missing(self):
         self.make_pull("IBD_Ancestry")
         with self.assertRaises(PullNotFound) as caught:
-            resolve("runs/IBD_Ancestory/split/pullmanifest.yaml", self.work)
+            resolve("runs/IBD_Ancestory/pullmanifest.yaml", self.work)
         self.assertIn("Manifest not found", str(caught.exception))
         self.assertIn("IBD_Ancestry", str(caught.exception))
 
@@ -243,13 +243,13 @@ class PreviewStatementTests(PullsTestCase):
         super().setUp()
         if not FIXTURES.is_dir():
             self.skipTest(f"fixtures not found at {FIXTURES}")
-        self.split = self.work / "runs" / "IBD_Ancestry" / "split"
+        self.split = self.work / "runs" / "IBD_Ancestry"
         shutil.copytree(FIXTURES, self.split)
 
     def preview(self, *extra):
         out = io.StringIO()
         with contextlib.chdir(self.work), contextlib.redirect_stdout(out):
-            code = cli.main(["--dry-run", str(Path("runs/IBD_Ancestry/split/pullmanifest.yaml")), *extra])
+            code = cli.main(["--dry-run", str(Path("runs/IBD_Ancestry/pullmanifest.yaml")), *extra])
         self.assertEqual(code, 0)
         return out.getvalue().rstrip("\n").splitlines()
 

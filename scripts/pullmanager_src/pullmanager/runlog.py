@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, TextIO
 
-from .pulls import logs_folder
+from .pulls import logs_folder, older_logs_folder
 
 
 class Tee:
@@ -56,12 +56,23 @@ class Tee:
 
 
 def new_log_path(manifest: str | Path, now: datetime | None = None) -> Path:
+    """A new log at the run folder's top, the earlier ones moved into
+    `older_logs/` first, so the latest is the one beside the manifest (D142)."""
     folder = logs_folder(manifest)
     folder.mkdir(parents=True, exist_ok=True)
+    older = folder.glob("execute-*.log")
+    for log in sorted(older):
+        target = older_logs_folder(manifest) / log.name
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            log.replace(target)
+        except OSError:
+            pass  # one still open elsewhere stays; the new log is still written
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     path = folder / f"execute-{stamp}.log"
     number = 2
-    while path.exists():
+    # Unique in both folders, so moving it aside later replaces nothing.
+    while path.exists() or (older_logs_folder(manifest) / path.name).exists():
         path = folder / f"execute-{stamp}-{number}.log"
         number += 1
     return path

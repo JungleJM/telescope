@@ -28,7 +28,7 @@ class LockTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.work = Path(self._tmp.name).resolve()
-        self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
+        self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         self.manifest.parent.mkdir(parents=True)
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
 
@@ -128,7 +128,7 @@ class ExecuteLockTests(LockTestCase):
 
 class RunningListTests(LockTestCase):
     def test_running_says_which_pulls_are_executing(self):
-        other = self.work / "runs" / "Test_Run" / "split" / "pullmanifest.yaml"
+        other = self.work / "runs" / "Test_Run" / "pullmanifest.yaml"
         other.parent.mkdir(parents=True)
         dump_yaml(SAMPLE_MANIFEST, other)
         self.write_lock(20)
@@ -192,7 +192,21 @@ class ExecuteLogTests(LockTestCase):
         return code, out.getvalue()
 
     def logs(self):
-        return sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+        return sorted((self.work / "runs" / "IBD_Ancestry").glob("execute-*.log"))
+
+    def test_the_latest_log_is_beside_the_manifest_and_the_rest_in_older_logs(self):
+        # D142: one log at the top, the latest; each earlier one moved aside.
+        def refused(*args, **kwargs):
+            raise DatabaseError("login failed for PROJECTS")
+
+        self.execute(refused)
+        [first] = self.logs()
+        (first.parent / "execute-20200101-000000.log").write_text("older", encoding="utf-8")
+        self.execute(refused)
+        [latest] = self.logs()
+        older = sorted(p.name for p in (first.parent / "older_logs").glob("execute-*.log"))
+        self.assertEqual(older, sorted(["execute-20200101-000000.log", first.name]))
+        self.assertNotIn(latest.name, older)
 
     def test_the_log_holds_what_the_terminal_showed(self):
         recorded = []
@@ -284,7 +298,7 @@ class UnexpectedErrorTests(LockTestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = cli.execute(Manifest.load(self.manifest), args, connect_fn=connect)
         self.assertEqual(code, 1)
-        [log] = sorted((self.work / "runs" / "IBD_Ancestry" / "logs").glob("execute-*.log"))
+        [log] = sorted((self.work / "runs" / "IBD_Ancestry").glob("execute-*.log"))
         text = log.read_text(encoding="utf-8")
         self.assertIn("did not expect", text)
         self.assertIn("RuntimeError: the driver fell over", text)

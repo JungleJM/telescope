@@ -117,9 +117,9 @@ class ArtifactTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.work = Path(self._tmp.name).resolve()
-        self.split = self.work / "runs" / "IBD_Ancestry" / "split"
+        self.split = self.work / "runs" / "IBD_Ancestry"
         shutil.copytree(FIXTURES, self.split)
-        self.out = self.work / "runs" / "IBD_Ancestry" / "parquets"
+        self.out = self.work / "runs" / "IBD_Ancestry"  # the run folder: parquet folders at its top (D142)
 
     def set_status(self, phases="done", runs="done"):
         data = load_yaml(self.split / "pullmanifest.yaml")
@@ -169,12 +169,12 @@ class PackageTests(ArtifactTestCase):
         self.set_status()
         result = self.package()
         self.assertEqual(result.left_out, [])
-        patients_table = self.read("Cosmos/Patients.parquet")
+        patients_table = self.read("cosmos_parquets/Patients.parquet")
         self.assertEqual(patients_table.column("PatientDurableKey").to_pylist(),
                          [r["PatientDurableKey"] for r in patients()])
         self.assertEqual(str(patients_table.schema.field("PatientDurableKey").type), "int64")
         self.assertEqual(str(patients_table.schema.field("BirthDate").type), "date32[day]")
-        facts = self.read("Cosmos/OtherHospitalizations.parquet")
+        facts = self.read("cosmos_parquets/OtherHospitalizations.parquet")
         self.assertNotIn("_batch", facts.column_names)
         self.assertEqual(facts.num_rows, 2)
         self.assertEqual(facts.column("LengthOfStayInDays").to_pylist(), [None, 1])
@@ -186,7 +186,7 @@ class PackageTests(ArtifactTestCase):
     def test_uploads_are_copied_from_the_split(self):
         self.set_status()
         self.package()
-        copied = self.out / "uploads" / "HospitalICDCodes.parquet"
+        copied = self.out / "uploads_parquets" / "HospitalICDCodes.parquet"
         self.assertEqual(copied.read_bytes(),
                          (self.split / "uploads" / "hospital_icd_codes.parquet").read_bytes())
 
@@ -194,8 +194,8 @@ class PackageTests(ArtifactTestCase):
         # The manifest decides, not what exists in Projects.
         self.set_status(phases="done", runs="failed")
         result = self.package()
-        self.assertTrue((self.out / "Cosmos" / "Patients.parquet").is_file())
-        self.assertFalse((self.out / "Cosmos" / "OtherHospitalizations.parquet").exists())
+        self.assertTrue((self.out / "cosmos_parquets" / "Patients.parquet").is_file())
+        self.assertFalse((self.out / "cosmos_parquets" / "OtherHospitalizations.parquet").exists())
         why = dict(result.left_out)["OtherHospitalizations"]
         self.assertIn("1 of its 1 run(s) are not done (failed)", why)
 
@@ -212,16 +212,32 @@ class PackageTests(ArtifactTestCase):
         db.rows["Patients"] = patients(25)
         with mock.patch.object(artifacts, "FETCH_ROWS", 10):
             self.package(db)
-        self.assertEqual(self.read("Cosmos/Patients.parquet").num_rows, 25)
+        self.assertEqual(self.read("cosmos_parquets/Patients.parquet").num_rows, 25)
 
     def test_each_packaging_replaces_the_last(self):
         self.set_status()
-        stale = self.out / "Cosmos" / "Dropped.parquet"
+        stale = self.out / "cosmos_parquets" / "Dropped.parquet"
         stale.parent.mkdir(parents=True)
         stale.write_bytes(b"old")
         self.package()
         self.assertFalse(stale.exists())
-        self.assertTrue((self.out / "Cosmos" / "Patients.parquet").is_file())
+        self.assertTrue((self.out / "cosmos_parquets" / "Patients.parquet").is_file())
+
+    def test_packaging_leaves_the_rest_of_the_run_folder_alone(self):
+        # D142: the parquet folders sit in the run folder, beside the manifest,
+        # the logs and pull_files/. Only the parquet folders are replaced.
+        self.set_status()
+        kept = [self.out / "pullmanifest.yaml", self.out / "execute-20260929-081215.log",
+                self.out / "older_logs" / "execute-20260928-120000.log",
+                self.out / "pull_files" / "split" / "uploads" / "codes.parquet",
+                self.out / "pull_files" / "sql" / "P" / "a.sql"]
+        for path in kept[1:]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("keep", encoding="utf-8")
+        self.package()
+        self.package()
+        for path in kept:
+            self.assertTrue(path.is_file(), path)
 
 
 class SeparateTests(ArtifactTestCase):
@@ -231,20 +247,20 @@ class SeparateTests(ArtifactTestCase):
         self.set_status()
         self.make_batched(separate=True)
         self.package(self.projects(labels=("b1of2-Female", "b2of2-Male")))
-        female = self.read("Cosmos/OtherHospitalizations_Female.parquet")
+        female = self.read("cosmos_parquets/OtherHospitalizations_Female.parquet")
         self.assertEqual(female.num_rows, 2)
-        self.assertEqual(self.read("Cosmos/OtherHospitalizations_Male.parquet").num_rows, 2)
-        self.assertFalse((self.out / "Cosmos" / "OtherHospitalizations.parquet").exists())
+        self.assertEqual(self.read("cosmos_parquets/OtherHospitalizations_Male.parquet").num_rows, 2)
+        self.assertFalse((self.out / "cosmos_parquets" / "OtherHospitalizations.parquet").exists())
         # The PK has no _batch: it is split on its own Sex column.
-        self.assertEqual(self.read("Cosmos/Patients_Female.parquet").column("Sex").to_pylist(),
+        self.assertEqual(self.read("cosmos_parquets/Patients_Female.parquet").column("Sex").to_pylist(),
                          ["Female", "Female"])
-        self.assertEqual(self.read("Cosmos/Patients_Male.parquet").num_rows, 1)
+        self.assertEqual(self.read("cosmos_parquets/Patients_Male.parquet").num_rows, 1)
 
     def test_without_the_flag_the_batches_stay_together(self):
         self.set_status()
         self.make_batched(separate=False)
         self.package(self.projects(labels=("b1of2-Female", "b2of2-Male")))
-        self.assertEqual(self.read("Cosmos/OtherHospitalizations.parquet").num_rows, 4)
+        self.assertEqual(self.read("cosmos_parquets/OtherHospitalizations.parquet").num_rows, 4)
 
     def test_a_sneakpeek_table_keeps_its_suffix_last(self):
         self.assertEqual(artifacts.file_name("OtherDiagnoses_sp", "LA"), "OtherDiagnoses_LA_sp.parquet")
@@ -260,9 +276,9 @@ class SneakPeekFolderTests(ArtifactTestCase):
                 cohort["cosmos_db"] = "COSMOS_SneakPeek"
             dump_yaml(doc, self.split / rel)
         self.package()
-        self.assertTrue((self.out / "SneakPeek" / "Patients.parquet").is_file())
-        self.assertTrue((self.out / "SneakPeek" / "OtherHospitalizations.parquet").is_file())
-        self.assertFalse((self.out / "Cosmos").exists())
+        self.assertTrue((self.out / "sneakpeek_parquets" / "Patients.parquet").is_file())
+        self.assertTrue((self.out / "sneakpeek_parquets" / "OtherHospitalizations.parquet").is_file())
+        self.assertFalse((self.out / "cosmos_parquets").exists())
 
 
 class CommandTests(ArtifactTestCase):
@@ -289,13 +305,13 @@ class CommandTests(ArtifactTestCase):
         code, out = self.run_artifacts(self.projects())
         self.assertEqual(code, 0, out)
         lines = out.splitlines()
-        start = lines.index("  writing  parquets/Cosmos/Patients.parquet ...")
+        start = lines.index("  writing  cosmos_parquets/Patients.parquet ...")
         self.assertRegex(
             lines[start + 1],
-            r"^  wrote    parquets/Cosmos/Patients\.parquet  \(3 rows, [\d.,]+ (bytes|KB), \d+\.\ds\)$",
+            r"^  wrote    cosmos_parquets/Patients\.parquet  \(3 rows, [\d.,]+ (bytes|KB), \d+\.\ds\)$",
         )
         listed = lines[next(i for i, l in enumerate(lines) if l.startswith("Files written, in")) + 1:]
-        self.assertTrue(any(l.startswith("  parquets/Cosmos/Patients.parquet  3 rows") for l in listed), out)
+        self.assertTrue(any(l.startswith("  cosmos_parquets/Patients.parquet  3 rows") for l in listed), out)
         self.assertIn("  contents.md", listed)
         self.assertRegex(out, r"Artifacts finished in \d+\.\ds: 3 table\(s\) in 3 parquet file\(s\), 7 rows")
 
@@ -306,12 +322,12 @@ class CommandTests(ArtifactTestCase):
         code, out = self.run_artifacts(db)
         self.assertEqual(code, 1, out)
         self.assertIn("  FAILED   Patients: RuntimeError: [42000] Invalid column name in Patients", out)
-        self.assertFalse((self.out / "Cosmos" / "Patients.parquet").exists())
+        self.assertFalse((self.out / "cosmos_parquets" / "Patients.parquet").exists())
         self.assertFalse(list(self.out.rglob("*.tmp")))
-        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file())
+        self.assertTrue((self.out / "cosmos_parquets" / "OtherHospitalizations.parquet").is_file())
         self.assertIn("Failed (not packaged; the rest were):\n  Patients:", out)
         self.assertIn("1 failed", out)
-        contents = (self.split.parent / "contents.md").read_text(encoding="utf-8")
+        contents = (self.split / "contents.md").read_text(encoding="utf-8")
         self.assertIn("OtherHospitalizations", contents)
 
     def test_a_pull_still_executing_is_not_packaged(self):
@@ -324,7 +340,7 @@ class CommandTests(ArtifactTestCase):
         self.assertEqual(code, 1)
         self.assertIn("already executing", out)
         self.assertEqual(db.executed, [])
-        self.assertFalse(self.out.exists())
+        self.assertFalse((self.out / "cosmos_parquets").exists())
 
 
 class AfterPullTests(ArtifactTestCase):
@@ -354,8 +370,8 @@ class AfterPullTests(ArtifactTestCase):
         # Before, only the PK's parquet existed until Artifacts was run by hand.
         code, out = self.execute(self.projects())
         self.assertEqual(code, 0, out)
-        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file(), out)
-        self.assertTrue((self.split.parent / "contents.md").is_file())
+        self.assertTrue((self.out / "cosmos_parquets" / "OtherHospitalizations.parquet").is_file(), out)
+        self.assertTrue((self.split / "contents.md").is_file())
         self.assertIn("packaging it (Artifacts)", out)
 
     def test_a_pull_with_a_failure_is_not_packaged(self):
@@ -364,7 +380,7 @@ class AfterPullTests(ArtifactTestCase):
         self.assertEqual(code, 1, out)
         self.assertIn("Not packaged", out)
         self.assertEqual(db.executed, [])
-        self.assertFalse(self.out.exists())
+        self.assertFalse((self.out / "cosmos_parquets").exists())
 
     def test_packaging_that_fails_leaves_the_exit_code_the_pulls(self):
         db = self.projects()
@@ -372,7 +388,7 @@ class AfterPullTests(ArtifactTestCase):
         code, out = self.execute(db)
         self.assertEqual(code, 0, out)
         self.assertIn("WARNING Artifacts did not write every table", out)
-        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file())
+        self.assertTrue((self.out / "cosmos_parquets" / "OtherHospitalizations.parquet").is_file())
 
 
 class LoaderTests(ArtifactTestCase):
@@ -383,13 +399,13 @@ class LoaderTests(ArtifactTestCase):
 
         self.set_status()
         self.package()
-        return write_loaders(self.out.parent, self.out, "IBD_Ancestry")
+        return write_loaders(self.out, self.out, "IBD_Ancestry")
 
     def run_script(self, name):
         import subprocess
         import sys
 
-        return subprocess.run([sys.executable, str(self.out.parent / name)], capture_output=True,
+        return subprocess.run([sys.executable, str(self.out / name)], capture_output=True,
                               text=True, timeout=120, cwd=str(self.work))
 
     def test_the_load_scripts_viewer_and_how_to_are_written_at_the_run_folders_root(self):
@@ -397,14 +413,14 @@ class LoaderTests(ArtifactTestCase):
         self.assertEqual(sorted(p.name for p in written), [
             "HOW_TO.md", "load_parquets.R", "load_parquets.py", "viewparquets.py",
         ])
-        self.assertIn(self.out.resolve().as_posix(), (self.out.parent / "load_parquets.R").read_text())
-        self.assertFalse(list(self.out.parent.glob("examine_parquets.*")))
+        self.assertIn(self.out.resolve().as_posix(), (self.out / "load_parquets.R").read_text())
+        self.assertFalse(list(self.out.glob("examine_parquets.*")))
 
     def test_the_viewer_is_the_stock_copy(self):
         from ..loaders import STOCK_DIR
 
         self.write()
-        self.assertEqual((self.out.parent / "viewparquets.py").read_bytes(),
+        self.assertEqual((self.out / "viewparquets.py").read_bytes(),
                          (STOCK_DIR.parent / "utils" / "viewparquets.py").read_bytes())
 
     def use_stock(self, listing: str, files: dict[str, str]):
@@ -427,9 +443,9 @@ class LoaderTests(ArtifactTestCase):
         self.use_stock("files:\n  - ../utils/viewparquets.py\n  - file: ../utils/tables.R\n    into: R\n",
                        {"utils/viewparquets.py": "# viewer\n", "utils/tables.R": "# R\n"})
         written = self.write()
-        self.assertEqual((self.out.parent / "R" / "tables.R").read_text(encoding="utf-8"), "# R\n")
-        self.assertEqual((self.out.parent / "viewparquets.py").read_text(encoding="utf-8"), "# viewer\n")
-        self.assertIn(self.out.parent / "R" / "tables.R", written)
+        self.assertEqual((self.out / "R" / "tables.R").read_text(encoding="utf-8"), "# R\n")
+        self.assertEqual((self.out / "viewparquets.py").read_text(encoding="utf-8"), "# viewer\n")
+        self.assertIn(self.out / "R" / "tables.R", written)
 
     def test_an_entry_that_is_not_there_is_said_and_the_rest_copied(self):
         import contextlib
@@ -440,7 +456,7 @@ class LoaderTests(ArtifactTestCase):
         with contextlib.redirect_stderr(said):
             self.write()
         self.assertIn("gone.R", said.getvalue())
-        self.assertTrue((self.out.parent / "viewparquets.py").is_file())
+        self.assertTrue((self.out / "viewparquets.py").is_file())
 
     def test_how_to_comes_from_the_stock_file_with_the_pull_filled_in(self):
         from .. import loaders
@@ -458,13 +474,17 @@ class LoaderTests(ArtifactTestCase):
         loaders.STOCK_DIR = stock
         self.addCleanup(setattr, loaders, "STOCK_DIR", original)
         self.write()
-        text = (self.out.parent / "HOW_TO.md").read_text(encoding="utf-8")
+        text = (self.out / "HOW_TO.md").read_text(encoding="utf-8")
         self.assertEqual(
             text, f"# IBD_Ancestry\nFiles in {self.out.resolve().as_posix()}. Braces {{like these}} stay.\n"
         )
 
     def test_the_python_load_script_opens_every_table_by_name(self):
         self.write()
+        # An upload as sent, in pull_files/: not a table of the pull (D142).
+        sent = self.out / "pull_files" / "split" / "uploads" / "Sent.parquet"
+        sent.parent.mkdir(parents=True)
+        shutil.copyfile(self.out / "uploads_parquets" / "HospitalICDCodes.parquet", sent)
         done = self.run_script("load_parquets.py")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("Opened 3 table(s): OtherHospitalizations, Patients, HospitalICDCodes", done.stdout)
@@ -485,7 +505,7 @@ class LoaderTests(ArtifactTestCase):
             with self.subTest(script=name):
                 done = subprocess.run(
                     [rscript, "-e", f'source("{name}"); cat(class({get}$PatientDurableKey))'],
-                    capture_output=True, text=True, timeout=180, cwd=str(self.out.parent),
+                    capture_output=True, text=True, timeout=180, cwd=str(self.out),
                 )
                 self.assertEqual(done.returncode, 0, done.stderr)
                 self.assertTrue(done.stdout.endswith("integer64"), done.stdout)
@@ -500,7 +520,7 @@ class LoaderTests(ArtifactTestCase):
         self.write()
         for name in ("load_parquets.R",):
             with self.subTest(script=name):
-                path = (self.out.parent / name).as_posix()
+                path = (self.out / name).as_posix()
                 done = subprocess.run([rscript, "-e", f'invisible(parse("{path}"))'],
                                       capture_output=True, text=True, timeout=120)
                 self.assertEqual(done.returncode, 0, done.stderr)

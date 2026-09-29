@@ -11,9 +11,11 @@ Everything this pull produced is in this folder:
 | File | What it is |
 | --- | --- |
 | `contents.md` | Every table and column: what it holds, one row per what, and its type in SQL, Python and R. Start here. |
-| `parquets/SneakPeek/` | Tables pulled from COSMOS_SneakPeek. Their names end in `_sp`. |
-| `parquets/Cosmos/` | Tables pulled from COSMOS. |
-| `parquets/uploads/` | Lists that were uploaded to make the pull, as supplied. |
+| `cosmos_parquets/` | Tables pulled from COSMOS. |
+| `sneakpeek_parquets/` | Tables pulled from COSMOS_SneakPeek. Their names end in `_sp`. |
+| `uploads_parquets/` | Lists that were uploaded to make the pull, as supplied. |
+| `pullmanifest.yaml`, `execute-*.log` | The pull's record and its latest log; earlier logs are in `older_logs/`. |
+| `pull_files/` | What ran the pull: the split and its SQL. Not needed to use the data. |
 | `viewparquets.py` | A window for looking at the tables: open one or several, page through, sort. |
 | `load_parquets.R`, `load_parquets.py` | Open every table in R or Python without reading it into memory. |
 
@@ -39,8 +41,9 @@ Each names a table after its file: `Patients`, `OtherDiagnoses_sp`.
 - **VSCodium:** open `load_parquets.py` and run it in the interactive window,
   or `%run load_parquets.py`.
 
-Each script names the parquets folder in `PARQUETS` near its top
-(`{parquets}`). If the folder is moved, change that line.
+Each script names this folder in `PARQUETS` near its top (`{parquets}`)
+and opens what is in its `*_parquets` folders. If the folder is moved, change
+that line.
 
 ## Joining Tables
 

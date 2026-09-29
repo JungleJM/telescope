@@ -152,11 +152,13 @@ class RunFolderTests(unittest.TestCase):
 
     def test_blank_folders_are_the_projects_own(self):
         paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
-        split = str(Path("runs") / "IBD_Ancestry" / "split")
+        # D142: the manifest at the run folder's top, the SQL under pull_files.
+        split = str(Path("runs") / "IBD_Ancestry")
         self.assertEqual(command_export_split(TOOLS, paths)[-1], split)
         dry_run = command_dry_run(TOOLS, paths, Options())
         self.assertIn(str(Path(split) / "pullmanifest.yaml"), dry_run)
-        self.assertEqual(dry_run[dry_run.index("--out-dir") + 1], str(Path("runs") / "IBD_Ancestry" / "sql"))
+        self.assertEqual(dry_run[dry_run.index("--out-dir") + 1],
+                         str(Path("runs") / "IBD_Ancestry" / "pull_files" / "sql"))
         # Execute is given the project's name, which finds that manifest (D66).
         execute = command_execute(TOOLS, paths, Options())
         self.assertEqual(execute[execute.index("--execute") + 1], "IBD_Ancestry")
@@ -166,7 +168,7 @@ class RunFolderTests(unittest.TestCase):
         paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
         self.assertNotIn("139081", str(paths.manifest()))
         out_dir = command_export_split(TOOLS, paths)[-1]
-        self.assertEqual(out_dir, str(Path("runs") / "IBD_Ancestry" / "split"))
+        self.assertEqual(out_dir, str(Path("runs") / "IBD_Ancestry"))
 
     def test_two_projects_never_share_a_manifest(self):
         first = Paths(template="IBD_Ancestry_transfer.yaml").manifest()
@@ -324,8 +326,8 @@ class LogFollowerTests(TempDirTestCase):
     def test_the_live_executes_log_is_shown_before_a_newer_one(self):
         from ..lock import LockInfo
 
-        manifest = self.tmp / "runs" / "P" / "split" / "pullmanifest.yaml"
-        logs = self.tmp / "runs" / "P" / "logs"
+        manifest = self.tmp / "runs" / "P" / "pullmanifest.yaml"
+        logs = self.tmp / "runs" / "P"
         logs.mkdir(parents=True)
         running = logs / "execute-20260925-140300.log"
         refused = logs / "execute-20260925-150000.log"  # a second Execute, refused
@@ -428,7 +430,7 @@ class SettingsTests(TempDirTestCase):
         )
         loaded = load_settings(self.tmp)
         self.assertEqual((loaded.split_dir, loaded.sql_dir), ("", ""))
-        self.assertEqual(loaded.manifest(), Path("runs") / "IBD_Ancestry" / "split" / "pullmanifest.yaml")
+        self.assertEqual(loaded.manifest(), Path("runs") / "IBD_Ancestry" / "pullmanifest.yaml")
 
     def test_settings_from_before_d49_still_load(self):
         # Older launchers remembered a recipes file; that choice no longer exists.
@@ -496,7 +498,7 @@ class ConfigTests(unittest.TestCase):
         from .. import pulls
 
         (self.home / "datascope.json").write_text('{"runs": "cleanup/runs"}', encoding="utf-8")
-        manifest = self.home / "cleanup" / "runs" / "IBD" / "split" / "pullmanifest.yaml"
+        manifest = self.home / "cleanup" / "runs" / "IBD" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, manifest)
         self.assertEqual(pulls.resolve("IBD", self.home).resolve(), manifest.resolve())
         command, folder = pulls.execute_command(manifest, self.home)

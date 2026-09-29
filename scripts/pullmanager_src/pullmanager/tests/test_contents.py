@@ -87,7 +87,7 @@ class TableTests(ContentsTestCase):
         text = self.contents()
         self.assertIn("**Yes: a test sample.** Each PK table holds at most 3000 rows, "
                       "a reproducible random sample", text)
-        self.assertIn("| `Cosmos/Patients.parquet` | 3 |", text)
+        self.assertIn("| `cosmos_parquets/Patients.parquet` | 3 |", text)
         self.assertIn("- `OtherHospitalizations`: 1 of its 1 run(s) are not done (failed)", text)
 
     def test_separated_batches_are_tables_of_their_own(self):
@@ -102,7 +102,7 @@ class TableTests(ContentsTestCase):
     def test_uploads_are_listed_with_their_loaded_types(self):
         self.set_status()
         uploads = self.section(self.contents(), "HospitalICDCodes")
-        self.assertIn("parquets/uploads/HospitalICDCodes.parquet", uploads)
+        self.assertIn("uploads_parquets/HospitalICDCodes.parquet", uploads)
         self.assertIn("(py: string, r: character)", uploads)
 
 

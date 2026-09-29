@@ -1,8 +1,8 @@
 """`--artifacts`: a pull's finished tables, as parquets in its run folder (D72).
 
-    runs/<project>/parquets/SneakPeek/   tables pulled from COSMOS_SneakPeek (`_sp`)
-    runs/<project>/parquets/Cosmos/      tables pulled from COSMOS
-    runs/<project>/parquets/uploads/     the uploads, copied from the split
+    runs/<project>/sneakpeek_parquets/   tables pulled from COSMOS_SneakPeek (`_sp`)
+    runs/<project>/cosmos_parquets/      tables pulled from COSMOS
+    runs/<project>/uploads_parquets/     the uploads, copied from the split
 
 Only finished tables are packaged, and the manifest decides which those are,
 never what happens to exist in Projects: a PK table once its PK phase is done,
@@ -31,10 +31,11 @@ from .normalize import NormalizationError, cosmos_database
 from .pulls import run_folder
 from .yaml_io import load_yaml
 
-PARQUETS_DIR = "parquets"
-SNEAKPEEK_DIR = "SneakPeek"
-COSMOS_DIR = "Cosmos"
-UPLOADS_DIR = "uploads"
+# At the run folder's top, beside the manifest (D142).
+SNEAKPEEK_DIR = "sneakpeek_parquets"
+COSMOS_DIR = "cosmos_parquets"
+UPLOADS_DIR = "uploads_parquets"
+PARQUET_FOLDERS = (COSMOS_DIR, SNEAKPEEK_DIR, UPLOADS_DIR)
 BATCH_COLUMN = "_batch"
 SP_SUFFIX = "_sp"
 FETCH_ROWS = 50_000
@@ -297,7 +298,9 @@ def write_part(cursor: Any, pa: Any, pq: Any, sql: str, params: list[Any],
 
 def package(manifest: Manifest, connection: Any, out_dir: Path,
             log: Callable[[str], None] = print) -> Plan:
-    """Write every finished table's parquet(s) under `out_dir`, replacing the last."""
+    """Write every finished table's parquet(s) into `out_dir`'s parquet
+    folders, replacing the last: only those folders are cleared, never the
+    run folder they sit in (D142)."""
     try:
         import pyarrow as pa
         import pyarrow.parquet as pq
@@ -307,8 +310,9 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
     if not project_db:
         raise ArtifactError("The manifest names no project_db, so there is nothing to read from.")
     result = plan(manifest)
-    if out_dir.exists():
-        shutil.rmtree(out_dir)  # each packaging replaces the last (D72)
+    for name in PARQUET_FOLDERS:
+        if (out_dir / name).exists():
+            shutil.rmtree(out_dir / name)  # each packaging replaces the last (D72)
     cursor = connection.cursor()
     for spec in result.tables:
         folder = out_dir / spec.folder
@@ -405,10 +409,11 @@ def seconds_text(seconds: float) -> str:
 
 def shown(path: Path, out_dir: Path) -> str:
     try:
-        return str(path.relative_to(out_dir.parent))
+        return path.relative_to(out_dir).as_posix()
     except ValueError:
         return str(path)
 
 
 def parquets_folder(manifest_path: Path) -> Path:
-    return run_folder(manifest_path) / PARQUETS_DIR
+    """The folder the parquet folders sit in: the run folder (D142)."""
+    return run_folder(manifest_path)

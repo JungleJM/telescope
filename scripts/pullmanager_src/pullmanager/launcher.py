@@ -30,6 +30,7 @@ from .lock import LockInfo
 from .manifest import Manifest, ManifestError
 from . import config
 from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
+from .pulls import sql_folder as pulls_sql_folder
 
 # Windows can give Execute a console window of its own; elsewhere it runs
 # unseen and its output is read from its log.
@@ -84,8 +85,10 @@ class Paths:
     is no recipes file to choose. Settings saved by an older launcher may still
     name one; unknown keys are ignored on load.
 
-    A blank split or SQL folder is the project's own, `runs/<project>/split`
-    and `runs/<project>/sql`, so two projects never share one (D57).
+    A blank split or SQL folder is the project's own: the split writes its
+    manifest into `runs/<project>` and the rest under `pull_files/split`, and
+    the SQL goes to `pull_files/sql`, so two projects never share one (D57,
+    D142).
     """
 
     template: str = ""
@@ -100,12 +103,13 @@ class Paths:
         return Path(self.runs or config.RUNS_DEFAULT) / run_folder_name(_require(self.template, "transfer YAML"))
 
     def split_folder(self) -> Path:
+        """Where Export split writes: the folder that holds the manifest."""
         chosen = self.split_dir.strip()
-        return Path(chosen) if chosen else self.run_dir() / "split"
+        return Path(chosen) if chosen else self.run_dir()
 
     def sql_folder(self) -> Path:
         chosen = self.sql_dir.strip()
-        return Path(chosen) if chosen else self.run_dir() / "sql"
+        return Path(chosen) if chosen else pulls_sql_folder(self.run_dir())
 
     def manifest(self) -> Path:
         return self.split_folder() / MANIFEST_FILENAME

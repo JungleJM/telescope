@@ -128,9 +128,9 @@ def live_lock(manifest: str | Path, now: float | None = None) -> LockInfo | None
 
 
 def pull_name(manifest: str | Path) -> str:
-    """`IBD_Ancestry` for `runs/IBD_Ancestry/split/pullmanifest.yaml`."""
+    """`IBD_Ancestry` for `runs/IBD_Ancestry/pullmanifest.yaml` (D142)."""
     manifest = Path(manifest)
-    return manifest.parent.parent.name if manifest.parent.name == "split" else str(manifest)
+    return manifest.parent.name if manifest.name == "pullmanifest.yaml" else str(manifest)
 
 
 def held_message(held: LockInfo, manifest: str | Path, now: float | None = None) -> str:

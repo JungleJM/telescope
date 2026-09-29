@@ -400,11 +400,11 @@ class PkParquetTests(SessionTestCase):
         with self.runner(projects={"pk_rows": 5}) as runner:
             report = runner.execute()
         self.assertTrue(report.ok, report.failed)
-        path = self.root.parent / "parquets" / "Cosmos" / "Patients.parquet"
+        path = self.root / "cosmos_parquets" / "Patients.parquet"
         self.assertTrue(path.is_file(), report.warnings)
         self.assertEqual(pq.read_metadata(path).num_rows, 5)
         pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
-        self.assertEqual(pk.outputs["pk_parquet"], {"file": "parquets/Cosmos/Patients.parquet", "rows": 5})
+        self.assertEqual(pk.outputs["pk_parquet"], {"file": "cosmos_parquets/Patients.parquet", "rows": 5})
 
     def test_it_is_written_before_any_run(self):
         from .. import artifacts

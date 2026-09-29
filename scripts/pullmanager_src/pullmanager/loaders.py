@@ -45,9 +45,11 @@ PARQUETS = Path(r"{parquets}")
 
 
 def load_parquets(folder=PARQUETS):
-    """Every parquet under `folder`, by table name, opened but not read."""
+    """Every parquet in `folder`'s *_parquets folders, by table name, opened
+    but not read. pull_files/ is left alone: it holds the uploads as sent."""
     return {{path.stem: ds.dataset(path, format="parquet")
-            for path in sorted(Path(folder).rglob("*.parquet"))}}
+            for path in sorted(p for d in sorted(Path(folder).glob("*_parquets"))
+                               for p in d.rglob("*.parquet"))}}
 
 
 tables = load_parquets()
@@ -73,7 +75,10 @@ library(dplyr)
 PARQUETS <- "{parquets}"
 
 load_parquets <- function(folder = PARQUETS, envir = globalenv()) {{
-  files <- sort(list.files(folder, pattern = "\\\\.parquet$", recursive = TRUE, full.names = TRUE))
+  # Only the *_parquets folders: pull_files/ holds the uploads as sent.
+  folders <- list.dirs(folder, recursive = FALSE)
+  folders <- folders[grepl("_parquets$", folders)]
+  files <- sort(list.files(folders, pattern = "\\\\.parquet$", recursive = TRUE, full.names = TRUE))
   names <- sub("\\\\.parquet$", "", basename(files))
   for (i in seq_along(files)) assign(names[i], open_dataset(files[i]), envir = envir)
   invisible(names)

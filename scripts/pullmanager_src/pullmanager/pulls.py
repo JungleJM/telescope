@@ -27,8 +27,12 @@ from .models import DONE, FAILED, PENDING, RUNNING, SKIPPED
 from .yaml_io import load_yaml
 
 RUNS_DIR = "runs"  # the default; datascope.json may say otherwise (D111)
+# The run folder (D142): the manifest, the latest log and the parquets at its
+# top; earlier logs in older_logs/; the split and SQL under pull_files/.
+PULL_FILES_DIR = "pull_files"
 SPLIT_DIR = "split"
-LOGS_DIR = "logs"
+SQL_DIR = "sql"
+OLDER_LOGS_DIR = "older_logs"
 MANIFEST_FILENAME = "pullmanifest.yaml"
 # Dropped from a transfer YAML's file name to name its run folder (D57);
 # `_temp` is what intakes were called before D95.
@@ -78,21 +82,34 @@ def home_folders(cwd: Path | None = None) -> list[Path]:
 
 
 def run_folder(manifest: str | Path) -> Path:
-    """`runs/<project>` for its split's manifest; the manifest's own folder
-    for one kept anywhere else."""
-    manifest = Path(manifest)
-    return manifest.parent.parent if manifest.parent.name == SPLIT_DIR else manifest.parent
+    """`runs/<project>`: the manifest's own folder (D142)."""
+    return Path(manifest).parent
 
 
 def logs_folder(manifest: str | Path) -> Path:
-    """Where Execute writes what it prints (D68): `runs/<project>/logs`."""
-    return run_folder(manifest) / LOGS_DIR
+    """Where Execute writes its log (D68): the run folder itself, where the
+    latest sits; the ones before it are in `older_logs/` (D142)."""
+    return run_folder(manifest)
+
+
+def older_logs_folder(manifest: str | Path) -> Path:
+    return run_folder(manifest) / OLDER_LOGS_DIR
+
+
+def split_folder(manifest: str | Path) -> Path:
+    return run_folder(manifest) / PULL_FILES_DIR / SPLIT_DIR
+
+
+def sql_folder(run_dir: str | Path) -> Path:
+    return Path(run_dir) / PULL_FILES_DIR / SQL_DIR
 
 
 def newest_log(manifest: str | Path) -> Path | None:
     """The latest `execute-<date>-<time>.log`; the names sort by time."""
     try:
         logs = sorted(logs_folder(manifest).glob("execute-*.log"))
+        if not logs:
+            logs = sorted(older_logs_folder(manifest).glob("execute-*.log"))
     except OSError:
         return None
     return logs[-1] if logs else None
@@ -118,11 +135,11 @@ def manifest_in(home: Path, name: str) -> Path | None:
     matches = [
         folder for folder in sorted(runs.iterdir())
         if folder.name.lower() == name.lower()
-        and (folder / SPLIT_DIR / MANIFEST_FILENAME).is_file()
+        and (folder / MANIFEST_FILENAME).is_file()
     ]
     exact = [folder for folder in matches if folder.name == name]
     chosen = (exact or matches or [None])[0]
-    return chosen / SPLIT_DIR / MANIFEST_FILENAME if chosen else None
+    return chosen / MANIFEST_FILENAME if chosen else None
 
 
 def resolve(argument: str, cwd: Path | None = None) -> Path:
@@ -132,9 +149,9 @@ def resolve(argument: str, cwd: Path | None = None) -> Path:
     if given.is_file() and is_manifest_file(given):
         return given
     if given.is_dir():
-        for candidate in (given / MANIFEST_FILENAME, given / SPLIT_DIR / MANIFEST_FILENAME):
-            if candidate.is_file():
-                return candidate
+        candidate = given / MANIFEST_FILENAME
+        if candidate.is_file():
+            return candidate
     # A path that is not there is a mistyped path, not a project's name.
     written_as_path = bool(re.search(r"[\\/]", argument)) or (
         Path(argument).name.lower() == MANIFEST_FILENAME
@@ -154,7 +171,7 @@ def not_found_message(argument: str, name: str, cwd: Path) -> str:
     looked = " and ".join(str(home) for home in home_folders(cwd))
     lines = [
         f"No pull named {argument!r}: looked for "
-        f"{config.runs_setting(cwd) / name / SPLIT_DIR / MANIFEST_FILENAME} in {looked}."
+        f"{config.runs_setting(cwd) / name / MANIFEST_FILENAME} in {looked}."
     ]
     pulls = find_pulls(cwd)
     if pulls:
@@ -259,7 +276,7 @@ def find_pulls(cwd: Path | None = None) -> list[Pull]:
         if not runs.is_dir():
             continue
         for folder in sorted(runs.iterdir(), key=lambda p: p.name.lower()):
-            manifest = folder / SPLIT_DIR / MANIFEST_FILENAME
+            manifest = folder / MANIFEST_FILENAME
             if not manifest.is_file() or manifest.resolve() in seen:
                 continue
             seen.add(manifest.resolve())
@@ -272,12 +289,12 @@ def execute_command(manifest: Path, cwd: Path | None = None,
     """The command that pulls this manifest, and the folder to type it in.
 
     By its project's name when it sits where names find it
-    (`runs/<name>/split/`); by its path otherwise.
+    (`runs/<name>/`); by its path otherwise.
     """
     manifest = Path(manifest).resolve()
-    split, run_dir = manifest.parent, manifest.parent.parent
+    run_dir = manifest.parent
     here = Path(cwd or Path.cwd()).resolve()
-    if manifest.name == MANIFEST_FILENAME and split.name == SPLIT_DIR:
+    if manifest.name == MANIFEST_FILENAME:
         for home in [here, *home_folders(here)]:
             if config.runs_dir(home).resolve() == run_dir.parent:
                 return f"python scope.py {option} {run_dir.name}", Path(home).resolve()

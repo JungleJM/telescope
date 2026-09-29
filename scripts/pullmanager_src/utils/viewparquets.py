@@ -329,8 +329,8 @@ class ParquetViewer(tk.Tk):
 
     def pick_files(self) -> None:
         # Beside a pull's files (Artifacts copies this script there), start in
-        # its parquets folder.
-        beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parquets")
+        # its COSMOS parquets folder (D142).
+        beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cosmos_parquets")
         paths = filedialog.askopenfilenames(
             title="Open Parquet file",
             initialdir=beside if os.path.isdir(beside) else None,
