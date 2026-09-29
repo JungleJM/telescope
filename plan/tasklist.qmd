@@ -15,7 +15,7 @@ The old `images/` folder at the root (paste-1 to 8) is referenced by nothing now
 ::: {.callout-warning title="🟧 Your response"}
 Ok, here's an image: ![](images/paste-1.png)\
 \
-It seems to have saved it in the same folders' /image subfolder. \
+It seems to have saved it in the same folders' /image subfolder.\
 \
 Colors still aren't working. Is there no CSS that could do it? Could we have the sections designated as HTML and then do it that way? But honestly if this is where we are I'm fine with it.
 :::
@@ -29,7 +29,6 @@ Colors still aren't working. Is there no CSS that could do it? Could we have the
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
 :::
 
 # Future Breakdown of Cohort

@@ -2092,6 +2092,8 @@ and the core files somewhere they can be moved without editing code.
 
 ### D114. The dictionary records Cosmos's real types; a dictionary page outranks the VM's AI
 
+**Amended by D130:** the checked dictionary replaced the old one.
+
 **Decision.**
 
 - The dictionary's `type` is what the Cosmos dictionary page shows, not what
@@ -2183,6 +2185,8 @@ replaced whole (D42), so the VM's old `recipes/` goes on the next extraction.
 
 ### D118. Every table's written SQL is checked against its own aliases
 
+**Amended by D129:** a fact table that joins nothing the pull makes is an error.
+
 **Context.** Infant_RSV's first Execute stopped at its PK on `pk.EncounterKey`:
 a join carried from a recipe named an alias the intake's table did not have.
 Eight more of the kind were in the same intake. Validate, Export split and
@@ -2203,6 +2207,8 @@ was the first reader.
 
 ### D119. A built where line picks its operator
 
+**Amended by D131:** `=` refuses a `%` or a comma list.
+
 **Amends D105.** The builder's Value mode wrote only `=` and quoted what it
 was given, so `BETWEEN {{min_date_key}} AND {{max_date_key}}` became
 `= 'BETWEEN …'`. It becomes an operator dropdown: `=`, `<>`, `<`, `<=`, `>`,
@@ -2211,6 +2217,8 @@ and In supporting table as now. Numbers and `{{Variables}}` are written
 unquoted, text quoted.
 
 ### D120. Each table's standard where lines live in the dictionary
+
+**Amended by D130:** the lists are the checked dictionary's `standard_checks`, date windows included.
 
 **Decision.** A table in `datadictionary.yaml` may carry `standard_where`, a
 short list of conditions written without the alias. When the builder adds
@@ -2224,6 +2232,8 @@ table, never applied as a hidden rule, so the dictionary shows what is added.
 the pulls smaller and faster.
 
 ### D121. A table's description and granularity are imported, and editable
+
+**Amended by D131:** recipe columns collate too.
 
 **Decision.**
 
@@ -2242,6 +2252,8 @@ would be wrong for it; its description, though, is an addition to the
 source's.
 
 ### D122. One `makebundle.py`, which carries the queue; YAMLs can travel alone
+
+**Amended by D131:** `--no-queue`.
 
 **Amends D106** (two bundles) **and D91** (the queue).
 
@@ -2271,6 +2283,8 @@ it had written, so there is one way in. The runtime package keeps its name.
 
 ### D124. `utils.py`, and a stock list
 
+**Amended by D131:** a stock entry that is not there is said, not fatal.
+
 **Decision.**
 
 - `utils.py` opens a small window with a button for each script in `utils/`,
@@ -2283,6 +2297,8 @@ it had written, so there is one way in. The runtime package keeps its name.
 
 ### D125. The builder's layout: join rows, Duplicate, and collapsed columns
 
+**Amended by D131:** a duplicate always gets its own destination.
+
 - A join row reads as its SQL does: type, JOIN, the other table and its
   column, the operator, then "by column" and this table's column.
 - A table's buttons are Edit, Duplicate, Remove, Save as Recipe. Duplicate
@@ -2292,6 +2308,8 @@ it had written, so there is one way in. The runtime package keeps its name.
   collapsed, remembered per table while the draft is open.
 
 ### D126. Run chooses a pull from two dropdowns
+
+**Amended by D131:** Start run lists `*_transfer.yaml`.
 
 - **Running pulls**: every pull whose Execute is live, with how far it has
   got. Choosing one follows its log, shows its status, and lets Stop reach it.
@@ -2324,3 +2342,68 @@ be reused.
 - A pasted image goes in `plan/images/markdowns/<document name>/` (set in
   `.vscode/settings.json`), and "update docs" deletes the folder of any
   document that no longer exists.
+
+### D129. A fact table that joins nothing the pull makes is an error
+
+**Amends D118**, which made it a warning.
+
+**Context.** Checking UC_Visits and UC_DxHxSxRx before they went to the VM,
+their built fact tables (EDVisitHistory, HospitalAdmissions, three medication
+tables) had no join and no where line. Rendered, each read `FROM
+dbo.EdVisitFact` with nothing but NOT NULL checks: every row in Cosmos, not the
+PK's patients. Batching does not restrict a fact table by itself. A Crohn's
+pull that ran for hours had the same shape (CrohnsClinicalData's medication
+tables).
+
+**Decision.** `fact_table_not_joined` is an error. A fact table counts as joined
+when any of its lines names a table the pull makes (`{{prefix}}_...` or `#`),
+a subquery in a where line included. Its fix is the join to the PK, written
+out with the table's alias.
+
+**Why.** A warning is read after the fact; this one costs hours of Cosmos time
+and a table no one wanted. The user prefers a loud stop (D28, D45).
+
+### D130. The checked dictionary is the dictionary; its standard checks are D120's lists
+
+**Amends D120** (the seeded lists) **and D114** (only LabComponentResultFact
+checked).
+
+**Decision.**
+
+- `datadictionary_checked.yaml`, checked against the page screenshots in
+  `reference/DDict image refs/`, replaces `datadictionary.yaml`. The foot of
+  the file lists what is not yet checked or only partly seen, and the tables
+  a checked foreign key points at that the dictionary lacks.
+- Its per-table `standard_checks` are D120's `standard_where`, renamed: a
+  live row (`_IsDeleted = 0`; PatientDim also `IsCurrent`, `IsValid`,
+  `UseInCosmosAnalytics_X`) and, for a checked fact table, the partition
+  key's date window. An unchecked table with `_IsDeleted` gets
+  `_IsDeleted = 0`, as D120 seeded.
+- The builder adds them all to a new table. Remaking the existing intakes
+  added only the live-row lines a built table lacked: a date window on a
+  mother's record or a pregnancy linked to a birth could drop rows, so it is
+  the author's to add.
+
+**Consequences.** A column the pages lack is gone, so a pull naming it stops
+on the Mac: Crohns_DxHxSxRx's `MedicationOrderFact.OrderedDateKey`, which is
+not on the page, was removed from it.
+
+### D131. Smaller choices made building D118 to D127
+
+- **Recipe columns collate too** (D121): a recipe column's description follows
+  its dictionary column's, as the table's does; text already containing the
+  dictionary's is kept as it is.
+- **`=` refuses a `%` or a comma list** (D119), naming LIKE or IN, rather than
+  switching silently as Value mode did.
+- **A duplicate always gets its own destination** (D125): a recipe's default
+  would land both tables in one.
+- **Start run lists `*_transfer.yaml`** (D126); anything else is reached with
+  Browse. Run remembers only the transfer YAML and a chosen dictionary.
+- **A stock entry that is not there is said, not fatal** (D124): Artifacts
+  runs at the end of a long pull.
+- **`makebundle.py --no-queue`** builds the software alone and leaves the
+  queue (D122); `queue`, D106's word, is accepted and changes nothing. No test
+  may run a build that reaches the real queue: one did, and emptied it.
+- **The Author view's tests open intakes of their own**
+  (`scripts/yamlmanager_fixtures/temp/`): they used the pulls in
+  `YAMLs/temp/`, and remaking those broke them.

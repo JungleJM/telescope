@@ -32,7 +32,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Constraints
 
-- Code reaches the VM only through a bundle in `dist/`: `bundle.py` (the runtime), or `bundle_with_yamls.py` (with the queued transfer YAMLs). Bundles are deterministic build products and `dist/` is not committed (D106): rebuild (`python3 makebundle.py`) after a bundled file changes.
+- Code reaches the VM only through a bundle in `dist/`: `bundle.py`, the software with the queued pulls' transfer YAMLs, or `yamls_to_transfer.py`, the YAMLs alone (D122). Bundles are deterministic build products and `dist/` is not committed (D106). A build carries and then empties `YAMLs/temp/bundle_queue.txt`, so build only when a bundle is wanted; to check a build without touching the queue, `python3 makebundle.py --no-queue --out <scratch file>`. No test may reach the real queue.
 - Standard library only, unless the package appears in `reference/DSVM Plugins.yaml` (the VM's installed list). The VM runs Python 3.13.9.
 - A test that needs a package this machine lacks: look it up in `reference/DSVM Plugins.yaml` and install exactly that version, with no need to ask: `python3.13 -m pip install --user <package>==<version>` (an R package at its listed version the same way). Not listed means the VM does not have it: do not install it, and do not depend on it.
 - Nothing here can reach a database. Database code is tested against fakes, and the user runs it on the VM and reports back, often with screenshots.
