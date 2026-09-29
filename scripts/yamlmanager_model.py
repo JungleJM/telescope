@@ -20,6 +20,8 @@ Standard library and makeYaml only, so it runs wherever makeYaml does (D93).
 from __future__ import annotations
 
 import copy
+import csv
+import io
 import json
 import os
 import re
@@ -267,6 +269,41 @@ def standard_where_lines(entry: Any, alias: str) -> list[str]:
         if match:
             out.append(f"{alias}.{match.group(1)}{match.group(2)}".strip())
     return out
+
+
+def read_pasted_csv(text: str) -> tuple[list[str], list[list[str]], str]:
+    """Pasted CSV as (header, rows, what separated it) (D127). Copied from a
+    spreadsheet it is tab-separated, and read so. A blank or repeated header,
+    or a row of another width, is refused, naming the line."""
+    lines = [line for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        raise DraftError("Nothing pasted yet.")
+    tabs = "\t" in lines[0]
+    rows = list(csv.reader(io.StringIO("\n".join(lines)), delimiter="\t" if tabs else ","))
+    header = [cell.strip() for cell in rows[0]]
+    for position, cell in enumerate(header, start=1):
+        if not cell:
+            raise DraftError(f"The first line is the header, and its column {position} is blank.")
+    repeated = sorted({cell for cell in header if header.count(cell) > 1})
+    if repeated:
+        raise DraftError(f"The header names {', '.join(repeated)} more than once.")
+    if len(rows) < 2:
+        raise DraftError("Only a header: paste its rows too.")
+    for number, row in enumerate(rows[1:], start=2):
+        if len(row) != len(header):
+            raise DraftError(f"Line {number} has {len(row)} values; the header has {len(header)}.")
+    return header, rows[1:], "tabs" if tabs else "commas"
+
+
+def pasted_summary(text: str) -> tuple[bool, str]:
+    """What a paste reads as, for showing as it is typed: (ok, words)."""
+    try:
+        header, rows, separator = read_pasted_csv(text)
+    except DraftError as exc:
+        return False, str(exc)
+    first = ", ".join(rows[0])
+    return True, (f"{len(header)} columns ({', '.join(header)}), {len(rows)} row{'' if len(rows) == 1 else 's'}, separated by "
+                  f"{separator}. First row: {first}")
 
 
 def is_pk(cohort: dict[str, Any] | None) -> bool:
@@ -751,6 +788,24 @@ class Draft:
         self.doc["upload_cohorts"].append(upload)
         self._changed()
         return len(self.doc["upload_cohorts"]) - 1
+
+    def add_pasted_csv(self, name: str, text: str) -> int:
+        """Pasted rows as a named CSV in YAMLs/temp/csv/, kept to use again, and
+        a supporting table that reads it (D127). A file of that name is not
+        overwritten."""
+        name = name.strip()
+        if not name:
+            raise DraftError("Name the pasted table: it becomes csv/<name>.csv.")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise DraftError(f"`{name}` cannot name a table: letters, digits and _ only, not starting with a digit.")
+        header, rows, _ = read_pasted_csv(text)
+        path = self.ws.temp_dir / "csv" / f"{name}.csv"
+        if path.exists():
+            raise DraftError(f"{path.name} is already in {path.parent}: choose another name, or Browse to use that file.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            csv.writer(handle, lineterminator="\n").writerows([header, *rows])
+        return self.add_supporting("csv", name, self.location_for(path))
 
     def _supporting_entry(self, index: int) -> dict[str, Any]:
         uploads = self.doc["upload_cohorts"]
@@ -2214,6 +2269,39 @@ class PkTests(ModelTest):
             draft.update_pk(pending_transfer=True)
 
 
+class PastedCsvTests(ModelTest):
+    """D127: rows pasted in become a named CSV kept on the Mac, and a table that reads it."""
+
+    def test_pasted_rows_become_a_named_csv_and_a_table_reading_it(self):
+        draft = self.draft()
+        index = draft.add_pasted_csv("RsvCodes", "Code\tLabel\nJ12.1\tRSV pneumonia\nB97.4\tRSV, as the cause\n")
+        path = self.home / "YAMLs" / "temp" / "csv" / "RsvCodes.csv"
+        self.assertEqual(path.read_text(encoding="utf-8"),
+                         'Code,Label\nJ12.1,RSV pneumonia\nB97.4,"RSV, as the cause"\n')
+        upload = draft.doc["upload_cohorts"][index]
+        self.assertEqual((upload["name"], upload["file_type"], upload["file_loc"]), ("RsvCodes", "csv", "csv/RsvCodes.csv"))
+        self.assertEqual(draft.supporting_columns()["RsvCodes"], ["Code", "Label"])
+
+    def test_a_ragged_row_or_a_bad_header_is_refused_naming_it(self):
+        for text, words in (("A,B\n1,2\n3\n", "Line 3 has 1 values"), ("A,,C\n1,2,3\n", "column 2 is blank"),
+                            ("A,A\n1,2\n", "A more than once"), ("A,B\n", "Only a header")):
+            with self.subTest(text=text):
+                ok, said = pasted_summary(text)
+                self.assertFalse(ok)
+                self.assertIn(words, said)
+        self.assertTrue(pasted_summary("A,B\n1,2\n")[0])
+
+    def test_it_asks_for_a_name_and_keeps_a_file_already_there(self):
+        draft = self.draft()
+        with self.assertRaises(DraftError):
+            draft.add_pasted_csv("", "A\n1\n")
+        draft.add_pasted_csv("Codes", "A\n1\n")
+        with self.assertRaises(DraftError) as caught:
+            draft.add_pasted_csv("Codes", "A\n2\n")
+        self.assertIn("choose another name", str(caught.exception))
+        self.assertEqual((self.home / "YAMLs" / "temp" / "csv" / "Codes.csv").read_text(encoding="utf-8"), "A\n1\n")
+
+
 class SupportingTests(ModelTest):
     def test_the_files_columns_show_and_rename_and_drop_as_written(self):
         draft = self.codes_draft()
@@ -2842,7 +2930,7 @@ def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-                 SaveTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
+                 SaveTests, PastedCsvTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
                  LocationTests, FilterLineTests, RowKeyTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)

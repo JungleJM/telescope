@@ -906,6 +906,33 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
                                      pending.get() and kind.get() in model.FILE_KINDS),
         rerender=True)).pack(side="left")
     note(parent, "Name, then the file (or the Projects table's name).").pack(anchor="w")
+    paste_panel(view, parent)
+
+
+def paste_panel(view: AuthorView, parent: Any) -> None:
+    """Rows pasted in, read as they are pasted, then kept as a named CSV (D127)."""
+    box = ttk.LabelFrame(parent, text="Or paste a CSV", padding=10)
+    box.pack(fill="x", pady=(10, 0))
+    text = tk.Text(box, height=8, width=90, wrap="none", font=("Courier", 11))
+    text.pack(fill="x")
+    said = note(box, "Paste rows with their header, from a spreadsheet or a CSV.")
+    said.pack(anchor="w", pady=(4, 0))
+
+    def read(*_: Any) -> None:
+        text.edit_modified(False)
+        ok, words = model.pasted_summary(text.get("1.0", "end"))
+        said.configure(text=words, foreground=COLOURS["pass" if ok else "error"])
+
+    text.bind("<<Modified>>", read)
+    row = ttk.Frame(box)
+    row.pack(fill="x", pady=(6, 0))
+    name = tk.StringVar()
+    keep(row, name)
+    ttk.Label(row, text="Name").pack(side="left")
+    ttk.Entry(row, textvariable=name, width=24).pack(side="left", padx=4)
+    ttk.Button(row, text="Add pasted table", command=lambda: view.edit(
+        lambda: view.draft.add_pasted_csv(name.get(), text.get("1.0", "end")), rerender=True)).pack(side="left", padx=6)
+    note(row, "Kept as YAMLs/temp/csv/<name>.csv, to use again.").pack(side="left")
 
 
 # =============================================================================
@@ -2139,6 +2166,23 @@ class FilterViewTests(ViewTest):
         next(w for w in buttons if w.cget("text") == "Duplicate").invoke()
         self.root.update()
         self.assertEqual(len(self.view.draft.fact_tables()), before + 1)
+
+    def test_a_pasted_csv_is_read_as_typed_and_kept_by_name(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("supporting")
+        self.root.update()
+        box = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.LabelFrame)
+                   and w.cget("text") == "Or paste a CSV")
+        text = next(w for w in widgets(box) if isinstance(w, tk.Text))
+        text.insert("1.0", "Code\tLabel\nJ12.1\tRSV\n")
+        self.root.update()
+        labels = [str(w.cget("text")) for w in widgets(box) if isinstance(w, ttk.Label)]
+        self.assertTrue(any(l.startswith("2 columns (Code, Label), 1 row,") for l in labels), labels)
+        next(w for w in widgets(box) if isinstance(w, ttk.Entry)).insert(0, "RsvCodes")
+        next(w for w in widgets(box) if isinstance(w, ttk.Button) and w.cget("text") == "Add pasted table").invoke()
+        self.root.update()
+        self.assertTrue((self.ws.temp_dir / "csv" / "RsvCodes.csv").is_file())
+        self.assertIn("RsvCodes", [u.get("name") for _, u in self.view.draft.supporting()])
 
     def test_the_column_list_starts_closed_and_stays_as_left(self):
         self.open("Celiac_intake.yaml")
