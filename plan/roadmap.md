@@ -25,6 +25,14 @@ When an item here is built, delete it from this file and describe the result in 
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+1. **Fill in types from the dictionary** (D115): at recipe import, for every output; the dictionary wins silently; an untypeable column without a type is an error. First, because it removes the reason a dictionary correction breaks templates.
+2. **Stop writing types**: the table builder omits them, and the types in `recipes.yaml` and the intakes are removed. After 1, so the stripped files still export.
+3. **Real types in the dictionary**: the fill-in understands `nvarchar(300)`, `tinyint`, `float` and the other page types, so the user can record them as they screenshot; `string` with no length becomes `NVARCHAR(900)`.
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
@@ -118,7 +126,7 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 ### Smaller Open Items
 
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
-- **Check the dictionary's types against the pages.** Only `LabComponentResultFact` has been checked against its dictionary page (D114). The user will screenshot the other tables the recipes use; each may turn a `boolean` into `tinyint`, and a template's `BIT` into an error.
+- **Check the dictionary's types against the pages.** Only `LabComponentResultFact` has been checked against its dictionary page (D114). The user will screenshot the other tables the recipes use, recording each column's real type (D115).
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names.
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.

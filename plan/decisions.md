@@ -2107,3 +2107,35 @@ column.
 checked; each check may turn a template's `BIT` into an error that says to
 use `TINYINT`. The user will screenshot the tables the recipes use.
 
+### D115. Column types come from the dictionary, filled in at export
+
+**Amends D114** (a `BIT` on a `tinyint` column no longer arises: templates
+stop declaring types).
+
+**Decision.**
+
+- A column whose source is `alias.Column` on a dictionary table takes its
+  type from `recipes/datadictionary.yaml`, filled in when recipes are
+  imported, the step every output shares: validation, the transfer YAML,
+  Export split and Preview. The transfer YAML carries the filled types, so
+  the VM's split and dry run need nothing more.
+- The dictionary wins, silently. A type a template or recipe still declares
+  on such a column is replaced without a message. The table builder stops
+  writing types, and the types already in `recipes.yaml` and the intakes are
+  removed.
+- A column the dictionary cannot type (an expression, a generated temp, an
+  upload) keeps a declared type, and an error says so if it has none. Every
+  column in the recipes and intakes today is a dictionary column.
+- The fill-in writes the page's real type where the dictionary records one
+  (`nvarchar(300)`, `tinyint`, `float`): the widest the source can hold, so
+  nothing is cut off, and no wider. A string with no recorded length becomes
+  `NVARCHAR(900)`: Cosmos text is Unicode, which `VARCHAR` would turn to
+  `?`, and the user keeps widths under 1000. A page type of `nvarchar(max)`
+  or over 900 is left for when one appears.
+
+**Why.** Every template held its own copy of each type, taken from the
+dictionary when the table was added. Correcting the dictionary (D114) left
+the copies stale, so each correction broke the templates that had copied the
+old type, though the user never wrote a type. With one copy, a correction
+reaches every template on its next export.
+
