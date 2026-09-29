@@ -9,7 +9,7 @@ test_options:
   stop_at_for_pk_table: 10
   random_pk_sample: false
 project_vars:
-  project_folder: UC DxHxSxRx
+  project_folder: Crohns DxHxSxRx
 vars: {}
 upload_cohorts:
   - name: CrohnsPatientInfo
@@ -327,6 +327,8 @@ cohorts:
         - EdVisitFact as evf
       join:
         - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+      where:
+        - "evf._IsDeleted = 0"
   - name: HospitalAdmissions
     dest_table: HospitalAdmissions
     type: fact
@@ -442,6 +444,8 @@ cohorts:
         - HospitalAdmissionFact as haf
       join:
         - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+      where:
+        - "haf._IsDeleted = 0"
   - name: MedOrderHistory
     dest_table: MedOrderHistory
     type: fact
@@ -503,9 +507,6 @@ cohorts:
         nullable: true
       - source: mof.MorphineEquivalentDailyDosage
         name: MorphineEquivalentDailyDosage
-        nullable: true
-      - source: mof.OrderedDateKey
-        name: OrderedDateKey
         nullable: true
       - source: mof.PatientDurableKey
         name: PatientDurableKey

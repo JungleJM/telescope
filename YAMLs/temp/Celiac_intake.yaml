@@ -10,8 +10,7 @@ test_options:
   random_pk_sample: false
 project_vars:
   project_folder: Celiac
-vars:
-
+vars: 
 upload_cohorts:
   - name: HospitalICDCodes
     dest_table: HospitalICDCodes
@@ -19,10 +18,8 @@ upload_cohorts:
     file_loc: csv/HospitalICDCodes.csv
     scope: global
     push_this_cycle: true
-multipliers:
-
-batching:
-
+multipliers: 
+batching: 
 cohorts:
   - recipe: PatientWithDx
     name: CeDPatients

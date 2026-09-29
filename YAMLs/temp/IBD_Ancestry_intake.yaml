@@ -5,19 +5,48 @@ run_vars:
   min_date_key: 19900101
   max_date_key: 20260601
 test_options:
-  smallset: false
-  stop_at_for_pk_table: 10
-  random_pk_sample: false
+  smallset: true
+  stop_at_for_pk_table: 3000
+  random_pk_sample: true
 project_vars:
-  project_folder: TotalCohort
-vars:
-
+  project_folder: IBD Ancestry
+vars: 
 upload_cohorts:
-
+  - name: IBD_Meds
+    dest_table: IBD_Meds
+    file_type: parquet
+    push_this_cycle: true
+    file_loc: data/Meds/ibd/IBD_Meds.parquet
+    pending_transfer: true
 multipliers:
-
+  - name: IBDType
+    stage: during_build
+    levels:
+      - strat: Crohns
+        vars:
+          ICD_Value:
+            - "K50.%"
+      - strat: UC
+        vars:
+          ICD_Value:
+            - "K51.%"
+  - name: Race
+    stage: split_after_build
+    levels:
+      - strat: black
+        column: FirstRace
+        values:
+          - "Black%"
+      - strat: white
+        column: FirstRace
+        values:
+          - "White%"
+        role: control
+        row_mult: 4
+    applies_to: PKTable
 batching:
-
+  - sex
 cohorts:
   - recipe: PatientWithDx
     name: Patients
+  - recipe: OtherDiagnoses
