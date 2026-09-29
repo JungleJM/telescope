@@ -41,6 +41,7 @@ SECTIONS = (
     ("multipliers", "Multipliers"),
     ("splitters", "Splitters"),
     ("fact", "Fact Tables"),
+    ("groups", "Table Groups"),
 )
 # How long after the last edit the draft is checked (D96).
 VALIDATE_DELAY_MS = 400
@@ -1219,7 +1220,7 @@ def build_multipliers(view: AuthorView, parent: Any) -> None:
 def build_splitters(view: AuthorView, parent: Any) -> None:
     draft = view.draft
     heading(parent, "Splitters",
-            "Two ways to split, and each splitter says which it is. Separate tables: each level gets its "
+            "Two ways to split, and each splitter says which it is. Separate PK per level: each level gets its "
             "own PK, pulled in its own session, and its own tables (blackPatients, whitePatients), with an "
             "optional control sampled against its case. Pieces of one table: the pull runs in batches, by "
             "a PK column or by a number of rows, and the rows land in one table.")
@@ -1244,7 +1245,7 @@ def build_splitters(view: AuthorView, parent: Any) -> None:
 def separate_box(view: AuthorView, parent: Any, splitter: model.Splitter, columns: list[str]) -> None:
     draft = view.draft
     index = splitter.index
-    box = entry_box(view, parent, f"Separate tables: {splitter.name}", "splitters", index)
+    box = entry_box(view, parent, f"Separate PK per level: {splitter.name}", "splitters", index)
     head = ttk.Frame(box)
     head.pack(fill="x")
     ttk.Label(head, text="Name").pack(side="left")
@@ -1327,7 +1328,7 @@ def add_splitter(view: AuthorView, parent: Any, columns: list[str]) -> None:
     keep(box, kind)
     kinds = ttk.Frame(box)
     kinds.pack(anchor="w")
-    for value, label in (("separate", "Separate tables"), ("column", "Pieces of one table, by a PK column"),
+    for value, label in (("separate", "Separate PK per level"), ("column", "Pieces of one table, by a PK column"),
                          ("chunk", "Pieces of one table, by rows")):
         ttk.Radiobutton(kinds, text=label, value=value, variable=kind, command=lambda: (
             setattr(view, "_splitter_kind", kind.get()), view.render())).pack(side="left", padx=(0, 12))
@@ -1430,6 +1431,9 @@ def build_fact(view: AuthorView, parent: Any) -> None:
         if built and not editing and view.ws.has_recipes:
             ttk.Button(head, text="Save as Recipe", command=lambda i=index: save_as_recipe(view, i)).pack(side="left", padx=4)
         note(box, "Type a position and press Enter to move it; the PK keeps its place.").pack(anchor="w")
+        group = draft.group_of(str(cohort.get("name") or ""))
+        note(box, f"Table group: {group}" if group else
+             "Table group: none (runs with the other tables in no group)").pack(anchor="w")
         if not built:
             texts = ttk.Frame(box)
             texts.pack(fill="x", pady=(4, 0))
@@ -1684,6 +1688,57 @@ class ExportsPanel:
         self.refresh()
 
 
+# =============================================================================
+# Table Groups (D134)
+# =============================================================================
+
+
+def build_groups(view: AuthorView, parent: Any) -> None:
+    draft = view.draft
+    heading(parent, "Table Groups",
+            "Each group is pulled on a Cosmos connection of its own, every batch of it before the next "
+            "group, so the log names what is being pulled and a stuck or failed group costs only itself. "
+            "Inside a group, tables run in Fact Tables order; a table cannot read a table in another group.")
+    note(parent, "Tables in no group run together, as one group, after the groups.").pack(anchor="w", pady=(0, 6))
+    ungrouped = draft.ungrouped_tables()
+    for index, name, tables in draft.table_groups():
+        box = entry_box(view, parent, f"Table group: {name}", "groups", index)
+        head = ttk.Frame(box)
+        head.pack(fill="x")
+        ttk.Label(head, text="Name").pack(side="left")
+        text_field(view, head, name, lambda v, i=index: draft.rename_group(i, v)).pack(side="left", padx=6)
+        ttk.Button(head, text="Remove group", command=lambda i=index: view.edit(
+            lambda: draft.remove_group(i), rerender=True)).pack(side="right")
+        for table in tables:
+            row = ttk.Frame(box)
+            row.pack(fill="x", pady=1)
+            ttk.Label(row, text=table, width=32).pack(side="left")
+            ttk.Button(row, text="Remove table from group", command=lambda i=index, t=table: view.edit(
+                lambda: draft.remove_from_group(i, t), rerender=True)).pack(side="left", padx=6)
+        if not tables:
+            note(box, "No tables yet, so it pulls nothing.", "warning").pack(anchor="w")
+        add = ttk.Frame(box)
+        add.pack(fill="x", pady=(6, 0))
+        if ungrouped:
+            choice = tk.StringVar(value=ungrouped[0])
+            keep(add, choice)
+            ttk.Combobox(add, textvariable=choice, values=ungrouped, state="readonly", width=30).pack(side="left")
+            ttk.Button(add, text="Add table to group", command=lambda i=index, c=choice: view.edit(
+                lambda: draft.add_to_group(i, c.get()), rerender=True)).pack(side="left", padx=6)
+        else:
+            note(add, "Every fact table is in a group.").pack(anchor="w")
+    if not draft.table_groups():
+        note(parent, "No table groups: every table runs together, on one connection.").pack(anchor="w")
+    add = ttk.Frame(parent)
+    add.pack(fill="x", pady=(10, 0))
+    name = tk.StringVar()
+    keep(add, name)
+    ttk.Entry(add, textvariable=name, width=24).pack(side="left")
+    ttk.Button(add, text="Add group", command=lambda: view.edit(
+        lambda: draft.add_group(name.get()), rerender=True)).pack(side="left", padx=6)
+    note(add, "A name, such as Meds.").pack(side="left")
+
+
 SECTION_BUILDERS: dict[str, Callable[[AuthorView, Any], None]] = {
     "project": build_project,
     "pk": build_pk,
@@ -1691,6 +1746,7 @@ SECTION_BUILDERS: dict[str, Callable[[AuthorView, Any], None]] = {
     "multipliers": build_multipliers,
     "splitters": build_splitters,
     "fact": build_fact,
+    "groups": build_groups,
 }
 
 
@@ -1864,7 +1920,7 @@ class SplitAndFactViewTests(ViewTest):
         self.root.update()
         titles = [w.cget("text") for w in widgets(self.view.body.inner) if isinstance(w, ttk.LabelFrame)]
         self.assertIn("Pieces of one table: by Sex", titles)
-        self.assertIn("Separate tables: Race", titles)
+        self.assertIn("Separate PK per level: Race", titles)
 
     def test_the_binding_picker_binds_what_is_chosen(self):
         self.open("AllCohort_intake.yaml")
@@ -1886,6 +1942,42 @@ class SplitAndFactViewTests(ViewTest):
         last = self.view.draft.fact_tables()[-1][0]
         self.view.edit(lambda: self.view.draft.move_fact_table(last, 1), rerender=True)
         self.assertEqual([c.get("name") for _, c in self.view.draft.fact_tables()], [names[-1]] + names[:-1])
+
+
+class TableGroupViewTests(ViewTest):
+    """D134: groups made, filled and emptied in the view."""
+
+    def button(self, text: str) -> Any:
+        return next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Button) and w.cget("text") == text)
+
+    def labels(self) -> list[str]:
+        return [str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
+
+    def test_a_group_is_made_filled_and_named_on_its_table(self):
+        self.open("AllCohort_intake.yaml")
+        self.view.show_section("groups")
+        self.assertIn("No table groups: every table runs together, on one connection.", self.labels())
+        add = self.button("Add group")
+        entry = next(w for w in add.master.winfo_children() if isinstance(w, ttk.Entry))
+        entry.insert(0, "Meds")
+        add.invoke()
+        self.root.update()
+        self.assertEqual([name for _, name, _ in self.view.draft.table_groups()], ["Meds"])
+        first = self.view.draft.ungrouped_tables()[0]
+        picker = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox))
+        self.assertEqual(picker.get(), first)
+        self.button("Add table to group").invoke()
+        self.root.update()
+        self.assertEqual(self.view.draft.doc["table_groups"], [{"name": "Meds", "tables": [first]}])
+        self.view.show_section("fact")
+        self.assertIn("Table group: Meds", self.labels())
+        self.view.show_section("groups")
+        self.button("Remove table from group").invoke()
+        self.root.update()
+        self.assertEqual(self.view.draft.table_groups()[0][2], [])
+        self.button("Remove group").invoke()
+        self.root.update()
+        self.assertNotIn("table_groups", self.view.draft.doc)
 
 
 class ValidateAndExportViewTests(ViewTest):
@@ -2221,7 +2313,7 @@ def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite([loader.loadTestsFromTestCase(case)
                                 for case in (SectionViewTests, SplitAndFactViewTests,
                                              ValidateAndExportViewTests, FilterViewTests,
-                                             InlineBuilderTests)])
+                                             InlineBuilderTests, TableGroupViewTests)])
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     if _TEST_ROOT and _TEST_ROOT[0] is not None:
         _TEST_ROOT[0].destroy()

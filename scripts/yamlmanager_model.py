@@ -955,9 +955,9 @@ class Draft:
         if not (0 <= index < len(mults)) or not isinstance(mults[index], dict):
             raise DraftError(f"There is no multiplier at {index}.")
         if stage == "split_after_build" and mults[index].get("stage") != stage:
-            raise DraftError(f"Multiplier {mults[index].get('name')} is not a Separate tables splitter.")
+            raise DraftError(f"Multiplier {mults[index].get('name')} is not a Separate PK per level splitter.")
         if stage == "during_build" and mults[index].get("stage") == "split_after_build":
-            raise DraftError(f"{mults[index].get('name')} is a Separate tables splitter, under Splitters.")
+            raise DraftError(f"{mults[index].get('name')} is a Separate PK per level splitter, under Splitters.")
         return mults[index]
 
     def add_multiplier(self, name: str = "") -> int:
@@ -1218,17 +1218,112 @@ class Draft:
         # Its own, always: a recipe's would land both tables in one destination.
         copy_of["dest_table"] = name
         self.doc["cohorts"].insert(index + 1, copy_of)
+        # In the same table group, right after the table it copies (D134).
+        for group in self._groups():
+            tables = group.get("tables")
+            if isinstance(tables, list) and base in tables:
+                tables.insert(tables.index(base) + 1, name)
         self._changed()
         return index + 1
 
     def rename_table(self, index: int, name: str) -> None:
-        self._cohort(index)["name"] = name.strip()
+        cohort = self._cohort(index)
+        old, name = str(cohort.get("name") or ""), name.strip()
+        cohort["name"] = name
+        # A group lists its tables by name, so it follows the rename (D134).
+        for group in self._groups():
+            tables = group.get("tables")
+            if isinstance(tables, list) and old and old in tables:
+                tables[tables.index(old)] = name
         self._changed()
 
     def remove_fact_table(self, index: int) -> None:
-        if self.cohort_is_pk(self._cohort(index)):
+        cohort = self._cohort(index)
+        if self.cohort_is_pk(cohort):
             raise DraftError("That is the PK; change it under PK Table.")
         del self.doc["cohorts"][index]
+        for group in self._groups():
+            tables = group.get("tables")
+            if isinstance(tables, list) and cohort.get("name") in tables:
+                tables.remove(cohort.get("name"))
+        self._changed()
+
+    # --------------------------------------------------------- table groups
+
+    def _groups(self) -> list[dict[str, Any]]:
+        groups = self.doc.get("table_groups")
+        return [g for g in groups if isinstance(g, dict)] if isinstance(groups, list) else []
+
+    def table_groups(self) -> list[tuple[int, str, list[str]]]:
+        """Each table group (D134): its place, its name and its tables, in the order they run."""
+        return [
+            (i, str(g.get("name") or ""), [str(t) for t in g.get("tables") or []])
+            for i, g in enumerate(self.doc.get("table_groups") or []) if isinstance(g, dict)
+        ]
+
+    def _group(self, index: int) -> dict[str, Any]:
+        groups = self.doc.get("table_groups")
+        if not isinstance(groups, list) or not (0 <= index < len(groups)) or not isinstance(groups[index], dict):
+            raise DraftError(f"There is no table group at {index}.")
+        return groups[index]
+
+    def _group_name(self, name: str, index: int | None = None) -> str:
+        name = str(name or "").strip()
+        if not name:
+            raise DraftError("A table group needs a name, such as Meds.")
+        if my.safe_id(name, "group").lower() in my.RESERVED_GROUP_IDS:
+            raise DraftError(f"A table group cannot be called {name}: the tables in no group run under that name.")
+        for i, other, _ in self.table_groups():
+            if i != index and my.safe_id(other, "group") == my.safe_id(name, "group"):
+                raise DraftError(f"There is a table group called {other} already.")
+        return name
+
+    def add_group(self, name: str) -> int:
+        groups = self.doc.get("table_groups")
+        if not isinstance(groups, list):
+            groups = self.doc["table_groups"] = []
+        groups.append({"name": self._group_name(name), "tables": []})
+        self._changed()
+        return len(groups) - 1
+
+    def rename_group(self, index: int, name: str) -> None:
+        self._group(index)["name"] = self._group_name(name, index)
+        self._changed()
+
+    def remove_group(self, index: int) -> None:
+        """Its tables go back to running with the tables in no group."""
+        self._group(index)
+        del self.doc["table_groups"][index]
+        if not self.doc["table_groups"]:
+            del self.doc["table_groups"]
+        self._changed()
+
+    def group_of(self, table: str) -> str | None:
+        return next((name for _, name, tables in self.table_groups() if table in tables), None)
+
+    def ungrouped_tables(self) -> list[str]:
+        """The fact tables in no group, in Fact Tables order: what a group can take."""
+        return [str(c.get("name")) for _, c in self.fact_tables()
+                if c.get("name") and self.group_of(str(c.get("name"))) is None]
+
+    def add_to_group(self, index: int, table: str) -> None:
+        group = self._group(index)
+        names = [str(c.get("name")) for _, c in self.fact_tables()]
+        if table not in names:
+            raise DraftError(f"{table} is not a fact table here.")
+        owner = self.group_of(table)
+        if owner is not None:
+            raise DraftError(f"{table} is in table group {owner}; remove it from there first.")
+        if not isinstance(group.get("tables"), list):
+            group["tables"] = []
+        group["tables"].append(table)
+        self._changed()
+
+    def remove_from_group(self, index: int, table: str) -> None:
+        tables = self._group(index).get("tables")
+        if not isinstance(tables, list) or table not in tables:
+            raise DraftError(f"{table} is not in that group.")
+        tables.remove(table)
         self._changed()
 
     def move_fact_table(self, index: int, position: int) -> None:
@@ -1523,7 +1618,7 @@ class Draft:
     def field_of(self, context: str) -> FieldRef | None:
         """The Builder field a message's context names, so a view can go there."""
         context = str(context or "")
-        match = re.match(r"^(cohorts|upload_cohorts|multipliers|batching)\[(\d+)\]\s*(.*)$", context)
+        match = re.match(r"^(cohorts|upload_cohorts|multipliers|batching|table_groups)\[(\d+)\]\s*(.*)$", context)
         if match:
             where, index, detail = match.group(1), int(match.group(2)), match.group(3)
             return FieldRef(self._section_of(where, index), index, detail.strip())
@@ -1550,6 +1645,8 @@ class Draft:
             return "pk" if is_pk(item) else "supporting"
         if where == "multipliers":
             return "splitters" if item.get("stage") == "split_after_build" else "multipliers"
+        if where == "table_groups":
+            return "groups"
         return "splitters"
 
     # ------------------------------------------------------- save and export
@@ -2926,12 +3023,78 @@ class FilterLineTests(ModelTest):
         self.assertEqual(len(draft.doc["cohorts"][index]["filter"]["where"]), 2)
 
 
+class TableGroupModelTests(ModelTest):
+    """D134: table groups edited in the app, written as makeYaml reads them."""
+
+    def two_tables(self) -> Draft:
+        draft = self.codes_draft()
+        draft.bind(1, "CodesTable", "Codes")
+        draft.duplicate_table(1)  # Codes_copy, its own destination
+        return draft
+
+    def test_a_group_is_written_as_makeyaml_reads_it_and_checks(self):
+        draft = self.two_tables()
+        at = draft.add_group("Meds")
+        draft.add_to_group(at, "Codes")
+        self.assertEqual(draft.doc["table_groups"], [{"name": "Meds", "tables": ["Codes"]}])
+        self.assertEqual(draft.group_of("Codes"), "Meds")
+        self.assertEqual(draft.ungrouped_tables(), ["Codes_copy"])
+        check = draft.validate()
+        self.assertTrue(check.ok, [m.text for m in check.messages if m.kind == "error"])
+
+    def test_renaming_removing_and_duplicating_a_table_keep_its_group_true(self):
+        draft = self.two_tables()
+        at = draft.add_group("Meds")
+        draft.add_to_group(at, "Codes")
+        draft.rename_table(1, "Orders")
+        self.assertEqual(draft.table_groups()[0][2], ["Orders"])
+        draft.duplicate_table(1)
+        self.assertEqual(draft.table_groups()[0][2], ["Orders", "Orders_copy"])
+        draft.remove_fact_table(1)
+        self.assertEqual(draft.table_groups()[0][2], ["Orders_copy"])
+        self.assertTrue(draft.validate().ok)
+
+    def test_what_is_refused(self):
+        draft = self.two_tables()
+        at = draft.add_group("Meds")
+        draft.add_to_group(at, "Codes")
+        other = draft.add_group("Visits")
+        for attempt, says in (
+            (lambda: draft.add_to_group(other, "Codes"), "in table group Meds"),
+            (lambda: draft.add_to_group(other, "Patients"), "not a fact table"),
+            (lambda: draft.add_group(""), "needs a name"),
+            (lambda: draft.add_group("run"), "cannot be called run"),
+            (lambda: draft.add_group("meds "), None),
+            (lambda: draft.rename_group(other, "Meds"), "called Meds already"),
+            (lambda: draft.remove_from_group(other, "Codes"), "not in that group"),
+        ):
+            if says is None:
+                continue
+            with self.subTest(says=says):
+                with self.assertRaises(DraftError) as caught:
+                    attempt()
+                self.assertIn(says, str(caught.exception))
+
+    def test_removing_the_last_group_leaves_no_list(self):
+        draft = self.two_tables()
+        draft.add_group("Meds")
+        draft.remove_group(0)
+        self.assertNotIn("table_groups", draft.doc)
+
+    def test_a_group_message_points_at_the_groups_section(self):
+        draft = self.two_tables()
+        draft.doc["table_groups"] = [{"name": "Meds", "tables": ["Nope"]}]
+        draft._changed()
+        message = next(m for m in draft.validate().messages if m.code == "unknown_group_table")
+        self.assertEqual((message.field.section, message.field.index), ("groups", 0))
+
+
 def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
                  SaveTests, PastedCsvTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
-                 LocationTests, FilterLineTests, RowKeyTests):
+                 LocationTests, FilterLineTests, RowKeyTests, TableGroupModelTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1
