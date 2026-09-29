@@ -14,6 +14,29 @@ That is all a new chat needs, because the rest is already written down. It reads
 
 # 
 
+# Table Groups And Recipe Sets: Built, To Discuss
+
+::: {.callout-note title="🟦 Claude: what was built, and the choices made along the way"}
+Built in the roadmap's order (D134, D135), one commit each, every suite passing: the ordering check (`c959e17`), groups at run time (`fea4697`), groups in the app (`44c78ba`), recipe sets (`5dbe0d6`). The plan documents are not yet updated, and no bundle carries this: `dist/bundle.py` (`738793…`) is the progress lines (D136) and `clear_projects_db` only.
+
+**Choices made while building, for you to confirm or change:**
+
+1.  **The first group shares the PK's connection.** A new connection opens only when the group changes, so a template with no groups runs exactly as before, and the first group saves one reload of the PK.
+2.  **Groups run in the order the Table Groups section lists them**, then the tables in no group, last.
+3.  **Add table to group offers only tables in no group.** A table in another group is refused ("remove it from there first"), not moved.
+4.  **Duplicate puts the copy in the original's group**, right after it.
+5.  **Save as recipe set** saves a prefabricated table as the template has it (its bindings to its siblings, its variables and filters). A table built from the dictionary is saved as a recipe too, in the same write, because a set names recipes. A name already in `recipes.yaml` is refused, and the file is left unchanged.
+6.  **Artifacts packages a finished group's tables even while another group is unfinished.** Before, every table waited for every run. It also read only the session's first run, so it would have missed every group but the first.
+7.  **The temp prefix stays the session's** on every group connection.
+
+**Found, not fixed:** in a template with multipliers, a fact table that reads another fact table names the base table (`##ibdanc_Orders`), not its level's copy (`UCOrders`), so it reads a table that does not exist. This is already on the roadmap (Generated-table dependencies). The ordering check matches base names, so it still checks the order.
+
+**For you to decide:** whether 1 to 7 stand; then I'll update design.md and the roadmap, and build a bundle with groups once the remade pulls have run.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
 # Settled
 
 Nothing waiting. The progress lines are D136; table groups and recipe sets are D134 and D135, with the order in the roadmap ("Next, Once The Pulls Run").
