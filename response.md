@@ -7,19 +7,17 @@ The builder always shows every column. **Recommendation:** a "Columns (39) ▸" 
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+great.
 :::
 
 - Number matching on the joints is not working. I put a patient durable key join against a string called fourth race and it said number match.But when I went to actually add the join, it said 'not joined: VarChar(400) vs BIGINT. So it does work just not in teh area where the number match statement is.
 
   - ![](images/paste-1.png)
 
-::: {.callout-note title="🟦 Claude: a stale "number match""}
-A real bug. The match label refreshes only when you change the *other* table or its column. Changing this table's column (to FourthRace) left the old "number match" showing, and Add join then refused correctly. **Fix:** refresh the label on every dropdown in the row.
-:::
+::: {.callout-note title="🟦 Claude: a stale "number match""} A real bug. The match label refreshes only when you change the *other* table or its column. Changing this table's column (to FourthRace) left the old "number match" showing, and Add join then refused correctly. **Fix:** refresh the label on every dropdown in the row. :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+yes, agreed.
 :::
 
 - I'm putting things in like p.IsValid = 1 (for p as PatientDim), but it needs to check and see if that exists. I'm doing it as a free text so maybe that's why it's not doing it. It also doesn't update if I change the column.
@@ -31,7 +29,7 @@ True today: validation checks output columns against the dictionary, never where
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+yes, and ok.
 :::
 
 - When I use the value and do a manual add of a between function, I don't think it's doing it correctly.It is currently putting it in quotes and an equal next to it.I think the best option would be to instead of have value have a series of value options such as '=', 'BETWEEN', '\<\>'. For Between, it should allow for two input fields, a 'lower' and 'higher'.
@@ -49,7 +47,7 @@ Numbers and `{{Variables}}` are written unquoted and text quoted, so `BETWEEN {{
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+agree with rec.
 :::
 
 - I think a few things are always going to be done for each table add - \_isDeleted =0,
@@ -61,19 +59,17 @@ Numbers and `{{Variables}}` are written unquoted and text quoted, so `BETWEEN {{
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+I like the idea of a short list for each table. \_isDeleted is a good one, something about currently used is another. It doesn't ahve to be a huge thing, because I'm sure they cull some data out but it still makes things faster.
 :::
 
 - I got this error after I'd fixed another error in a different table. The validate now says 'valid: ready to save and transfer'. I had incorrectly wrote DiagnosisTerminologyDIm for a join, when it's DiagnosisTerminologyDim. I fixed it, but now this seems to show as an error. Is this an artifact? hitting save (which should refresh) doesn't remove it
 
   - ![](images/paste-3.png)
 
-::: {.callout-note title="🟦 Claude: "Validate points here" left behind"}
-A real bug. The marker is set when you double-click a message, and only cleared by opening a different section; a later clean check never clears it. **Fix:** each check clears the marker once no message points there.
-:::
+::: {.callout-note title="🟦 Claude: "Validate points here" left behind"} A real bug. The marker is set when you double-click a message, and only cleared by opening a different section; a later clean check never clears it. **Fix:** each check clears the marker once no message points there. :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+great, agree.
 :::
 
 - And editing the description and granularity of a fact table. Right now we have it do an override in case there's anything that I add. I think it might be better to just import what is currently there. That way I can see what it is and then also add information at the beginning or end instead.
@@ -83,7 +79,7 @@ A new dictionary table starts with these empty, though the dictionary has both f
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+I think we should import it in, and then I can delete the whole thing and change it, leave it in, or add in more data. Definitely from data dictionary. I'd say that you should merge the two recipe - we just need a convention that we only add additional info in recipe, not copy the original.
 :::
 
 - I want to reverse the order of the tables in the JOIN sections. I wanted to say the (Join type select) JOIN (other table selector) (other table column) (connector =, \<\> etc) 'by column' (this table column elector). This is how the code does it as well so it ties them together:
@@ -99,7 +95,7 @@ Agreed: **type** JOIN **other table · its column** **op** by column **this tabl
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+sounds good
 :::
 
 - Sometimes I do a table that I want to just duplicate, but change the name or change a couple join or where logic rules. So I'd like to have a duplicate button. Probably before 'Save as Recipe'. Now that I think of it, order should be Edit, Duplicate, Remove, Save as Recipe
@@ -111,7 +107,7 @@ Agreed. The buttons become Edit, Duplicate, Remove, Save as Recipe. Duplicate co
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+great, lets do it
 :::
 
 ## Exports section
@@ -126,7 +122,7 @@ It takes each intake, makes its transfer YAML, and bundles the transfer. **Recom
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+yes
 :::
 
 - Also, clicking a 'bundle' option here should bundle JUST the yamls. that way I could have something like 'yamls_to_transfer.py' in 'dist'. i'd also like a 'Bundle With Manager' button that does the full bundle of both microscope and yamls. That way I can just transfer over things when there's no need to overwrite the software. If I do python bundle.py it should assume that all yamls that are qeued are to be bundles as well. Essentially, 'python bundle.py' should just bundle the miscrope itself only if there are no queued yamls. any time there's a queued yaml then they go along for the ride.
@@ -145,7 +141,8 @@ As I read your answer:
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+empty after each bundle. \
+Microscope - I think I'm going to call this Datascope for now, and then for specific companies I'll have offshoot names. For instance, Epic's will be 'telescope', because it's epic Cosmos, and telescopes look through the cosmos. But for census data, genetics databases, etc. I would think of a theme related to that field. Maybe the census one for somethign like Social Explorer could be Weather Baloon, etc. Somethign i'm toying with.
 :::
 
 # Utils
@@ -160,7 +157,7 @@ Agreed: a small window with a button per script in `utils/`, each run as its own
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+yup! and can we have the manager be 'scope.py' instead of pullmanager.py? easier to write.
 :::
 
 you'll probably have to move viewparquets.py over to /utils. Have /stock have soem sort of little yaml or somethign that will pull scripts from various sections. I like a yaml so I can organize the folder within stock. That way I can add custom python/r scripts as I go, and i know it'll be added to the stock of each when done.
@@ -170,7 +167,6 @@ you'll probably have to move viewparquets.py over to /utils. Have /stock have so
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
 :::
 
 # Runtime errors
@@ -191,7 +187,7 @@ When I copied in bundle_with_yamls.py this time, I ran the extraction fine, and 
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+so eventually the reader did open, so you're probably right about the loading from network drive. That's not an issue if that's what needs to be done. These things turned on fine, so i think the TDD cautght something that wasn't stopping the startup. I agree with the fixes here.
 :::
 
 # Cleanup
@@ -203,7 +199,7 @@ For any quarto, there should be a specific way to have the images embed with the
 ::: {.callout-note title="🟦 Claude: pasted images"}
 Neither Markdown nor Quarto can put a pasted image inside the source file itself (base64 would make it unreadable; Quarto's `embed-resources` embeds only in the rendered HTML). What you can control is where a paste goes. In VSCodium or Positron, set `markdown.copyFiles.destination` so each document's pastes go in a folder named after it:
 
-```json
+``` json
 "markdown.copyFiles.destination": { "**/*.{md,qmd}": "${documentDirName}/${documentBaseName}_images/${fileName}" }
 ```
 
@@ -211,7 +207,7 @@ Then `response.md` gets `response_images/` beside it: delete the two together an
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+I think the easiest thing might be a folder 'images' in 'plan' as i mentioned, in subfolder 'markdowns', each folder is named after the file.
 :::
 
 # Infant_RSV failed at Execute
@@ -225,34 +221,33 @@ Then `response.md` gets `response_images/` beside it: delete the two together an
 
 **Recommendation:**
 
-1. **makeYaml checks every table's SQL references**, in Validate on the Mac, in the app and on the VM:
-   - an alias used but never defined in the table's `from`/`join`: an **error**, naming the aliases it has ("`pk` is not defined here; this table has `evf`, `age`, `d`, `dt`");
-   - a column the dictionary doesn't list for that table: a **warning** (the dictionary lacks `_IsDeleted` on some tables your pulls use fine);
-   - a fact table joining no generated table: a **warning** (it would pull the whole table);
-   - a PK joining a many-rows table without `dedup_keys`: a **warning**.
-2. **The builder checks a written line as you add it**, refusing an alias the table doesn't have, with the same message.
-3. **Changing a table's alias rewrites its own join and where lines.**
+1.  **makeYaml checks every table's SQL references**, in Validate on the Mac, in the app and on the VM:
+    - an alias used but never defined in the table's `from`/`join`: an **error**, naming the aliases it has ("`pk` is not defined here; this table has `evf`, `age`, `d`, `dt`");
+    - a column the dictionary doesn't list for that table: a **warning** (the dictionary lacks `_IsDeleted` on some tables your pulls use fine);
+    - a fact table joining no generated table: a **warning** (it would pull the whole table);
+    - a PK joining a many-rows table without `dedup_keys`: a **warning**.
+2.  **The builder checks a written line as you add it**, refusing an alias the table doesn't have, with the same message.
+3.  **Changing a table's alias rewrites its own join and where lines.**
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+I think we're tackling this, no? or is this still to be done?
 :::
 
 # Suggested order
 
 ::: {.callout-note title="🟦 Claude: what to build first"}
-1. **The three checks (Infant_RSV):** what let a broken run reach the VM.
-2. **The `--tdd` fixes and line endings (Runtime errors).**
-3. **The operator dropdown with BETWEEN, and `_IsDeleted` added for you.**
-4. **The stale "Validate points here" and "number match".**
-5. **Bundling: one makebundle.py, and YAMLs alone.** Needed before your next transfer.
-6. **Join row order, Duplicate, collapsible columns, prefilled description.**
-7. **utils.py and stock.yaml.**
-8. **Pasted images**, once you've said which editor you paste in.
+1.  **The three checks (Infant_RSV):** what let a broken run reach the VM.
+2.  **The `--tdd` fixes and line endings (Runtime errors).**
+3.  **The operator dropdown with BETWEEN, and `_IsDeleted` added for you.**
+4.  **The stale "Validate points here" and "number match".**
+5.  **Bundling: one makebundle.py, and YAMLs alone.** Needed before your next transfer.
+6.  **Join row order, Duplicate, collapsible columns, prefilled description.**
+7.  **utils.py and stock.yaml.**
+8.  **Pasted images**, once you've said which editor you paste in.
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
 :::
 
 # Other Ideas
@@ -274,7 +269,7 @@ Agreed, and it suits how we already work. What I'd set up:
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-
+so if we're doing 'feature', i think this fits more like a lean model of feature priorization, so 'features' is confusing to me. maybe tasklist.qmd. can be /markdown_images with the folders tied to each markdown's title, QMD or MD.
 :::
 
 - In the 'Run' section of Microscope, is it possible to have a dropdown with 'project name' similar to how you do it with author? Ideally I'd like it to be able to see every pull that is running, and have a list of 'running pulls' as a dropdown, and then 'start run:' and that is a dropdown as well as a browse.
@@ -295,6 +290,7 @@ Doable, and most of it exists already: `pulls.py` finds every pull under the run
 - Remove the Split and SQL folder fields completely, or tuck them behind an "Other folders" toggle?
 :::
 
-::: {.callout-warning title="🟧 Your response"}
+two dropdowns is good, as long as running pools are taken out of the 'start run' section.
 
+::: {.callout-warning title="🟧 Your response"}
 :::
