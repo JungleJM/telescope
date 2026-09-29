@@ -27,13 +27,14 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: The Remade Pulls On The VM
 
-The user stopped every run and cleared the VM's pulls to start over (29 September 2026). The next bundle carries D117 to D131 and four pulls, each remade for the checked dictionary (D130): Celiac, IBD_Ancestry, Infant_RSV and Crohns_DxHxSxRx. Checked on the Mac: each validates, splits and dry-runs; Celiac's SQL reads only `K90.0`; every fact-table query joins its PK. On the VM:
+The user stopped every run and cleared the VM's pulls to start over (29 September 2026). The next bundle carries D117 to D131 and six pulls, each remade for the checked dictionary (D130): Celiac, IBD_Ancestry, Infant_RSV, Crohns_DxHxSxRx, Crohns_PatientsFromUpload and UC_Visits. Checked on the Mac: each validates, splits and dry-runs; Celiac's SQL reads only `K90.0`; every fact-table query joins its PK. On the VM:
 
 1.  **Delivery.** `python bundle.py`, then `python scope.py --tdd`: the three Windows-only failures and the error should be gone (two of the fixes show only on Windows). `pullmanager.py` beside the folder is removed; `scope.py` and `utils.py` are there, and `python utils.py` lists the viewer and the transcription viewer.
-2.  **Upload files beside the transfers**, at the paths the build names: IBD_Ancestry's `data\Meds\ibd\IBD_Meds.parquet`; Crohns_DxHxSxRx's `CrohnsPatients.parquet`, `data\Codes\ICD-hosp.csv` and `data\Meds\IBD_meds.parquet`; Celiac's `csv\HospitalICDCodes.csv`.
+2.  **Upload files beside the transfers**, at the paths the build names: IBD_Ancestry's `data\Meds\ibd\IBD_Meds.parquet`; Crohns_DxHxSxRx's and Crohns_PatientsFromUpload's `CrohnsPatients.parquet`; UC_Visits' `UCPatients.parquet`; `data\Codes\ICD-hosp.csv` (Crohns_DxHxSxRx, UC_Visits); Crohns_DxHxSxRx's `data\Meds\IBD_meds.parquet`; Celiac's `csv\HospitalICDCodes.csv`.
 3.  **Celiac** first: its PK should be celiac patients (`K90.0`). The earlier Celiac run pulled Crohn's: the transfer sent had `K50.%`.
-4.  **Infant_RSV**, then **Crohns_DxHxSxRx**, then **IBD_Ancestry**. IBD_Ancestry is as it ran live, a test sample (`smallset`, 3000, hashed); a full pull turns that off.
-5.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
+4.  **The batching tests.** Crohns_PatientsFromUpload is every Crohn's patient's PatientDim row, the uploaded PK (1.2 million) in 100,000-row chunks: does each chunk land, and do the rows add up to the PK's? IBD_Ancestry is now all patients, not a sample, batched by sex and in 30,000-patient chunks (24 runs, each chunked once its PK exists): the test of chunking a generated PK.
+5.  **Infant_RSV**, **Crohns_DxHxSxRx** and **UC_Visits**.
+6.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
 
 ------------------------------------------------------------------------
 
@@ -127,8 +128,6 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Finish checking the dictionary against the pages.** Most tables are checked (D130). The dictionary's foot lists the rest (ProblemListFact, TerminologyConceptDim, VitalsFact, CoverageDim, and the parts only partly seen), and the tables a checked foreign key points at that it lacks (DateDim, DiagnosisDim, the bridges...): screenshot one before a pull joins it. Until a table is checked, its unsized strings are `NVARCHAR(900)`.
-- **Crohns_PatientsFromUpload is empty.** Its intake has no tables, so it is not queued. The user means to run it; what it pulls is theirs to say.
-- **UC_Visits is kept, not queued.** Its fact tables were joined to its PK (D129); it was not among the pulls the user named for the fresh start.
 - **Pasted images.** Quarto's visual editor puts a paste in `images/` beside the document, whatever `.vscode/settings.json` says; the proposal (in `plan/tasklist.qmd`) is that "update docs" deletes every `paste-*.png` in a `plan/images/` folder that no document mentions.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names.
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.

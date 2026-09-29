@@ -5,9 +5,9 @@ run_vars:
   min_date_key: 19900101
   max_date_key: 20260601
 test_options:
-  smallset: true
+  smallset: false
   stop_at_for_pk_table: 3000
-  random_pk_sample: true
+  random_pk_sample: false
 project_vars:
   project_folder: IBD Ancestry
 vars: 
@@ -46,6 +46,7 @@ multipliers:
     applies_to: PKTable
 batching:
   - sex
+  - chunk: 30000
 cohorts:
   - recipe: PatientWithDx
     name: Patients

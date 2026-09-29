@@ -11,7 +11,175 @@ test_options:
 project_vars:
   project_folder: Crohns_PatientsFromUpload
 vars: {}
-upload_cohorts: []
+upload_cohorts:
+  - name: CrohnsPatients
+    dest_table: CrohnsPatients
+    type: pk
+    file_type: parquet
+    file_loc: CrohnsPatients.parquet
+    key_columns:
+      - PatientDurableKey
+    pending_transfer: true
+    push_this_cycle: true
 multipliers: []
-batching: []
-cohorts: []
+batching:
+  - chunk: 100000
+cohorts:
+  - name: PatientInfo
+    dest_table: PatientInfo
+    type: fact
+    pull_this_cycle: true
+    description: "Core patient dimension table. One row per patient, carrying demographics, vital status, and several social vulnerability and geography attributes. Use PatientDim.DurableKey to join to facts (note: this is the patient durable key)."
+    granularity: One row per patient (patient-level dimension).
+    columns:
+      - source: pd._IsDeleted
+        name: _IsDeleted
+        nullable: false
+      - source: pd._IsInferred
+        name: _IsInferred
+        nullable: false
+      - source: pd.AgeInYears
+        name: AgeInYears
+        nullable: true
+      - source: pd.BirthDate
+        name: BirthDate
+        nullable: true
+      - source: pd.BirthDateAccuracy_X
+        name: BirthDateAccuracy_X
+        nullable: true
+      - source: pd.EarliestPossibleBirthDate_X
+        name: EarliestPossibleBirthDate_X
+        nullable: true
+      - source: pd.BloodType_X
+        name: BloodType_X
+        nullable: true
+      - source: pd.BloodTypeAndRhesusFactor_X
+        name: BloodTypeAndRhesusFactor_X
+        nullable: true
+      - source: pd.Country
+        name: Country
+        nullable: true
+      - source: pd.DeathDate
+        name: DeathDate
+        nullable: true
+      - source: pd.DurableKey
+        name: DurableKey
+        nullable: false
+      - source: pd.Ethnicity
+        name: Ethnicity
+        nullable: true
+      - source: pd.FifthRace
+        name: FifthRace
+        nullable: true
+      - source: pd.FirstRace
+        name: FirstRace
+        nullable: true
+      - source: pd.FourthRace
+        name: FourthRace
+        nullable: true
+      - source: pd.GenderIdentity
+        name: GenderIdentity
+        nullable: true
+      - source: pd.HasPcp_X
+        name: HasPcp_X
+        nullable: true
+      - source: pd.IsCurrent
+        name: IsCurrent
+        nullable: false
+      - source: pd.IsValid
+        name: IsValid
+        nullable: false
+      - source: pd.LastImmunizationQueryInstantUtc
+        name: LastImmunizationQueryInstantUtc
+        nullable: true
+      - source: pd.MaritalStatus
+        name: MaritalStatus
+        nullable: true
+      - source: pd.MultiRacial
+        name: MultiRacial
+        nullable: true
+      - source: pd.PreferredLanguage
+        name: PreferredLanguage
+        nullable: true
+      - source: pd.PreliminaryCauseOfDeathDiagnosisKey
+        name: PreliminaryCauseOfDeathDiagnosisKey
+        nullable: true
+      - source: pd.PrimaryRUCA_X
+        name: PrimaryRUCA_X
+        nullable: true
+      - source: pd.ReliableSex
+        name: ReliableSex
+        nullable: true
+      - source: pd.RhesusFactor_X
+        name: RhesusFactor_X
+        nullable: true
+      - source: pd.SecondRace
+        name: SecondRace
+        nullable: true
+      - source: pd.Sex
+        name: Sex
+        nullable: true
+      - source: pd.SexAssignedAtBirth
+        name: SexAssignedAtBirth
+        nullable: true
+      - source: pd.SourceComboKey_X
+        name: SourceComboKey_X
+        nullable: true
+      - source: pd.SourceCountry_X
+        name: SourceCountry_X
+        nullable: true
+      - source: pd.StateOrProvince
+        name: StateOrProvince
+        nullable: true
+      - source: pd.StateOrProvinceAbbreviation
+        name: StateOrProvinceAbbreviation
+        nullable: true
+      - source: pd.Status
+        name: Status
+        nullable: true
+      - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
+        name: SviHouseholdCharacteristicsPctlRankByZip2020_X
+        nullable: true
+      - source: pd.SviHouseholdCompositionPctlRankingByZip2018_X
+        name: SviHouseholdCompositionPctlRankingByZip2018_X
+        nullable: true
+      - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
+        name: SviHousingTypeTransportationPctlRankByZip2020_X
+        nullable: true
+      - source: pd.SviHousingTypeTransportationPctlRankingByZip2018_X
+        name: SviHousingTypeTransportationPctlRankingByZip2018_X
+        nullable: true
+      - source: pd.SviMinorityStatusLanguagePctlRankingByZip2018_X
+        name: SviMinorityStatusLanguagePctlRankingByZip2018_X
+        nullable: true
+      - source: pd.SviOverallPctlRankByZip2020_X
+        name: SviOverallPctlRankByZip2020_X
+        nullable: true
+      - source: pd.SviOverallPctlRankingByZip2018_X
+        name: SviOverallPctlRankingByZip2018_X
+        nullable: true
+      - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+        nullable: true
+      - source: pd.SviSocioeconomicPctlRankByZip2020_X
+        name: SviSocioeconomicPctlRankByZip2020_X
+        nullable: true
+      - source: pd.SviSocioeconomicPctlRankingByZip2018_X
+        name: SviSocioeconomicPctlRankingByZip2018_X
+        nullable: true
+      - source: pd.ThirdRace
+        name: ThirdRace
+        nullable: true
+      - source: pd.UseInCosmosAnalytics_X
+        name: UseInCosmosAnalytics_X
+        nullable: false
+    filter:
+      from:
+        - PatientDim as pd
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatients AS pk ON pk.PatientDurableKey = pd.DurableKey"
+      where:
+        - "pd.IsCurrent = 1"
+        - "pd.IsValid = 1"
+        - "pd.UseInCosmosAnalytics_X = 1"
+        - "pd._IsDeleted = 0"

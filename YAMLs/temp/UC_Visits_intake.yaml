@@ -323,6 +323,8 @@ cohorts:
         - EdVisitFact as evf
       join:
         - "INNER JOIN {{prefix}}_UCPatients AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+      where:
+        - "evf._IsDeleted = 0"
   - name: HospitalAdmissions
     dest_table: HospitalAdmissions
     type: fact
@@ -438,3 +440,5 @@ cohorts:
         - HospitalAdmissionFact as haf
       join:
         - "INNER JOIN {{prefix}}_UCPatients AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+      where:
+        - "haf._IsDeleted = 0"
