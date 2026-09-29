@@ -9,40 +9,36 @@ test_options:
   stop_at_for_pk_table: 10
   random_pk_sample: false
 project_vars:
-  project_folder: UC DxHxSxRx
+  project_folder: UC Visits
 vars: {}
 upload_cohorts:
-  - name: CrohnsPatientInfo
-    dest_table: CrohnsPatientInfo
+  - name: UCPatients
+    dest_table: UCPatients
     type: pk
     file_type: parquet
     key_columns:
       - PatientDurableKey
     pending_transfer: true
     push_this_cycle: true
-    file_loc: CrohnsPatients.parquet
+    file_loc: UCPatients.parquet
   - name: HospitalICDCodes
     dest_table: HospitalICDCodes
     file_type: csv
     pending_transfer: true
     push_this_cycle: true
     file_loc: data/Codes/ICD-hosp.csv
-  - name: IBD_Meds
-    dest_table: IBD_Meds
-    file_type: parquet
-    file_loc: data/Meds/IBD_meds.parquet
-    pending_transfer: true
-    push_this_cycle: true
 multipliers: []
 batching:
   - chunk: 100000
 cohorts:
   - recipe: OtherDiagnoses
     name: OtherDiagnoses
+    filter: {}
   - recipe: OtherHospitalizations
     name: OtherHospitalizations
     vars:
       HospitalICDTable: HospitalICDCodes
+    filter: {}
   - name: EDVisitHistory
     dest_table: EDVisitHistory
     type: fact
@@ -326,7 +322,7 @@ cohorts:
       from:
         - EdVisitFact as evf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_UCPatients AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
   - name: HospitalAdmissions
     dest_table: HospitalAdmissions
     type: fact
@@ -441,265 +437,4 @@ cohorts:
       from:
         - HospitalAdmissionFact as haf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
-  - name: MedOrderHistory
-    dest_table: MedOrderHistory
-    type: fact
-    pull_this_cycle: true
-    columns:
-      - source: mof._IsDeleted
-        name: _IsDeleted
-        nullable: false
-      - source: mof._IsInferred
-        name: _IsInferred
-        nullable: false
-      - source: mof.Count
-        name: Count
-        nullable: false
-      - source: mof.DepartmentKey
-        name: DepartmentKey
-        nullable: true
-      - source: mof.DiscontinueReason
-        name: DiscontinueReason
-        nullable: true
-      - source: mof.DoseUnit
-        name: DoseUnit
-        nullable: true
-      - source: mof.DurationKey
-        name: DurationKey
-        nullable: true
-      - source: mof.EncounterKey
-        name: EncounterKey
-        nullable: true
-      - source: mof.EndDateKey
-        name: EndDateKey
-        nullable: true
-      - source: mof.FifthIndicationForUse
-        name: FifthIndicationForUse
-        nullable: true
-      - source: mof.FirstIndicationForUse
-        name: FirstIndicationForUse
-        nullable: true
-      - source: mof.FourthIndicationForUse
-        name: FourthIndicationForUse
-        nullable: true
-      - source: mof.Frequency
-        name: Frequency
-        nullable: true
-      - source: mof.IsOutpatientMode
-        name: IsOutpatientMode
-        nullable: true
-      - source: mof.MedicationKey
-        name: MedicationKey
-        nullable: false
-      - source: mof.MedicationOrderKey
-        name: MedicationOrderKey
-        nullable: false
-      - source: mof.MinimumDose
-        name: MinimumDose
-        nullable: true
-      - source: mof.Mode
-        name: Mode
-        nullable: true
-      - source: mof.MorphineEquivalentDailyDosage
-        name: MorphineEquivalentDailyDosage
-        nullable: true
-      - source: mof.OrderedDateKey
-        name: OrderedDateKey
-        nullable: true
-      - source: mof.PatientDurableKey
-        name: PatientDurableKey
-        nullable: false
-      - source: mof.Quantity
-        name: Quantity
-        nullable: true
-      - source: mof.RefillsWritten
-        name: RefillsWritten
-        nullable: true
-      - source: mof.Route
-        name: Route
-        nullable: true
-      - source: mof.SecondIndicationForUse
-        name: SecondIndicationForUse
-        nullable: true
-      - source: mof.SixthIndicationForUse
-        name: SixthIndicationForUse
-        nullable: true
-      - source: mof.SourceComboKey_X
-        name: SourceComboKey_X
-        nullable: true
-      - source: mof.StartDateKey
-        name: StartDateKey
-        nullable: true
-      - source: mof.ThirdIndicationForUse
-        name: ThirdIndicationForUse
-        nullable: true
-      - source: mof.Type_X
-        name: Type_X
-        nullable: true
-    filter:
-      from:
-        - MedicationOrderFact as mof
-      join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
-      where:
-        - "mof._IsDeleted = 0"
-  - name: MedDispenseHistory
-    dest_table: MedDispenseHistory
-    type: fact
-    pull_this_cycle: true
-    columns:
-      - source: mdf._IsDeleted
-        name: _IsDeleted
-        nullable: false
-      - source: mdf._IsInferred
-        name: _IsInferred
-        nullable: false
-      - source: mdf.Count
-        name: Count
-        nullable: false
-      - source: mdf.DaysSupply
-        name: DaysSupply
-        nullable: true
-      - source: mdf.DispenseDataSourceType_X
-        name: DispenseDataSourceType_X
-        nullable: true
-      - source: mdf.DoseUnit_X
-        name: DoseUnit_X
-        nullable: true
-      - source: mdf.FilledDateKey
-        name: FilledDateKey
-        nullable: true
-      - source: mdf.FilledInstant
-        name: FilledInstant
-        nullable: true
-      - source: mdf.FilledTimeOfDayKey
-        name: FilledTimeOfDayKey
-        nullable: true
-      - source: mdf.FillNumber
-        name: FillNumber
-        nullable: true
-      - source: mdf.FirstDispense
-        name: FirstDispense
-        nullable: true
-      - source: mdf.Frequency_X
-        name: Frequency_X
-        nullable: true
-      - source: mdf.MedicationDispenseKey
-        name: MedicationDispenseKey
-        nullable: false
-      - source: mdf.MedicationKey
-        name: MedicationKey
-        nullable: false
-      - source: mdf.MedicationOrderKey
-        name: MedicationOrderKey
-        nullable: true
-      - source: mdf.MedicationOrderWrittenDateKey_X
-        name: MedicationOrderWrittenDateKey_X
-        nullable: true
-      - source: mdf.MinimumDose_X
-        name: MinimumDose_X
-        nullable: true
-      - source: mdf.Mode
-        name: Mode
-        nullable: true
-      - source: mdf.PatientDurableKey
-        name: PatientDurableKey
-        nullable: false
-      - source: mdf.PrimaryComponentQuantity
-        name: PrimaryComponentQuantity
-        nullable: true
-      - source: mdf.PrimaryComponentQuantityUnit
-        name: PrimaryComponentQuantityUnit
-        nullable: true
-      - source: mdf.PrimaryComponentUnformattedNdc
-        name: PrimaryComponentUnformattedNdc
-        nullable: true
-      - source: mdf.RawCodeSystem_X
-        name: RawCodeSystem_X
-        nullable: true
-      - source: mdf.RawCodeValue_X
-        name: RawCodeValue_X
-        nullable: true
-      - source: mdf.ReadyToDispenseDateKey
-        name: ReadyToDispenseDateKey
-        nullable: true
-      - source: mdf.RefillsRemaining_X
-        name: RefillsRemaining_X
-        nullable: true
-      - source: mdf.RefillsWritten_X
-        name: RefillsWritten_X
-        nullable: true
-      - source: mdf.Route_X
-        name: Route_X
-        nullable: true
-      - source: mdf.SourceComboKey_X
-        name: SourceComboKey_X
-        nullable: true
-      - source: mdf.SupplyEndDateKey_X
-        name: SupplyEndDateKey_X
-        nullable: true
-    filter:
-      from:
-        - MedicationDispenseFact as mdf
-      join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
-      where:
-        - "mdf._IsDeleted = 0"
-  - name: MedAdminHistory
-    dest_table: MedAdminHistory
-    type: fact
-    pull_this_cycle: true
-    columns:
-      - source: maf._IsDeleted
-        name: _IsDeleted
-        nullable: false
-      - source: maf._IsInferred
-        name: _IsInferred
-        nullable: false
-      - source: maf.AdministrationDateKey
-        name: AdministrationDateKey
-        nullable: true
-      - source: maf.AdministrationDepartmentKey
-        name: AdministrationDepartmentKey
-        nullable: true
-      - source: maf.AdministrationInstant
-        name: AdministrationInstant
-        nullable: true
-      - source: maf.AdministrationRoute
-        name: AdministrationRoute
-        nullable: true
-      - source: maf.AgeKey
-        name: AgeKey
-        nullable: true
-      - source: maf.Count
-        name: Count
-        nullable: false
-      - source: maf.EncounterAdmissionInstant
-        name: EncounterAdmissionInstant
-        nullable: true
-      - source: maf.EncounterKey
-        name: EncounterKey
-        nullable: true
-      - source: maf.MedicationAdministrationKey
-        name: MedicationAdministrationKey
-        nullable: false
-      - source: maf.MedicationKey
-        name: MedicationKey
-        nullable: false
-      - source: maf.MedicationOrderKey
-        name: MedicationOrderKey
-        nullable: true
-      - source: maf.PatientDurableKey
-        name: PatientDurableKey
-        nullable: false
-      - source: maf.SourceComboKey_X
-        name: SourceComboKey_X
-        nullable: true
-    filter:
-      from:
-        - MedicationAdministrationFact as maf
-      join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
-      where:
-        - "maf._IsDeleted = 0"
+        - "INNER JOIN {{prefix}}_UCPatients AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"

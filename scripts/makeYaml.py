@@ -2240,6 +2240,157 @@ def validate_data_dictionary(
                 )
 
 
+# Written SQL, read for what it references (D118). A table named in `from`,
+# `join` or a subquery, with its alias; `AS` may be left out.
+_SQL_KEYWORDS = {
+    "ON", "WITH", "WHERE", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "OUTER",
+    "JOIN", "APPLY", "AND", "OR", "GROUP", "ORDER", "UNION", "AS", "SELECT",
+}
+_NOT_KEYWORD = r"(?!(?:" + "|".join(sorted(_SQL_KEYWORDS)) + r")\b)"
+_TABLE_AND_ALIAS = (
+    _NOT_KEYWORD + r"(?P<table>\[[^\]]+\]|[A-Za-z_#@{][\w@$#.{}]*)"
+    r"(?:\s+AS)?\s+" + _NOT_KEYWORD + r"(?P<alias>[A-Za-z_]\w*)\b"
+)
+_DECLARED_TABLE = re.compile(r"\b(?:FROM|JOIN)\s+" + _TABLE_AND_ALIAS, re.IGNORECASE)
+# A `from` entry is the table itself: `EdVisitFact AS evf`.
+_FROM_ENTRY = re.compile(r"^\s*" + _TABLE_AND_ALIAS, re.IGNORECASE)
+# A derived table or APPLY: `(...) AS x`.
+_DERIVED_TABLE = re.compile(r"\)\s*(?:AS\s+)?(?P<alias>[A-Za-z_]\w*)\b", re.IGNORECASE)
+_QUALIFIED_NAME = re.compile(r"(?<![\w.#@\]])\[?(?P<alias>[A-Za-z_]\w*)\]?\.\[?(?P<column>[A-Za-z_]\w*)\]?")
+_STRING_LITERAL = re.compile(r"N?'(?:[^']|'')*'")
+SQL_SCHEMAS = {"dbo", "sys", "information_schema"}
+# A PK joined to one of these gains a row per event unless it deduplicates.
+MANY_ROWS_SUFFIX = "Fact"
+
+
+def declared_sql_tables(text: str, is_from: bool = False) -> list[tuple[str, str, tuple[int, int]]]:
+    """Each (alias, table, span of the table name) a line of SQL declares."""
+    found = []
+    matches = list(_DECLARED_TABLE.finditer(text))
+    if is_from:
+        matches += list(_FROM_ENTRY.finditer(text))
+    for match in matches:
+        alias, table = match.group("alias"), match.group("table").strip("[]")
+        if table.lower().startswith("dbo."):
+            table = table[4:]
+        found.append((alias, table, match.span("table")))
+    for match in _DERIVED_TABLE.finditer(text):
+        if match.group("alias").upper() not in _SQL_KEYWORDS:
+            found.append((match.group("alias"), "(subquery)", (match.start(), match.start())))
+    return found
+
+
+def referenced_sql_names(text: str, is_from: bool = False) -> list[tuple[str, str]]:
+    """Each `alias.Column` a line of SQL reads, table names and strings aside."""
+    text = _STRING_LITERAL.sub("''", text)
+    spans = sorted(span for _, _, span in declared_sql_tables(text, is_from))
+    for start, end in reversed(spans):
+        text = text[:start] + " " * (end - start) + text[end:]
+    return [(m.group("alias"), m.group("column")) for m in _QUALIFIED_NAME.finditer(text)]
+
+
+def cohort_sql_lines(cohort: dict[str, Any]) -> list[tuple[str, str]]:
+    """(`from`/`join`/`where`, line) for each written line of a cohort."""
+    block = cohort.get("filter") or {}
+    lines = []
+    for key in ("from", "join", "where"):
+        value = block.get(key)
+        for item in [value] if isinstance(value, str) else value or []:
+            if isinstance(item, (str, int, float)):
+                lines.append((key, str(item)))
+    return lines
+
+
+def pk_cohort_name(cohorts: list[dict[str, Any]]) -> str | None:
+    """The generated PK's destination, for a suggested join."""
+    for cohort in cohorts:
+        if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() == "pk":
+            return str(cohort.get("dest_table") or cohort.get("name"))
+    return None
+
+
+def check_sql_references(
+    cohorts: list[dict[str, Any]],
+    dictionary: dict[str, Any] | None,
+    pk_name: str | None,
+    result: CompileResult,
+) -> None:
+    """Every alias a table's written SQL uses is one it declares (D118).
+
+    Validate otherwise reads only the output columns; a join or where line is
+    text until SQL Server reads it at Execute, as Infant_RSV's `pk.` did.
+    Also: a fact table that joins nothing this pull makes reads the whole
+    Cosmos table (an error), a column the dictionary does not list, and a PK
+    joined to a fact table without `dedup_keys` (warnings).
+    """
+    for cohort in cohorts:
+        if not isinstance(cohort, dict):
+            continue
+        label = cohort_label(cohort)
+        lines = cohort_sql_lines(cohort)
+        aliases: dict[str, str] = {}
+        for key, line in lines:
+            for alias, table, _ in declared_sql_tables(line, key == "from"):
+                aliases.setdefault(alias, table)
+        have = ", ".join(sorted(aliases)) or "none"
+
+        for key, line in lines:
+            said: set[str] = set()
+            for alias, column in referenced_sql_names(line, key == "from"):
+                if alias in SQL_SCHEMAS or alias in said:
+                    continue
+                table = aliases.get(alias)
+                if table is None:
+                    said.add(alias)
+                    result.error(
+                        "undefined_sql_alias",
+                        f"`{alias}.{column}` in a `{key}` line names `{alias}`, which this "
+                        f"table does not define; it has {have}.",
+                        f"{label}.filter.{key}: {line}",
+                        fix=f"Use one of {have}, or add a join that defines `{alias}`. A line "
+                        "copied from a recipe keeps the recipe's aliases.",
+                    )
+                    continue
+                if not dictionary or is_generated_reference(table) or table not in dictionary:
+                    continue
+                if column not in ((dictionary[table] or {}).get("columns") or {}):
+                    result.warn(
+                        "sql_column_not_in_dictionary",
+                        f"`{alias}.{column}` in a `{key}` line: the data dictionary does not "
+                        f"list `{column}` under `{table}`.",
+                        f"{label}.filter.{key}: {line}",
+                        fix=f"Check the spelling. If `{table}` has it, add it to the dictionary.",
+                    )
+
+        kind = str(cohort.get("type", "")).lower()
+        text = " ".join(line for _, line in lines)
+        makes_its_own = "{{prefix}}" in text or "#" in text
+        tables = [t for t in aliases.values() if t != "(subquery)"]
+        if kind == "fact" and not makes_its_own and tables:
+            main = tables[0]
+            alias = next(a for a, t in aliases.items() if t == main)
+            pk = pk_name or "<your PK>"
+            result.error(
+                "fact_table_not_joined",
+                f"This table reads `{main}` without joining any table this pull makes, so it "
+                f"would pull every row of `{main}` in Cosmos, not just your patients'.",
+                f"{label}.filter.join",
+                fix=f"Join the PK: `INNER JOIN {{{{prefix}}}}_{pk} AS pk ON pk.PatientDurableKey = "
+                f"{alias}.PatientDurableKey`, or a table built from it.",
+            )
+        if kind == "pk" and not cohort.get("dedup_keys", cohort.get("dedup_key")):
+            joined = sorted({t for t in aliases.values() if t.endswith(MANY_ROWS_SUFFIX)} - {tables[0] if tables else ""})
+            if joined:
+                result.warn(
+                    "pk_join_without_dedup",
+                    f"This PK joins {', '.join(f'`{t}`' for t in joined)}, which can hold several "
+                    "rows per patient or visit, and has no `dedup_keys`, so it may repeat rows.",
+                    f"{label}.dedup_keys",
+                    fix="Add `dedup_keys: [[<the key it should be one row per>]]` and "
+                    "`dedup_order_by: [<column>]`.",
+                )
+
+
 _DATADICT_CACHE: dict[tuple[str, float], dict[str, Any]] = {}
 
 
@@ -2770,6 +2921,9 @@ def compile_yaml(
         # and before expansion so each real cohort reports once rather than once
         # per multiplier and Cosmos variant.
         validate_data_dictionary(rendered_cohorts, dictionary, result)
+        check_sql_references(
+            rendered_cohorts, dictionary, find_uploaded_pk_table(template, CompileResult()) or pk_cohort_name(rendered_cohorts), result
+        )
         if not result.errors:
             # After the dictionary's own errors, which say why better.
             check_column_types(rendered_cohorts, result)
@@ -4482,6 +4636,7 @@ class DataDictionaryTests(MakeYamlTest):
         type: BIT
     filter:
       from: LabComponentResultFact AS l
+      join: INNER JOIN {{prefix}}_Patients AS pk ON pk.PatientDurableKey = l.PatientDurableKey
 """
         template, recipes = self.write_pair(extra=labs)
         out = self.tmp / "out" / "Test_Run_transfer.yaml"
@@ -5700,6 +5855,74 @@ class AddedLinesTests(MakeYamlTest):
         self.assertHasError(res, "bad_added_lines")
 
 
+class SqlReferenceTests(MakeYamlTest):
+    """D118: written join and where lines are read before SQL Server reads them."""
+
+    def table(self, join: str = "", where: str = "", kind: str = "fact", extra: str = "") -> str:
+        lines = "    filter:\n      from: EdVisitFact AS evf\n"
+        if join:
+            lines += f"      join:\n        - \"{join}\"\n"
+        if where:
+            lines += f"      where:\n        - \"{where}\"\n"
+        return (
+            f"  - name: Visits\n    type: {kind}\n{extra}"
+            "    columns:\n      - source: evf.EdVisitKey\n        name: EdVisitKey\n"
+            "      - source: evf.PatientDurableKey\n        name: PatientDurableKey\n" + lines
+        )
+
+    PK_JOIN = "INNER JOIN {{prefix}}_Patients AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+
+    def messages(self, res: CompileResult, code: str) -> list[Any]:
+        return [m for m in res.errors + res.warnings if m.code == code]
+
+    def test_an_alias_the_table_does_not_define_stops_it(self):
+        # Infant_RSV: a join carried from a recipe, whose table is `edv`, onto one aliased `evf`.
+        text = tiny_template(self.table(join=self.PK_JOIN)).replace(
+            self.PK_JOIN + '"\n', self.PK_JOIN + '"\n        - "INNER JOIN DurationDim AS age ON age.DurationKey = edv.AgeKey"\n')
+        res = self.compile_template(template=text)
+        self.assertHasError(res, "undefined_sql_alias")
+        message = self.messages(res, "undefined_sql_alias")[0]
+        self.assertIn("edv.AgeKey", message.message)
+        self.assertIn("age, evf, pk", message.message)
+        self.assertFalse(res.ok)
+
+    def test_an_alias_in_a_where_line_is_checked_too(self):
+        res = self.compile_template(extra=self.table(join=self.PK_JOIN, where="p.IsValid = 1"))
+        self.assertHasError(res, "undefined_sql_alias")
+
+    def test_a_fact_table_joining_nothing_this_pull_makes_is_refused(self):
+        # UC_Visits: every row of EdVisitFact in Cosmos, not the cohort's.
+        res = self.compile_template(extra=self.table())
+        self.assertHasError(res, "fact_table_not_joined")
+        fix = self.messages(res, "fact_table_not_joined")[0].fix
+        self.assertIn("INNER JOIN {{prefix}}_Patients AS pk ON pk.PatientDurableKey = evf.PatientDurableKey", fix)
+
+    def test_joined_to_the_pk_it_compiles(self):
+        res = self.compile_template(extra=self.table(join=self.PK_JOIN))
+        self.assertCompiles(res)
+
+    def test_a_where_line_reading_a_table_this_pull_makes_counts_as_joined(self):
+        res = self.compile_template(extra=self.table(
+            where="evf.PatientDurableKey IN (SELECT [PatientDurableKey] FROM {{prefix}}_Patients)"))
+        self.assertCompiles(res)
+
+    def test_dotted_values_in_strings_are_not_aliases(self):
+        res = self.compile_template(extra=self.table(
+            join=self.PK_JOIN, where="evf.AcuityLevel IN ('J12.1', 'B97.4')"))
+        self.assertCompiles(res)
+
+    def test_a_column_the_dictionary_lacks_warns_and_still_compiles(self):
+        res = self.compile_template(extra=self.table(join=self.PK_JOIN, where="evf._IsDeleted = 0"))
+        self.assertCompiles(res)
+        self.assertHasWarning(res, "sql_column_not_in_dictionary")
+
+    def test_a_pk_joined_to_a_fact_table_without_dedup_warns(self):
+        pk = self.table(join="INNER JOIN DiagnosisEventFact AS d ON d.EncounterKey = evf.EncounterKey", kind="PK")
+        text = tiny_template().replace("  - recipe: PatientWithDx\n    name: Patients\n  - recipe: OtherDx\n    name: OtherDx\n", pk)
+        res = self.compile_template(template=text)
+        self.assertHasWarning(res, "pk_join_without_dedup")
+
+
 class PendingTransferTests(MakeYamlTest):
     """D97: a file that will only exist on the VM, and columns typed in for it."""
 
@@ -5871,6 +6094,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "project_db": ProjectDbTests,
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
+    "sql_references": SqlReferenceTests,
     "added_lines": AddedLinesTests,
     "config": ConfigTests,
     "upload_column_changes": UploadColumnChangeTests,
