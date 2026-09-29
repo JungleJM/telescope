@@ -23,10 +23,10 @@ Mac   template + reference/recipes.yaml + reference/datadictionary.yaml
 VM    <project>_transfer.yaml + datadictionary   no recipes file
         └─► makeYaml --export-split     (validate again, apply cosmos_db,
               │                          multipliers, batching)
-              └─► runs/<project>/split/pullmanifest.yaml, sessions/...
+              └─► runs/<project>/pullmanifest.yaml, pull_files/split/sessions/...
                     └─► Pullmanager --execute ──► <project_db>.dbo.<dest>
                           │                       status back into the manifest
-                          └─► Pullmanager --artifacts ──► runs/<project>/parquets,
+                          └─► Pullmanager --artifacts ──► runs/<project>/*_parquets,
                                                           contents.md, load scripts
 ```
 
@@ -191,12 +191,16 @@ The extracted tree is replaced on every update, so everything you author sits be
     data\                     its upload files, at the paths the export listed
     runs\                     one folder per project (D57), so projects run side by side
       IBD_Ancestry\           from IBD_Ancestry_transfer.yaml
-        split\                written by Export split; pullmanifest.lock while executing (D67)
-        sql\                  written by Preview SQL
-        logs\                 execute-<date>-<time>.log, one per Execute (D68)
-        parquets\             written by Artifacts: SneakPeek\, Cosmos\, uploads\ (D72)
+        pullmanifest.yaml     written by Export split; pullmanifest.lock beside it while executing (D67, D142)
+        IBD_Ancestry_transfer.yaml   the copy the split was made from (D142)
+        execute-<date>-<time>.log    the latest Execute's log (D68)
+        older_logs\           every earlier log, moved there as an Execute starts
+        cosmos_parquets\, sneakpeek_parquets\, uploads_parquets\   written by Artifacts (D72)
         contents.md           what each table and column is (D73)
         load_parquets.R/.py, viewparquets.py, HOW_TO.md   (D75, D89)
+        pull_files\
+          split\              sessions\ and uploads\, written by Export split
+          sql\                written by Preview SQL
       .pullmanager-gui.json   the launcher's remembered paths (D103); on the Mac in cleanup/runs/
 ```
 
@@ -214,10 +218,10 @@ python scope.py                        # the app: Author and Run (D93, D123)
 python utils.py                        # the utilities (D124)
 
 # or the same steps by hand
-python pullmanager_runtime/scripts/makeYaml.py --template IBD_Ancestry_transfer.yaml --export-split --out-dir runs/IBD_Ancestry/split
-python scope.py --dry-run runs/IBD_Ancestry/split/pullmanifest.yaml --out-dir runs/IBD_Ancestry/sql
+python pullmanager_runtime/scripts/makeYaml.py --template IBD_Ancestry_transfer.yaml --export-split --out-dir runs/IBD_Ancestry
+python scope.py --dry-run runs/IBD_Ancestry/pullmanifest.yaml --out-dir runs/IBD_Ancestry/pull_files/sql
 python scope.py --execute IBD_Ancestry     # by the project's name (D66)
-python scope.py --artifacts IBD_Ancestry   # once it has finished (D72)
+python scope.py --artifacts IBD_Ancestry   # by hand; a clean pull packages itself (D72, D141)
 python scope.py --running                  # every pull, and which are executing (D67)
 ```
 
@@ -436,7 +440,7 @@ An `_sp` copy reads the `_sp` copies of the generated tables it joins: `##tesrun
 
 - **Transfer YAML** (`--export-transfer`, `--out` to choose the file): what the VM receives (D49). The template as written, with cohort recipes merged into their cohorts and batching items replaced by their full definitions; multipliers and batching are declared, not applied. Grouped settings stay in their groups (`cosmos_vars.project_db`), each once, so editing one by hand on the VM takes effect. Written only if the template passes full validation. Named `<project_folder>_transfer.yaml`, written at the repository root by the command (D79; in an extracted bundle, the working folder beside it), or where `--out` says. Written to another folder than the template's, each upload inside the template's folder keeps its `file_loc` and is copied there at it, so that folder is the unit to carry across; one that leaves the template's folder (`..`) is rewritten to reach the same file from the transfer's folder, and one still outside it, or absolute, is not copied, with the warning `upload_not_copied` (D103). The export lists every upload path to carry. It opens with a `transfer:` block: `from_template` (file name), and, when recipes were used, `recipes_sha256` (first 12 hex digits) and `recipes_used`. No timestamp, so the same inputs give the same file. The split drops the block from its YAMLs and records it as the manifest's `source.transfer`, with `source.recipes` null.
 - **pre-YAML** (`--export-preyaml symbolic`): the template, portable, close to what was authored, recipe references left symbolic. `expanded-recipes` inlines cohort recipes only, for inspection. Upload paths stay relative to where it was written, so moving one means moving its uploads too.
-- **Split folder** (`--export-split --out-dir`; without it `runs/<project>/split`, D57): below. Self-contained: upload files are copied into `split/uploads/` and `file_loc` repointed, so the folder is the unit to copy or archive. A CSV upload is written there as parquet (`file_type: parquet`), with its declared types. Parquet output is deterministic: the same inputs give the same bytes.
+- **Split** (`--export-split --out-dir`, the run folder; without it `runs/<project>`, D57, D142): below. The manifest and a copy of the template it was made from at the folder's top, the rest under `pull_files/split/`. Self-contained: upload files are copied into `pull_files/split/uploads/` and `file_loc` repointed, relative to the manifest, so the run folder is the unit to copy or archive. A CSV upload is written there as parquet (`file_type: parquet`), with its declared types. Parquet output is deterministic: the same inputs give the same bytes.
 - **Report** (`--report`): markdown summary of the template.
 
 ### The App: Author
@@ -477,8 +481,10 @@ The browser UI that came before it (`scripts/yamlmanager.py`) was retired (D112)
 ## The Split Folder
 
 ``` text
-split/
-  pullmanifest.yaml
+runs/<project>/                the run folder (D142)
+  pullmanifest.yaml            its paths are relative to it: pull_files/split/sessions/...
+  <project>_transfer.yaml      the template the split was made from
+  pull_files/split/
   uploads/                     copied upload files
   sessions/
     <session_id>/
@@ -646,7 +652,7 @@ runtime:
   cosmos_created: {Cosmos: "2026-09-17T19:34:56.450"}
 
 # on the pk phase of a generated PK (D87)
-outputs: {pk_parquet: {file: parquets/Cosmos/Patients.parquet, rows: 4242}}
+outputs: {pk_parquet: {file: cosmos_parquets/Patients.parquet, rows: 4242}}
 
 # on the pk phase of a sampled control (D59)
 outputs: {control_sample: {matched_to: CrohnsblackPatients, row_mult: 4.0,
@@ -659,6 +665,9 @@ outputs: {uploads: {IBD_Meds: {projects: landed, cosmos: not read in this sessio
 cosmos_refresh: {Cosmos: "2026-09-17T19:34:56.450", Cosmos_SneakPeek: "..."}   # D51
 uploads_landed: {IBD_Meds: {table: PROJECTD93A5E7.dbo.upload_IBD_Meds, rows: 1204,
                  landed_at: "...", by_session: CrohnsblackPatients}}            # D61
+last_execute: {started_at: "...", ended_at: "...", exit_code: 0,
+               how: finished}   # or finished with errors, stopped by user,
+                                # stopped with errors; ended_at empty if killed (D140)
 ```
 
 ### Rules
@@ -722,7 +731,7 @@ When the session opens, before anything runs: capture `@@SERVERNAME`, check the 
 
 2.  **Uploads** (D54, D61). A non-PK upload lands in Projects once per pull, as `upload_<dest>` with its types (Uploads, below), committed, by the first session to reach it; the manifest records it (`uploads_landed`) and later sessions use that copy. Its Cosmos temp is created with the copy's types, read back from `INFORMATION_SCHEMA`, and filled from the copy through the client (there is no linked server from Cosmos back to Projects), but only in a session whose cohorts read it. An uploaded PK lands and goes up in every session. Resuming, the copies are kept and the files are not read; a copy that is missing stops the phase, pointing at `--repull`.
 
-3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first (Multipliers). Then a generated PK is written whole to parquet, where Artifacts puts it (`runs/<project>/parquets/<Cosmos|SneakPeek>/<pk>.parquet`), before any run starts (D87); a failure to write it warns and the pull goes on. An uploaded PK is a file already and is not written. Not rerun on a resume.
+3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first (Multipliers). Then a generated PK is written whole to parquet, where Artifacts puts it (`runs/<project>/<cosmos|sneakpeek>_parquets/<pk>.parquet`), before any run starts (D87); a failure to write it warns and the pull goes on. An uploaded PK is a file already and is not written. Not rerun on a resume.
 
 4.  **Runs.** For a batched run, the PK temp is emptied and refilled with that batch's whole PK rows, selected from the **Projects copy** with a parameterized predicate, then uploaded. The cohort SQL runs unchanged: it only ever joins the PK temp. On a resume an unbatched run refills it with the whole Projects copy the same way, as does an unbatched sampled control, whose temp still holds every row the PK query built. Each run then:
 
@@ -832,8 +841,8 @@ A project database has a size cap: PROJECTD93A5E7's data file and its log each s
 On the VM each command is typed as `python scope.py ...` in the working folder (D123); `scope.py` passes it to the runtime's `pullmanager.py`, which is what is written below.
 
 ``` bash
-pullmanager.py runs/<project>/split/pullmanifest.yaml              # summarize
-pullmanager.py --dry-run runs/<project>/split/pullmanifest.yaml [--out-dir runs/<project>/sql] [-v] [--all] [--retry-failed] [--repull]
+pullmanager.py runs/<project>/pullmanifest.yaml                    # summarize
+pullmanager.py --dry-run runs/<project>/pullmanifest.yaml [--out-dir runs/<project>/pull_files/sql] [-v] [--all] [--retry-failed] [--repull]
 pullmanager.py --execute <project> [--retry-failed] [--repull] [--env FILE] [--keep-open]
 pullmanager.py --execute                                           # lists the pulls; runs nothing
 pullmanager.py --artifacts <project>                               # package a finished pull (D72)
@@ -843,7 +852,7 @@ pullmanager.py --gui                                               # the same
 pullmanager.py --tdd [module]
 ```
 
-`--execute` and `--artifacts` take a project's name (D66): `IBD_Ancestry`, `"IBD Ancestry"` or `IBD_Ancestry_transfer.yaml` all mean `runs/IBD_Ancestry/split/pullmanifest.yaml`, looked for under the working directory, then beside `scope.py`; the folder's own spelling is used whatever the case typed. A manifest path still works; one that is not there says so. A name with no pull lists the pulls there are. With no name, each lists every pull with its state (not started, sessions done of the total, failed, executing, or stopped mid-run) and the command for it, and runs nothing.
+`--execute` and `--artifacts` take a project's name (D66): `IBD_Ancestry`, `"IBD Ancestry"` or `IBD_Ancestry_transfer.yaml` all mean `runs/IBD_Ancestry/pullmanifest.yaml`, looked for under the working directory, then beside `scope.py`; the folder's own spelling is used whatever the case typed. A manifest path still works; one that is not there says so. A name with no pull lists the pulls there are. With no name, each lists every pull with its state (not started, executing, finished, or finished with errors, stopped by user or stopped with errors, with its sessions done of the total; D140) and the command for it, and runs nothing.
 
 A dry run (the launcher's **Preview SQL**) renders every SQL block without touching a database or the manifest, listing why each unit is included and what was excluded, and what each session will do next. It ends with one statement (D71):
 
@@ -854,11 +863,11 @@ To pull it: press Execute, or in a terminal in <working folder> run:
     python scope.py --execute IBD_Ancestry
 ```
 
-**Execute** writes everything it prints to `runs/<project>/logs/execute-<date>-<time>.log` as well, flushed line by line, however it is started (D68); a refused Execute writes one too, saying why. Ctrl+C stops it cleanly (exit 130), releasing its lock; what it was working on stays `running`, and the next Execute pulls it again. Each step records its own failures in the manifest; an error no step catches is written to the log with its traceback, and a crash in native code (the ODBC driver, pyarrow) writes where it was (`faulthandler`), so the reason outlives the window. `--keep-open` holds the window at the end: "Safe to close: the pull has finished (exit code N). Type exit and press Enter to close this window." Only `exit` closes it.
+**Execute** writes everything it prints to `runs/<project>/execute-<date>-<time>.log` as well, flushed line by line, however it is started (D68); a refused Execute writes one too, saying why. As it starts, the logs already there move into `older_logs/`, so the one beside the manifest is the latest (D142). In a Windows console it turns QuickEdit off, so a click in the window cannot pause the pull at its next line (D143). It writes `last_execute` into the manifest as it starts and ends (D140). When it pulled something and ends with every session done and nothing failed, it runs Artifacts itself, in the same window and log, still holding the lock; a pull with a failure says it was not packaged and why. If Artifacts fails, the exit code stays the pull's, with a warning naming what was not written (D141). Ctrl+C stops it cleanly (exit 130), releasing its lock; what it was working on stays `running`, and the next Execute pulls it again. Each step records its own failures in the manifest; an error no step catches is written to the log with its traceback, and a crash in native code (the ODBC driver, pyarrow) writes where it was (`faulthandler`), so the reason outlives the window. `--keep-open` holds the window at the end: "Safe to close: the pull has finished (exit code N). Type exit and press Enter to close this window." Only `exit` closes it.
 
 ### The Launcher: Run
 
-The launcher is the app's **Run** half (D93), in the same window as Author, which hands it the transfer YAML it exports. It is for **running** pulls, chosen from two dropdowns (D126), each filled as it opens: **Running pulls**, every pull executing now with how far it has got (`IBD_Ancestry: executing since 14:03, heartbeat 20s ago (2 of 8 sessions done)`), and **Start run**, the working folder's `*_transfer.yaml` files by project with how each last ran (`Celiac  (not run yet)`, `Infant_RSV  (1 of 1 sessions done, 1 failed)`), leaving out the running ones, with Browse beside it. Choosing either loads the pull: Pull Log, Status and Stop are then its. A line under them names the loaded file and where its split and SQL go, always `runs/<project>/split` and `runs/<project>/sql` (D57), so there are no folder fields. The data dictionary line names the file makeYaml will use, in full, and whether it is there, with Browse and "Use the bundled one". Then Validate, Export split, Preview SQL, Execute, Artifacts and Stop, with "Retry failed" and "Re-pull everything" options (`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is ever passed (D49); settings saved by an older launcher that named one still load.
+The launcher is the app's **Run** half (D93), in the same window as Author, which hands it the transfer YAML it exports. It is for **running** pulls, chosen from three dropdowns (D126, D140), each filled as it opens: **Running pulls**, every pull executing now with how far it has got (`IBD_Ancestry: executing since 14:03, heartbeat 20s ago (2 of 8 sessions done)`); **Finished and stopped pulls**, every pull that has run and is not executing, as `(finished)`, or `(finished with errors)`, `(stopped by user)` or `(stopped with errors)` with its sessions done (`Infant_RSV  (finished with errors (1 of 2 sessions done, 1 failed))`); and **Start run**, the working folder's `*_transfer.yaml` files by project that have not run (`Celiac  (not run yet)`, or `(not started)` once split), with Browse beside it. A pull is finished once every session is done, however its process ended; stopped by user once Execute ended on Ctrl+C, or on Stop, which the window that pressed it records, since the process it ends cannot; stopped with errors when Execute ended on an error it did not expect, left a step running, or never wrote its end (killed); finished with errors otherwise. Choosing any loads the pull: Pull Log, Status and Stop are then its. A line under them names the loaded file, its run folder and `pull_files/` (D57, D142), so there are no folder fields. The data dictionary line names the file makeYaml will use, in full, and whether it is there, with Browse and "Use the bundled one". Then Validate, Export split, Preview SQL, Execute, Artifacts and Stop, with "Retry failed" and "Re-pull everything" options (`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is ever passed (D49); settings saved by an older launcher that named one still load.
 
 Three tabs (D71):
 
@@ -876,14 +885,13 @@ It is a front end, not a second implementation. Each button runs the same comman
 
 ## Artifacts
 
-`python scope.py --artifacts <project>`, or the launcher's Artifacts button, turns a pull into files for R and Python on the VM (the parquets cannot leave it). It refuses while the pull is executing (D67), and each run replaces what the last wrote.
+`python scope.py --artifacts <project>`, or the launcher's Artifacts button, turns a pull into files for R and Python on the VM (the parquets cannot leave it). Execute runs it by itself after a clean pull (D141). By hand it refuses while the pull is executing (D67). Each run replaces what the last wrote in the three parquet folders, and clears nothing else in the run folder (D142).
 
 ``` text
 runs/<project>/
-  parquets/
-    SneakPeek/    tables from COSMOS_SneakPeek; names end in _sp
-    Cosmos/       tables from COSMOS
-    uploads/      the uploads, copied from the split's parquet
+  sneakpeek_parquets/   tables from COSMOS_SneakPeek; names end in _sp
+  cosmos_parquets/      tables from COSMOS
+  uploads_parquets/     the uploads, copied from the split's parquet
   contents.md     every table and column (D73)
   load_parquets.R, load_parquets.py
   viewparquets.py a window for looking at the parquets (D89)
@@ -902,9 +910,9 @@ It reports as it goes (D88): `writing <file> ...` as each parquet starts, then `
 
 Descriptions are read from the split, so a changed description reaches `contents.md` through a new split.
 
-**Load scripts** (`loaders.py`, D75), at the run folder's root. `load_parquets.R` and `.py` open every parquet without reading it (`arrow::open_dataset()`, `pyarrow.dataset`). Each table becomes a variable named for its file. R sets `arrow.int64_downcast = FALSE`, so 64-bit keys are `integer64` in every table and joins match. Each script names the parquets folder in `PARQUETS`; moved, that line changes.
+**Load scripts** (`loaders.py`, D75), at the run folder's root. `load_parquets.R` and `.py` open every parquet in the `*_parquets` folders (not `pull_files/`, which holds the uploads as sent; D142) without reading it (`arrow::open_dataset()`, `pyarrow.dataset`). Each table becomes a variable named for its file. R sets `arrow.int64_downcast = FALSE`, so 64-bit keys are `integer64` in every table and joins match. Each script names the run folder in `PARQUETS`; moved, that line changes. `viewparquets.py` opens in `cosmos_parquets/`.
 
-**The stock files** (D89, D124) are what `scripts/pullmanager_src/stock/stock.yaml` lists, by path from that folder: a plain entry lands at the run folder's top, and `{file: ..., into: R}` in a folder of its own there. It lists `HOW_TO.md` and `../utils/viewparquets.py`; adding a file (an R script, say) sends it with every pull. An entry that is not there is said, and the rest are still copied. The user edits them; the bundle carries them, so an edit reaches the VM with the next bundle. `viewparquets.py`, in `utils/` and so in the utilities window too, is a tkinter window that opens parquets in tabs, pages through them and sorts; it reads them with pyarrow (duckdb or pandas if present), and its Open dialog starts in the `parquets` folder beside it. `HOW_TO.md` says what each file is, how to look at the data with the viewer, how to load it in RStudio and VSCodium, and how tables join. Its leading `<!-- stock HOW_TO.md ... -->` note is dropped from the copy, and `{project}` and `{parquets}` are filled in by plain replacement, so other braces stay as written.
+**The stock files** (D89, D124) are what `scripts/pullmanager_src/stock/stock.yaml` lists, by path from that folder: a plain entry lands at the run folder's top, and `{file: ..., into: R}` in a folder of its own there. It lists `HOW_TO.md` and `../utils/viewparquets.py`; adding a file (an R script, say) sends it with every pull. An entry that is not there is said, and the rest are still copied. The user edits them; the bundle carries them, so an edit reaches the VM with the next bundle. `viewparquets.py`, in `utils/` and so in the utilities window too, is a tkinter window that opens parquets in tabs, pages through them and sorts; it reads them with pyarrow (duckdb or pandas if present), and its Open dialog starts in the `cosmos_parquets` folder beside it (D142). `HOW_TO.md` says what each file is, how to look at the data with the viewer, how to load it in RStudio and VSCodium, and how tables join. Its leading `<!-- stock HOW_TO.md ... -->` note is dropped from the copy, and `{project}` and `{parquets}` are filled in by plain replacement, so other braces stay as written.
 
 ------------------------------------------------------------------------
 
@@ -941,7 +949,7 @@ Fixtures:
 | Location | What |
 |------------------------------------|------------------------------------|
 | `YAMLs/manager_test_cases/*.yaml` | Realistic templates: `01` and `02` pass, `03` warns, `00`, `04`, `05` fail on purpose |
-| `scripts/pullmanager_src/fixtures/split/` | Real `--export-split` output of `01_valid_basic.yaml`, the runtime's specification; its upload is parquet |
+| `scripts/pullmanager_src/fixtures/split/` | Real `--export-split` output of `01_valid_basic.yaml`, the runtime's specification; its upload is parquet. Made before D142, so `sessions/` and `uploads/` sit beside its manifest; the runtime reads paths relative to the manifest, so the tests copy it into a run folder as it is. Regenerated with the command below, it would take the new layout, and the tests that name `sessions/...` would change |
 | `scripts/pullmanager_src/fixtures/pullmanifest.in-flight.yaml` | That manifest mid-run, produced by driving the real transition API |
 | `scripts/yamlmanager_fixtures/temp/` | The intakes the Author view's tests open; `IBD_Ancestry_intake.yaml` there lacks a variable on purpose |
 

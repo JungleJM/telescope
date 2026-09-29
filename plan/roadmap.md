@@ -16,10 +16,11 @@ When an item here is built, delete it from this file and describe the result in 
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
-| Execute's progress lines: each step's start and end, timed, as it happens (D136); each table's rows in the summary, the manifest and the Status tab (D137) | Built and tested on the Mac; in the next bundle |
-| Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; in the next bundle. Not yet run on the VM: the first live group is the question of what a group costs (below) |
-| Launcher, now the app's Run half; its two dropdowns (D126) | Opened on the VM; Validate, Export split, Preview and Execute used there. The dropdowns not yet |
-| `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself goes in the next bundle |
+| Execute's progress lines: each step's start and end, timed, as it happens (D136); each table's rows in the summary, the manifest and the Status tab (D137) | Built and tested on the Mac; in the bundle `77742a9a…` (29 September 2026), not yet on the VM |
+| Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; in the bundle `77742a9a…` (29 September 2026). Not yet run on the VM: the first live group is the question of what a group costs (below) |
+| Launcher, now the app's Run half; its three dropdowns (D126, D140) | Opened on the VM; Validate, Export split, Preview and Execute used there, and the two dropdowns of D126. The third, and the pulls' finished and stopped words, not yet |
+| How Execute ended, in the manifest (D140); Artifacts after a clean pull (D141); the run folder's layout (D142); QuickEdit off in Execute's window (D143) | Built and tested on the Mac; in the bundle `77742a9a…` (29 September 2026), not yet on the VM. QuickEdit tested against a fake console only |
+| `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself is in the bundle `77742a9a…` (29 September 2026) |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; `stock.yaml` not yet |
 
 ## Known Bugs
@@ -30,25 +31,18 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: The Remade Pulls On The VM
 
-The user stopped every run and cleared the VM's pulls to start over (29 September 2026). The next bundle carries D117 to D131 and six pulls, each remade for the checked dictionary (D130): Celiac, IBD_Ancestry, Infant_RSV, Crohns_DxHxSxRx, Crohns_PatientsFromUpload and UC_Visits. Checked on the Mac: each validates, splits and dry-runs; Celiac's SQL reads only `K90.0`; every fact-table query joins its PK. On the VM:
+The user stopped every run and cleared the VM's pulls to start over (29 September 2026). The bundle sent that morning carried D117 to D131 and six pulls, each remade for the checked dictionary (D130): Celiac, IBD_Ancestry, Infant_RSV, Crohns_DxHxSxRx, Crohns_PatientsFromUpload and UC_Visits. Checked on the Mac: each validates, splits and dry-runs; Celiac's SQL reads only `K90.0`; every fact-table query joins its PK. On the VM:
 
+0.  **Before extracting the bundle `77742a9a…` (29 September 2026)** (59 files, the runtime alone). Pulls in the old layout (`runs\<project>\split\`) are not found by the new runtime (D142): let any pull that matters finish, and run Artifacts on it, first. After the update each pull is split again, which starts it over.
 1.  **Delivery.** `python bundle.py`, then `python scope.py --tdd`: the three Windows-only failures and the error should be gone (two of the fixes show only on Windows). `pullmanager.py` beside the folder is removed; `scope.py` and `utils.py` are there, and `python utils.py` lists the viewer, the transcription viewer and `clear_projects_db`: Refresh shows the project database's tables and space.
 2.  **Upload files beside the transfers**, at the paths the build names: IBD_Ancestry's `data\Meds\ibd\IBD_Meds.parquet`; Crohns_DxHxSxRx's and Crohns_PatientsFromUpload's `CrohnsPatients.parquet`; UC_Visits' `UCPatients.parquet`; `data\Codes\ICD-hosp.csv` (Crohns_DxHxSxRx, UC_Visits); Crohns_DxHxSxRx's `data\Meds\IBD_meds.parquet`; Celiac's `csv\HospitalICDCodes.csv`.
 3.  **Celiac** first: its PK should be celiac patients (`K90.0`). The earlier Celiac run pulled Crohn's: the transfer sent had `K50.%`.
-4.  **The batching tests.** Crohns_PatientsFromUpload is every Crohn's patient's PatientDim row, the uploaded PK (1.2 million) in 100,000-row chunks: does each chunk land, and do the rows add up to the PK's? IBD_Ancestry is now all patients, not a sample, batched by sex and in 30,000-patient chunks (24 runs, each chunked once its PK exists): the test of chunking a generated PK.
+4.  **The batching tests.** Crohns_PatientsFromUpload finished on the old bundle (29 September 2026): its upload 1,284,756 rows in 2m 31s (both legs together, since the old bundle did not time them apart), the PK registered in 0s, and its one run, 13 chunks, in 5m 43s. Its window then sat at the session's name with the lock held, paused by QuickEdit (D143). Still to check: that the rows add up to the PK's. Crohns_PatientsFromUpload is every Crohn's patient's PatientDim row, the uploaded PK (1.2 million) in 100,000-row chunks: does each chunk land, and do the rows add up to the PK's? IBD_Ancestry is now all patients, not a sample, batched by sex and in 30,000-patient chunks (24 runs, each chunked once its PK exists): the test of chunking a generated PK.
 5.  **Infant_RSV**, **Crohns_DxHxSxRx** and **UC_Visits**. Infant_RSV ran to the end on 29 September 2026 (exit code 0, both sessions, the PK 186,963 rows); it looked stopped after the PK only because the old bundle said nothing per table and only the PK's parquet is written before Artifacts (D137). Its first run failed at `setup` with error 1105: the project database was full (Space In The Projects Database, in design.md). Its tables were dropped and three pulls restarted (29 September 2026); not yet reported. The log stood at 12.6 of its 20,000 MB, held by an open transaction: it is to be ended (an SSMS tab's `COMMIT`, or closing SSMS) and checked with `clear_projects_db`'s Refresh.
-6.  **The progress lines** (D136), once the next bundle is in: the Pull Log tab shows each table as it starts and lands, with its rows and times; the closing summary and the Status tab list each table's rows under its run (D137). Crohns_PatientsFromUpload's upload lines time its two legs, file to Projects and Projects to Cosmos: the cost each table group adds (D134).
-7.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
-
-------------------------------------------------------------------------
-
-## Next: Fixes, In Order
-
-Agreed after Infant_RSV (29 September 2026). One commit each, with its outcome tests.
-
-1.  **Finished and stopped pulls** (D140): Execute records how it ended (`last_execute`); Run's three dropdowns, Running pulls, Finished and stopped pulls, Start run, with `(finished)`, `(finished with errors)`, `(stopped by user)` and `(stopped with errors)`. First because it defines "finished", which 2 needs, and makes every later VM report easier to read.
-2.  **Artifacts after a clean pull** (D141), on exactly the "finished" of 1.
-3.  **The run folder** (D142): the largest, touching makeYaml's split, Pullmanager's paths, Artifacts, the launcher and the test fixtures; after 2 has settled where Artifacts writes.
+6.  **The progress lines** (D136), once the bundle `77742a9a…` (29 September 2026) is in: the Pull Log tab shows each table as it starts and lands, with its rows and times; the closing summary and the Status tab list each table's rows under its run (D137). Crohns_PatientsFromUpload's upload lines time its two legs, file to Projects and Projects to Cosmos: the cost each table group adds (D134).
+7.  **Run** chooses from its three dropdowns (D140): a running pull is under Running pulls only; one that has run under Finished and stopped pulls with its word; Start run lists only pulls not yet run. Stop one, and it reads `(stopped by user)`. The dictionary line names `reference\datadictionary.yaml` in the extracted folder.
+8.  **The run folder** (D142): after Export split, `runs\<project>\` holds the manifest, the transfer YAML's copy and `pull_files\`; after Execute, its log beside the manifest, the earlier ones in `older_logs\`. A clean pull ends by packaging itself (D141): `cosmos_parquets\` and the rest appear without pressing Artifacts, and `load_parquets` opens them.
+9.  **QuickEdit** (D143): click inside Execute's window while it runs. The title should not change to "Select", and the lines keep coming.
 
 ------------------------------------------------------------------------
 
@@ -63,7 +57,7 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
     - Each session ends with its warnings, then one column-width table.
     - A batch with no values (`state`, D82): each run shows `values_found` and `v3of51 (LA)` as it goes, and `SELECT StateOrProvinceAbbreviation, COUNT(*)` on a destination's PK matches the whole PK.
     - `--artifacts IBD_Ancestry` once it finishes: each file says when it starts, then its rows, size and time, and the run ends with the list of files; the parquets open with `load_parquets.R` and `.py`, and in `viewparquets.py` under the VM's Tk; `PatientDurableKey` is `integer64` in R `arrow` 11 (checked only on 25); `contents.md` and `HOW_TO.md` read right.
-    - The PK's parquet appears in `runs/<project>/parquets/` as soon as its PK phase is done, before the first run (D87), and the pk phase's `pk_parquet` output gives its rows.
+    - The PK's parquet appears in `runs/<project>/cosmos_parquets/` (or `sneakpeek_parquets/`) as soon as its PK phase is done, before the first run (D87), and the pk phase's `pk_parquet` output gives its rows.
 3.  Two pulls at once: Celiac and an IBD template, exported from the Mac, validated, split, previewed and executed side by side. Each keeps its own run folder, lock, log and temp prefix; the launcher greys only the loaded one's buttons; `--running` lists both.
 4.  The IBD Ancestry pull, once it finishes (D58–D61):
     - `SELECT Sex, COUNT(*) FROM <white PK> GROUP BY Sex` is about `row_mult` times the same on the black PK, and the PK phase's `control_sample` output agrees.
@@ -94,9 +88,9 @@ Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished 
 
 ### Project Folder Layout
 
-The layout is decided (D142, Next: Fixes, In Order). Still open:
+The layout is built (D142). Still open:
 
-- Packaging SneakPeek as soon as its sessions finish, before the Cosmos ones run. Artifacts packages only finished tables, so running it mid-pull would do this, except that it refuses while the pull is executing (D67). D141 packages at the end of a clean pull; a `--artifacts` that waits on the lock, or runs from Execute when the last SneakPeek session ends, would package earlier.
+- Packaging SneakPeek as soon as its sessions finish, before the Cosmos ones run. Artifacts packages only finished tables, so running it mid-pull would do this, except that it refuses while the pull is executing (D67). Execute packages at the end of a clean pull (D141); a `--artifacts` that waits on the lock, or runs from Execute when the last SneakPeek session ends, would package earlier.
 - Big reference files live in a `data/` folder in the parent directory; templates reference them relative to the template.
 
 ### After Artifacts
