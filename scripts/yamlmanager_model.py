@@ -216,6 +216,37 @@ def join_line(join_type: str, source: str, operator: str, table: str, alias: str
             f"ON {source} {operator} {alias}.{column}")
 
 
+def line_aliases(lines: list[tuple[str, str]]) -> dict[str, str]:
+    """Each alias the (`from`/`join`, line) pairs declare, with its table."""
+    aliases: dict[str, str] = {}
+    for key, line in lines:
+        for alias, table, _ in my.declared_sql_tables(line, key == "from"):
+            aliases.setdefault(alias, table)
+    return aliases
+
+
+def line_problem(line: str, aliases: dict[str, str]) -> str | None:
+    """Why a written line would fail at Execute, or None (D118): an alias the
+    table does not define. The same check Validate makes, as the line is added."""
+    own = {alias for alias, _, _ in my.declared_sql_tables(line)}
+    for alias, column in my.referenced_sql_names(line):
+        if alias in my.SQL_SCHEMAS or alias in aliases or alias in own:
+            continue
+        have = ", ".join(sorted(set(aliases) | own)) or "none"
+        return f"`{alias}.{column}` names `{alias}`, which this table does not define; it has {have}."
+    return None
+
+
+_OUTSIDE_STRINGS = re.compile(r"(N?'(?:[^']|'')*')")
+
+
+def rename_alias(line: str, old: str, new: str) -> str:
+    """`old.Column` as `new.Column` throughout a line, strings left alone."""
+    pattern = re.compile(rf"(?<![\w.#@\]]){re.escape(old)}\.")
+    parts = _OUTSIDE_STRINGS.split(line)
+    return "".join(part if i % 2 else pattern.sub(f"{new}.", part) for i, part in enumerate(parts))
+
+
 def is_pk(cohort: dict[str, Any] | None) -> bool:
     return str((cohort or {}).get("type", "")).lower() == "pk"
 
@@ -1251,10 +1282,18 @@ class Draft:
         lines = filt.get(key) or []
         return [lines] if isinstance(lines, str) else [str(line) for line in lines]
 
+    def table_aliases(self, index: int) -> dict[str, str]:
+        """The aliases a table's `from` and joins define, its recipe's included."""
+        merged = self._merged_cohort(index) or self._cohort(index)
+        return line_aliases(my.cohort_sql_lines(merged))
+
     def add_line(self, index: int, kind: str, line: str) -> None:
         line = line.strip()
         if not line:
             raise DraftError("The line is empty.")
+        problem = line_problem(line, self.table_aliases(index))
+        if problem:
+            raise DraftError(problem)
         filt, key = self._lines_key(index, kind)
         filt[key] = self.added_lines(index, kind) + [line]
         self._changed()
@@ -1617,13 +1656,38 @@ class TableBuilder:
         self.joins = []
 
     def set_alias(self, alias: str) -> None:
+        """Rename the from table's alias in its columns, joins and where lines (D118)."""
         alias = alias.strip()
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", alias):
             raise DraftError(f"`{alias}` cannot be an alias: letters, digits and _ only.")
+        if alias == self.alias:
+            return
+        if alias in self.aliases():
+            raise DraftError(f"`{alias}` is already a join's alias here; choose another.")
+        old = self.alias
         for column in self.columns:
-            if str(column.get("source") or "").startswith(f"{self.alias}."):
+            if str(column.get("source") or "").startswith(f"{old}."):
                 column["source"] = f"{alias}.{self.source_column(column)}"
+        for i, join in enumerate(self.joins):
+            if isinstance(join, str):
+                self.joins[i] = rename_alias(join, old, alias)
+            elif join.get("base_alias") == old:
+                join["base_alias"] = alias
+        self.wheres = [rename_alias(w, old, alias) for w in self.wheres]
         self.alias = alias
+
+    def aliases(self) -> dict[str, str]:
+        """This table's aliases: the from table's, and each join's."""
+        found = {self.alias: self.from_table} if self.alias else {}
+        for join in self.joins:
+            if isinstance(join, str):
+                found.update(line_aliases([("join", join)]))
+            else:
+                found[str(join.get("alias"))] = str(join.get("table"))
+        return found
+
+    def line_problem(self, line: str) -> str | None:
+        return line_problem(line, self.aliases()) if line.strip() else None
 
     def removed_columns(self) -> list[str]:
         chosen = {self.source_column(c) for c in self.columns}
@@ -1686,8 +1750,12 @@ class TableBuilder:
                            "table": table, "alias": alias_for(table), "column": column})
 
     def add_join_text(self, text: str) -> None:
-        """A join written out, for a Cosmos table: `INNER JOIN PatientDim AS p ON ...`."""
+        """A join written out, for a Cosmos table: `INNER JOIN PatientDim AS p ON ...`,
+        refused if it names an alias the table does not define (D118)."""
         if text.strip():
+            problem = self.line_problem(text)
+            if problem:
+                raise DraftError(problem)
             self.joins.append(text.strip())
 
     def remove_join(self, index: int) -> None:
@@ -1746,6 +1814,10 @@ class TableBuilder:
         PK or a new fact table. Returns its place in `cohorts`."""
         if not self.from_table:
             raise DraftError("Choose the table its rows come from first.")
+        for line in [j for j in self.joins if isinstance(j, str)] + self.wheres:
+            problem = self.line_problem(line)
+            if problem:
+                raise DraftError(f"{problem} In: {line}")
         cohort = self.build()
         if self.index is not None:
             if self.pk and not self.draft.cohort_is_pk(self.draft._cohort(self.index)):
@@ -2300,6 +2372,52 @@ class TableBuilderTests(ModelTest):
                          ["INNER JOIN {{prefix}}_Patients AS p ON ef.PatientDurableKey = p.PatientDurableKey"])
         validation = draft.validate()
         self.assertTrue(validation.ok, [m.text for m in validation.of_kind("error")])
+
+    def test_a_written_join_naming_an_alias_the_table_lacks_is_refused(self):
+        # Infant_RSV: `pk.` from a recipe, on a table aliased `ef` here.
+        draft = self.draft()
+        builder = self.encounters(draft)
+        with self.assertRaises(DraftError) as caught:
+            builder.add_join_text("INNER JOIN DurationDim AS age ON age.DurationKey = pk.AgeKey")
+        self.assertIn("`pk`", str(caught.exception))
+        self.assertIn("age, ef", str(caught.exception))
+        self.assertEqual(builder.joins, [])
+        builder.add_join_text("INNER JOIN DurationDim AS age ON age.DurationKey = ef.AgeKey")
+        self.assertEqual(len(builder.joins), 1)
+
+    def test_a_table_with_a_bad_written_where_is_not_committed(self):
+        draft = self.draft()
+        builder = self.encounters(draft)
+        builder.add_where("p.IsValid = 1")
+        self.assertIn("`p`", builder.line_problem("p.IsValid = 1"))
+        with self.assertRaises(DraftError):
+            builder.commit()
+        self.assertEqual(draft.doc["cohorts"], [])
+
+    def test_renaming_the_alias_rewrites_the_tables_own_lines(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        builder = self.encounters(draft)
+        builder.add_join(1, "Patients", "PatientDurableKey")
+        builder.add_join_text("LEFT JOIN {{prefix}}_Patients AS pt ON pt.PatientDurableKey = ef.PatientDurableKey")
+        builder.add_where("ef.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}")
+        builder.add_where("ef.Department <> 'ef.x'")
+        builder.set_alias("enc")
+        cohort = draft.doc["cohorts"][builder.commit()]
+        self.assertEqual(cohort["filter"]["join"], [
+            "INNER JOIN {{prefix}}_Patients AS p ON enc.PatientDurableKey = p.PatientDurableKey",
+            "LEFT JOIN {{prefix}}_Patients AS pt ON pt.PatientDurableKey = enc.PatientDurableKey"])
+        self.assertEqual(cohort["filter"]["where"], [
+            "enc.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}", "enc.Department <> 'ef.x'"])
+        self.assertTrue(draft.validate().ok, [m.text for m in draft.validate().of_kind("error")])
+
+    def test_an_alias_a_join_already_has_is_refused(self):
+        builder = self.encounters(self.draft())
+        builder.add_join_text("INNER JOIN DurationDim AS age ON age.DurationKey = ef.AgeKey")
+        with self.assertRaises(DraftError):
+            builder.set_alias("age")
+        self.assertEqual(builder.alias, "ef")
 
     def test_the_template_keeps_no_type_the_dictionary_supplies(self):
         # A copy in the template goes stale when the dictionary is corrected.

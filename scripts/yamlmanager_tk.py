@@ -1078,9 +1078,17 @@ class TableBuilderPanel:
             var = tk.StringVar(value=line)
             entry = ttk.Entry(row, textvariable=var, width=100)
             keep(entry, var)
-            var.trace_add("write", lambda *a, i=i, v=var: b.set_where(i, v.get()))
+            problem = ttk.Label(box, text=b.line_problem(line) or "", foreground="#b3261e")
+
+            def typed(*_: Any, i: int = i, v: tk.StringVar = var, shown: ttk.Label = problem) -> None:
+                b.set_where(i, v.get())
+                # Checked as it is typed, and again at Done (D118).
+                shown.configure(text=b.line_problem(v.get()) or "")
+
+            var.trace_add("write", typed)
             entry.pack(side="left")
             ttk.Button(row, text="Remove", command=lambda i=i: self.act(lambda: b.remove_where(i))).pack(side="left", padx=4)
+            problem.pack(anchor="w")
         names = [b.source_column(c) for c in b.columns]
         where_form(self.view, box, [(name, name) for name in names],
                    lambda source, mode, value, table, column: self.act(lambda: b.add_where_by_column(
@@ -1945,6 +1953,29 @@ class FilterViewTests(ViewTest):
         mapped = [w for w in widgets(box) if isinstance(w, ttk.Combobox) and w.winfo_ismapped()]
         tables = [w for w in mapped if "HospitalICDCodes" in w.cget("values")]
         self.assertTrue(tables)
+
+    def test_a_written_condition_says_at_once_when_it_names_an_alias_the_table_lacks(self):
+        self.open("Celiac_intake.yaml")
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
+        window = self.view._last_builder
+        next(w for w in widgets(window.win) if isinstance(w, ttk.Button)
+             and w.cget("text") == "Add a written condition").invoke()
+        self.root.update()
+        window = self.view._last_builder
+        where = next(w for w in widgets(window.win) if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Where")
+        entry = next(w for w in widgets(where) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox))
+
+        def shown() -> list[str]:
+            return [str(w.cget("text")) for w in widgets(where) if isinstance(w, ttk.Label) and "does not define" in str(w.cget("text"))]
+
+        entry.insert(0, "p.IsValid = 1")
+        self.root.update()
+        self.assertTrue(shown() and "`p`" in shown()[0], shown())
+        entry.delete(0, "end")
+        entry.insert(0, "ef.DateKey > 20200101")
+        self.root.update()
+        self.assertEqual(shown(), [])
 
     def test_the_builder_offers_the_join_operator(self):
         self.open("Celiac_intake.yaml")
