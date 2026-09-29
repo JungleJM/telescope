@@ -1,5 +1,3 @@
-transfer:
-  from_template: Crohns_PatientsFromUpload_intake.yaml
 cosmos_vars:
   project_db: PROJECTD93A5E7
   cosmos_db: Dual
@@ -11,9 +9,15 @@ test_options:
   stop_at_for_pk_table: 10
   random_pk_sample: false
 project_vars:
-  project_folder: Crohns_PatientsFromUpload
-vars: {}
-upload_cohorts: []
-multipliers: []
-batching: []
-cohorts: []
+  project_folder: TotalCohort
+vars:
+
+upload_cohorts:
+
+multipliers:
+
+batching:
+
+cohorts:
+  - recipe: PatientWithDx
+    name: Patients

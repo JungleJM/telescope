@@ -1,0 +1,17 @@
+DiagnosisCode,Description,Category
+K92.0,Hematemesis,GI bleed
+K92.1,Melena,GI bleed
+K92.2,"Gastrointestinal hemorrhage, unspecified",GI bleed
+K62.5,Hemorrhage of anus and rectum,GI bleed
+K63.1,Perforation of intestine (nontraumatic),Bowel perforation
+K25.1,Acute gastric ulcer with perforation,Bowel perforation
+K57.20,Diverticulitis of large intestine with perforation and abscess without bleeding,Bowel perforation
+K65.0,Generalized (acute) peritonitis,Bowel perforation
+A09,"Infectious gastroenteritis and colitis, unspecified",Acute gastroenteritis
+K52.9,"Noninfective gastroenteritis and colitis, unspecified",Acute gastroenteritis
+A08.4,"Viral intestinal infection, unspecified",Acute gastroenteritis
+A04.72,"Enterocolitis due to Clostridium difficile, not specified as recurrent",Acute gastroenteritis
+K56.7,"Ileus, unspecified",Bowel obstruction
+K56.609,"Unspecified intestinal obstruction, unspecified as to partial versus complete obstruction",Bowel obstruction
+K85.90,"Acute pancreatitis without necrosis or infection, unspecified",Acute pancreatitis
+K35.80,Unspecified acute appendicitis,Acute appendicitis

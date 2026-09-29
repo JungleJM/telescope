@@ -1702,7 +1702,6 @@ import shutil  # noqa: E402
 import tempfile  # noqa: E402
 import unittest  # noqa: E402
 
-REPO_YAMLS = SCRIPT_DIR.parent / "YAMLs"
 
 
 _TEST_ROOT: list[Any] = []
@@ -1729,6 +1728,9 @@ def widgets(parent: Any) -> list[Any]:
     return out
 
 
+VIEW_FIXTURES = Path(__file__).resolve().parent / "yamlmanager_fixtures" / "temp"
+
+
 class ViewTest(unittest.TestCase):
     # One Tk for every test (tk_root).
     root: Any = None
@@ -1742,8 +1744,8 @@ class ViewTest(unittest.TestCase):
             self.skipTest("no display for Tk")
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        shutil.copytree(REPO_YAMLS / "temp", self.tmp / "YAMLs" / "temp",
-                        ignore=shutil.ignore_patterns("bundle_queue.txt"))
+        # The tests' own intakes, not the pulls in YAMLs/temp, which change.
+        shutil.copytree(VIEW_FIXTURES, self.tmp / "YAMLs" / "temp")
         # The core files, from wherever datascope.json says (D111).
         (self.tmp / "recipes").mkdir()
         for key in ("recipes", "datadictionary", "template"):

@@ -5981,7 +5981,7 @@ class SqlReferenceTests(MakeYamlTest):
         self.assertCompiles(res)
 
     def test_a_column_the_dictionary_lacks_warns_and_still_compiles(self):
-        res = self.compile_template(extra=self.table(join=self.PK_JOIN, where="evf._IsDeleted = 0"))
+        res = self.compile_template(extra=self.table(join=self.PK_JOIN, where="evf.NotAColumn_X = 0"))
         self.assertCompiles(res)
         self.assertHasWarning(res, "sql_column_not_in_dictionary")
 
