@@ -64,6 +64,26 @@ sys.argv[0] = str(ENTRY)
 runpy.run_path(str(ENTRY), run_name="__main__")
 '''
 
+# The utilities window's shortcut, written beside scope.py the same way (D124).
+UTILS_LAUNCHER_NAME = "utils.py"
+UTILS_LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
+"""Opens the utilities window from {folder}: a button for each script in its utils/.
+
+Written by `python bundle.py --extract`, and rewritten by every extraction, so
+it is not for editing. `python utils.py --list` names the scripts.
+"""
+
+import runpy
+import sys
+from pathlib import Path
+
+ENTRY = Path(__file__).resolve().parent / {folder!r} / "utilities.py"
+if not ENTRY.is_file():
+    sys.exit(f"No utilities at {{ENTRY}}. Extract it again: python bundle.py --extract {folder}")
+sys.argv[0] = str(ENTRY)
+runpy.run_path(str(ENTRY), run_name="__main__")
+'''
+
 # What a re-extraction does to a file that is already there. Everything
 # bundled is managed and gets updated; a locally modified copy is set aside
 # rather than overwritten.
@@ -432,6 +452,8 @@ def write_launcher(target: Path) -> Path:
     target = Path(target).resolve()
     launcher = target.parent / LAUNCHER_NAME
     launcher.write_bytes(LAUNCHER_TEMPLATE.format(folder=target.name).encode("utf-8"))
+    (target.parent / UTILS_LAUNCHER_NAME).write_bytes(
+        UTILS_LAUNCHER_TEMPLATE.format(folder=target.name).encode("utf-8"))
     old = target.parent / OLD_LAUNCHER_NAME
     try:
         if old.is_file() and old.read_bytes().startswith(LAUNCHER_SIGNATURE.encode("utf-8")):
@@ -463,8 +485,10 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     for path, kept in place_root_files(bundle_path, target):
         note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
         print(f"Wrote {path}{note}")
-    print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the launcher "
-          f"(`python {LAUNCHER_NAME} --tdd` tests the delivery).")
+    print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}")
+    print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the app "
+          f"(`python {LAUNCHER_NAME} --tdd` tests the delivery); `python {UTILS_LAUNCHER_NAME}` "
+          "the utilities.")
 
 
 def interactive(bundle_path: Path) -> int:
@@ -483,8 +507,8 @@ def interactive(bundle_path: Path) -> int:
             answer = input(f"Write {', '.join(carried)} into {bundle_path.parent}, leaving the "
                            f"software as it is? [y/N] ")
         else:
-            answer = input(f"Extract into {target} and write {', '.join([LAUNCHER_NAME] + carried)} "
-                           f"beside it? [y/N] ")
+            answer = input(f"Extract into {target} and write "
+                           f"{', '.join([LAUNCHER_NAME, UTILS_LAUNCHER_NAME] + carried)} beside it? [y/N] ")
     except EOFError:
         answer = ""
     if answer.strip().lower() not in ("y", "yes"):

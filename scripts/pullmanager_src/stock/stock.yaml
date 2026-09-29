@@ -1,0 +1,9 @@
+# What Artifacts copies into every pull's run folder (D124), by path from this
+# folder. A plain entry lands at the run folder's top; `into:` puts it in a
+# folder of its own there. HOW_TO.md has {project} and {parquets} filled in;
+# everything else is copied as it is. Add a file here and every pull gets it.
+files:
+  - HOW_TO.md
+  - ../utils/viewparquets.py
+  # - file: ../utils/some_script.R
+  #   into: R

@@ -357,13 +357,49 @@ class LoaderTests(ArtifactTestCase):
 
         self.write()
         self.assertEqual((self.out.parent / "viewparquets.py").read_bytes(),
-                         (STOCK_DIR / "viewparquets.py").read_bytes())
+                         (STOCK_DIR.parent / "utils" / "viewparquets.py").read_bytes())
+
+    def use_stock(self, listing: str, files: dict[str, str]):
+        """A stock folder in the scratch space, with `files` beside it by path."""
+        from .. import loaders
+
+        stock = self.work / "stock"
+        stock.mkdir(exist_ok=True)
+        (stock / "stock.yaml").write_text(listing, encoding="utf-8")
+        for name, text in files.items():
+            path = self.work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        original = loaders.STOCK_DIR
+        loaders.STOCK_DIR = stock
+        self.addCleanup(setattr, loaders, "STOCK_DIR", original)
+
+    def test_what_stock_yaml_lists_is_copied_where_it_says(self):
+        # D124: a script added to the list reaches every pull.
+        self.use_stock("files:\n  - ../utils/viewparquets.py\n  - file: ../utils/tables.R\n    into: R\n",
+                       {"utils/viewparquets.py": "# viewer\n", "utils/tables.R": "# R\n"})
+        written = self.write()
+        self.assertEqual((self.out.parent / "R" / "tables.R").read_text(encoding="utf-8"), "# R\n")
+        self.assertEqual((self.out.parent / "viewparquets.py").read_text(encoding="utf-8"), "# viewer\n")
+        self.assertIn(self.out.parent / "R" / "tables.R", written)
+
+    def test_an_entry_that_is_not_there_is_said_and_the_rest_copied(self):
+        import contextlib
+        import io
+
+        self.use_stock("files: [gone.R, ../utils/viewparquets.py]\n", {"utils/viewparquets.py": "# viewer\n"})
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said):
+            self.write()
+        self.assertIn("gone.R", said.getvalue())
+        self.assertTrue((self.out.parent / "viewparquets.py").is_file())
 
     def test_how_to_comes_from_the_stock_file_with_the_pull_filled_in(self):
         from .. import loaders
 
         stock = self.work / "stock"
         stock.mkdir()
+        (stock / "stock.yaml").write_text("files: [HOW_TO.md, viewparquets.py]\n", encoding="utf-8")
         (stock / "viewparquets.py").write_text("# viewer\n", encoding="utf-8")
         (stock / "HOW_TO.md").write_text(
             "<!-- stock HOW_TO.md: a note for the editor -->\n# {project}\n"

@@ -134,7 +134,8 @@ class BuildTests(BundleTestCase):
         sections, _ = read_bundle(self.bundle)
         published = {section["path"] for section in sections}
         self.assertIn("stock/HOW_TO.md", published)
-        self.assertIn("stock/viewparquets.py", published)
+        self.assertIn("utils/viewparquets.py", published)
+        self.assertIn("stock/stock.yaml", published)
 
     def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
         # makeYaml's defaults are beside the code (D111): the dictionary must be
@@ -526,6 +527,14 @@ class LauncherTests(BundleTestCase):
         old.write_text("print('mine')\n", encoding="utf-8")
         self.run_python("bundle.py", "--extract")
         self.assertEqual(old.read_text(encoding="utf-8"), "print('mine')\n")
+
+    def test_utils_py_is_written_beside_scope_py_and_lists_the_utilities(self):
+        # D124: `python utils.py` on the VM; the viewer moved to utils/.
+        self.assertEqual(self.run_python("bundle.py", "--extract").returncode, 0)
+        listed = self.run_python("utils.py", "--list")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn("viewparquets.py", listed.stdout.split())
+        self.assertIn("transcription_viewer.py", listed.stdout.split())
 
     def test_a_missing_folder_says_to_extract_again(self):
         self.run_python("bundle.py", "--extract")
