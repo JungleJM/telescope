@@ -49,6 +49,10 @@ I'll assume, unless you say otherwise, that a failed group is retried alone (`--
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
+1.  Not sure, and i've deleted the log since. I'll see when I finish this run of Crohns_pateintsFromUploads.
+2.  its own connection, and then a name in teh progress. While a batch is running i can't see any progress until it's done, so if I have 12 tables in it, and the 8th table takes 4 hours, even if everything else is 2 minutes i can't see any updates
+3.  sure
+4.  
 :::
 
 ::: {.callout-note title="🟦 Claude: cohort recipes"}

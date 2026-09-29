@@ -2434,3 +2434,31 @@ CSS colours them there.
 section, take its pictures at the next update, at no cost in tokens, and never
 touches an image not named `paste-`. A test holds it to the path: the same
 `paste-1.png` beside another document does not keep this one.
+
+### D133. A utility to see and clear a Projects database
+
+**Context.** Infant_RSV's two sessions failed at `setup` with error 1105:
+the project database's data file had reached its 20,000 MB cap, full of the
+tables of earlier pulls, already packaged as parquets. A drop-everything
+script in SSMS seemed to do nothing, most likely waiting on a lock another
+session held. Its log, a separate 20,000 MB file, stood at 12.5 GB used,
+held by an open transaction (`ACTIVE_TRANSACTION`, under `SIMPLE` recovery).
+
+**Decision.**
+
+- `utils/clear_projects_db.py`: a tkinter window onto one project database,
+  showing each table's rows and size, each file's use against its cap, and
+  what the log is waiting on. It drops one table, the selected ones, or all
+  (all only after the database's name is typed), and refreshes after each.
+- Each drop commits alone, with a 30-second lock timeout: a locked table is
+  reported as blocked, naming the usual holders, and the rest still drop. A
+  foreign key on or pointing at a chosen table is dropped first.
+- It refuses any database whose name does not start `PROJECTD`.
+- Pullmanager itself still drops nothing of a finished pull, and does not
+  check space before it starts (roadmap).
+
+**Why.** Dropping is the user's choice, table by table, once the parquets are
+safe (D28, D45): a pull deleting its own tables would lose the copy
+Artifacts reads. A lock timeout turns a silent hang into a message saying
+what to close. The name check keeps it off Cosmos and anything that is not a
+project database.

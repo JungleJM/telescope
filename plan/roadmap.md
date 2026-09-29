@@ -17,6 +17,7 @@ When an item here is built, delete it from this file and describe the result in 
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
 | Launcher, now the app's Run half; its two dropdowns (D126) | Opened on the VM; Validate, Export split, Preview and Execute used there. The dropdowns not yet |
+| `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself goes in the next bundle |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; `stock.yaml` not yet |
 
 ## Known Bugs
@@ -29,11 +30,11 @@ When an item here is built, delete it from this file and describe the result in 
 
 The user stopped every run and cleared the VM's pulls to start over (29 September 2026). The next bundle carries D117 to D131 and six pulls, each remade for the checked dictionary (D130): Celiac, IBD_Ancestry, Infant_RSV, Crohns_DxHxSxRx, Crohns_PatientsFromUpload and UC_Visits. Checked on the Mac: each validates, splits and dry-runs; Celiac's SQL reads only `K90.0`; every fact-table query joins its PK. On the VM:
 
-1.  **Delivery.** `python bundle.py`, then `python scope.py --tdd`: the three Windows-only failures and the error should be gone (two of the fixes show only on Windows). `pullmanager.py` beside the folder is removed; `scope.py` and `utils.py` are there, and `python utils.py` lists the viewer and the transcription viewer.
+1.  **Delivery.** `python bundle.py`, then `python scope.py --tdd`: the three Windows-only failures and the error should be gone (two of the fixes show only on Windows). `pullmanager.py` beside the folder is removed; `scope.py` and `utils.py` are there, and `python utils.py` lists the viewer, the transcription viewer and `clear_projects_db`: Refresh shows the project database's tables and space.
 2.  **Upload files beside the transfers**, at the paths the build names: IBD_Ancestry's `data\Meds\ibd\IBD_Meds.parquet`; Crohns_DxHxSxRx's and Crohns_PatientsFromUpload's `CrohnsPatients.parquet`; UC_Visits' `UCPatients.parquet`; `data\Codes\ICD-hosp.csv` (Crohns_DxHxSxRx, UC_Visits); Crohns_DxHxSxRx's `data\Meds\IBD_meds.parquet`; Celiac's `csv\HospitalICDCodes.csv`.
 3.  **Celiac** first: its PK should be celiac patients (`K90.0`). The earlier Celiac run pulled Crohn's: the transfer sent had `K50.%`.
 4.  **The batching tests.** Crohns_PatientsFromUpload is every Crohn's patient's PatientDim row, the uploaded PK (1.2 million) in 100,000-row chunks: does each chunk land, and do the rows add up to the PK's? IBD_Ancestry is now all patients, not a sample, batched by sex and in 30,000-patient chunks (24 runs, each chunked once its PK exists): the test of chunking a generated PK.
-5.  **Infant_RSV**, **Crohns_DxHxSxRx** and **UC_Visits**.
+5.  **Infant_RSV**, **Crohns_DxHxSxRx** and **UC_Visits**. Infant_RSV's first run failed at `setup` with error 1105: the project database was full (Space In The Projects Database, in design.md). Its tables were dropped and three pulls restarted (29 September 2026); not yet reported. The log stood at 12.6 of its 20,000 MB, held by an open transaction: it is to be ended (an SSMS tab's `COMMIT`, or closing SSMS) and checked with `clear_projects_db`'s Refresh.
 6.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
 
 ------------------------------------------------------------------------
@@ -134,6 +135,7 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 - **`split_after_build` on an uploaded PK** is refused (D54). It could be supported by splitting the rows as the copy lands, if a list ever needs it.
 - **One PK per multiplier group.** Two `type: PK` cohorts in one group are an error (`multiple_pk_cohorts`), so each session has exactly one PK.
 - **Multi-step PK.** A PK built from a prior PK (a patient list, then diagnosis events for those patients: `PKTable` built by joining `PKTable2`). The `pk` phase is one YAML; ordered PK cohorts inside it need a representation.
+- **Space in the project database.** Pullmanager neither checks the data file's and log's room before a pull nor drops a finished pull's tables, so a full database is found only when `setup` fails (D133). It could say, at Validate or before `setup`, how full each file is, and name the tables of pulls already packaged as parquets.
 - **Tests still owed**: duplicate output column names and blank `source` expressions in a cohort.
 
 ------------------------------------------------------------------------
