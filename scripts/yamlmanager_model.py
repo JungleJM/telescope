@@ -150,6 +150,14 @@ class Workspace:
     def fact_recipes(self) -> list[str]:
         return [str(r["name"]) for r in self.recipes() if not is_pk(r)]
 
+    def recipe_sets(self) -> list[dict[str, Any]]:
+        """`recipe_sets` in recipes.yaml (D135): several recipes added as one table group."""
+        sets = self.recipes_doc().get("recipe_sets") or []
+        return [s for s in sets if isinstance(s, dict) and s.get("name")] if isinstance(sets, list) else []
+
+    def recipe_set(self, name: str) -> dict[str, Any] | None:
+        return next((s for s in self.recipe_sets() if str(s.get("name")) == name), None)
+
     def batching_recipes(self) -> list[dict[str, Any]]:
         return [r for r in self.recipes_doc().get("batching_recipes") or [] if isinstance(r, dict) and r.get("name")]
 
@@ -1248,6 +1256,38 @@ class Draft:
                 tables.remove(cohort.get("name"))
         self._changed()
 
+    def add_recipe_set(self, name: str) -> list[int]:
+        """A recipe set's tables as ordinary fact tables, in a table group
+        named for the set (D135). Checked whole before anything is added."""
+        found = self.ws.recipe_set(name)
+        if found is None:
+            raise DraftError(f"No recipe set named {name}. {self.ws.recipes_problem()}".strip())
+        entries = [t for t in found.get("tables") or [] if isinstance(t, dict)]
+        if not entries:
+            raise DraftError(f"Recipe set {name} lists no tables.")
+        taken = {str(c.get("name")) for c in self.doc["cohorts"] if isinstance(c, dict)}
+        names: list[str] = []
+        for entry in entries:
+            recipe = self.ws.recipe(str(entry.get("recipe") or ""))
+            if recipe is None:
+                raise DraftError(f"Recipe set {name} names recipe {entry.get('recipe')}, which recipes.yaml lacks.")
+            if is_pk(recipe):
+                raise DraftError(f"Recipe set {name} names {entry.get('recipe')}, a PK; a set holds fact tables.")
+            table = str(entry.get("name") or entry.get("recipe"))
+            if table in taken or table in names:
+                raise DraftError(f"{table} is a table here already. Rename it, then add the set.")
+            names.append(table)
+        group_name = self._group_name(name)
+        start = len(self.doc["cohorts"])
+        for entry, table in zip(entries, names):
+            self.doc["cohorts"].append({**copy.deepcopy(entry), "name": table})
+        groups = self.doc.get("table_groups")
+        if not isinstance(groups, list):
+            groups = self.doc["table_groups"] = []
+        groups.append({"name": group_name, "tables": names})
+        self._changed()
+        return list(range(start, len(self.doc["cohorts"])))
+
     # --------------------------------------------------------- table groups
 
     def _groups(self) -> list[dict[str, Any]]:
@@ -2059,51 +2099,110 @@ class TableBuilder:
         return self.draft.add_fact_table(cohort)
 
 
+def _read_recipes_file(recipes_path: Path, what: str) -> tuple[str, dict[str, Any]]:
+    if not recipes_path.is_file():
+        raise DraftError(f"There is no {recipes_path.name} here: recipes are kept on the Mac (D49), "
+                         f"so {what} is saved there.")
+    try:
+        return recipes_path.read_text(encoding="utf-8"), my.load_yaml(recipes_path) or {}
+    except Exception as exc:  # noqa: BLE001 - said to the view
+        raise DraftError(f"Could not read {recipes_path.name}: {exc}") from exc
+
+
+def _append_to_recipes(recipes_path: Path, text: str, additions: dict[str, list[dict[str, Any]]]) -> None:
+    """Add entries to lists of recipes.yaml, keeping its comments and layout,
+    and read it back before it replaces the file, so a bad write cannot break it."""
+    lines = text.splitlines()
+    for section, entries in additions.items():
+        if not entries:
+            continue
+        start = next((i for i, line in enumerate(lines) if re.match(rf"^{section}:\s*(#.*)?$", line)), None)
+        if start is None:
+            lines += ["", f"{section}:"]
+            end, indent = len(lines), "  "
+        else:
+            end = next((i for i in range(start + 1, len(lines))
+                        if lines[i] and not lines[i][0].isspace() and not lines[i].startswith("#")), len(lines))
+            while end > start + 1 and not lines[end - 1].strip():
+                end -= 1
+            item = next((line for line in lines[start + 1:end] if line.lstrip().startswith("- ")), "  - ")
+            indent = item[: len(item) - len(item.lstrip())]
+        entry = [indent + line if line else line for line in my.dump_yaml_text(entries).rstrip().splitlines()]
+        lines = lines[:end] + entry + lines[end:]
+    temp = recipes_path.with_name(recipes_path.name + ".tmp")
+    try:
+        temp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        check = my.load_yaml(temp) or {}
+        for section, entries in additions.items():
+            have = {str(r.get("name")) for r in check.get(section) or [] if isinstance(r, dict)}
+            missing = [str(e.get("name")) for e in entries if str(e.get("name")) not in have]
+            if missing:
+                raise ValueError(f"the saved file did not read back with {', '.join(missing)}")
+        os.replace(temp, recipes_path)
+    except Exception as exc:  # noqa: BLE001 - said to the view
+        temp.unlink(missing_ok=True)
+        raise DraftError(f"Could not save to {recipes_path.name}: {exc}. The file is unchanged.") from exc
+
+
 def save_recipe(recipes_path: Path, cohort: dict[str, Any]) -> tuple[bool, str]:
-    """Add a table to recipes.yaml as a recipe, keeping the file's comments and
-    layout (D56). A name already there is refused; the result is read back
-    before it replaces the file, so a bad write cannot break it."""
+    """Add a table to recipes.yaml as a recipe (D56). A name already there is refused."""
     recipe = copy.deepcopy(cohort)
     recipe.pop("recipe", None)
     name = str(recipe.get("name") or "").strip()
     if not name:
         return False, "The table needs a Name before it can be saved as a recipe."
-    if not recipes_path.is_file():
-        return False, (f"There is no {recipes_path.name} here: recipes are kept on the Mac (D49), "
-                       "so a table is saved as a recipe there.")
     try:
-        text = recipes_path.read_text(encoding="utf-8")
-        existing = my.load_yaml(recipes_path) or {}
-    except Exception as exc:  # noqa: BLE001 - said to the view
-        return False, f"Could not read {recipes_path.name}: {exc}"
-    names = {str(r.get("name")) for r in existing.get("recipes") or [] if isinstance(r, dict)}
-    if name in names:
-        return False, f"A recipe named {name} is already in {recipes_path.name}. Rename the table and save again."
-    lines = text.splitlines()
-    start = next((i for i, line in enumerate(lines) if re.match(r"^recipes:\s*(#.*)?$", line)), None)
-    if start is None:
-        lines += ["", "recipes:"]
-        end, indent = len(lines), "  "
-    else:
-        end = next((i for i in range(start + 1, len(lines))
-                    if lines[i] and not lines[i][0].isspace() and not lines[i].startswith("#")), len(lines))
-        while end > start + 1 and not lines[end - 1].strip():
-            end -= 1
-        item = next((line for line in lines[start + 1:end] if line.lstrip().startswith("- ")), "  - ")
-        indent = item[: len(item) - len(item.lstrip())]
-    entry = [indent + line if line else line for line in my.dump_yaml_text([recipe]).rstrip().splitlines()]
-    updated = "\n".join(lines[:end] + entry + lines[end:]) + "\n"
-    temp = recipes_path.with_name(recipes_path.name + ".tmp")
-    try:
-        temp.write_text(updated, encoding="utf-8")
-        check = my.load_yaml(temp) or {}
-        if name not in {str(r.get("name")) for r in check.get("recipes") or [] if isinstance(r, dict)}:
-            raise ValueError("the saved file did not read back with the new recipe")
-        os.replace(temp, recipes_path)
-    except Exception as exc:  # noqa: BLE001 - said to the view
-        temp.unlink(missing_ok=True)
-        return False, f"Could not save to {recipes_path.name}: {exc}. The file is unchanged."
+        text, existing = _read_recipes_file(recipes_path, "a table")
+        names = {str(r.get("name")) for r in existing.get("recipes") or [] if isinstance(r, dict)}
+        if name in names:
+            return False, f"A recipe named {name} is already in {recipes_path.name}. Rename the table and save again."
+        _append_to_recipes(recipes_path, text, {"recipes": [recipe]})
+    except DraftError as exc:
+        return False, str(exc)
     return True, f"Saved {name} to {recipes_path.name}."
+
+
+def save_recipe_set(recipes_path: Path, draft: "Draft", group: int) -> tuple[bool, str]:
+    """A table group as a recipe set in recipes.yaml (D135), in Fact Tables order.
+
+    A prefabricated table is saved as it is in the template: its recipe, its
+    name, and what the template adds to it (its variables, bindings to its
+    siblings among them, and filters). A table built from the dictionary is
+    saved as a recipe too, in the same write, since a set names recipes.
+    """
+    try:
+        index, name, tables = next((g for g in draft.table_groups() if g[0] == group), (None, "", []))
+        if index is None:
+            raise DraftError(f"There is no table group at {group}.")
+        if not tables:
+            raise DraftError(f"Table group {name} has no tables to save.")
+        text, existing = _read_recipes_file(recipes_path, "a recipe set")
+        if name in {str(s.get("name")) for s in existing.get("recipe_sets") or [] if isinstance(s, dict)}:
+            raise DraftError(f"A recipe set named {name} is already in {recipes_path.name}. Rename the group and save again.")
+        recipe_names = {str(r.get("name")) for r in existing.get("recipes") or [] if isinstance(r, dict)}
+        new_recipes: list[dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
+        for _, cohort in draft.fact_tables():
+            table = str(cohort.get("name") or "")
+            if table not in tables:
+                continue
+            if cohort.get("recipe"):
+                entries.append(copy.deepcopy(cohort))
+                continue
+            if table in recipe_names:
+                raise DraftError(f"{table} is built here, and a recipe named {table} is already in "
+                                 f"{recipes_path.name}. Rename the table and save again.")
+            recipe = copy.deepcopy(cohort)
+            new_recipes.append(recipe)
+            entries.append({"recipe": table, "name": table})
+        _append_to_recipes(recipes_path, text, {
+            "recipes": new_recipes,
+            "recipe_sets": [{"name": name, "tables": entries}],
+        })
+    except DraftError as exc:
+        return False, str(exc)
+    also = f", with {', '.join(r['name'] for r in new_recipes)} as recipes" if new_recipes else ""
+    return True, f"Saved recipe set {name} to {recipes_path.name}{also}."
 
 
 # =============================================================================
@@ -3089,12 +3188,99 @@ class TableGroupModelTests(ModelTest):
         self.assertEqual((message.field.section, message.field.index), ("groups", 0))
 
 
+class RecipeSetTests(ModelTest):
+    """D135: a table group saved as a recipe set, and the set added as a group."""
+
+    VISITS = {
+        "name": "Visits", "dest_table": "Visits", "type": "fact",
+        "columns": [{"source": "e.EncounterKey", "name": "EncounterKey"}],
+        "filter": {"from": "EncounterFact AS e",
+                   "join": ["INNER JOIN {{prefix}}_CodedVisits AS cv ON cv.EncounterKey = e.EncounterKey"]},
+    }
+
+    def grouped(self) -> Draft:
+        """A prefabricated table bound to a supporting table, and a built one reading it."""
+        draft = self.codes_draft()
+        draft.bind(1, "CodesTable", "Codes")
+        draft.add_fact_table(self.VISITS)
+        at = draft.add_group("Visit block")
+        for table in ("Codes", "Visits"):
+            draft.add_to_group(at, table)
+        return draft
+
+    def fresh(self) -> Draft:
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        draft.add_supporting("csv", "Codes", "csv/codes.csv")
+        return draft
+
+    def test_a_saved_set_comes_back_as_the_same_tables_in_a_group(self):
+        path = self.ws.recipes_path
+        path.write_text("# kept\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
+        draft = self.grouped()
+        self.assertTrue(draft.validate().ok)
+        ok, said = save_recipe_set(path, draft, 0)
+        self.assertTrue(ok, said)
+        self.assertIn("with Visits as recipes", said)
+        written = my.load_yaml(path)
+        self.assertTrue(path.read_text(encoding="utf-8").startswith("# kept\n"))
+        self.assertIn("Visits", [r["name"] for r in written["recipes"]])
+        self.assertEqual(written["recipe_sets"][0]["name"], "Visit block")
+
+        again = self.fresh()
+        added = again.add_recipe_set("Visit block")
+        cohorts = [again.doc["cohorts"][i] for i in added]
+        self.assertEqual([(c["recipe"], c["name"]) for c in cohorts], [("Codes", "Codes"), ("Visits", "Visits")])
+        self.assertEqual(cohorts[0]["vars"], {"CodesTable": "Codes"})
+        self.assertEqual(again.doc["table_groups"], [{"name": "Visit block", "tables": ["Codes", "Visits"]}])
+        check = again.validate()
+        self.assertTrue(check.ok, [m.text for m in check.messages if m.kind == "error"])
+
+    def test_adding_a_set_is_all_or_nothing(self):
+        draft = self.grouped()
+        save_recipe_set(self.ws.recipes_path, draft, 0)
+        again = self.fresh()
+        again.add_prefab("Codes")
+        before = copy.deepcopy(again.doc)
+        with self.assertRaises(DraftError) as caught:
+            again.add_recipe_set("Visit block")
+        self.assertIn("Codes is a table here already", str(caught.exception))
+        self.assertEqual(again.doc, before)
+        with self.assertRaises(DraftError):
+            again.add_recipe_set("Nope")
+
+    def test_a_refused_save_leaves_the_file_as_it_was(self):
+        path = self.ws.recipes_path
+        draft = self.grouped()
+        self.assertTrue(save_recipe_set(path, draft, 0)[0])
+        before = path.read_text(encoding="utf-8")
+        ok, said = save_recipe_set(path, draft, 0)
+        self.assertFalse(ok)
+        self.assertIn("A recipe set named Visit block is already", said)
+        empty = self.codes_draft()
+        empty.add_group("Nothing")
+        ok, said = save_recipe_set(path, empty, 0)
+        self.assertFalse(ok)
+        self.assertIn("has no tables", said)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+    def test_a_set_naming_a_recipe_the_file_lacks_is_refused(self):
+        path = self.ws.recipes_path
+        path.write_text(path.read_text(encoding="utf-8") + "recipe_sets:\n  - name: Broken\n    tables:\n"
+                        "      - {recipe: Missing}\n", encoding="utf-8")
+        with self.assertRaises(DraftError) as caught:
+            self.fresh().add_recipe_set("Broken")
+        self.assertIn("names recipe Missing", str(caught.exception))
+
+
 def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
                  SaveTests, PastedCsvTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests,
-                 LocationTests, FilterLineTests, RowKeyTests, TableGroupModelTests):
+                 LocationTests, FilterLineTests, RowKeyTests, TableGroupModelTests,
+                 RecipeSetTests):
         suite.addTests(loader.loadTestsFromTestCase(case))
     result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
     return 0 if result.wasSuccessful() else 1

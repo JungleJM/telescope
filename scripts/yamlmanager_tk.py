@@ -1474,6 +1474,8 @@ def add_fact_panel(view: AuthorView, parent: Any) -> None:
             lambda: draft.add_prefab(recipe.get(), name.get()), rerender=True)).pack(side="left", padx=6)
     else:
         note(prefab, view.ws.recipes_problem() or "recipes.yaml has no fact recipes.", "warning").pack(side="left")
+    if view.ws.has_recipes:
+        recipe_set_row(view, inner)
     dictionary = ttk.Frame(inner)
     dictionary.pack(fill="x", pady=2)
     table, table_name = tk.StringVar(), tk.StringVar()
@@ -1488,6 +1490,31 @@ def add_fact_panel(view: AuthorView, parent: Any) -> None:
                                                                    name=table_name.get()))
     note(inner, "Choosing a dictionary table opens its whole form here.").pack(anchor="w")
     ttk.Separator(parent).pack(fill="x", pady=(0, 6))
+
+
+def recipe_set_row(view: AuthorView, parent: Any) -> None:
+    """Several recipes at once, in a table group named for the set (D135)."""
+    row = ttk.Frame(parent)
+    row.pack(fill="x", pady=2)
+    ttk.Label(row, text="Recipe set", width=20).pack(side="left")
+    sets = view.ws.recipe_sets()
+    if not sets:
+        note(row, "None yet: make a table group, then Save as recipe set under Table Groups.").pack(side="left")
+        return
+    labels = {f"{s['name']} ({', '.join(str(t.get('name') or t.get('recipe')) for t in s.get('tables') or [] if isinstance(t, dict))})": str(s["name"])
+              for s in sets}
+    chosen = tk.StringVar(value=next(iter(labels)))
+    keep(row, chosen)
+    ttk.Combobox(row, textvariable=chosen, values=list(labels), state="readonly", width=60).pack(side="left", padx=4)
+    ttk.Button(row, text="Add", command=lambda: view.edit(
+        lambda: view.draft.add_recipe_set(labels[chosen.get()]), rerender=True)).pack(side="left", padx=6)
+
+
+def save_as_recipe_set(view: AuthorView, group: int) -> None:
+    ok, message = model.save_recipe_set(view.ws.recipes_path, view.draft, group)
+    view.say(message, "pass" if ok else "error")
+    if ok:
+        view.render_soon()
 
 
 def duplicate_table(view: AuthorView, index: int, built: bool) -> None:
@@ -1709,6 +1736,9 @@ def build_groups(view: AuthorView, parent: Any) -> None:
         text_field(view, head, name, lambda v, i=index: draft.rename_group(i, v)).pack(side="left", padx=6)
         ttk.Button(head, text="Remove group", command=lambda i=index: view.edit(
             lambda: draft.remove_group(i), rerender=True)).pack(side="right")
+        if view.ws.has_recipes:
+            ttk.Button(head, text="Save as recipe set", command=lambda i=index: save_as_recipe_set(view, i)
+                       ).pack(side="right", padx=4)
         for table in tables:
             row = ttk.Frame(box)
             row.pack(fill="x", pady=1)
@@ -1978,6 +2008,25 @@ class TableGroupViewTests(ViewTest):
         self.button("Remove group").invoke()
         self.root.update()
         self.assertNotIn("table_groups", self.view.draft.doc)
+
+    def test_a_group_saved_as_a_set_is_offered_under_add_a_fact_table(self):
+        # D135: Save as recipe set, then the set comes back from Fact Tables.
+        self.open("AllCohort_intake.yaml")
+        draft = self.view.draft
+        table = draft.ungrouped_tables()[0]
+        draft.add_to_group(draft.add_group("Block"), table)
+        self.view.show_section("groups")
+        self.button("Save as recipe set").invoke()
+        self.root.update()
+        self.assertIn("Block", [s["name"] for s in self.ws.recipe_sets()])
+        draft.remove_group(0)
+        draft.remove_fact_table(next(i for i, c in draft.fact_tables() if c.get("name") == table))
+        self.view.show_section("fact")
+        picker = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
+                      and str(w.get()).startswith("Block ("))
+        next(w for w in picker.master.winfo_children() if isinstance(w, ttk.Button) and w.cget("text") == "Add").invoke()
+        self.root.update()
+        self.assertEqual(draft.table_groups()[0][1:], ("Block", [table]))
 
 
 class ValidateAndExportViewTests(ViewTest):
