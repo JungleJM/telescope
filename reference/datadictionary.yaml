@@ -6,6 +6,8 @@ DataDictionary:
       Use PatientDim.DurableKey to join to facts (note: this is the patient durable key).
     granularity: >
       One row per patient (patient-level dimension).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [IsCurrent = 1, IsValid = 1]
     columns:
       AgeInYears:
         type: integer
@@ -988,6 +990,8 @@ DataDictionary:
       Partitioned on PrioritizedDateKey.
     granularity: >
       One row per lab component result per patient per event.
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: tinyint (flag)
@@ -1154,6 +1158,8 @@ DataDictionary:
       attributes. EncounterKey is the principal link to many other fact tables.
     granularity: >
       One row per encounter across settings (encounter-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -1362,6 +1368,8 @@ DataDictionary:
       analyte/measurement). Contains naming, LOINC codes, units, and data type.
     granularity: >
       One row per lab component concept (component-level dimension).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -1436,6 +1444,8 @@ DataDictionary:
       lab components. Used to group components for cohorts or measure logic.
     granularity: >
       One row per lab component set membership (LabComponentSetKey, LabComponentKey).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -1485,6 +1495,8 @@ DataDictionary:
       characteristics.
     granularity: >
       One row per infant birth event (birth-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -1937,6 +1949,8 @@ DataDictionary:
       ingredients when mixtures are in scope.
     granularity: >
       One row per medication order (order-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2106,6 +2120,8 @@ DataDictionary:
       and dispense timing. Only outpatient dispenses are present.
     granularity: >
       One row per outpatient dispense/fill event (dispense-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2279,6 +2295,8 @@ DataDictionary:
       can improve completeness.
     granularity: >
       One row per MAR action for a medication order (administration-action-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2370,6 +2388,8 @@ DataDictionary:
       and to births via BirthFact.PregnancyKey.
     granularity: >
       One row per pregnancy episode per patient (pregnancy-episode-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2582,6 +2602,8 @@ DataDictionary:
     granularity: >
       One row per diagnosis code representation in a terminology (diagnosis-code-level
       dimension).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2717,6 +2739,8 @@ DataDictionary:
       longitudinal conditions separate from billing diagnoses.
     granularity: >
       One row per problem list entry per patient (problem-entry-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2804,6 +2828,8 @@ DataDictionary:
       reference via TerminologyConceptKey.
     granularity: >
       One row per terminology concept (concept-level dimension).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2851,6 +2877,8 @@ DataDictionary:
     granularity: >
       One row per documented procedure event per encounter
       (procedure-event-level fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -2984,6 +3012,8 @@ DataDictionary:
     granularity: >
       One row per vital sign measurement per encounter (vital-measurement-level
       fact).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)
@@ -3111,6 +3141,8 @@ DataDictionary:
       through CoverageBridgeX.
     granularity: >
       One row per coverage/payor concept (coverage-level dimension).
+    # Added as where lines when the builder adds this table (D120).
+    standard_where: [_IsDeleted = 0]
     columns:
       _IsDeleted:
         type: boolean (flag)

@@ -257,6 +257,18 @@ def rename_alias(line: str, old: str, new: str) -> str:
     return "".join(part if i % 2 else pattern.sub(f"{new}.", part) for i, part in enumerate(parts))
 
 
+def standard_where_lines(entry: Any, alias: str) -> list[str]:
+    """A dictionary table's `standard_where` (D120), each line's leading column
+    written under `alias`: `_IsDeleted = 0` is `vf._IsDeleted = 0`."""
+    lines = entry.get("standard_where") if isinstance(entry, dict) else None
+    out = []
+    for line in [lines] if isinstance(lines, str) else lines or []:
+        match = re.match(r"\s*([A-Za-z_]\w*)(.*)$", str(line))
+        if match:
+            out.append(f"{alias}.{match.group(1)}{match.group(2)}".strip())
+    return out
+
+
 def is_pk(cohort: dict[str, Any] | None) -> bool:
     return str((cohort or {}).get("type", "")).lower() == "pk"
 
@@ -1664,6 +1676,8 @@ class TableBuilder:
         self.alias = alias_for(table)
         self.columns = [self._column_from(c) for c in self.dictionary_columns()]
         self.joins = []
+        # The table's standard lines, as ordinary where lines to keep or remove (D120).
+        self.wheres = standard_where_lines(self.dictionary.get(table), self.alias)
 
     def set_alias(self, alias: str) -> None:
         """Rename the from table's alias in its columns, joins and where lines (D118)."""
@@ -2429,6 +2443,26 @@ class TableBuilderTests(ModelTest):
         with self.assertRaises(DraftError):
             builder.set_alias("age")
         self.assertEqual(builder.alias, "ef")
+
+    def test_a_table_arrives_with_its_standard_where_lines(self):
+        path = self.home / "YAMLs" / "datadictionary.yaml"
+        path.write_text(path.read_text(encoding="utf-8").replace(
+            "  EncounterFact:\n", "  EncounterFact:\n    standard_where: [DateKey > 0, Department <> 'X']\n", 1),
+            encoding="utf-8")
+        draft = self.draft()
+        builder = self.encounters(draft)
+        self.assertEqual(builder.wheres, ["ef.DateKey > 0", "ef.Department <> 'X'"])
+        builder.remove_where(1)
+        builder.set_alias("e")
+        cohort = draft.doc["cohorts"][builder.commit()]
+        self.assertEqual(cohort["filter"]["where"], ["e.DateKey > 0"])
+
+    def test_the_repositorys_standard_lines_name_their_tables_columns(self):
+        for table, entry in (my.load_datadictionary(None, my.CompileResult()) or {}).items():
+            for line in standard_where_lines(entry, "x"):
+                column = line.split()[0].split(".", 1)[1]
+                with self.subTest(table=table, line=line):
+                    self.assertIn(column, entry.get("columns") or {})
 
     def test_the_template_keeps_no_type_the_dictionary_supplies(self):
         # A copy in the template goes stale when the dictionary is corrected.
