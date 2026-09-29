@@ -1957,18 +1957,25 @@ def queue_remove(name: str, folder: Path) -> bool:
     return bool(module and module.queue_remove(name, folder))
 
 
-def make_bundle(workspace: Workspace) -> tuple[bool, list[str], str]:
-    """Build dist/bundle_with_yamls.py with every queued intake's transfer
-    YAML (D106). Returns (ok, what was done or why not, content_id)."""
+def make_bundle(workspace: Workspace, yamls_only: bool = False) -> tuple[bool, list[str], str]:
+    """Build dist/bundle.py, the software with every queued intake's transfer
+    YAML, or with `yamls_only` dist/yamls_to_transfer.py, the YAMLs alone; the
+    queue is emptied after (D122). Returns (ok, what was done or why not, content_id)."""
     module = _queue_module()
     if module is None:
         return False, ["Bundles are made on the Mac, beside makebundle.py."], ""
     try:
         _, manifest, said = module.build_bundle([], True, queue_folder=workspace.temp_dir,
-                                                export_dir=workspace.home)
+                                                export_dir=workspace.home, yamls_only=yamls_only)
     except module.BundleError as exc:
         return False, [str(exc)], ""
     return True, said, str(manifest["content_id"])
+
+
+def project_of(intake: str) -> str:
+    """`Infant_RSV_intake.yaml` is `Infant_RSV` (D122: Exports lists projects)."""
+    name = Path(intake).name
+    return name[: -len(INTAKE_SUFFIX)] if name.endswith(INTAKE_SUFFIX) else Path(name).stem
 
 
 def queue_state(workspace: Workspace) -> dict[str, Any]:
@@ -1978,7 +1985,8 @@ def queue_state(workspace: Workspace) -> dict[str, Any]:
     names = [p.name for p in workspace.intakes()]
     return {
         "available": module is not None,
-        "queue": [{"name": n, "exists": (workspace.temp_dir / n).is_file()} for n in queued],
+        "queue": [{"name": n, "project": project_of(n), "exists": (workspace.temp_dir / n).is_file()}
+                  for n in queued],
         "addable": [n for n in names if n not in queued],
     }
 

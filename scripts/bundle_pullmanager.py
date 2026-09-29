@@ -4,9 +4,9 @@
 The VM cannot pull from git, so development happens as normal modules under
 `scripts/pullmanager_src/` and ships as one generated file:
 
-    python3 scripts/bundle_pullmanager.py            # build dist/bundle.py
-    python3 makebundle.py yaml=IBD_Ancestry,Celiac   # and carry those transfer YAMLs
-    python3 makebundle.py queue                      # or the temps queued in YAMLs/temp
+    python3 makebundle.py                            # dist/bundle.py, carrying the queue (D122)
+    python3 makebundle.py yaml=IBD_Ancestry,Celiac   # and those transfer YAMLs too
+    python3 makebundle.py --yamls-only               # dist/yamls_to_transfer.py: the YAMLs alone
     python3 scripts/bundle_pullmanager.py --tdd      # run bundle/extractor tests
 
 On the VM:
@@ -43,9 +43,11 @@ REPO_ROOT = SCRIPTS_DIR.parent
 SOURCE_ROOT = SCRIPTS_DIR / "pullmanager_src"
 EXTRACTOR_PATH = SCRIPTS_DIR / "bundle_extractor.py"
 DEFAULT_OUTPUT = REPO_ROOT / "dist" / "bundle.py"
-# A build carrying transfer YAMLs goes beside it, so the runtime-only bundle is
-# never overwritten by one with project pulls in it; you choose which to copy.
-WITH_YAMLS_OUTPUT = REPO_ROOT / "dist" / "bundle_with_yamls.py"
+# The queued pulls' transfer YAMLs alone, for when the software need not change
+# (D122); extracting it leaves the runtime as it is.
+YAMLS_ONLY_OUTPUT = REPO_ROOT / "dist" / "yamls_to_transfer.py"
+# What D106 built beside bundle.py; bundle.py carries the queue now (D122).
+RETIRED_OUTPUT_NAME = "bundle_with_yamls.py"
 # Each build's content_id, one line per bundle file (D106).
 CONTENT_ID_NAME = "content_id.txt"
 
@@ -94,7 +96,7 @@ TEMP_DIR = REPO_ROOT / "YAMLs" / "temp"
 QUEUE_NAME = "bundle_queue.txt"
 QUEUE_HEADER = (
     "# Temps queued for the bundle, one per line (D91). YAML Manager's Save & Refresh\n"
-    "# adds to it and its Builder > Exports edits it; python3 makebundle.py queue carries it.\n"
+    "# adds to it and its Builder > Exports edits it; python3 makebundle.py carries it (D122).\n"
 )
 RECIPES_PATH = makeYaml.core_path("recipes")
 
@@ -271,17 +273,19 @@ def export_queue(folder: Path = TEMP_DIR, out_dir: Path | None = None) -> list[t
 
 
 def bundled_files(
-    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None, yamls_only: bool = False
 ) -> list[tuple[Path, str, str]]:
     """Every file the bundle carries, as (source, published path, policy)."""
-    files = source_files(root)
-    if not files:
-        raise BundleError(f"No Python sources found under {root}")
-    triples = [(path, path.relative_to(root).as_posix(), "replace") for path in files]
-    for source, published, policy in COMPANION_FILES:
-        if not source.is_file():
-            raise BundleError(f"Companion file missing: {source}")
-        triples.append((source, published, policy))
+    triples: list[tuple[Path, str, str]] = []
+    if not yamls_only:
+        files = source_files(root)
+        if not files:
+            raise BundleError(f"No Python sources found under {root}")
+        triples = [(path, path.relative_to(root).as_posix(), "replace") for path in files]
+        for source, published, policy in COMPANION_FILES:
+            if not source.is_file():
+                raise BundleError(f"Companion file missing: {source}")
+            triples.append((source, published, policy))
     for source in transfers or []:
         triples.append((source, f"{ROOT_PREFIX}{source.name}", ROOT_POLICY))
     seen: set[str] = set()
@@ -293,11 +297,11 @@ def bundled_files(
 
 
 def build_sections(
-    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+    root: Path = SOURCE_ROOT, transfers: list[Path] | None = None, yamls_only: bool = False
 ) -> tuple[list[dict], list[str]]:
     entries: list[dict] = []
     lines: list[str] = []
-    for path, published, policy in bundled_files(root, transfers):
+    for path, published, policy in bundled_files(root, transfers, yamls_only):
         rel = safe_relpath(published)
         text = read_source(path)
         raw = text.encode("utf-8")
@@ -320,8 +324,9 @@ def extractor_prelude() -> str:
     return text[marker:]
 
 
-def render_bundle(root: Path = SOURCE_ROOT, transfers: list[Path] | None = None) -> str:
-    entries, payload_lines = build_sections(root, transfers)
+def render_bundle(root: Path = SOURCE_ROOT, transfers: list[Path] | None = None,
+                  yamls_only: bool = False) -> str:
+    entries, payload_lines = build_sections(root, transfers, yamls_only)
     prelude = BUNDLE_HEADER + extractor_prelude().rstrip("\n") + "\n\n"
     prelude_sha256 = hashlib.sha256(prelude.encode("utf-8")).hexdigest()
     manifest = {
@@ -347,9 +352,10 @@ def render_bundle(root: Path = SOURCE_ROOT, transfers: list[Path] | None = None)
 
 
 def build(
-    output: Path = DEFAULT_OUTPUT, root: Path = SOURCE_ROOT, transfers: list[Path] | None = None
+    output: Path = DEFAULT_OUTPUT, root: Path = SOURCE_ROOT, transfers: list[Path] | None = None,
+    yamls_only: bool = False,
 ) -> tuple[Path, dict]:
-    text = render_bundle(root, transfers)
+    text = render_bundle(root, transfers, yamls_only)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(text.encode("utf-8"))
     _, manifest = read_bundle(output)
@@ -366,32 +372,62 @@ def record_content_id(output: Path, content_id: str) -> Path:
     return path
 
 
+def retire_old_output(output: Path) -> str | None:
+    """Remove a bundle_with_yamls.py left in dist/ by D106, and its content_id line."""
+    old = output.parent / RETIRED_OUTPUT_NAME
+    if not old.is_file():
+        return None
+    old.unlink()
+    ids = output.parent / CONTENT_ID_NAME
+    if ids.is_file():
+        kept = [line for line in ids.read_text(encoding="utf-8").splitlines()
+                if line.split(" ", 1)[0] != RETIRED_OUTPUT_NAME and line.strip()]
+        ids.write_text("".join(f"{line}\n" for line in kept), encoding="utf-8")
+    return f"Removed {old}: bundle.py carries the queue now (D122)."
+
+
 def build_bundle(names: list[str], queue: bool, output: Path | None = None,
                  root: Path = SOURCE_ROOT, queue_folder: Path | None = None,
-                 export_dir: Path | None = None) -> tuple[Path, dict, list[str]]:
-    """Export and carry what is asked (named transfer YAMLs, the queue), into
-    bundle_with_yamls.py if any are carried, else bundle.py; record its
-    content_id. Returns (bundle, manifest, lines saying what was done)."""
+                 export_dir: Path | None = None, yamls_only: bool = False) -> tuple[Path, dict, list[str]]:
+    """Export and carry what is asked (named transfer YAMLs, and with `queue`
+    whatever is queued) in bundle.py, or with `yamls_only` in
+    yamls_to_transfer.py without the runtime (D122). Records its content_id and
+    empties the queue it carried. Returns (bundle, manifest, what was done)."""
     said: list[str] = []
+    folder = queue_folder or TEMP_DIR
     transfers = [find_transfer(name) for name in transfer_names(names)]
-    if queue:
-        for temp, transfer in export_queue(queue_folder or TEMP_DIR, export_dir):
+    carried_queue = bool(queue and read_queue(folder))
+    if carried_queue:
+        for temp, transfer in export_queue(folder, export_dir):
             shown = temp.relative_to(REPO_ROOT).as_posix() if temp.is_relative_to(REPO_ROOT) else str(temp)
             said.append(f"Exported {transfer.name} from {shown}")
             if transfer not in transfers:
                 transfers.append(transfer)
+    if yamls_only and not transfers:
+        raise BundleError(f"Nothing to carry: the bundle queue ({folder / QUEUE_NAME}) is empty and no "
+                          "yaml= was named. Queue an intake (Save, or Builder > Exports) first.")
     if output is None:
-        output = WITH_YAMLS_OUTPUT if transfers else DEFAULT_OUTPUT
-    output, manifest = build(output, root, transfers)
+        output = YAMLS_ONLY_OUTPUT if yamls_only else DEFAULT_OUTPUT
+    output, manifest = build(output, root, transfers, yamls_only)
     record_content_id(output, manifest["content_id"])
+    retired = retire_old_output(output)
     size_kb = output.stat().st_size / 1024
     said.append(f"Wrote {output}  ({manifest['file_count']} files, {size_kb:.1f} KiB)")
     said.append(f"content_id: {manifest['content_id']}")
+    if retired:
+        said.append(retired)
+    if yamls_only:
+        said.append("It carries no runtime: extracting it leaves the VM's software as it is.")
+    elif not transfers:
+        said.append("Nothing was queued, so it carries the runtime alone.")
     for transfer in transfers:
-        said.append(f"Carries {transfer.name}: extracted beside pullmanager.py on the VM.")
+        said.append(f"Carries {transfer.name}: extracted beside scope.py on the VM.")
         for upload in upload_locations(transfer):
             said.append(f"  It reads {upload}: copy that to the VM at the same path beside it, "
                         "unless it is there already.")
+    if carried_queue:
+        write_queue([], folder)
+        said.append("The queue is emptied; save an intake, or add it in Exports, to queue it again.")
     said.append(f"Copy {output.name} to the VM and run `python {output.name}` there.")
     return output, manifest, said
 
@@ -408,8 +444,13 @@ def main(argv: list[str] | None = None) -> int:
         description="Build the single-file Pullmanager bundle.",
     )
     parser.add_argument("--out", default=None,
-                        help="Bundle output path. Default: dist/bundle.py, or dist/bundle_with_yamls.py "
-                             "when transfer YAMLs are carried (D106).")
+                        help="Bundle output path. Default: dist/bundle.py, or dist/yamls_to_transfer.py "
+                             "with --yamls-only (D122).")
+    parser.add_argument("--yamls-only", action="store_true",
+                        help="Carry the queued (and named) transfer YAMLs without the runtime, in "
+                             "dist/yamls_to_transfer.py; extracting it leaves the VM's software alone.")
+    parser.add_argument("--no-queue", action="store_true",
+                        help="Leave the queue out, and in place: the runtime and any yaml= alone.")
     parser.add_argument("--src", default=str(SOURCE_ROOT), help="Source tree to bundle.")
     parser.add_argument("--verify", metavar="BUNDLE", help="Verify an existing bundle and exit.")
     parser.add_argument(
@@ -418,8 +459,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="yaml=NAME,NAME",
         help="Transfer YAMLs to carry, by project name: yaml=IBD_Ancestry,Celiac finds "
              "IBD_Ancestry_transfer.yaml and Celiac_transfer.yaml at the repository "
-             "root. Each is extracted beside pullmanager.py on the VM. `queue` exports "
-             "and carries every temp queued in YAMLs/temp/bundle_queue.txt (D91).",
+             "root. Each is extracted beside scope.py on the VM. Every intake queued in "
+             "YAMLs/temp/bundle_queue.txt is carried too, unless --no-queue (D122).",
     )
     parser.add_argument(
         "--tdd",
@@ -442,9 +483,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"content_id: {manifest['content_id']}")
             return 0
 
-        queued = "queue" in args.yaml
+        # `queue` was D106's way to carry the queue; it is carried by default now.
         named = [token for token in args.yaml if token != "queue"]
-        _, _, said = build_bundle(named, queued, Path(args.out) if args.out else None, Path(args.src))
+        _, _, said = build_bundle(named, not args.no_queue, Path(args.out) if args.out else None,
+                                  Path(args.src), yamls_only=args.yamls_only)
         for line in said:
             print(line)
     except BundleError as exc:

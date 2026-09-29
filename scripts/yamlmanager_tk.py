@@ -1538,13 +1538,14 @@ class ExportsPanel:
         top.pack(fill="x")
         state = model.queue_state(view.ws)
         if state["available"]:
-            queue = ttk.LabelFrame(top, text="Bundle queue: python3 makebundle.py queue carries these", padding=8)
+            queue = ttk.LabelFrame(top, text="Queued projects: every bundle carries these", padding=8)
             queue.pack(fill="x")
             for item in state["queue"]:
                 row = ttk.Frame(queue)
                 row.pack(fill="x")
-                ttk.Button(row, text=item["name"], command=lambda n=item["name"]: self.show(view.ws.temp_dir / n)
+                ttk.Button(row, text=item["project"], command=lambda n=item["name"]: self.show(view.ws.temp_dir / n)
                            ).pack(side="left")
+                note(row, f"{item['name']} → {item['project']}_transfer.yaml, carried").pack(side="left", padx=6)
                 if not item["exists"]:
                     note(row, "not in YAMLs/temp/: the build will stop on it", "error").pack(side="left", padx=6)
                 ttk.Button(row, text="Remove", command=lambda n=item["name"]: self.queue("remove", n)).pack(side="right")
@@ -1552,9 +1553,12 @@ class ExportsPanel:
                 note(queue, "Nothing queued. Saving an intake queues it.").pack(anchor="w")
             make = ttk.Frame(queue)
             make.pack(fill="x", pady=(8, 0))
-            ttk.Button(make, text="Make bundle", command=self.make_bundle).pack(side="left")
-            note(make, "Writes dist/bundle_with_yamls.py with every queued intake's transfer YAML; "
-                       "dist/bundle.py, the runtime alone, is left as it is (D106).").pack(side="left", padx=8)
+            ttk.Button(make, text="Bundle With Manager", command=self.make_bundle).pack(side="left")
+            ttk.Button(make, text="Bundle YAMLs only", command=lambda: self.make_bundle(yamls_only=True)
+                       ).pack(side="left", padx=6)
+            note(make, "With Manager: dist/bundle.py, the software and each queued project's transfer YAML. "
+                       "YAMLs only: dist/yamls_to_transfer.py, which leaves the VM's software as it is. "
+                       "Either empties the queue (D122).").pack(side="left", padx=8)
             if self.last_bundle is not None:
                 ok, lines, content_id = self.last_bundle
                 if ok:
@@ -1588,10 +1592,10 @@ class ExportsPanel:
             box.grid(row=1, column=column, sticky="nsew", padx=3)
         panes.rowconfigure(1, weight=1)
 
-    def make_bundle(self) -> None:
+    def make_bundle(self, yamls_only: bool = False) -> None:
         self.view.say("Making the bundle...")
         self.view.root.update_idletasks()
-        self.last_bundle = model.make_bundle(self.view.ws)
+        self.last_bundle = model.make_bundle(self.view.ws, yamls_only=yamls_only)
         ok, lines, _ = self.last_bundle
         self.view.say(lines[-1] if ok else lines[0], "pass" if ok else "error")
         self.refresh()
@@ -1871,16 +1875,20 @@ class ValidateAndExportViewTests(ViewTest):
 
         self.open("Celiac_intake.yaml")
         model.queue_add("Celiac_intake.yaml", self.ws.temp_dir)
+        self.view.exports_panel.refresh()
+        shown = [str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, (ttk.Label, ttk.Button))]
+        self.assertIn("Celiac", shown)  # the project, not the file (D122)
         dist = self.tmp / "dist"
         with mock.patch.object(bp, "DEFAULT_OUTPUT", dist / "bundle.py"), \
-                mock.patch.object(bp, "WITH_YAMLS_OUTPUT", dist / "bundle_with_yamls.py"):
-            self.view.exports_panel.make_bundle()
+                mock.patch.object(bp, "YAMLS_ONLY_OUTPUT", dist / "yamls_to_transfer.py"):
+            next(w for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Button)
+                 and w.cget("text") == "Bundle YAMLs only").invoke()
         ok, lines, content_id = self.view.exports_panel.last_bundle
         self.assertTrue(ok, lines)
-        self.assertTrue((dist / "bundle_with_yamls.py").is_file())
+        self.assertTrue((dist / "yamls_to_transfer.py").is_file())
         self.assertFalse((dist / "bundle.py").exists())
-        self.assertIn(f"bundle_with_yamls.py {content_id}", (dist / "content_id.txt").read_text(encoding="utf-8"))
-        self.view.exports_panel.refresh()
+        self.assertIn(f"yamls_to_transfer.py {content_id}", (dist / "content_id.txt").read_text(encoding="utf-8"))
+        self.assertEqual(model.queue_state(self.ws)["queue"], [])
         shown = [str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label)]
         self.assertIn(f"content_id: {content_id}", shown)
 

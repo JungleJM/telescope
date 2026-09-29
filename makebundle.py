@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build dist/bundle.py, the one file that carries Pullmanager to the VM.
+"""Build the bundle that carries Datascope, and the queued pulls, to the VM.
 
-    python3 makebundle.py          # build it, and print its content_id
-    python3 makebundle.py queue    # dist/bundle_with_yamls.py, with the queued YAMLs (D106)
-    python3 makebundle.py --tdd    # the bundle's own tests
+    python3 makebundle.py               # dist/bundle.py: the runtime and every queued pull (D122)
+    python3 makebundle.py --yamls-only  # dist/yamls_to_transfer.py: the queued pulls alone
+    python3 makebundle.py --no-queue    # the runtime alone, the queue left as it is
+    python3 makebundle.py --tdd         # the bundle's own tests
 
 A shortcut for scripts/bundle_pullmanager.py, which it runs with the same
 arguments (D64).

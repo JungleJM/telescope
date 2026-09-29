@@ -482,7 +482,8 @@ class LauncherTests(BundleTestCase):
     def test_makebundle_builds_the_bundle(self):
         out = self.tmp / "made" / "bundle.py"
         run = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out)],
+            # --no-queue: a test must never carry, or empty, the real queue.
+            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out), "--no-queue"],
             capture_output=True, text=True,
         )
         self.assertEqual(run.returncode, 0, run.stderr)
@@ -797,7 +798,7 @@ class TransferYamlTests(unittest.TestCase):
     def test_makebundle_takes_yaml_equals(self):
         out = self.tmp / "out.py"
         proc = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out), "yaml=Nope"],
+            [sys.executable, str(REPO_ROOT / "makebundle.py"), "--out", str(out), "yaml=Nope", "--no-queue"],
             capture_output=True, text=True, cwd=self.tmp,
         )
         self.assertEqual(proc.returncode, 2)
@@ -850,28 +851,81 @@ class QueueTests(unittest.TestCase):
         self.assertIn("root/Celiac_transfer.yaml", published)
         self.assertIn("root/IBD_Ancestry_transfer.yaml", published)
 
-    def test_the_queue_builds_its_own_bundle_and_leaves_the_runtimes_alone(self):
-        # D106: bundle_with_yamls.py carries the pulls; bundle.py stays the runtime.
+    def build(self, **options):
         import bundle_pullmanager as bp
         from unittest import mock
 
         dist = self.tmp / "dist"
         with mock.patch.object(bp, "DEFAULT_OUTPUT", dist / "bundle.py"), \
-                mock.patch.object(bp, "WITH_YAMLS_OUTPUT", dist / "bundle_with_yamls.py"):
-            plain, plain_manifest, _ = bp.build_bundle([], False)
-            plain_bytes = plain.read_bytes()
-            queued, queued_manifest, said = bp.build_bundle([], True, queue_folder=self.temps,
-                                                            export_dir=self.out)
-        self.assertEqual(plain.name, "bundle.py")
-        self.assertEqual(queued.name, "bundle_with_yamls.py")
-        self.assertEqual(plain.read_bytes(), plain_bytes)
-        published = {s["path"] for s in read_bundle(queued)[0]}
+                mock.patch.object(bp, "YAMLS_ONLY_OUTPUT", dist / "yamls_to_transfer.py"):
+            return bp.build_bundle([], True, queue_folder=self.temps, export_dir=self.out, **options)
+
+    def test_bundle_py_carries_the_queue_and_empties_it(self):
+        # D122: one makebundle.py; the queued pulls go with the software.
+        from bundle_pullmanager import read_queue
+
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        (dist / "bundle_with_yamls.py").write_text("# D106's\n", encoding="utf-8")
+        (dist / "content_id.txt").write_text("bundle_with_yamls.py abc\n", encoding="utf-8")
+        bundle, manifest, said = self.build()
+        self.assertEqual(bundle.name, "bundle.py")
+        published = {s["path"] for s in read_bundle(bundle)[0]}
         self.assertIn("root/Celiac_transfer.yaml", published)
-        self.assertNotIn("root/Celiac_transfer.yaml", {s["path"] for s in read_bundle(plain)[0]})
-        ids = (dist / "content_id.txt").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(ids, [f"bundle.py {plain_manifest['content_id']}",
-                               f"bundle_with_yamls.py {queued_manifest['content_id']}"])
-        self.assertIn(f"content_id: {queued_manifest['content_id']}", said)
+        self.assertIn("pullmanager/__init__.py", published)
+        self.assertEqual(read_queue(self.temps), [])
+        self.assertFalse((dist / "bundle_with_yamls.py").exists())
+        self.assertEqual((dist / "content_id.txt").read_text(encoding="utf-8").splitlines(),
+                         [f"bundle.py {manifest['content_id']}"])
+        self.assertIn(f"content_id: {manifest['content_id']}", said)
+
+    def test_with_nothing_queued_it_is_the_runtime_alone(self):
+        from bundle_pullmanager import write_queue
+
+        write_queue([], self.temps)
+        bundle, _, said = self.build()
+        self.assertFalse([s for s in read_bundle(bundle)[0] if s["path"].startswith("root/")])
+        self.assertIn("Nothing was queued, so it carries the runtime alone.", said)
+
+    def test_yamls_only_carries_the_transfers_and_no_software(self):
+        bundle, _, _ = self.build(yamls_only=True)
+        self.assertEqual(bundle.name, "yamls_to_transfer.py")
+        self.assertEqual(sorted(s["path"] for s in read_bundle(bundle)[0]),
+                         ["root/Celiac_transfer.yaml", "root/IBD_Ancestry_transfer.yaml"])
+
+    def test_yamls_only_with_nothing_to_carry_is_refused(self):
+        from bundle_pullmanager import write_queue
+
+        write_queue([], self.temps)
+        with self.assertRaises(BundleError) as caught:
+            self.build(yamls_only=True)
+        self.assertIn("Nothing to carry", str(caught.exception))
+
+    def test_extracting_yamls_only_places_them_and_leaves_the_runtime(self):
+        import contextlib
+        import io
+
+        from bundle_extractor import unpack
+
+        full = self.tmp / "full.py"
+        build(full, SOURCE_ROOT, [])
+        vm = self.tmp / "vm"
+        vm.mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            unpack(full, vm / "pullmanager_runtime", quiet=True)
+        runtime_manifest = (vm / "pullmanager_runtime" / ".bundle-manifest.json").read_bytes()
+        (vm / "pullmanager_runtime" / "mine.txt").write_text("kept\n", encoding="utf-8")
+        scope = (vm / "scope.py").read_bytes()
+        yamls, _, _ = self.build(yamls_only=True)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            unpack(yamls, vm / "pullmanager_runtime", quiet=True)
+        self.assertTrue((vm / "Celiac_transfer.yaml").is_file())
+        self.assertTrue((vm / "IBD_Ancestry_transfer.yaml").is_file())
+        self.assertEqual((vm / "pullmanager_runtime" / ".bundle-manifest.json").read_bytes(), runtime_manifest)
+        self.assertTrue((vm / "pullmanager_runtime" / "mine.txt").is_file())
+        self.assertEqual((vm / "scope.py").read_bytes(), scope)
+        self.assertIn("left as it is", out.getvalue())
 
     def test_a_queued_temp_that_does_not_validate_stops_the_build_naming_it(self):
         from bundle_pullmanager import export_queue

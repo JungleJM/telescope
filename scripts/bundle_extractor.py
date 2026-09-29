@@ -255,6 +255,12 @@ def previous_extraction_hashes(target: Path) -> dict[str, str]:
         return {}
 
 
+def is_yamls_only(manifest: dict) -> bool:
+    """A bundle of transfer YAMLs alone (D122): it places them and leaves the runtime."""
+    files = [entry for entry in manifest.get("files", []) if isinstance(entry, dict)]
+    return bool(files) and all(entry.get("policy") == ROOT_POLICY for entry in files)
+
+
 def root_paths(manifest: dict) -> set[str]:
     """The published paths of the files that go beside scope.py."""
     return {
@@ -437,7 +443,16 @@ def write_launcher(target: Path) -> Path:
 
 
 def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = False) -> None:
-    """Extract, write the launcher beside the folder, and say what to run next."""
+    """Extract, write the launcher beside the folder, and say what to run next.
+    A YAMLs-only bundle places its YAMLs and leaves the runtime alone (D122)."""
+    _, manifest = read_bundle(bundle_path)
+    if is_yamls_only(manifest):
+        for path, kept in place_root_files(bundle_path, target):
+            note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
+            print(f"Wrote {path}{note}")
+        print(f"The software in {Path(target).resolve().name} is left as it is. "
+              f"Next: `python {LAUNCHER_NAME}`, and Run the pull.")
+        return
     written = extract(bundle_path, target, force=force)
     if not quiet:
         for path in written:
@@ -462,9 +477,14 @@ def interactive(bundle_path: Path) -> int:
     target = bundle_path.parent / DEFAULT_TARGET
     print(f"OK  {len(sections)} files verified")
     print(f"content_id: {manifest['content_id']}")
-    beside = [LAUNCHER_NAME] + sorted(Path(path).name for path in root_paths(manifest))
+    carried = sorted(Path(path).name for path in root_paths(manifest))
     try:
-        answer = input(f"Extract into {target} and write {', '.join(beside)} beside it? [y/N] ")
+        if is_yamls_only(manifest):
+            answer = input(f"Write {', '.join(carried)} into {bundle_path.parent}, leaving the "
+                           f"software as it is? [y/N] ")
+        else:
+            answer = input(f"Extract into {target} and write {', '.join([LAUNCHER_NAME] + carried)} "
+                           f"beside it? [y/N] ")
     except EOFError:
         answer = ""
     if answer.strip().lower() not in ("y", "yes"):
