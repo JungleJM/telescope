@@ -2,7 +2,15 @@
 title: "Task list"
 ---
 
-What is still under discussion (D128). Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `plan/images/markdowns/tasklist/`.
+What is still under discussion (D128). Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `images/` beside this file (see Pasting images).
+
+**Starting a new chat.** Paste this, with the section's heading filled in:
+
+```text
+Work on the task list section "<heading>" in plan/tasklist.qmd.
+```
+
+That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
 
 # Pasting images
 

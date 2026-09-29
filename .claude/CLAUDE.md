@@ -19,6 +19,7 @@ Read before working:
 
 The user works in this cycle; follow it for any change bigger than a small fix.
 
+0.  **A new chat** is usually started with a task-list section's heading: read that section, the plan documents above, and the code behind it, then answer under it. Before a chat ends, write anything it settled or learned that lives only in the chat into the task list (or, if agreed, the plan documents).
 1.  **Respond topic by topic, in `plan/tasklist.qmd`.** When the user brings research, notes or ideas, read the code behind each topic first. Under each, in a `::: {.callout-note title="🟦 Claude: <topic>"}` block, say what the code does today, give a recommendation, and end with "For you to decide" where the choice is theirs; follow it with an empty `::: {.callout-warning title="🟧 Your response"}` block. Close with a numbered **Suggested order**: one line per item, most urgent first, saying why it sits where it does. Agreed items move to the `# Settled` section at the bottom; new notes go above it.
 2.  **Document before code.** Once the user agrees, write the numbered decisions, put the order in `roadmap.md` as "Next: Fixes, In Order", and move each settled item out of the task list into the three documents, then delete it there: Settled should not become a graveyard. Commit and push, so there is a clean slate to revert to.
 3.  **Build in that order.** One commit per item (small ones may share), each with its outcome tests and a rebuilt bundle if a bundled file changed. Push at the end.
