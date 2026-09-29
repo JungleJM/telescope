@@ -14,16 +14,18 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `00bfcd3` (28 Sep, 07:31), every planning
+- **Sources.** Every commit up to `87f10d7` (28 Sep), every planning
   document committed by then (most since deleted, recovered from git), the
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `00bfcd3` (28 Sep, 07:31), after the app's first VM run, its
-  fixes and the repository's tidying. Earlier versions of this record stopped
-  at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13), `b4dec41` (27 Sep,
-  16:30) and `a9a577a` (28 Sep, 03:28); everything after each was added from
-  the commits and the three design documents.
+- **Cut-off.** `87f10d7` (28 Sep), your first recipe written in the new
+  layout and the Infant RSV intake queued for the VM. Section 2's last column
+  is as of `00bfcd3` (07:31); only two commits followed. Earlier versions of
+  this record stopped at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13),
+  `b4dec41` (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28) and `00bfcd3` (28 Sep,
+  07:31); everything after each was added from the commits and the three
+  design documents.
 - **Where things are.** `QMDs/` became `plan/` on 28 Sep (`3b6efb6`), and
   `CLAUDE.md` moved to `.claude/CLAUDE.md`; commits before then name the old
   paths, which is what Section 12's commands use.
@@ -911,6 +913,28 @@ alongside all night.
   where they had been pasted outside it (#56). `.env.example` removed
   (`00bfcd3`), as D43 had decided.
 
+### 28 Sep, Later: Your First Recipe In The New Layout, And A Correction (2 commits)
+
+- **The docs caught up** (`71f4eb2`) with D103 to D113.
+- **A correction to this record, and to the assistant.** You asked why you
+  had decided transfer YAMLs should not go with the bundle, since "that
+  seems incorrect". You never did. Your notes had asked for the opposite
+  from the start ("I think now is the time to think about bundling the YAMLs
+  with the make bundle.py"; "I still want those to dump out to root of folder
+  over on the VM side"). The line "the committed `dist/bundle.py` is built
+  without transfer YAMLs" entered D79's consequences in a docs commit
+  (`951e36d`, 26 Sep) as a side-effect of the bundle then being committed,
+  was repeated as a rule by D91, and the assistant gave it a reason it never
+  had when you asked about it, so you split the bundles (D106) on that
+  footing. What replaces it is open (roadmap).
+- **Your recipe** (`87f10d7`): `EDVisitByDiagnosisAndIndexAge`, a PK of ED
+  visits with a diagnosis (`ICD_Value`) for patients aged `IndexAgeMin` to
+  `IndexAgeMax` years, from an earlier RSV pull kept for reference in
+  `plan/images/RSV Transcribeme/`. You wrote it, asked whether the age range
+  would be asked for (it is), fixed the type, destination and dedup as
+  advised, and the assistant added the age column. With it, the
+  `Infant_RSV` intake, queued for the next bundle with `UC_DxHxSxRx`.
+
 ---
 
 ## 6. The Work, By Role
@@ -1730,6 +1754,8 @@ resume line.
     and CoverageDim's descriptions come from: the interactive dictionary, a
     screenshot, or the VM's AI? (The roadmap grades facts as seen, counted
     or said.)
+25. **The Infant RSV pull.** Its question, and whether one row per ED visit
+    (not per child) is what it needs.
 
 **Attribution, and my recommendation.**
 

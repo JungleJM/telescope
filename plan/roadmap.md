@@ -95,6 +95,10 @@ Most of it is built inside `runs/<project>/` (D57, D72 to D75): `split/`, `sql/`
 - **Descriptions without a new split.** `contents.md` reads descriptions from the split (D73), so improving one means splitting again, which resets the pull. Reading them from the transfer YAML instead would need a way to match a multiplied table (`whitePatients_sp`) back to its template cohort.
 - **Measured column widths** go only to the console and the log (D70); they could be written to the manifest, so templates can be tuned from data.
 
+### One Bundle Or Two
+
+Open, for the user to decide. D106 split the bundles into `bundle.py` (the runtime) and `bundle_with_yamls.py` on the footing that transfer YAMLs had been kept out of the committed bundle on purpose. They had not: the user's notes always asked for them to travel, and "the committed `dist/bundle.py` is built without transfer YAMLs" was a side-effect of the bundle being committed, written into D79's consequences (`951e36d`). With `dist/` no longer committed, the recommendation is one bundle again: `makebundle.py` and Make bundle write `dist/bundle.py` carrying every queued intake's transfer YAML, with `--runtime-only` for a code-only update; an empty queue gives the runtime alone, saying so. Until decided, `python3 makebundle.py queue` (or Make bundle) writes `dist/bundle_with_yamls.py` with the queue, and plain `makebundle.py` the runtime alone.
+
 ### Queueing Transfers
 
 Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template added gets its transfer version (recipes written out; multipliers and batching still in their own sections, D49), and the queue is carried to the VM and run. Open: whether the tab lives in YAML Manager (building the queue on the Mac), in the launcher (running it on the VM), or both; and whether queued pulls run one after another or side by side (D57 allows either). Carrying several transfer YAMLs in one bundle (`makebundle.py yaml=A,B`, D79) is the first piece. The user expects two or three queued at a time, with one `--execute` starting them all (today it takes one project, D66).
