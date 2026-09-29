@@ -14,23 +14,23 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `94e8b7c` (28 Sep), every planning
+- **Sources.** Every commit up to `d30e427` (29 Sep), every planning
   document committed by then (most since deleted, recovered from git), the
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `94e8b7c` (28 Sep, 21:06), the Infant RSV intake repaired
-  after its first Execute stopped. Section 2's last column is as of `00bfcd3`
-  (07:31); only four commits followed. Earlier versions of this record
-  stopped at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13), `b4dec41`
-  (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28), `00bfcd3` (28 Sep, 07:31) and
-  `87f10d7` (28 Sep); everything after each was added from the commits and
-  the three design documents.
+- **Cut-off.** `d30e427` (29 Sep, 01:33): column types taken from the data
+  dictionary, after Infant RSV's second Execute stopped. Earlier versions of
+  this record stopped at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep,
+  12:13), `b4dec41` (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28), `00bfcd3`
+  (28 Sep, 07:31), `87f10d7` (28 Sep) and `94e8b7c` (28 Sep, 21:06);
+  everything after each was added from the commits and the three design
+  documents.
 - **Where things are.** `QMDs/` became `plan/` on 28 Sep (`3b6efb6`), and
   `CLAUDE.md` moved to `.claude/CLAUDE.md`; commits before then name the old
   paths, which is what Section 12's commands use.
 - **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
-  number (D1 to D113). Section 12 explains how to recover any deleted document.
+  number (D1 to D116). Section 12 explains how to recover any deleted document.
 - **Proprietary detail.** Server names, project database names and internal
   paths are left out on purpose. Scrub further before sharing anything.
 
@@ -120,7 +120,9 @@ By 28 Sep 03:07 YAML Manager had become a tkinter app, Author and Run in one
 window (D92 to D101). Its first VM run, that morning, was stopped by two bugs
 (D103, fixed within the hour); by 07:31 your notes on it were built (D104 to
 D110), the browser UI was retired and the repository tidied (D111 to D113),
-none of it yet on the VM.
+none of it yet on the VM. On 29 Sep, after a type in the dictionary proved
+wrong on Cosmos, templates stopped carrying column types at all: they are
+filled in from the dictionary at export (D115).
 
 **The pain point.** Your note says you "identified a specific pain point,
 detailed it and then investigated all the reasons why it occurred". The record
@@ -142,30 +144,30 @@ recoverable, reproducible and hard to get wrong.
 
 ## 2. By The Numbers
 
-Five columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
-27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`), 28 Sep 03:28 (`a9a577a`)
-and the cut-off, 28 Sep 07:31 (`00bfcd3`). A blank means unchanged from the
-column before.
+Six columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
+27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`), 28 Sep 03:28 (`a9a577a`),
+28 Sep 07:31 (`00bfcd3`) and the cut-off, 29 Sep 01:33 (`d30e427`). A blank
+means unchanged from the column before.
 
-| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | 28 Sep, 07:31 | Basis |
-| --- | --- | --- | --- | --- | --- | --- |
-| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days |  |  | git log |
-| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | 205 (18 more, each with a Claude co-author line) | git log |
-| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  |  |  | **[Measured]** git log |
-| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | about 26,500 lines, the browser UI's 3,822 removed: YAML Manager 5,982; the app's model 2,564 and Author view 1,973; `datascope.py` 53; runtime 6,948; its tests 5,604; bundle tooling 1,903; `viewparquets.py` 369; your utilities 1,069 | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
-| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | 798 in five suites (176, 467, 73, the app's model 59 and view 23), the browser UI's 21 retired with it | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
-| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | → 467 | commit messages, design.md, then **[Measured]** |
-| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | 113 | decisions.md |
-| First decision record | 39 decisions, 22 Sep 22:47 |  |  |  |  | `ea74c3d` |
-| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | still 3, now in `plan/`; the testing guide moved beside its scripts | D47 |
-| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | 3,174 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
-| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  |  | 20 tables, 3,162 lines: your ProcedureEventFact, VitalsFact and CoverageDim; now `recipes/datadictionary.yaml` | **[Measured]** `YAMLs/datadictionary.yaml` |
-| VM software inventory | 1,375 lines | unchanged |  |  | unchanged; now `recipes/DSVM Plugins.yaml` | commit `38a4d55` |
-| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | 1,183 KB, 54 files; no longer committed (D106) | D41 for the first two; **[Measured]** for the rest |
-| Defects listed in Section 8 | 35 | 45 | 46 | 51 | 56 | my compilation from commits and decisions |
-| One fix's effect | sample template went from 1,120 generated SQL files to 168 |  |  |  |  | `61befa4` |
-| First live pull | 8 sessions, 48 units, running | ran to the end |  |  |  | see below; roadmap |
-| Pulls running at once | 1 | 3 |  |  |  | `bdd3cc6` |
+| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | 28 Sep, 07:31 | 29 Sep, 01:33 | Basis |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days |  |  | 12 days | git log |
+| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | 205 (18 more, each with a Claude co-author line) | 216 (11 more, each with a Claude co-author line) | git log |
+| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  |  |  |  | **[Measured]** git log |
+| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | about 26,500 lines, the browser UI's 3,822 removed: YAML Manager 5,982; the app's model 2,564 and Author view 1,973; `datascope.py` 53; runtime 6,948; its tests 5,604; bundle tooling 1,903; `viewparquets.py` 369; your utilities 1,069 | about 26,650 lines: YAML Manager 6,115; the app's model 2,585; the rest unchanged | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | 798 in five suites (176, 467, 73, the app's model 59 and view 23), the browser UI's 21 retired with it | 802 (178, 467, 73, the app's model 61 and view 23) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | → 467 |  | commit messages, design.md, then **[Measured]** |
+| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | 113 | 116 | decisions.md |
+| First decision record | 39 decisions, 22 Sep 22:47 |  |  |  |  |  | `ea74c3d` |
+| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | still 3, now in `plan/`; the testing guide moved beside its scripts |  | D47 |
+| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | 3,174 lines at the cut-off, before this update's additions | 3,238 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  |  | 20 tables, 3,162 lines: your ProcedureEventFact, VitalsFact and CoverageDim; now `recipes/datadictionary.yaml` | 3,168 lines; one table, LabComponentResultFact, checked against its page (D114, D116) | **[Measured]** `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines | unchanged |  |  | unchanged; now `recipes/DSVM Plugins.yaml` |  | commit `38a4d55` |
+| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | 1,183 KB, 54 files; no longer committed (D106) | 1,193 KB, 54 files | D41 for the first two; **[Measured]** for the rest |
+| Defects listed in Section 8 | 35 | 45 | 46 | 51 | 56 | 60 | my compilation from commits and decisions |
+| One fix's effect | sample template went from 1,120 generated SQL files to 168 |  |  |  |  |  | `61befa4` |
+| First live pull | 8 sessions, 48 units, running | ran to the end |  |  |  |  | see below; roadmap |
+| Pulls running at once | 1 | 3 |  |  |  |  | `bdd3cc6` |
 
 How the first live pull's figures were reached:
 
@@ -964,6 +966,51 @@ alongside all night.
   alias check in makeYaml, a check as a line is added, and alias renames that
   reach the lines) await your answer in `response.md`.
 
+### 29 Sep, Night: A Type The Dictionary Had Wrong, And Types From The Dictionary (7 commits)
+
+- **Infant RSV's second Execute stopped** in its lab table,
+  `EDLabTestComponents`: `Error converting data type nvarchar to float
+  (8114)`. SQL Server named no column. You asked where the conversion
+  happened and whether the message could name it.
+- **The cause.** Pullmanager creates each cohort's temp table with the
+  declared types and inserts into it with no `CAST`, so SQL Server converts
+  each value itself. Of the table's six `FLOAT` columns, `ReferenceValueHigh_X`
+  and `ReferenceValueLow_X` were the suspects: the dictionary said `numeric`.
+  Your screenshot of the dictionary page settled it, `nvarchar(300)`. You had
+  had the VM's AI transcribe the page and then confirm the transcription, and
+  the two columns were still wrong. Checked column by column against the page,
+  the entry also had `PrioritizedDateKey` as an integer (it is a `bigint`,
+  and the partition key), `Count` and the flags as `boolean` (they are
+  `tinyint`), and a foreign key on the wrong column (`b32c17d`, D114).
+- **"Am I causing this by running validation?"** No: validation already
+  compared each template's types with the dictionary, and passed the `FLOAT`
+  because the dictionary agreed with it. Each template held its own copy of
+  every type, taken from the dictionary when the table was added, so each
+  correction to the dictionary would break the templates that had copied the
+  old one. You had never typed a type; the app and the recipes wrote them.
+- **Your answer**: remake the templates, have the dictionary be the source of
+  truth at export, and do the same for dry runs and for `recipes.yaml`, since
+  "the types are only necessary at export anyways". You chose silence for a
+  stale type ("there's no chance I need to know"), and for text of unknown
+  width 900, having been "urged not to go past 1000". The assistant suggested
+  Unicode (`NVARCHAR`) over your `VARCHAR`, and the page's own width where it
+  is recorded, which is the "expand to fit" you asked about.
+- **Built in three commits** (`e0789f8`, `72a821f`, `ffa01e6`, D115): the
+  fill-in at recipe import, which every output shares; 784 types removed from
+  the recipes and intakes; the lab table's text at its page widths. The
+  regenerated Infant RSV transfer differed from the old in 74 text columns
+  (`VARCHAR(400)` to Unicode) and two `Count`s, and nowhere else.
+- **Only the database's columns** (`d30e427`, D116). A page's Available
+  column carries an SD icon, a database icon, or both; you want only the
+  database's. Five SD-only columns had been added to the lab table from its
+  page, and were removed.
+- **The other tables.** You screenshotted 28 more dictionary pages into
+  `plan/images/Data Dictionary/`, beside the `DiagnosisEventFact` example
+  you moved there from `plan/keys_research/`, to be checked in a new session.
+- **The run-time message** that would name the column on an 8114 is agreed
+  and not built (roadmap). A history commit from another session
+  (`10c51a3`) extended this record to `94e8b7c` in the middle of this work.
+
 ---
 
 ## 6. The Work, By Role
@@ -1445,6 +1492,8 @@ design document.
 | The browser UI as the authoring tool, its logic in the page's JavaScript | Frozen; a tkinter app over a Python model replaces it, on the Mac and the VM | You want several UIs over time, and one app from authoring to running | D92, D93 |
 | `<project>_temp.yaml` | `<project>_intake.yaml`, the name for the phase you are in with a client | "It's better than 'temp'" (your notes) | D95 |
 | Looking codes (ICD, CPT) up through an outside service | Dropped | | D96 |
+| Each template declares its columns' types, checked by family against the dictionary | The dictionary supplies every type at export; the family check removed | A dictionary correction broke every template holding the old type | D114, D115 |
+| Text columns as `VARCHAR(400)` | The page's own type, else `NVARCHAR(900)` | `VARCHAR` loses non-Latin text; the page's width is the exact fit | D115 |
 
 ---
 
@@ -1463,7 +1512,7 @@ design document.
 - **#43 to #46** were fixed on 27 Sep, between 12:19 and 12:26; #47 to #51 on
   28 Sep, while the app was built; #52 to #56 that morning, #52 and #53 from
   the app's first VM run; #57 and #58 that evening, from Infant RSV's first
-  Execute.
+  Execute; #59 and #60 on 29 Sep, from its second.
 
 | # | Defect | What it would have done | Surfaced by | Ref |
 | --- | --- | --- | --- | --- |
@@ -1525,10 +1574,12 @@ design document.
 | 56 | Three new dictionary tables pasted at the file's top level, outside `DataDictionary:` | Nothing could see them: 17 tables read, not 20 | Counting the tables before committing them | `319fc26` |
 | 57 | The Builder's Value mode writes only `=`, quoting what it is given | A date range became `vf.DateKey = 'BETWEEN {{min_date_key}} AND {{max_date_key}}'` | Checking Infant RSV after its Execute stopped | Open; `response.md` |
 | 58 | Infant RSV's intake named aliases its tables did not have, misspelled `_IsDeleted`, and left two inpatient tables unjoined; Validate reads no join or where line | Execute stopped at the PK; the unjoined tables would have pulled whole fact tables | Your first Execute of the pull, on the VM | `94e8b7c`; the check is open |
+| 59 | The dictionary had `ReferenceValueHigh_X` and `ReferenceValueLow_X` as `numeric`; they are `nvarchar(300)` | The lab tables declared `FLOAT`, validation agreed, and the insert failed on Cosmos with 8114, naming no column | Infant RSV's second Execute, then your screenshot of the page | D114, `b32c17d`; types from the dictionary since, D115 |
+| 60 | Five SD-only columns added to the dictionary from a page, before its icons were read | Columns a pull cannot read would have validated | Your note on the Available column | D116, `d30e427` |
 
 ---
 
-## 9. Decision Index (D1 To D113)
+## 9. Decision Index (D1 To D116)
 
 One line each, paraphrasing the decision's title; the reasoning is in
 `decisions.md`.
@@ -1648,11 +1699,16 @@ One line each, paraphrasing the decision's title; the reasoning is in
 | 111 | The core files live in `recipes/`, found through `datascope.json` |
 | 112 | The browser UI is retired; `datascope.py` opens the app |
 | 113 | The repository's top level: `plan/`, `.claude/CLAUDE.md`, runs in `cleanup/` |
+| 114 | The dictionary records Cosmos's real types; a dictionary page outranks the VM's AI |
+| 115 | Column types come from the dictionary, filled in at export |
+| 116 | The dictionary lists only the columns a pull can read |
 
 D84 to D91 were built on 27 Sep (`1aa3568` to `abb3c7e`). D92 to D98 were
 decided that afternoon and built overnight (`d20692c` to `95b38b9`); D99 to
 D102 record choices made while building them. D103 to D113 came on 28 Sep's
-morning, each built the same hour it was decided.
+morning, each built the same hour it was decided. D114 to D116 came in the
+night of 28 to 29 Sep: D115 decided, committed and pushed before it was
+built, as `CLAUDE.md`'s cycle asks.
 
 ---
 
@@ -1702,6 +1758,7 @@ Every planning document committed by the cut-off, and what became of it.
 | `response.md` (second) | 28 Sep | Your notes on the app and its first VM run, six screenshots | Your words | Folded into D104 to D110 and deleted (`d95f991`); committed first, `c2c2922` |
 | `CLAUDE.md` | 23 Sep | Working method | Not recorded; reflowed by another session | Moved to `.claude/CLAUDE.md` (`3b6efb6`) |
 | `datascope.json` | 28 Sep | Where the core files and runs are | Claude (commit trailer), at your request | Current |
+| `images/Data Dictionary/` | 29 Sep | 28 screenshots of dictionary pages, and the `DiagnosisEventFact` example moved from `keys_research/` | Yours | Current; not yet committed at the cut-off |
 
 **The keys research, in brief.** The brief (138 lines) asked the VM's AI three
 questions: are keys declared where SQL can read them (`INFORMATION_SCHEMA`,
@@ -1788,8 +1845,12 @@ resume line.
     or said.)
 25. **The Infant RSV pull.** Its question, and whether one row per ED visit
     (not per child) is what it needs.
-26. **Infant RSV's second Execute.** Did the repaired intake run through, and
-    what did it return?
+26. **Infant RSV's second Execute.** Partly answered: it stopped in the lab
+    table on a type the dictionary had wrong (#59). Does the third, on types
+    from the dictionary, run through, and what does it return?
+27. **The SD icon.** What does SD stand for on a dictionary page, and what
+    are its columns that the database does not have? **[Guess]** SlicerDicer,
+    Epic's self-service reporting tool.
 
 **Attribution, and my recommendation.**
 

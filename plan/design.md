@@ -347,28 +347,39 @@ Columns arrive as `source: dt.DiagnosisKey`, so the alias is resolved to a table
 | Table absent from the dictionary | Error. Add the table to the dictionary. |
 | Column absent from the table     | Error.                                  |
 | Alias cannot be resolved         | Error.                                  |
-| Type family mismatch             | Error.                                  |
+| A column nobody types            | Error (`column_type_missing`), after the three above. |
 
-The dictionary uses annotated abstract types; cohorts declare T-SQL. The parenthetical is stripped and families compared, with widening accepted:
+#### Column Types Come From The Dictionary
 
-| Dictionary                  | Accepts                                |
-|-----------------------------|----------------------------------------|
-| `bigint`                    | `BIGINT`                               |
-| `integer`                   | `INT`, `SMALLINT`, `TINYINT`, `BIGINT` |
-| `string`                    | `VARCHAR(n)`, `NVARCHAR(n)`, `CHAR(n)` |
-| `tinyint`                   | `TINYINT`, `SMALLINT`, `INT`, `BIGINT` |
-| `boolean`                   | `BIT`                                  |
-| `numeric`                   | `DECIMAL`, `NUMERIC`, `FLOAT`, `REAL`  |
-| `float`                     | `FLOAT`                                |
-| `datetime`, `date/datetime` | `DATE`, `DATETIME`, `DATETIME2(n)`     |
+A template declares no types (D115). When recipes are imported, the step every output shares (validation, the transfer YAML, Export split, Preview), each column whose source is a plain `alias.Column` on a dictionary table takes its type from the dictionary. The dictionary wins silently: a type a template still declares on such a column is replaced without a message. The transfer YAML carries the filled types, so the split and the dry run on the VM read them from it. Pre-YAML export (`--export-preyaml`) is not filled; it never travels.
 
-Cosmos keeps many flags (`_IsDeleted`, `IsFinal`) as `tinyint`; where a page shows that, the dictionary says `tinyint`, not `boolean`, and `BIT` is refused, since it would turn any value above 1 into 1 without an error (D114). The table builder declares a dictionary type as the narrowest T-SQL type the check accepts (`tinyint` as `TINYINT`). Validation is only as right as the dictionary: `LabComponentResultFact.ReferenceValueHigh_X` and `ReferenceValueLow_X` were recorded as `numeric` and are `nvarchar(300)`, so a `FLOAT` passed validation and failed on Cosmos with error 8114, which names no column. `LabComponentResultFact` has since been checked against its dictionary page.
+| Dictionary `type` | Filled in as |
+|------------------------------------|------------------------------------|
+| A page's type with a size: `nvarchar(300)`, `varchar(50)`, `decimal(10,2)` | As written: `NVARCHAR(300)` |
+| A page's type: `bigint`, `int`, `tinyint`, `smallint`, `bit`, `float`, `real`, `date`, `time`, `datetime2`, `smalldatetime`, `money`, `uniqueidentifier` | As written: `TINYINT` |
+| `string`, `text`, or a text type with no size | `NVARCHAR(900)` |
+| `integer` | `INT` |
+| `boolean` | `BIT` |
+| `numeric` | `FLOAT` |
+| `datetime`, `date/datetime` | `DATETIME2(7)` |
 
-Lengths are not compared: the dictionary records none. Nullability is not cross-checked, because `nullable: false` on a nullable column is the documented way to force an `IS NOT NULL` filter.
+A parenthetical annotation is ignored: `bigint (foreign key to EncounterFact)` is `BIGINT`. A page's size is the widest the source can hold, so nothing is cut off and nothing is wider than it needs to be. A string with no recorded size is Unicode, as Cosmos text is (`VARCHAR` would turn other scripts to `?`), and 900 wide, under the 1000 the user keeps to. Declared widths also set SQL Server's memory grant for a sort, so a cohort with many unrecorded strings under `dedup_keys` asks for more than it uses until its sizes are recorded.
+
+A column the dictionary cannot type keeps its declared type, and without one is `column_type_missing`: an expression, a column of a generated temp or an upload, or a dictionary type the fill-in does not know (which also warns, `dd_unknown_type`, and says to write the type as the page shows it). A missing dictionary types nothing, so every column is then an error.
+
+The table builder writes no types, but knows each column's for its join checks, from the same fill-in (D115).
+
+#### What The Dictionary Records
+
+Each table's columns as its Cosmos dictionary page shows them, and only those with the database icon in its Available column: a column marked SD alone is left out (D116). Types are written as the page writes them (`nvarchar(300)`, `tinyint`, `float`), with any foreign key after them (`bigint (foreign key to LabDim)`). A comment above a table says what was checked against its page, and when.
+
+Validation is only as right as the dictionary. `LabComponentResultFact.ReferenceValueHigh_X` and `ReferenceValueLow_X` were recorded as `numeric` and are `nvarchar(300)`, so a `FLOAT` went to Cosmos, where the insert failed with error 8114, which names no column (D114). `LabComponentResultFact` has since been checked against its page; the other tables are being checked the same way. Many flags (`_IsDeleted`, `_IsInferred`) are `tinyint` where the page shows it: a `BIT` would turn a stored 2 into 1 without an error.
+
+Nullability is not cross-checked, because `nullable: false` on a nullable column is the documented way to force an `IS NOT NULL` filter.
 
 ### Keys And Relationships In Cosmos
 
-Validation checks that every column exists with the right type, not that a join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is wrong; a correct join can still multiply rows, if it meets a table with several rows per key and no filter. Knowing each table's keys, and what each foreign key points at, would let validation check joins. Three questions were put to the VM's AI: are keys declared where SQL can read them, do they hold in the data, and what does the interactive data dictionary show. It explained its queries rather than running them, and said its dictionary answers were "paraphrased based on Epic's conventions, not exact text", so nothing below has been counted, and what it alone said is unverified. The brief and its answer are summarized here and in the roadmap (Needs Research); the one page seen is `plan/keys_research/DataDictionary DiagnosisEventFact example.png`.
+Validation checks that every column exists with the right type, not that a join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is wrong; a correct join can still multiply rows, if it meets a table with several rows per key and no filter. Knowing each table's keys, and what each foreign key points at, would let validation check joins. Three questions were put to the VM's AI: are keys declared where SQL can read them, do they hold in the data, and what does the interactive data dictionary show. It explained its queries rather than running them, and said its dictionary answers were "paraphrased based on Epic's conventions, not exact text", so nothing below has been counted, and what it alone said is unverified. The brief and its answer are summarized here and in the roadmap (Needs Research); the first page seen is `plan/images/Data Dictionary/DataDictionary DiagnosisEventFact example.png`, beside the user's screenshots of the others.
 
 | Finding | Source | How sure |
 |------------------------|------------------------|------------------------|
@@ -382,7 +393,7 @@ Validation checks that every column exists with the right type, not that a join 
 
 **Reading a dictionary page** (`DataDictionary DiagnosisEventFact example.png`):
 
-- **Columns tab:** each column's type, and for a foreign key the *table* it points at, in blue. A `Partition key` badge (here `StartDateKey`) marks the column that lets SQL Server skip most of the table when filtered; our recipes filter it.
+- **Columns tab:** each column's type, and for a foreign key the *table* it points at, in blue. An Available column shows where the column exists: an SD icon, a database icon, or both. Only the database icon's columns can be pulled, so only they go in our dictionary (D116). Expanding a row shows its description, whether it allows null, and its de-identification method. A `Partition key` badge (here `StartDateKey`) marks the column that lets SQL Server skip most of the table when filtered; our recipes filter it.
 - **ER Diagram:** the table's own key (filled key icon, `DiagnosisEventKey`), then a "Foreign keys" list (outline key icons). A dashed line runs from each foreign key to the table it points at, ending on the *column* it lands on, which the Columns tab does not give. The ends give the cardinality: a crow's foot on this side (many rows here), a bar on the other (one row there).
 - **For `DiagnosisEventFact`** that reads: `DiagnosisKey` → `DiagnosisDim.DiagnosisKey`; `PatientDurableKey` → `PatientDim.DurableKey`; `EncounterKey` → `EncounterFact.EncounterKey`; `AgeKey` → `DurationDim.DurationKey`; `StartDateKey`, `EndDateKey`, `NotedDateKey_X`, `UserEnteredDateKey` → `DateDim.DateKey`; `SourceComboKey` → `DiagnosisEventSourceBridge`, a bridge from one combination key to several `SourceDim` rows. Our dictionary has `DiagnosisKey` pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the interactive dictionary says `DiagnosisDim`.
 
@@ -431,7 +442,7 @@ The **Builder** (D96) has its sections down the left, each marked when a message
 - **Splitters.** Each says which it is. **Separate tables** is a `split_after_build` multiplier: levels with a PK column (chosen from the PK's columns), values, and an optional role and row mult. **Pieces of one table** is batching: a PK column with values (blank: every value, D82) and Separate parquets, or a number of rows. A splitter by column needs the PK's columns; before there is a PK, or when its columns are unknown, the section says so and only rows can be added. Editing a batch writes it out in full, as a transfer YAML does, so one written as `sex` becomes its definition.
 - **Fact Tables.** At the top, set apart by a coloured frame, **Add a fact table** (D110): Prefabricated (a non-PK recipe) or From data dictionary (a table), each with a Name; choosing a dictionary table opens its whole form in place. Below, each table, prefabricated or built from the dictionary (Edit opens its form inside its entry; Save as Recipe, D56), with its position (a number and Enter moves it; the PK keeps its place), its variables, and its table inputs. A variable left blank says where its value comes from: "set by multiplier IBDType", "from the PK (K50.%)" or "from the PK's value"; one nothing supplies is marked required. A table input is bound from a list of the template's tables, those whose columns cover what it reads first, each with a ✓ and the columns it has, a ✗ and the ones it lacks, or a ? where its columns are unknown. Nothing is picked for you (D45). A prefabricated table has **Filters added to this table** (D105): a where line by column, as a value (`=`; `IN` for several, separated by commas; `LIKE` with `%`) or **In supporting table** (`x.MedicationKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)`: `IN`, not a join, so a code listed twice cannot duplicate rows), and a join by column to another table of the template, with its type (what each keeps is said beside it) and operator, refused unless the two columns' types match. They are written as the table's `add_where` and `add_join`, each removable.
 
-The **table builder**, drawn in place (D110), builds a PK or fact table from the dictionary: name, destination, description, granularity, Pull this cycle, and the table its rows come from, which brings every column, typed from the dictionary, under an alias of its initials. Columns are removed, added back, renamed, described and moved by number. A join to another table of the template is picked from lists, with its type and operator, and refused unless the two columns' types match (and says why); a join to a Cosmos table is written out. Where lines are written by column, as a Fact Table's filters are, or typed as SQL. Add Table (or Save Changes) puts it into the draft; Cancel closes the form. A loaded table is edited in place, keeping what the builder does not show (`dedup_keys`, ...).
+The **table builder**, drawn in place (D110), builds a PK or fact table from the dictionary: name, destination, description, granularity, Pull this cycle, and the table its rows come from, which brings every column under an alias of its initials; the builder knows their types from the dictionary but writes none (D115). Columns are removed, added back, renamed, described and moved by number. A join to another table of the template is picked from lists, with its type and operator, and refused unless the two columns' types match (and says why); a join to a Cosmos table is written out. Where lines are written by column, as a Fact Table's filters are, or typed as SQL. Add Table (or Save Changes) puts it into the draft; Cancel closes the form. A loaded table is edited in place, keeping what the builder does not show (`dedup_keys`, ...).
 
 **Validate** shows the pipeline's steps (Load, Recipes, Variables, Uploads, Columns, Ready for the VM: passed, failed, or pending), then every message: errors red, warnings yellow, pending transfers blue. Choosing one shows its fix; double-clicking it opens the Builder at its section with the entry marked "Validate points here". **Exports** has the bundle queue (Mac only), with Remove and Add, and **Make bundle**, which builds `dist/bundle_with_yamls.py` from the queue and shows its `content_id` until the next build (D106); then the saved intake's pre-YAML, transfer YAML and manifest, or a queued intake's when chosen; an unsaved draft is told to save first. **YAML** shows the draft as it would be saved.
 

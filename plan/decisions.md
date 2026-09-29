@@ -2139,3 +2139,25 @@ the copies stale, so each correction broke the templates that had copied the
 old type, though the user never wrote a type. With one copy, a correction
 reaches every template on its next export.
 
+**As built** (`e0789f8` to `ffa01e6`). The fill-in sits in `import_recipes`,
+which every output calls. The type-family check (D114's families) is removed:
+with every type filled, it could no longer disagree. The error for a column
+nobody types comes after the dictionary's own errors, which say why better,
+and a missing dictionary makes every column one. 784 types were removed from
+`recipes.yaml` and the intakes; `LabComponentResultFact`'s text columns went
+to their page widths.
+
+### D116. The dictionary lists only the columns a pull can read
+
+**Decision.** A dictionary page's Available column marks each column with an
+SD icon, a database icon, or both. Only columns with the database icon go in
+`datadictionary.yaml`; a column marked SD alone is left out, and says so in
+the table's comment.
+
+**Why.** The user pulls only from the database, and wants the dictionary to
+hold only what a pull can name. An SD-only column in it would pass
+validation; whether Cosmos then refuses it is not tested, and need not be.
+Five were added to `LabComponentResultFact` from its page (`IsFinal`,
+`RawNumericValue_X`, `RawUnit_X`, `RawValue_X`, `SourceKey`) before the
+icons were read, and are removed.
+
