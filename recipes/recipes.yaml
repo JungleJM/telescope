@@ -35,109 +35,88 @@ recipes:
     columns:
       - source: dxf.PatientDurableKey
         name: PatientDurableKey
-        type: BIGINT
         nullable: false
 
       - source: p.Sex
         name: Sex
-        type: VARCHAR(50)
         nullable: true
 
       - source: dt.NameAndCode
         name: ICDName
-        type: VARCHAR(400)
         nullable: true
 
       - source: dur.Years
         name: AgeAtIndexDiagnosis
-        type: BIGINT
         nullable: true
         description: "Age in Years of patient at earliest diagnosis of index condition"
 
       - source: p.BirthDate
         name: BirthDate
-        type: DATE
         nullable: true
 
       - source: p.StateOrProvince
         name: StateOrProvince
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.StateOrProvinceAbbreviation
         name: StateOrProvinceAbbreviation
-        type: VARCHAR(300)
         nullable: false
 
       - source: p.Country
         name: Country
-        type: VARCHAR(100)
         nullable: true
 
       - source: dt.Value
         name: ICDCode
-        type: VARCHAR(400)
         nullable: true
 
       - source: dxf.StartDateKey
         name: IndexDate
-        type: INT
         nullable: true
 
       # Everything else:
       - source: dxf.DiagnosisEventKey
         name: DiagnosisEventKey
-        type: BIGINT
         nullable: false
 
       - source: dxf.EncounterKey
         name: IndexEncounter
-        type: BIGINT
         nullable: false
 
       - source: p.DurableKey
         name: DurableKey
-        type: BIGINT
         nullable: false
 
       - source: p.FirstRace
         name: FirstRace
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.SecondRace
         name: SecondRace
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.ThirdRace
         name: ThirdRace
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.FourthRace
         name: FourthRace
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.FifthRace
         name: FifthRace
-        type: VARCHAR(100)
         nullable: true
 
       - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
         name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-        type: FLOAT
         nullable: true
 
       - source: p.SviOverallPctlRankByZip2020_X
         name: SviOverallPctlRankByZip2020_X
-        type: FLOAT
         nullable: true
 
       - source: p.SviSocioeconomicPctlRankByZip2020_X
         name: SviSocioeconomicPctlRankByZip2020_X
-        type: FLOAT
         nullable: true
 
     filter:
@@ -171,84 +150,68 @@ recipes:
     columns:
       - source: def.DiagnosisEventKey
         name: DiagnosisEventKey
-        type: BIGINT
         nullable: false
 
       - source: tc.StandardName
         name: BillingCodeType
-        type: VARCHAR(400)
         nullable: true
         description: "ICD code type"
 
       - source: dt.Value
         name: BillingCodeValue
-        type: VARCHAR(400)
         nullable: true
 
       - source: dt.NameAndCode
         name: NameAndCode
-        type: VARCHAR(400)
         nullable: true
 
       - source: dur.Years
         name: AgeAtDiagnosis
-        type: INT
         nullable: true
 
       - source: def.IsPrimary
         name: IsPrimary
-        type: BIT
         nullable: true
 
       - source: dt.ReferenceBillingCode
         name: IsReferenceBillingCode
-        type: VARCHAR(100)
         nullable: true
         description: "0/1 of if this was used as the code for Billing submission"
 
       - source: def.Type
         name: TypeOfDx
-        type: VARCHAR(100)
         nullable: true
 
       - source: tc.Concept
         name: TerminologyConcept
-        type: VARCHAR(400)
         nullable: true
 
       - source: tc.Name
         name: TerminologyName
-        type: VARCHAR(400)
         nullable: true
 
       - source: def.Status
         name: Status
-        type: VARCHAR(100)
         nullable: true
 
       - source: def.StartDateKey
         name: StartDateKey
-        type: INT
         nullable: true
 
       - source: def.EndDateKey
         name: EndDateKey
-        type: INT
         nullable: true
 
       - source: def.PatientDurableKey
         name: PatientDurableKey
-        type: BIGINT
         nullable: false
 
       - source: def.DiagnosisKey
         name: DiagnosisKey
-        type: BIGINT
         nullable: false
 
       - source: def.EncounterKey
         name: EncounterKey
-        type: BIGINT
         nullable: false
 
     filter:
@@ -279,84 +242,68 @@ recipes:
     columns:
       - source: def.DiagnosisEventKey
         name: DiagnosisEventKey
-        type: BIGINT
         nullable: false
 
       - source: tc.StandardName
         name: BillingCodeType
-        type: VARCHAR(400)
         nullable: true
         description: "ICD code type"
 
       - source: dt.Value
         name: BillingCodeValue
-        type: VARCHAR(400)
         nullable: true
 
       - source: dt.NameAndCode
         name: NameAndCode
-        type: VARCHAR(400)
         nullable: true
 
       - source: dur.Years
         name: AgeAtDiagnosis
-        type: INT
         nullable: true
 
       - source: def.IsPrimary
         name: IsPrimary
-        type: BIT
         nullable: true
 
       - source: dt.ReferenceBillingCode
         name: IsReferenceBillingCode
-        type: VARCHAR(100)
         nullable: true
         description: "0/1 of if this diagnosis was used for Billing submission"
 
       - source: def.Type
         name: TypeOfDx
-        type: VARCHAR(100)
         nullable: true
 
       - source: tc.Concept
         name: TerminologyConcept
-        type: VARCHAR(400)
         nullable: true
 
       - source: tc.Name
         name: TerminologyName
-        type: VARCHAR(400)
         nullable: true
 
       - source: def.Status
         name: Status
-        type: VARCHAR(100)
         nullable: true
 
       - source: def.StartDateKey
         name: StartDateKey
-        type: INT
         nullable: true
 
       - source: def.EndDateKey
         name: EndDateKey
-        type: INT
         nullable: true
 
       - source: def.PatientDurableKey
         name: PatientDurableKey
-        type: BIGINT
         nullable: false
 
       - source: def.DiagnosisKey
         name: DiagnosisKey
-        type: BIGINT
         nullable: false
 
       - source: def.EncounterKey
         name: EncounterKey
-        type: BIGINT
         nullable: false
 
     filter:
@@ -384,93 +331,75 @@ recipes:
     columns:
       - source: haf.HospitalAdmissionKey
         name: HospitalAdmissionKey
-        type: BIGINT
         nullable: false
 
       - source: haf.EncounterKey
         name: InpatientEncounterKey
-        type: BIGINT
         nullable: false
 
       - source: haf.PatientDurableKey
         name: PatientDurableKey
-        type: BIGINT
         nullable: false
 
       - source: haf.AdmissionDateKey
         name: AdmissionDateKey
-        type: INT
         nullable: false
 
       - source: haf.InpatientAdmissionInstant
         name: InpatientAdmissionInstant
-        type: DATETIME2(7)
         nullable: false
 
       - source: haf.DischargeDateKey
         name: DischargeDateKey
-        type: INT
         nullable: true
 
       - source: haf.DischargeInstant
         name: DischargeInstant
-        type: DATETIME2(7)
         nullable: true
 
       - source: haf.DischargeDisposition
         name: DischargeDisposition
-        type: VARCHAR(300)
         nullable: true
 
       - source: haf.InpatientLengthOfStayInDays
         name: InpatientLengthOfStayInDays
-        type: INT
         nullable: true
 
       - source: haf.LengthOfStayInDays
         name: LengthOfStayInDays
-        type: INT
         nullable: true
 
       - source: haf.DaysSincePriorAdmission_X
         name: DaysSincePriorAdmission_X
-        type: INT
         nullable: true
 
       - source: haf.ReadmissionCausedByKey_X
         name: ReadmissionCausedByKey_X
-        type: BIGINT
         nullable: true
 
       - source: haf.IsPlannedReadmission_X
         name: IsPlannedReadmission_X
-        type: BIT
         nullable: true
 
       - source: haf.IsUnplannedReadmission_X
         name: IsUnplannedReadmission_X
-        type: BIT
         nullable: true
 
       - source: haf.EncounterType
         name: EncounterType
-        type: NVARCHAR(300)
         nullable: true
 
       - source: haf.FinancialClass
         name: FinancialClass
-        type: VARCHAR(100)
         nullable: true
 
       # optional: ICD for the qualifying diagnosis
       - source: dt.Value
         name: ICDCode
-        type: VARCHAR(400)
         nullable: true
 
       - source: dt.NameAndCode
         name: ICDName
-        type: VARCHAR(400)
         nullable: true
 
     filter:
@@ -503,32 +432,26 @@ recipes:
     columns:
       - source: pk.EdVisitKey
         name: EdVisitKey
-        type: BIGINT
         nullable: false
 
       - source: pk.EncounterKey
         name: EncounterKey
-        type: BIGINT
         nullable: false
 
       - source: pk.PatientDurableKey
         name: PatientDurableKey
-        type: BIGINT
         nullable: false
 
       - source: pk.ArrivalDateKey
         name: ArrivalDateKey
-        type: INT
         nullable: false
 
       - source: pk.HospitalAdmissionKey
         name: HospitalAdmissionKey
-        type: BIGINT
         nullable: true # Some ED visits may not be admitted; allow NULL.
 
       - source: age.Years
         name: AgeAtVisit
-        type: INT
         nullable: true
         description: "Age in years at the ED visit"
 

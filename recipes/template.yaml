@@ -97,7 +97,6 @@ example_cohorts:
       # If it's all in one table it's much easier to pull later data, even if it's not a "primary key"
       - source: pk.x
         name: # Name in the output table. If you leave alone, skill.md will fill with same name as (column)
-        type: # Filled by skill.mg
         nullable: # Filled by skill.mg
       - source: pk.x # repeat as necessary
       - source: pk.x
@@ -136,7 +135,6 @@ example_cohorts:
       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
       - source: bpf.x
         name:
-        type:
         nullable:
     filter:
       from: PatientDim as p # the general collection on Cosmos.
@@ -153,7 +151,6 @@ example_cohorts:
       # Example: "Patients" could be 'p', so 'p.AgeKey' would be the agekey var for that patient
       - source: bpf.x
         name:
-        type:
         nullable:
     filter:
       from: PatientDim as p # the general collection on Cosmos.

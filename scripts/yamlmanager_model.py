@@ -1561,6 +1561,11 @@ class TableBuilder:
                 column = dict(column)
                 source = str(column.get("source") or "")
                 column.setdefault("name", source.split(".")[-1] if source else "")
+                # The dictionary's type, which the export fills in (D115), for the
+                # join checks; the template keeps none.
+                column["type"] = self._dictionary_type(column) or column.get("type")
+                if not column["type"]:
+                    column.pop("type")
                 self.columns.append(column)
 
     def _parse_from(self, value: Any) -> tuple[str, str]:
@@ -1587,6 +1592,14 @@ class TableBuilder:
         if meta.get("nullable") is not None:
             out["nullable"] = bool(meta["nullable"])
         return out
+
+    def _dictionary_type(self, column: dict[str, Any]) -> str | None:
+        """The type the export fills in for a column of the from table, if any."""
+        alias, _, name = str(column.get("source") or "").partition(".")
+        if alias != self.alias or not name:
+            return None
+        meta = self.dictionary_columns().get(name)
+        return my.dictionary_sql_type(meta.get("type")) if isinstance(meta, dict) else None
 
     @staticmethod
     def source_column(column: dict[str, Any]) -> str:
@@ -1712,7 +1725,8 @@ class TableBuilder:
             cohort["granularity"] = self.granularity.strip()
         cohort.update(copy.deepcopy(self.extra))
         cohort["columns"] = [
-            {k: c[k] for k in ("source", "name", "type", "nullable", "description") if c.get(k) not in (None, "")}
+            {k: c[k] for k in ("source", "name", "type", "nullable", "description") if c.get(k) not in (None, "")
+             and not (k == "type" and self._dictionary_type(c))}  # the export fills it in (D115)
             for c in self.columns
         ]
         filt: dict[str, Any] = {}
@@ -2286,6 +2300,16 @@ class TableBuilderTests(ModelTest):
                          ["INNER JOIN {{prefix}}_Patients AS p ON ef.PatientDurableKey = p.PatientDurableKey"])
         validation = draft.validate()
         self.assertTrue(validation.ok, [m.text for m in validation.of_kind("error")])
+
+    def test_the_template_keeps_no_type_the_dictionary_supplies(self):
+        # A copy in the template goes stale when the dictionary is corrected.
+        draft = self.draft()
+        index = self.encounters(draft).commit()
+        columns = draft.doc["cohorts"][index]["columns"]
+        self.assertTrue(columns and not any("type" in c for c in columns), columns)
+        # Opened again, the builder still knows the types, for its join checks.
+        again = TableBuilder(draft, index)
+        self.assertEqual(again.columns[0]["type"], "BIGINT")
 
     def test_a_join_whose_types_differ_is_refused(self):
         draft = self.draft()
