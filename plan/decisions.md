@@ -2462,3 +2462,70 @@ safe (D28, D45): a pull deleting its own tables would lose the copy
 Artifacts reads. A lock timeout turns a silent hang into a message saying
 what to close. The name check keeps it off Cosmos and anything that is not a
 project database.
+
+### D133. Table groups: one Cosmos connection each, inside the session
+
+**Amends D36** (one connection for the whole session).
+
+**Context.** The user uploaded all 1.2 million Crohn's patients (about ten
+columns) in about two minutes, not the long block feared. The fear was why every
+table of a cohort ran on one connection held open for hours, with no news until
+it ended. A pull's tables tend to come in related blocks: a birth (BirthFact,
+the mother, the pregnancy), medications (order, administration, dispense), visits
+(ED visits, hospital admissions). The user wants to pull each block on its own
+connection, and to see it named in the progress: "getting UC Meds", not "getting
+all UC data".
+
+**Decision.**
+
+- A **table group** is a named set of a template's fact tables. The levels are
+  session (one PK) → group (one Cosmos connection) → batch → chunk.
+- The session's first connection does setup, uploads and the PK, as now; the
+  PK is built once. Each group then opens its own connection, mints its own
+  epoch and captures `@@SERVERNAME` (D37), refills the PK temp from the PK's
+  Projects copy (D19), loads the supporting tables its tables read, runs every
+  batch and chunk of its tables, and closes.
+- Groups are outside batches: every chunk of UC Meds, then every chunk of UC
+  Visits. Progress names the group (`UC · Meds · c3of12`).
+- The tables in no group share one group, so a template without groups runs as
+  today.
+- A table that reads a table in another group is an error naming both groups,
+  whose fix is to put them in one group. It is never reloaded from Projects.
+- Inside a group, tables run in the Fact Tables order, which can be changed by
+  number. A table that reads a table later in that order is an error naming both.
+  It is not reordered for you (D45). This check applies to templates without
+  groups too: today such a table fails in Cosmos.
+- A failed group is retried alone by `--retry-failed`; finished groups are
+  skipped. Under `Dual`, every SneakPeek session still runs first (D65).
+
+**In the app.** Table groups get their own section after Fact Tables: **Add
+group** (a name), **Add table to group**, **Remove table from group**, **Remove
+group**, and the note "Tables in no group run together, as one group". Each fact
+table says which group it is in. It is not in Splitters, which splits the PK. They
+are "groups", not "batches": batching already means pieces of one table, and
+every destination has a `_batch` column. Splitters' **Separate tables** is renamed
+**Separate PK per level**.
+
+**Why.** A group costs only a refill of the PK temp, which the upload suggests is
+minutes. In return a stuck or failed group costs only itself, and progress names
+what is being pulled.
+
+### D134. Recipe sets: several recipes added as one table group
+
+**Decision.**
+
+- `recipes.yaml` gets a `recipe_sets:` list. A set names its recipes in order,
+  which is the order they run: a chain's first table first (BirthFact before the
+  tables that read it).
+- Adding a set puts its recipes in the template as ordinary fact tables, with
+  their table inputs to each other already bound, in a table group named for the
+  set. After that there is nothing special: each table is edited, removed or
+  moved out of the group as any prefabricated table is.
+- A set and a group are two things. Groups can be made by hand, with no set.
+- A set has no variables of its own. Its tables take the template's and the
+  PK's, as every table does.
+- In the app, a group has **Save as recipe set**, as a built table has Save as
+  Recipe (D56).
+
+**Why.** Birth, medications and visits are each two or three tables that are
+always pulled together and read each other.

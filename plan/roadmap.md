@@ -39,6 +39,19 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 
 ------------------------------------------------------------------------
 
+## Next, Once The Pulls Run: Table Groups And Recipe Sets
+
+The first feature after the remade pulls succeed on the VM (D133, D134). In order:
+
+1.  **A table that reads one later in the order is an error**, naming both, grouped or not (D133). It stands alone, and groups rely on it.
+2.  **Table groups at run time**: a Cosmos connection per group inside the session, the PK temp refilled from Projects and the supporting tables it reads loaded; groups outside batches; the ungrouped tables one group; a table reading another group's an error; progress naming the group; a failed group retried alone. The split, the manifest, the dry run and the status all show groups.
+3.  **Table groups in the app**: their own section after Fact Tables, each fact table saying its group; Splitters' Separate tables renamed Separate PK per level.
+4.  **Recipe sets**: `recipe_sets:` in `recipes.yaml`, adding one as a group with its bindings set, and Save as recipe set.
+
+Before building 2, from Crohns_PatientsFromUpload's manifest: how long its upload phase took (the file to Projects, then Projects to Cosmos). A group repeats only the second part, so this is what each group adds.
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
