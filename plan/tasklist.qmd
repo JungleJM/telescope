@@ -55,6 +55,10 @@ Colors still aren't working. Is there no CSS that could do it? Could we have the
 
 - i want to ensure the current features work first. BuTo that end, tell me your questions, so we have mutual understanding. ONce taht's done, outline the findings to 'roadmap' so we can make this the first feature add as soon as the pulls are successfully running.
 
+::: {.callout-note title="🟦 Claude: carried over from the last chat"}
+Background, not an answer: the Crohn's pull you describe above, running for hours with no news, had medication tables joined to nothing (CrohnsClinicalData), so it was reading all of MedicationOrderFact and MedicationDispenseFact in Cosmos, not your 1.2 million patients (D129, which now stops that on the Mac). Some of those hours were that, not the size of the cohort. The pulls now queued include two batching tests: Crohns_PatientsFromUpload, the uploaded PK in 100,000-row chunks; and IBD_Ancestry in 30,000-patient chunks (roadmap, The Remade Pulls). Their timings are evidence for this idea.
+:::
+
 # Settled
 
 Nothing waiting: D117 to D128 and the roadmap's "Next: Fixes, In Order" hold everything agreed so far.
