@@ -976,23 +976,26 @@ DataDictionary:
           Key referencing cause-of-readmission concept when mapped (e.g., another
           admission or diagnosis).
 
+  # Types, keys and ReferenceValueHigh_X's nullability checked against the Cosmos
+  # dictionary page (screenshots, 2026-09-29). Other nullability not yet checked.
   LabComponentResultFact:
     description: >
       Lab component result fact table. One row per lab component result for a patient,
       linked to specific lab tests and encounters. Numeric results are stored in
       NumericValue with units in Unit; categorical/string results are stored in Value.
       LabComponentKey = -1 indicates an unmapped component; exclude or handle separately.
+      Partitioned on PrioritizedDateKey.
     granularity: >
       One row per lab component result per patient per event.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
           Flag indicating the row has been logically deleted in the source. Filter this
           out for most analytic use cases.
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
           Flag indicating the row was inferred rather than directly sourced; used for
@@ -1009,7 +1012,7 @@ DataDictionary:
         description: >
           Timestamp when the specimen was collected. De-identified and time-shifted.
       Count:
-        type: integer
+        type: tinyint
         nullable: false
         description: >
           Cosmos row count indicator, typically 1 for real rows. Placeholder rows
@@ -1025,10 +1028,15 @@ DataDictionary:
         description: >
           Result flag as provided by the source (e.g., H, L, critical).
       IsBlankOrUnsuccessfulAttempt:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
           Indicates the result represents a blank measurement or an unsuccessful attempt.
+      IsFinal:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
       LabComponentKey:
         type: bigint (foreign key to LabComponentDim)
         nullable: false
@@ -1046,25 +1054,25 @@ DataDictionary:
         description: >
           Key linking this component result to the parent lab test record.
       NumericValue:
-        type: numeric
+        type: float
         nullable: true
         description: >
           Numeric representation of the lab result when the raw value parses as a number.
           Value is NULL for categorical/string results. Selecting on NumericValue
           preferentially pulls abnormal results; use with care.
       NumericBoundaryValue_X:
-        type: numeric
+        type: float
         nullable: true
         description: >
           Numeric boundary value when the result uses inequality or thresholds (e.g.,
           "<5").
       NumericValueMaximum_X:
-        type: numeric
+        type: float
         nullable: true
         description: >
           Maximum numeric value when the lab result represents a range.
       NumericValueMinimum_X:
-        type: numeric
+        type: float
         nullable: true
         description: >
           Minimum numeric value when the lab result represents a range.
@@ -1074,7 +1082,7 @@ DataDictionary:
         description: >
           Patient durable key associated with the lab result.
       PrioritizedDateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim; partition key)
         nullable: true
         description: >
           DateKey for the prioritized result date (usually the result date); use for
@@ -1086,20 +1094,37 @@ DataDictionary:
           Timestamp for the prioritized result date/time (result or collection, depending
           on configuration).
       ProcedureDurableKey:
-        type: bigint
+        type: bigint (foreign key to ProcedureDim)
         nullable: true
         description: >
           Durable key for a procedure associated with the lab result, when mapped.
+      RawNumericValue_X:
+        type: float
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      RawUnit_X:
+        type: string
+        nullable: true
+        description: >
+          On the dictionary page (nvarchar(100)); description not yet transcribed.
+      RawValue_X:
+        type: string
+        nullable: true
+        description: >
+          On the dictionary page (nvarchar(300)); description not yet transcribed.
       ReferenceValueHigh_X:
-        type: numeric
-        nullable: true
+        type: string
+        nullable: false
         description: >
-          Upper bound of normal reference range for the numeric result.
+          High end of the normal range for this result. Text (nvarchar(300)), not a
+          number: cast it yourself where it parses.
       ReferenceValueLow_X:
-        type: numeric
+        type: string
         nullable: true
         description: >
-          Lower bound of normal reference range for the numeric result.
+          Low end of the normal range for this result. Text (nvarchar(300)), not a
+          number: cast it yourself where it parses.
       ReferenceValueNormal_X:
         type: string
         nullable: true
@@ -1117,10 +1142,15 @@ DataDictionary:
           Timestamp when the result was finalized/reported. Often used as the main
           result time for analyses.
       SourceComboKey:
-        type: bigint (foreign key to LabComponentResultSourceBridge/SourceDim)
+        type: bigint (foreign key to LabComponentResultSourceBridge)
         nullable: true
         description: >
           Composite source key for the lab result; use to trace origin system.
+      SourceKey:
+        type: bigint (foreign key to SourceDim)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
       StructuredBoundaryOperator_X:
         type: string
         nullable: true

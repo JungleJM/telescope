@@ -1691,11 +1691,11 @@ cohorts:
         nullable: true
       - source: lcrf._IsDeleted
         name: _IsDeleted
-        type: BIT
+        type: TINYINT
         nullable: false
       - source: lcrf._IsInferred
         name: _IsInferred
-        type: BIT
+        type: TINYINT
         nullable: false
       - source: lcrf.Abnormal
         name: Abnormal
@@ -1719,7 +1719,7 @@ cohorts:
         nullable: true
       - source: lcrf.IsBlankOrUnsuccessfulAttempt
         name: IsBlankOrUnsuccessfulAttempt
-        type: BIT
+        type: TINYINT
         nullable: true
       - source: lcrf.LabComponentKey
         name: LabComponentKey
@@ -1755,7 +1755,7 @@ cohorts:
         nullable: false
       - source: lcrf.PrioritizedDateKey
         name: PrioritizedDateKey
-        type: INT
+        type: BIGINT
         nullable: true
       - source: lcrf.PrioritizedInstant_X
         name: PrioritizedInstant_X
@@ -1767,11 +1767,11 @@ cohorts:
         nullable: true
       - source: lcrf.ReferenceValueHigh_X
         name: ReferenceValueHigh_X
-        type: FLOAT
+        type: NVARCHAR(300)
         nullable: true
       - source: lcrf.ReferenceValueLow_X
         name: ReferenceValueLow_X
-        type: FLOAT
+        type: NVARCHAR(300)
         nullable: true
       - source: lcrf.ReferenceValueNormal_X
         name: ReferenceValueNormal_X
@@ -1822,11 +1822,11 @@ cohorts:
         nullable: true
       - source: lcrf._IsDeleted
         name: _IsDeleted
-        type: BIT
+        type: TINYINT
         nullable: false
       - source: lcrf._IsInferred
         name: _IsInferred
-        type: BIT
+        type: TINYINT
         nullable: false
       - source: lcrf.Abnormal
         name: Abnormal
@@ -1850,7 +1850,7 @@ cohorts:
         nullable: true
       - source: lcrf.IsBlankOrUnsuccessfulAttempt
         name: IsBlankOrUnsuccessfulAttempt
-        type: BIT
+        type: TINYINT
         nullable: true
       - source: lcrf.LabComponentKey
         name: LabComponentKey
@@ -1886,7 +1886,7 @@ cohorts:
         nullable: false
       - source: lcrf.PrioritizedDateKey
         name: PrioritizedDateKey
-        type: INT
+        type: BIGINT
         nullable: true
       - source: lcrf.PrioritizedInstant_X
         name: PrioritizedInstant_X
@@ -1898,11 +1898,11 @@ cohorts:
         nullable: true
       - source: lcrf.ReferenceValueHigh_X
         name: ReferenceValueHigh_X
-        type: FLOAT
+        type: NVARCHAR(300)
         nullable: true
       - source: lcrf.ReferenceValueLow_X
         name: ReferenceValueLow_X
-        type: FLOAT
+        type: NVARCHAR(300)
         nullable: true
       - source: lcrf.ReferenceValueNormal_X
         name: ReferenceValueNormal_X

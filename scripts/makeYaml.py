@@ -2022,9 +2022,13 @@ def default_datadictionary_path() -> Path:
 TYPE_FAMILIES: dict[str, set[str]] = {
     "bigint": {"BIGINT"},
     "integer": {"INT", "SMALLINT", "TINYINT", "BIGINT"},
+    # Cosmos keeps many flags as tinyint. BIT is refused: it turns any value
+    # above 1 into 1 without a word.
+    "tinyint": {"TINYINT", "SMALLINT", "INT", "BIGINT"},
     "string": {"VARCHAR", "NVARCHAR", "CHAR", "NCHAR", "TEXT", "NTEXT"},
     "boolean": {"BIT"},
     "numeric": {"DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY", "SMALLMONEY"},
+    "float": {"FLOAT"},
     "datetime": {"DATETIME", "DATETIME2", "SMALLDATETIME", "DATE"},
     "date/datetime": {"DATE", "DATETIME", "DATETIME2", "SMALLDATETIME"},
     "date": {"DATE", "DATETIME", "DATETIME2"},
@@ -4303,6 +4307,8 @@ class DataDictionaryTests(MakeYamlTest):
                 "IsCurrent": {"type": "boolean (flag)", "nullable": False},
                 "StartDateKey": {"type": "integer (DateKey)", "nullable": True},
                 "Weight": {"type": "numeric", "nullable": True},
+                "IsValid": {"type": "tinyint (flag)", "nullable": False},
+                "Height": {"type": "float", "nullable": True},
             }
         }
     }
@@ -4353,6 +4359,9 @@ class DataDictionaryTests(MakeYamlTest):
             ("p.BirthDate", "DATETIME2(7)"),
             ("p.StartDateKey", "INT"),
             ("p.Weight", "FLOAT"),
+            ("p.IsValid", "TINYINT"),
+            ("p.IsValid", "INT"),
+            ("p.Height", "FLOAT"),
         ]
         for source, declared in cases:
             with self.subTest(source=source, declared=declared):
@@ -4364,6 +4373,37 @@ class DataDictionaryTests(MakeYamlTest):
         self.assertIn(
             "dd_type_mismatch", self.codes(self.check(self.cohort("p.DurableKey", "INT")))
         )
+
+    def test_a_tinyint_flag_is_not_narrowed_to_bit(self):
+        # BIT would turn a stored 2 into 1 without an error.
+        self.assertIn(
+            "dd_type_mismatch", self.codes(self.check(self.cohort("p.IsValid", "BIT")))
+        )
+
+    def test_a_float_is_not_narrowed(self):
+        for declared in ("REAL", "DECIMAL(10,2)"):
+            with self.subTest(declared=declared):
+                self.assertIn(
+                    "dd_type_mismatch",
+                    self.codes(self.check(self.cohort("p.Height", declared))),
+                )
+
+    def test_the_real_dictionary_refuses_a_float_reference_range(self):
+        # The Infant_RSV pull failed on Cosmos (8114, nvarchar to float) because
+        # the dictionary called ReferenceValueHigh_X numeric; it is nvarchar(300).
+        res = CompileResult()
+        dictionary = load_datadictionary(None, res)
+        cohort = {
+            "dest_table": "T",
+            "columns": [
+                {"source": "l.ReferenceValueHigh_X", "name": "H", "type": "FLOAT"},
+                {"source": "l.ReferenceValueLow_X", "name": "L", "type": "FLOAT"},
+            ],
+            "filter": {"from": "LabComponentResultFact AS l"},
+        }
+        mismatches = [m for m in self.check(cohort, dictionary).errors
+                      if m.code == "dd_type_mismatch"]
+        self.assertEqual(len(mismatches), 2)
 
     def test_length_is_not_checked(self):
         # The dictionary carries no lengths, so VARCHAR(50) and VARCHAR(400)

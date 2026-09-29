@@ -117,6 +117,8 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 
 ### Smaller Open Items
 
+- **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
+- **Check the dictionary's types against the pages.** Only `LabComponentResultFact` has been checked against its dictionary page (D114). The user will screenshot the other tables the recipes use; each may turn a `boolean` into `tinyint`, and a template's `BIT` into an error.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names.
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.

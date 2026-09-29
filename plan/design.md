@@ -356,9 +356,13 @@ The dictionary uses annotated abstract types; cohorts declare T-SQL. The parenth
 | `bigint`                    | `BIGINT`                               |
 | `integer`                   | `INT`, `SMALLINT`, `TINYINT`, `BIGINT` |
 | `string`                    | `VARCHAR(n)`, `NVARCHAR(n)`, `CHAR(n)` |
+| `tinyint`                   | `TINYINT`, `SMALLINT`, `INT`, `BIGINT` |
 | `boolean`                   | `BIT`                                  |
 | `numeric`                   | `DECIMAL`, `NUMERIC`, `FLOAT`, `REAL`  |
+| `float`                     | `FLOAT`                                |
 | `datetime`, `date/datetime` | `DATE`, `DATETIME`, `DATETIME2(n)`     |
+
+Cosmos keeps many flags (`_IsDeleted`, `IsFinal`) as `tinyint`; where a page shows that, the dictionary says `tinyint`, not `boolean`, and `BIT` is refused, since it would turn any value above 1 into 1 without an error (D114). The table builder declares a dictionary type as the narrowest T-SQL type the check accepts (`tinyint` as `TINYINT`). Validation is only as right as the dictionary: `LabComponentResultFact.ReferenceValueHigh_X` and `ReferenceValueLow_X` were recorded as `numeric` and are `nvarchar(300)`, so a `FLOAT` passed validation and failed on Cosmos with error 8114, which names no column. `LabComponentResultFact` has since been checked against its dictionary page.
 
 Lengths are not compared: the dictionary records none. Nullability is not cross-checked, because `nullable: false` on a nullable column is the documented way to force an `IS NOT NULL` filter.
 

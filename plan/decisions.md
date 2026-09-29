@@ -2079,3 +2079,31 @@ and the core files somewhere they can be moved without editing code.
   has no `datascope.json` and keeps `runs/` in its working folder.
 - `TESTING_UPLOADS_AND_LABS.md` moves beside the scripts it describes, in
   `scripts/`.
+
+### D114. The dictionary records Cosmos's real types; a dictionary page outranks the VM's AI
+
+**Decision.**
+
+- The dictionary's `type` is what the Cosmos dictionary page shows, not what
+  a column's name suggests. A flag stored as `tinyint` is `tinyint (flag)`,
+  and a `float` is `float`, each with its own family: `tinyint` accepts
+  `TINYINT` and wider integers, `float` accepts `FLOAT` only.
+- `BIT` is refused for a `tinyint` column: it would turn a stored 2 into 1
+  without an error. Guessing that a tinyint is only ever 0 or 1 is left out.
+- A table's entry counts as checked only against the page itself (a
+  screenshot), with a comment above the table saying what was checked and
+  when. `LabComponentResultFact` is the first.
+
+**Why.** The Infant_RSV pull failed on Cosmos with error 8114 (nvarchar to
+float), naming no column. `ReferenceValueHigh_X` and `ReferenceValueLow_X`
+are `nvarchar(300)`; the dictionary, transcribed by the VM's AI and
+confirmed against that transcription, said `numeric`, so validation passed a
+`FLOAT`. Validation already compared types; the dictionary was wrong. The
+same page showed `PrioritizedDateKey` as `bigint`, `Count` and the flags as
+`tinyint`, five columns missing, and one foreign key attached to the wrong
+column.
+
+**Consequences.** Other tables' `boolean` flags stay until their pages are
+checked; each check may turn a template's `BIT` into an error that says to
+use `TINYINT`. The user will screenshot the tables the recipes use.
+

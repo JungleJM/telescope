@@ -1515,6 +1515,8 @@ def sql_type_for_dictionary(dictionary_type: Any) -> str:
     text = str(dictionary_type or "").lower()
     if "bigint" in text:
         return "BIGINT"
+    if "tinyint" in text:
+        return "TINYINT"
     if re.search(r"integer|int", text):
         return "INT"
     if re.search(r"date|time", text):
@@ -2251,6 +2253,20 @@ class SaveTests(ModelTest):
 
 
 class TableBuilderTests(ModelTest):
+    def test_every_dictionary_type_gets_a_type_validation_accepts(self):
+        # A column the builder adds must pass the dictionary check it is then
+        # validated by: a tinyint flag as TINYINT, not BIT.
+        res = my.CompileResult()
+        dictionary = my.load_datadictionary(None, res)
+        for table, entry in dictionary.items():
+            for column, meta in ((entry or {}).get("columns") or {}).items():
+                raw = (meta or {}).get("type")
+                accepted = my.TYPE_FAMILIES.get(my.dictionary_family(raw))
+                if accepted is None:
+                    continue
+                with self.subTest(table=table, column=column, type=raw):
+                    self.assertIn(my.tsql_base_type(sql_type_for_dictionary(raw)), accepted)
+
     def encounters(self, draft: Draft, pk: bool = False) -> TableBuilder:
         builder = TableBuilder(draft, pk=pk)
         builder.name = "Visits"
