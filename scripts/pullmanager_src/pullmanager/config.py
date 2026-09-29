@@ -14,10 +14,10 @@ from pathlib import Path
 
 CONFIG_NAME = "datascope.json"
 CORE_DEFAULTS = {
-    "recipes": "recipes/recipes.yaml",
-    "datadictionary": "recipes/datadictionary.yaml",
-    "template": "recipes/template.yaml",
-    "vm_plugins": "recipes/DSVM Plugins.yaml",
+    "recipes": "reference/recipes.yaml",
+    "datadictionary": "reference/datadictionary.yaml",
+    "template": "reference/template.yaml",
+    "vm_plugins": "reference/DSVM Plugins.yaml",
 }
 RUNS_DEFAULT = "runs"
 CONFIG_KEYS = (*CORE_DEFAULTS, "runs")

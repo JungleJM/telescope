@@ -180,8 +180,8 @@ class ExtractionPolicyTests(BundleTestCase):
             "YAMLs/recipes.yaml",
             "YAMLs/template.yaml",
             "YAMLs/template.yaml.example",
-            "recipes/recipes.yaml",
-            "recipes/template.yaml",
+            "reference/recipes.yaml",
+            "reference/template.yaml",
             "scripts/yamlmanager.py",
             "scripts/yamlmanager_backend.py",
         ):
@@ -225,19 +225,19 @@ class ExtractionPolicyTests(BundleTestCase):
         # Changed upstream, never touched here: not an edit, nothing to keep.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        self.pretend_previous_release_shipped(target, "recipes/datadictionary.yaml", "# last release\n")
+        self.pretend_previous_release_shipped(target, "reference/datadictionary.yaml", "# last release\n")
         extract(self.bundle, target)
-        self.assertFalse((target / "recipes/datadictionary.yaml.local").exists())
+        self.assertFalse((target / "reference/datadictionary.yaml.local").exists())
         self.assertEqual(
-            (target / "recipes/datadictionary.yaml").read_bytes(),
-            SOURCES["recipes/datadictionary.yaml"].read_bytes(),
+            (target / "reference/datadictionary.yaml").read_bytes(),
+            SOURCES["reference/datadictionary.yaml"].read_bytes(),
         )
 
     def test_a_kept_copy_survives_the_next_update(self):
-        target = self.extract_twice("recipes/datadictionary.yaml", "# edited on the VM\n")
+        target = self.extract_twice("reference/datadictionary.yaml", "# edited on the VM\n")
         extract(self.bundle, target)
         self.assertEqual(
-            (target / "recipes/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            (target / "reference/datadictionary.yaml.local").read_text(encoding="utf-8"),
             "# edited on the VM\n",
         )
 
@@ -247,7 +247,7 @@ class ExtractionPolicyTests(BundleTestCase):
         # is why your templates belong beside the tree rather than in it.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
-        stray = target / "recipes" / "UCPatients.yaml"
+        stray = target / "reference" / "UCPatients.yaml"
         stray.write_text("# my pull\n", encoding="utf-8")
         extract(self.bundle, target)
         self.assertFalse(stray.exists())
@@ -262,11 +262,11 @@ class ExtractionPolicyTests(BundleTestCase):
         self.assertEqual((mine / "UCPatients.yaml").read_text(encoding="utf-8"), "# my pull\n")
 
     def test_a_replaced_file_is_updated_but_the_old_one_is_kept(self):
-        target = self.extract_twice("recipes/datadictionary.yaml", "# edited on the VM\n")
-        shipped = (SOURCES["recipes/datadictionary.yaml"]).read_bytes()
-        self.assertEqual((target / "recipes/datadictionary.yaml").read_bytes(), shipped)
+        target = self.extract_twice("reference/datadictionary.yaml", "# edited on the VM\n")
+        shipped = (SOURCES["reference/datadictionary.yaml"]).read_bytes()
+        self.assertEqual((target / "reference/datadictionary.yaml").read_bytes(), shipped)
         self.assertEqual(
-            (target / "recipes/datadictionary.yaml.local").read_text(encoding="utf-8"),
+            (target / "reference/datadictionary.yaml.local").read_text(encoding="utf-8"),
             "# edited on the VM\n",
         )
 

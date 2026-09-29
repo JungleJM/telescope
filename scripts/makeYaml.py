@@ -41,10 +41,10 @@ RUNS_DIR = Path("runs")
 # Pullmanager keeps the same defaults (pullmanager/config.py); a test holds them.
 CONFIG_NAME = "datascope.json"
 CORE_DEFAULTS = {
-    "recipes": "recipes/recipes.yaml",
-    "datadictionary": "recipes/datadictionary.yaml",
-    "template": "recipes/template.yaml",
-    "vm_plugins": "recipes/DSVM Plugins.yaml",
+    "recipes": "reference/recipes.yaml",
+    "datadictionary": "reference/datadictionary.yaml",
+    "template": "reference/template.yaml",
+    "vm_plugins": "reference/DSVM Plugins.yaml",
 }
 CONFIG_KEYS = (*CORE_DEFAULTS, "runs")
 # Dropped from a template's file name to name its run folder (D57).
@@ -5635,7 +5635,7 @@ class ConfigTests(MakeYamlTest):
         home = self.home(None)
         with mock.patch(f"{__name__}.transfer_home", return_value=home), \
                 mock.patch(f"{__name__}.project_root", return_value=self.tmp / "code"):
-            self.assertEqual(default_datadictionary_path(), self.tmp / "code" / "recipes" / "datadictionary.yaml")
+            self.assertEqual(default_datadictionary_path(), self.tmp / "code" / "reference" / "datadictionary.yaml")
             self.assertEqual(runs_root(), home / "runs")
 
     def test_a_moved_file_is_found_through_it(self):
@@ -5653,7 +5653,7 @@ class ConfigTests(MakeYamlTest):
         self.assertIn("recipes", str(caught.exception))
 
     def test_the_repositorys_own_says_where_the_moved_files_are(self):
-        # The files moved to recipes/ (D113); the repository's config finds them.
+        # The files moved to reference/ (D113, renamed from recipes/); the repository's config finds them.
         for key in CORE_DEFAULTS:
             with self.subTest(key=key):
                 self.assertTrue(core_path(key).is_file(), core_path(key))

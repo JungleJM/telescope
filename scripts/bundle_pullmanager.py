@@ -76,7 +76,7 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     # Authored on the Mac and flowing one way, so the shipped copy wins. Read
     # from where datascope.json says; published where makeYaml's default
     # finds it in the extracted tree (D111).
-    (makeYaml.core_path("datadictionary"), "recipes/datadictionary.yaml", "replace"),
+    (makeYaml.core_path("datadictionary"), "reference/datadictionary.yaml", "replace"),
 )
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to

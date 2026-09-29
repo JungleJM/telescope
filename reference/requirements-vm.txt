@@ -1,7 +1,7 @@
-# The VM's versions of the packages Telescope uses (recipes/DSVM Plugins.yaml).
+# The VM's versions of the packages Telescope uses (reference/DSVM Plugins.yaml).
 # Install them into any Python 3.10-3.13, or a venv, to match the VM:
-#   python -m pip install -r recipes/requirements-vm.txt
-#   uv pip install -r recipes/requirements-vm.txt        (a uv-made venv)
+#   python -m pip install -r reference/requirements-vm.txt
+#   uv pip install -r reference/requirements-vm.txt        (a uv-made venv)
 # pyodbc (5.3.0 on the VM) is left out: it is only for --execute, which needs
 # the VM's SQL Server driver anyway.
 ruamel.yaml==0.17.17

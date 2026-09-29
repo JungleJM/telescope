@@ -15,7 +15,7 @@ When code and this document disagree, one of them is a bug. Fix whichever is wro
 ## The Pipeline
 
 ``` text
-Mac   template + recipes/recipes.yaml + recipes/datadictionary.yaml
+Mac   template + reference/recipes.yaml + reference/datadictionary.yaml
         └─► makeYaml --export-transfer  (validate)
               └─► <project>_transfer.yaml        recipes written out, nothing applied
 VM    <project>_transfer.yaml + datadictionary   no recipes file
@@ -69,9 +69,9 @@ The artifact tests run the generated load scripts: the Python one under the runn
 
 Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All five suites pass under `python3.13` with nothing skipped (`python3.13 datascope.py test`).
 
-`recipes/requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv: `python -m pip install -r recipes/requirements-vm.txt`. Every Python on the Mac has the packages, so whichever one an editor picks can run the tools: the VM's versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that fit in brew's 3.14, Apple's 3.9 and the project venvs.
+`reference/requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv: `python -m pip install -r reference/requirements-vm.txt`. Every Python on the Mac has the packages, so whichever one an editor picks can run the tools: the VM's versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that fit in brew's 3.14, Apple's 3.9 and the project venvs.
 
-**`recipes/DSVM Plugins.yaml` is the VM's installed software and package list.** Check it before depending on anything outside the standard library; if it is not listed, the VM does not have it and cannot get it.
+**`reference/DSVM Plugins.yaml` is the VM's installed software and package list.** Check it before depending on anything outside the standard library; if it is not listed, the VM does not have it and cannot get it.
 
 Cosmos permissions are narrow: `VIEW DATABASE PERFORMANCE STATE` is denied and `sys.partitions` returns nothing, so row counts come from counting, never from metadata (D33).
 
@@ -83,7 +83,7 @@ Dev box gotchas: an IDE Python console (Positron's `%run`) keeps a started `yaml
 datascope.py        the front door: the app, `test`, or a Pullmanager command (D112)
 datascope.json      where the core files are, and where runs go (D111)
 makebundle.py       builds dist/bundle.py and dist/bundle_with_yamls.py (D106)
-recipes/            the core files: datadictionary.yaml, recipes.yaml, template.yaml,
+reference/            the core files: datadictionary.yaml, recipes.yaml, template.yaml,
                     DSVM Plugins.yaml, requirements-vm.txt
 YAMLs/              the pulls: temp/ (intakes, their csv/), manager_test_cases/
 plan/               design, decisions, roadmap; commemorating/ (the history)
@@ -93,7 +93,7 @@ dist/               bundles and content_id.txt; not committed (D106)
 .claude/CLAUDE.md   how to work in this repository
 ```
 
-`datascope.json` says, relative to itself, where each core file is (`recipes`, `datadictionary`, `template`, `vm_plugins`) and where runs go (`runs`: `cleanup/runs` on the Mac). Moving a core file means editing its line. makeYaml (`core_path`, `runs_root`) and Pullmanager (`pullmanager/config.py`) each read it from the working folder; neither imports the other, and a test holds their defaults together. Without it, as on the VM, the core files are beside the code (`recipes/...` in the extracted tree) and runs are in the working folder's `runs/`. A name it cannot mean, or a file it cannot read, is `ConfigError`, saying what it may set.
+`datascope.json` says, relative to itself, where each core file is (`recipes`, `datadictionary`, `template`, `vm_plugins`) and where runs go (`runs`: `cleanup/runs` on the Mac). Moving a core file means editing its line. makeYaml (`core_path`, `runs_root`) and Pullmanager (`pullmanager/config.py`) each read it from the working folder; neither imports the other, and a test holds their defaults together. Without it, as on the VM, the core files are beside the code (`reference/...` in the extracted tree) and runs are in the working folder's `runs/`. A name it cannot mean, or a file it cannot read, is `ConfigError`, saying what it may set.
 
 ### The Bundle
 
@@ -110,7 +110,7 @@ pullmanager_runtime/                # the extracted tree (any name; this is --ex
   scripts/makeYaml.py               validator and splitter
   scripts/yamlmanager_model.py      the app's model (D92)
   scripts/yamlmanager_tk.py         the app's Author half (D93)
-  recipes/datadictionary.yaml       where makeYaml's default finds it (D111)
+  reference/datadictionary.yaml       where makeYaml's default finds it (D111)
   .bundle-manifest.json
 ```
 
@@ -135,10 +135,10 @@ Every bundled file is replaced on re-extraction. One that was edited on the VM i
 A file the previous bundle shipped and this one does not is removed, unless it was edited, in which case it too is kept as `.local`. `.local` copies are carried through later updates until you delete them.
 
 ``` text
-replaced   recipes/datadictionary.yaml  (your previous copy saved as recipes/datadictionary.yaml.local)
+replaced   reference/datadictionary.yaml  (your previous copy saved as reference/datadictionary.yaml.local)
 no longer shipped   YAMLs/datadictionary.yaml  (removed; it had not been edited)
 no longer shipped   YAMLs/recipes.yaml  (your edited copy kept as YAMLs/recipes.yaml.local)
-kept       recipes/datadictionary.yaml.local  (set aside by an earlier update; delete it when done)
+kept       reference/datadictionary.yaml.local  (set aside by an earlier update; delete it when done)
 ```
 
 Nothing a user authors is bundled.
@@ -223,8 +223,8 @@ The repair loop for a VM-side bug: read the file out of the bundle or the extrac
 | File | Role |
 |------------------------------------|------------------------------------|
 | template | The pull: project metadata, `cosmos_vars`, `run_vars`, `project_vars`, `multipliers`, `batching`, `upload_cohorts`, `cohorts` |
-| `recipes/recipes.yaml` | Reusable cohort and batching definitions, referenced by name. Mac only (D49) |
-| `recipes/datadictionary.yaml` | Source of truth for Cosmos tables, columns and types: 20 tables |
+| `reference/recipes.yaml` | Reusable cohort and batching definitions, referenced by name. Mac only (D49) |
+| `reference/datadictionary.yaml` | Source of truth for Cosmos tables, columns and types: 20 tables |
 
 Paths typed on the command line (`--template`, `--recipes`, `--datadictionary`) resolve from the working directory, like any command-line tool. Defaults are where `datascope.json` says, else beside the install (D111). `--datadictionary` is honoured by every route: validation, the UI, pre-YAML, transfer and split export. A template that does not exist is a one-line error, not a traceback.
 
@@ -379,7 +379,7 @@ Nullability is not cross-checked, because `nullable: false` on a nullable column
 
 ### Keys And Relationships In Cosmos
 
-Validation checks that every column exists with the right type, not that a join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is wrong; a correct join can still multiply rows, if it meets a table with several rows per key and no filter. Knowing each table's keys, and what each foreign key points at, would let validation check joins. Three questions were put to the VM's AI: are keys declared where SQL can read them, do they hold in the data, and what does the interactive data dictionary show. It explained its queries rather than running them, and said its dictionary answers were "paraphrased based on Epic's conventions, not exact text", so nothing below has been counted, and what it alone said is unverified. The brief and its answer are summarized here and in the roadmap (Needs Research); the first page seen is `plan/images/Data Dictionary/DiagnosisEventFact/DiagnosisEventFact 3 columns and ER diagram.png`, beside the user's screenshots of the others, one folder per table.
+Validation checks that every column exists with the right type, not that a join is right. `ON tc.TerminologyConceptKey = dt.DiagnosisKey` passes and is wrong; a correct join can still multiply rows, if it meets a table with several rows per key and no filter. Knowing each table's keys, and what each foreign key points at, would let validation check joins. Three questions were put to the VM's AI: are keys declared where SQL can read them, do they hold in the data, and what does the interactive data dictionary show. It explained its queries rather than running them, and said its dictionary answers were "paraphrased based on Epic's conventions, not exact text", so nothing below has been counted, and what it alone said is unverified. The brief and its answer are summarized here and in the roadmap (Needs Research); the first page seen is `reference/DDict image refs/DiagnosisEventFact/DiagnosisEventFact 3 columns and ER diagram.png`, beside the user's screenshots of the others, one folder per table.
 
 | Finding | Source | How sure |
 |------------------------|------------------------|------------------------|
@@ -883,7 +883,7 @@ Regenerate the split fixture after a change to split output:
 
 ``` bash
 python3 scripts/makeYaml.py --template YAMLs/manager_test_cases/01_valid_basic.yaml \
-  --recipes recipes/recipes.yaml --export-split --out-dir scripts/pullmanager_src/fixtures/split
+  --recipes reference/recipes.yaml --export-split --out-dir scripts/pullmanager_src/fixtures/split
 ```
 
 The database layer is tested against a fake cursor, and the GUI against a fake tkinter. The fake Projects connection keeps each destination's rows per `_batch` label, carried across executions like the real database, so retry, chunk and refresh tests check what landed where. Statements apply in order and a failure stops at the one it matches, so a run can fail after landing rows. By default a rollback undoes nothing, the worst case; a transactional mode, where only committed work survives, checks D55's commit per cohort. It also answers `INFORMATION_SCHEMA`, `OBJECT_ID` and `SELECT INTO` for uploads. Neither fake proves the real thing: nothing here has run against Cosmos. Real Tk is exercised by the Author view's tests (Tk 8.6 with the Mac's `python3.13`, which the VM likely matches) and by hand: Tk 9 under Xvfb on the dev box.

@@ -6,7 +6,7 @@
     python3 datascope.py --execute IBD_Ancestry  # anything else goes to pullmanager.py
 
 It runs from the repository root wherever it is started, so datascope.json,
-the core files in recipes/ and the runs folder are found (D111); a path typed
+the core files in reference/ and the runs folder are found (D111); a path typed
 after it is read from the root too.
 """
 
