@@ -1,0 +1,5 @@
+# Improvements
+
+- ![](images/paste-1.png)
+
+- Traditionally, if I had to do a pull of All Crohn's patients each time I wanted to get more info, I'd wait the entire time of pull just to get something I already have. Now, with this upload system, it took 2 minutes.
