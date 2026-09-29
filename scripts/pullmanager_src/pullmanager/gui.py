@@ -546,16 +546,21 @@ class LauncherApp:
             rows, message = launcher.try_manifest_rows(manifest)
         self.tree.delete(*self.tree.get_children())
         parents: dict[str, str] = {}
+        step = ""
         for row in rows:
             values = (row.kind, row.name, row.status, row.rows, row.duration, row.detail)
             if row.kind == "session":
                 parents[row.session] = self.tree.insert(
                     "", "end", text=row.session, values=values, open=True, tags=(row.status,)
                 )
+            elif row.kind == "table":
+                # Under the phase or run that landed it (D137).
+                self.tree.insert(step or parents.get(row.session, ""), "end", text="",
+                                 values=values)
             else:
-                self.tree.insert(
+                step = self.tree.insert(
                     parents.get(row.session, ""), "end", text="",
-                    values=values, tags=(row.status,),
+                    values=values, tags=(row.status,), open=True,
                 )
         if not message and self.pull_lock is not None:
             message = f"{self.pull_lock.summary()}.  {manifest}"

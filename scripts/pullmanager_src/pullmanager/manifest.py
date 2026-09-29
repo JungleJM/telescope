@@ -96,6 +96,9 @@ class Node:
         self._data["finished_at"] = None
         self._data["error"] = None
         self._data.pop("duration", None)
+        # A rerun's rows are its own: none carried over from the last attempt.
+        self._data.pop("rows", None)
+        self.outputs.pop("table_rows", None)
 
     def finish(self, rows: int | None = None, outputs: dict[str, Any] | None = None) -> None:
         self.status = DONE

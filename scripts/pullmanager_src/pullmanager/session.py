@@ -96,6 +96,9 @@ class SessionReport:
     # (destination, column) -> [declared type, widest value], across every
     # batch and chunk of the session: notes, not warnings (D34, D70).
     widths: dict[tuple[str, str], list] = field(default_factory=dict)
+    # Each finished phase or run's label -> its tables' rows, table by table:
+    # a run of four tables has four counts, never one total.
+    tables: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -376,6 +379,8 @@ class SessionRunner:
                 self._rollback()
                 node.fail(str(exc), detail=type(exc).__name__)
                 self.report.failed.append((label, str(exc)))
+                if node.outputs.get("table_rows"):
+                    self.report.tables[label] = dict(node.outputs["table_rows"])
                 self.say(f"{name} FAILED after {since(started)}: {exc}")
                 self.manifest.save()
                 if isinstance(node, Phase):
@@ -383,7 +388,13 @@ class SessionRunner:
                 continue
             node.finish(rows=rows)
             self.report.completed.append(label)
-            counted = f", {rows:,} rows" if rows is not None else ""
+            tables = node.outputs.get("table_rows") or {}
+            if tables:
+                self.report.tables[label] = dict(tables)
+            if kind == "run":
+                counted = f", {len(tables)} table{'' if len(tables) == 1 else 's'}"
+            else:
+                counted = f", {rows:,} rows" if rows is not None else ""
             self.say(f"{name} done in {since(started)}{counted}")
             self.manifest.save()
         return self.report
@@ -569,9 +580,10 @@ class SessionRunner:
         sampled = self._sample_control(node, doc)
         total = self._verify_pk_uniqueness(doc)
         self._write_pk_parquet(node, doc)
-        if sampled is not None:
-            return sampled
-        return rows if rows is not None else total
+        rows = sampled if sampled is not None else rows if rows is not None else total
+        if rows is not None:
+            node.outputs["table_rows"] = {self.session.pk_table or "": rows}
+        return rows
 
     def _write_pk_parquet(self, node: Any, doc: dict[str, Any]) -> None:
         """The whole PK as a parquet as soon as it lands, before any run (D87).
@@ -744,9 +756,13 @@ class SessionRunner:
         )
         open_dims = open_dimensions(node.batch)
         size = self._chunk_size(node)
+        # Each table's rows as it lands, so a run that fails partway still
+        # says which tables it finished. A run has no one row count (D137).
+        tables = node.outputs["table_rows"] = {}
         if size is None and not open_dims:
             self._materialize_batch(node)
-            return self._run_pair(unit)
+            self._run_pair(unit, tables)
+            return None
 
         # Chunks run inside their batch (D53), and so do the values of a
         # `values: all` dimension, found now that the PK is in Projects (D82):
@@ -773,11 +789,11 @@ class SessionRunner:
                     self._where = " ".join(filter(None, (value_where, node.outputs["chunk"])))
                 self.manifest.save()
                 self._materialize_batch(node, chunk_index=index, batch=batch)
-                server_rows, local_rows = self._execute_unit(unit, clear=False)
+                server_rows, local_rows = self._execute_unit(unit, clear=False, tables=tables)
                 for dest, count in server_rows.items():
                     server_total[dest] = server_total.get(dest, 0) + count
         self._check_counts(server_total, local_rows)
-        return next(iter(server_total.values()), None)
+        return None
 
     def _value_slices(self, node: Any, dims: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
         """One batch per combination of values the open dimensions take in
@@ -901,9 +917,9 @@ class SessionRunner:
         """Where in its run a line is, as its prefix: `c3of12 `, or nothing."""
         return f"{self._where} " if self._where else ""
 
-    def _run_pair(self, unit: Unit) -> int | None:
+    def _run_pair(self, unit: Unit, tables: dict[str, int] | None = None) -> int | None:
         """Server blocks, then the local transfer, then compare both counts."""
-        server_rows, local_rows = self._execute_unit(unit)
+        server_rows, local_rows = self._execute_unit(unit, tables=tables)
         self._check_counts(server_rows, local_rows)
         return next(iter(server_rows.values()), None)
 
@@ -912,12 +928,15 @@ class SessionRunner:
             self._execute(connection, block.sql, label=block.block_id)
         connection.commit()
 
-    def _execute_unit(self, unit: Unit, *, clear: bool = True) -> tuple[dict[str, int], dict[str, int]]:
+    def _execute_unit(self, unit: Unit, *, clear: bool = True,
+                      tables: dict[str, int] | None = None) -> tuple[dict[str, int], dict[str, int]]:
         """Run a unit's SQL; return Cosmos and Projects row counts per destination.
 
         One cohort at a time (D55): build its temp, land it in Projects and
         commit, before the next is pulled, so a failure loses at most the
         cohort in flight. Clears run first, together, since they only empty.
+        Given `tables`, each table's rows are added to it, and the manifest
+        saved, as the table lands: across chunks and values they add up.
         """
         server_rows: dict[str, int] = {}
         local_rows: dict[str, int] = {}
@@ -939,6 +958,10 @@ class SessionRunner:
             for local in [b for b in transfers if b.dest_table == block.dest_table]:
                 self._land(local, local_rows)
             rows = server_rows.get(str(block.dest_table))
+            if tables is not None and rows is not None:
+                dest = str(block.dest_table)
+                tables[dest] = tables.get(dest, 0) + rows
+                self.manifest.save()
             counted = f"{rows:,} rows" if rows is not None else "built"
             self.say(
                 f"{self._at()}{block.dest_table}: {counted} "

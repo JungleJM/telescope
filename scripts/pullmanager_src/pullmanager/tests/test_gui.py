@@ -479,6 +479,22 @@ class StatusTests(GuiTestCase):
         parents = [call.args[0] for call in self.app.tree.insert.call_args_list]
         self.assertEqual(parents.count(""), 2)
 
+    def test_tables_nest_under_their_run(self):
+        import copy
+        import itertools
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        data["sessions"][0]["runs"][0].setdefault("outputs", {})["table_rows"] = {"A": 7}
+        dump_yaml(data, self.manifest)
+        ids = itertools.count()
+        self.app.tree.insert.reset_mock()
+        self.app.tree.insert.side_effect = lambda *a, **k: f"item{next(ids)}"
+        self.app.refresh_status()
+        calls = self.app.tree.insert.call_args_list
+        table = next(i for i, c in enumerate(calls) if c.kwargs["values"][0] == "table")
+        self.assertEqual(calls[table - 1].kwargs["values"][0], "run")
+        self.assertEqual(calls[table].args[0], f"item{table - 1}")
+
     def test_a_missing_manifest_says_what_to_do(self):
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]

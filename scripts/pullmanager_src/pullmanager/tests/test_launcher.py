@@ -350,6 +350,20 @@ class StatusRowTests(TempDirTestCase):
         self.assertEqual(kinds.count("phase"), 6)
         self.assertEqual(kinds.count("run"), 3)
 
+    def test_each_table_is_a_row_under_its_run_with_its_own_rows(self):
+        # D137: four tables of 5,000 are four rows of 5,000, never 20,000.
+        import copy
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        run = data["sessions"][0]["runs"][0]
+        run["rows"] = 20000  # what an older Pullmanager recorded: its first table's
+        run.setdefault("outputs", {})["table_rows"] = {"A": 5000, "B": 5000}
+        rows = manifest_rows(self.write_manifest(data))
+        at = next(i for i, row in enumerate(rows) if row.kind == "run")
+        self.assertEqual(rows[at].rows, "")
+        self.assertEqual([(r.kind, r.name, r.rows) for r in rows[at + 1:at + 3]],
+                         [("table", "A", "5,000"), ("table", "B", "5,000")])
+
     def test_runs_are_named_for_their_batch(self):
         rows = manifest_rows(self.write_manifest())
         self.assertIn("LA-Female", [row.name for row in rows if row.kind == "run"])

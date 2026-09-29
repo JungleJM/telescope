@@ -2558,3 +2558,29 @@ start of its lines. The end-of-session summary is unchanged.
 **Why.** A table's start line with nothing after it is the table in flight, so a
 slow table and a hung one can be told apart, and the upload's two legs are timed
 separately (the question behind D134's cost).
+
+### D137. A run's rows are its tables', one count per table
+
+**Amends D136** (the end-of-session summary) **and D70.**
+
+**Context.** Infant_RSV finished with exit code 0, but nothing said which tables
+it had pulled or how many rows each had: the summary named only the run
+(`done EDVisits__run`), and only the PK's parquet appeared before Artifacts ran,
+so the pull looked as if it had stopped after the PK. The manifest's `rows` on a
+run was its first table's count alone, so a run of nine tables recorded one
+number that described none of the others.
+
+**Decision.** Each run records `outputs.table_rows`: every table it landed and
+the rows Cosmos built for it, added across chunks and values, and saved as each
+table lands. The PK phase records its one table the same way. A run has no
+`rows` of its own, and nothing ever shows a total across tables: four tables of
+5,000 are four lines of 5,000, not 20,000. The end-of-session summary, the
+summary command and the Status tab list the tables under their phase or run; a
+failed run lists what it landed before failing. A node that starts again drops
+its last attempt's rows. With table groups (D134) each group is its own run, so
+its tables are listed under it.
+
+**Why.** Row counts are only meaningful per table; a total mixes visits with
+lab results. The counts were already gathered for the Cosmos/Projects check and
+thrown away.
+

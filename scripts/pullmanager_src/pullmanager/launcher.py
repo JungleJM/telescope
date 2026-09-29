@@ -407,17 +407,23 @@ def manifest_rows(manifest_path: Path) -> list[StatusRow]:
                 child.group, (child.batch or {}).get("name")))) or child.label
             duration = (child.data.get("duration") or {}).get("display", "")
             detail = (child.error or {}).get("message") or child.note or ""
+            # A run's rows are its tables', listed under it; never one total.
+            shown = None if not is_phase else child.rows
             rows.append(
                 StatusRow(
                     session=session.session_id,
                     kind="phase" if is_phase else "run",
                     name=str(name),
                     status=child.status,
-                    rows="" if child.rows is None else f"{child.rows:,}",
+                    rows="" if shown is None else f"{shown:,}",
                     duration=duration,
                     detail=str(detail),
                 )
             )
+            # Each table the step landed, under it, with its own rows (D137).
+            for dest, count in (child.outputs.get("table_rows") or {}).items():
+                rows.append(StatusRow(session.session_id, "table", str(dest), "",
+                                      rows=f"{count:,}"))
     return rows
 
 

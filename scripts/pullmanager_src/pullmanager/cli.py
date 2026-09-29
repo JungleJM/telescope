@@ -40,12 +40,26 @@ def summarize(manifest: Manifest) -> None:
         print(f"    next --execute: {next_step(manifest, session)}")
         for phase in session.phases:
             print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}")
+            for line in table_lines(phase.outputs.get("table_rows"), "            "):
+                print(line)
         for run in session.runs:
             batch = run.batch.get("name") if run.batch else "-"
             if run.group:
                 batch = f"{run.group} {batch}" if run.batch else run.group
             print(f"    run   {batch:<15} {run.status:<8} {run.yaml}")
+            for line in table_lines(run.outputs.get("table_rows"), "            "):
+                print(line)
         print()
+
+
+def table_lines(tables: dict[str, int] | None, indent: str) -> list[str]:
+    """One line per table with its rows, aligned; never a total (D137)."""
+    if not tables:
+        return []
+    width = max(len(str(name)) for name in tables)
+    size = max(len(f"{rows:,}") for rows in tables.values())
+    return [f"{indent}{str(name):<{width}}  {f'{rows:,}':>{size}} rows"
+            for name, rows in tables.items()]
 
 
 def next_step(manifest: Manifest, session, retry_failed: bool = False) -> str:
@@ -378,10 +392,17 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> i
         print(f"  epoch {report.epoch} on {report.linked_server}")
         for label in report.completed:
             print(f"  done     {label}")
+            for line in table_lines(report.tables.get(label), "             "):
+                print(line)
         for label in report.skipped:
             print(f"  skipped  {label}")
         for label, message in report.failed:
             print(f"  FAILED   {label}: {message}")
+            landed = table_lines(report.tables.get(label), "             ")
+            if landed:
+                print("           landed before it failed (a retry pulls them again):")
+                for line in landed:
+                    print(line)
         for warning in report.warnings:
             print(f"  warning  {warning}")
         for line in width_notes(report.widths):

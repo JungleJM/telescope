@@ -104,8 +104,10 @@ class FakeConnection:
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
-                 widths=None, found_values=None, instance=INSTANCE):
+                 widths=None, found_values=None, instance=INSTANCE, per_table=None):
         self.side = side
+        # A destination's own row count, by its bare name; the rest get `rows`.
+        self.per_table = per_table or {}
         # The instance `@@SERVERNAME` reports: a new one on every connection.
         self.instance = instance
         # What `SELECT DISTINCT [column]` finds in the PK copy, for values: all.
@@ -192,7 +194,7 @@ class FakeConnection:
                 tables[match.group(1)] = Counter()
         if match := re.search(r"INSERT INTO (PROJECTD\S+) \(", statement):
             label = re.search(r", '([^']*)' FROM #", statement)
-            tables[match.group(1)][label.group(1) if label else "-"] += self.rows
+            tables[match.group(1)][label.group(1) if label else "-"] += self.count(match.group(1))
         if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
             tables[match.group(1)].pop(match.group(2), None)
 
@@ -229,12 +231,12 @@ class FakeConnection:
             dest = match.group(1)
             if "'cosmos' AS [Side]" in sql:
                 sets.append((["DestTable", "Side", "RowCount"],
-                             [(dest, "cosmos", self.rows)]))
+                             [(dest, "cosmos", self.count(dest))]))
                 sets.append((["DestTable", "Side", "RowCount"],
                              [(dest, "projects", self._landed(sql))]))
             else:
                 sets.append((["CohortName", "DestTable", "RowCount"],
-                             [(dest, dest, self.rows)]))
+                             [(dest, dest, self.count(dest))]))
         measured = re.findall(
             r"'([^']+)' AS \[DestTable\],\s*'([^']+)' AS \[Column\],\s*'([^']+)' AS \[DeclaredType\]",
             sql,
@@ -246,6 +248,9 @@ class FakeConnection:
                 for dest, column, declared in measured
             ]))
         return sets
+
+    def count(self, dest):
+        return self.per_table.get(dest.split(".")[-1], self.rows)
 
     def _landed(self, sql):
         if self.landed is not None:
@@ -662,6 +667,8 @@ class ChunkTests(SessionTestCase):
         run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
         self.assertEqual(run.outputs["chunk"], "c3of3")
         self.assertEqual(run.outputs["batch_pk_rows_total"], 4500)
+        # Three chunks of 10 rows: the table's rows add up across them (D137).
+        self.assertEqual(run.outputs["table_rows"], {"OtherHospitalizations": 30})
 
     def test_a_batch_failing_mid_chunks_lands_once_after_a_retry(self):
         # Male's first chunk lands, its second fails.
@@ -672,11 +679,89 @@ class ChunkTests(SessionTestCase):
         self.assertTrue(second.ok, second.failed)
         self.assertEqual(self.tables[DEST], Counter({"Female": 30, "Male": 30}))
         self.assertNotIn("Patients__Female", second.completed)
+        # The retry's count is its own, not added to the failed attempt's.
+        male = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[1]
+        self.assertEqual(male.outputs["table_rows"], {"OtherHospitalizations": 30})
 
     def test_an_empty_batch_still_runs_once(self):
         report = self.execute(pk_rows=0)
         self.assertTrue(report.ok, report.failed)
         self.assertEqual(self.windows(), [(0, 2000)] * 2)
+
+
+class TableRowsTests(SessionTestCase):
+    """D137: a run's rows are its tables', each its own, never one total."""
+
+    COUNTS = {"OtherHospitalizations": 5000, "Admissions": 7}
+
+    def setUp(self):
+        super().setUp()
+        import copy
+
+        # A second table in the fixture's one run.
+        path = self.root / "sessions" / "Patients" / "runs" / "run.yaml"
+        doc = load_yaml(path)
+        admissions = copy.deepcopy(doc["cohorts"][0])
+        admissions["name"] = admissions["dest_table"] = "Admissions"
+        doc["cohorts"].append(admissions)
+        dump_yaml(doc, path)
+        self.tables: dict[str, Counter] = {}
+
+    def connect(self, **cosmos):
+        def connect_fn(conn_str, **_):
+            if "PROJECTD" in conn_str:
+                return FakeConnection("projects", tables=self.tables, per_table=self.COUNTS)
+            return FakeConnection("cosmos", per_table=self.COUNTS, **cosmos)
+        return connect_fn
+
+    def execute(self, **cosmos):
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = cli.execute(Manifest.load(self.root / "pullmanifest.yaml"), args,
+                               connect_fn=self.connect(**cosmos))
+        return code, out.getvalue()
+
+    def session(self):
+        return Manifest.load(self.root / "pullmanifest.yaml").sessions[0]
+
+    def test_each_table_keeps_its_own_rows(self):
+        code, out = self.execute()
+        self.assertEqual(code, 0, out)
+        run = self.session().runs[0]
+        self.assertEqual(run.outputs["table_rows"], self.COUNTS)
+        # Before, the run's rows were its first table's alone.
+        self.assertIsNone(run.rows)
+        self.assertEqual(self.session().phases[2].outputs["table_rows"], {"Patients": 10})
+        self.assertEqual(sum(self.tables["PROJECTD33A929.dbo.Admissions"].values()), 7)
+
+    def test_the_summary_lists_each_table_and_no_total(self):
+        _, out = self.execute()
+        self.assertRegex(out, r"\n\s+OtherHospitalizations\s+5,000 rows\n")
+        self.assertRegex(out, r"\n\s+Admissions\s+7 rows\n")
+        self.assertNotIn("5,007", out)
+        summary = io.StringIO()
+        with contextlib.redirect_stdout(summary):
+            cli.summarize(Manifest.load(self.root / "pullmanifest.yaml"))
+        self.assertRegex(summary.getvalue(), r"\n\s+OtherHospitalizations\s+5,000 rows\n")
+        self.assertRegex(summary.getvalue(), r"\n\s+Admissions\s+7 rows\n")
+
+    def test_the_run_says_how_many_tables_it_landed(self):
+        runner_said = []
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        with self.runner(cosmos={"per_table": self.COUNTS}, projects={"per_table": self.COUNTS},
+                         say=runner_said.append) as runner:
+            runner.execute()
+        done = [line for line in runner_said if "run done in" in line]
+        self.assertTrue(done and done[0].endswith(", 2 tables"), runner_said)
+
+    def test_a_failed_run_says_which_tables_landed_first(self):
+        code, out = self.execute(failures={r"INSERT INTO ##\w+_Admissions": "timeout"})
+        self.assertEqual(code, 1, out)
+        run = self.session().runs[0]
+        self.assertEqual(run.status, "failed")
+        self.assertEqual(run.outputs["table_rows"], {"OtherHospitalizations": 5000})
+        self.assertIn("landed before it failed", out)
 
 
 class TempClashTests(SessionTestCase):

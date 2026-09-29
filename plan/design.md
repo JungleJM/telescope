@@ -618,6 +618,11 @@ epoch: <str>                                  # the connection it completed unde
 # on a run
 outputs: {chunk: c3of3, batch_pk_rows_total: 4500, batch_pk_rows: 500, batch: ...}
 
+# on a run, and the pk phase (D137): each table's rows as Cosmos built them,
+# added across chunks and values; saved as each table lands, so a failed run
+# keeps the ones it finished. A run has no `rows` of its own.
+outputs: {table_rows: {HospitalAdmissionFact: 5000, RSVPatients: 5000}}
+
 # on a session
 runtime:
   epoch: "20260922T140000-3f2a9c11"
@@ -730,7 +735,9 @@ When the session opens, before anything runs: capture `@@SERVERNAME`, check the 
   14:34:03  run Female done in 0s, 10 rows
 ```
 
-A phase or run says started, then done (its time and rows), FAILED (its time and error), blocked or skipped (why). An upload times its two legs apart; a table gives its rows, the time Cosmos took to build it and the time it took to land. A chunk or a value (`v2of5 (LA)`) names itself at the start of its lines. A table's start line with nothing after it is the table in flight. The summary at the session's end is unchanged.
+A phase says started, then done (its time and rows); a run says done with its time and how many tables it landed, never one row total, since each table has said its own (D137). Either can say FAILED (its time and error), blocked or skipped (why). An upload times its two legs apart; a table gives its rows, the time Cosmos took to build it and the time it took to land. A chunk or a value (`v2of5 (LA)`) names itself at the start of its lines. A table's start line with nothing after it is the table in flight.
+
+The summary at the session's end lists, under each finished phase and run, every table it landed with its rows, and under a failed run the tables it landed before failing (a retry pulls them again). The summary command (`pullmanager.py <manifest>`) and the Status tab list them the same way, from the manifest's `table_rows` (D137).
 
 After each run the Cosmos and Projects row counts are compared, counting only this run's `_batch` rows on the Projects side (a chunked run compares totals), and a mismatch warns. Counts past 80,000,000 warn. The widest value of each staged column is measured and reported, not applied (D34): at the end of each session, after its warnings, one table of each text column's declared type and widest value across all the session's batches, as a note (D70). A unit that fails rolls both connections back. Nothing runs in parallel: sessions, runs, chunks and cohorts go one after another.
 
@@ -843,7 +850,7 @@ Three tabs (D71):
 
 - **Validation Output**: what Validate, Export split, Preview SQL and Artifacts print, which run inside the window.
 - **Pull Log**: the loaded pull's Execute log, followed every second: the live Execute's (named in its lock), else the newest. A pull started from a terminal shows there too. Windows' `\r\n` is shown as a newline, a `\r` that ends one read waiting for its `\n` in the next.
-- **Status**: the manifest as a tree, with Refresh and the manifest's path at the top left. Refreshed when the window opens, on Refresh, every three seconds while the window's own command runs, and every three seconds while the loaded pull's lock is live, when it says "Executing since 14:03, last heartbeat 20s ago".
+- **Status**: the manifest as a tree, each phase and run with the tables it landed under it, each with its own rows (D137), with Refresh and the manifest's path at the top left. Refreshed when the window opens, on Refresh, every three seconds while the window's own command runs, and every three seconds while the loaded pull's lock is live, when it says "Executing since 14:03, last heartbeat 20s ago".
 
 **Execute** opens a console window of its own (`CREATE_NEW_CONSOLE`) in the working folder, running the runtime's `pullmanager.py --execute <project> --keep-open` with the same Python and no shell between (D68): started from the window with its output piped back, it died on the VM before printing a line (`0xC0000142`). If the console cannot be opened, or its process ends before writing its log, the window says so, with the exit code (in hex for a Windows failure), and gives the terminal command (`python scope.py --execute <project>`, D123). If it ends with a non-zero code before its log has the pull's summary, Pull Log says it ended before finishing: what it was working on stays `running`, and the reason, if Python gave one, is just above. On Windows a killed process, Stop included, ends with 1. Stop ends a pull the window started and removes the lock it could not remove itself; a pull started from a terminal is stopped there. Closing the window leaves a pull in its own console running. On the Mac, with no console to open, Execute runs unseen and is read from its log.
 
