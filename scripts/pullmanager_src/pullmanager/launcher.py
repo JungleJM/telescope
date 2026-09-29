@@ -350,6 +350,7 @@ class LogFollower:
         self.path: Path | None = None
         self._position = 0
         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._held_cr = False
 
     def read(self, path: Path | None) -> tuple[bool, str]:
         """(switched, text). Switched means a different log from last time,
@@ -360,6 +361,7 @@ class LogFollower:
             self._position = 0
             # A character cut in two by a read is completed by the next.
             self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            self._held_cr = False
         if path is None:
             return switched, ""
         try:
@@ -369,7 +371,17 @@ class LogFollower:
         except OSError:
             return switched, ""
         self._position += len(data)
-        return switched, self._decoder.decode(data)
+        return switched, self._newlines(self._decoder.decode(data))
+
+    def _newlines(self, text: str) -> str:
+        """Windows writes `\\r\\n`; the Pull Log shows `\\n`. A `\\r` that ends a
+        read waits for the next, in case its `\\n` is there."""
+        if self._held_cr:
+            text = "\r" + text
+        self._held_cr = text.endswith("\r")
+        if self._held_cr:
+            text = text[:-1]
+        return text.replace("\r\n", "\n")
 
 
 @dataclass

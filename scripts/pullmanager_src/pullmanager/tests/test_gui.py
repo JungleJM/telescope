@@ -68,7 +68,8 @@ class GuiTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.work = Path(self._tmp.name)
+        # Resolved: Windows can name a temporary folder short (SHDW_0~1) or in full.
+        self.work = Path(self._tmp.name).resolve()
 
         # Swap in only the tkinter entries. patch.dict would restore the whole
         # module table on cleanup, dropping anything first imported during the
@@ -207,6 +208,8 @@ class RunningPullTests(GuiTestCase):
         self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "split" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
+        # Execute must not open a real window: on Windows it holds the folder open.
+        self.app.console = FakeConsole()
 
     def lock(self, manifest=None, heartbeat_age=20):
         import json

@@ -301,6 +301,18 @@ class LogFollowerTests(TempDirTestCase):
         _, second = follower.read(log)
         self.assertEqual(first + second, "Crohn’s\n")
 
+    def test_windows_line_endings_reach_the_pull_log_as_newlines(self):
+        # The VM's --tdd: its logs are written with \r\n, and the tab showed \r.
+        log = self.tmp / "execute.log"
+        log.write_bytes(b"one\r\ntwo\r")
+        follower = launcher.LogFollower()
+        _, first = follower.read(log)
+        with open(log, "ab") as handle:
+            handle.write(b"\nthree\r\n")
+        _, second = follower.read(log)
+        self.assertEqual(first, "one\ntwo")  # its \r held for the next read
+        self.assertEqual(first + second, "one\ntwo\nthree\n")
+
     def test_a_new_log_starts_over(self):
         first, second = self.tmp / "a.log", self.tmp / "b.log"
         first.write_text("old\n", encoding="utf-8")
