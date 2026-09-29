@@ -22,539 +22,553 @@ cohorts:
   type: PK
   pull_this_cycle: true
   description: Every visit to ED with a diagnosis of RSV for a child 2 years or less
-  granularity: one row per patient
+  granularity: One row per ED visit (EdVisitKey)
   columns:
   - source: evf.AcuityLevel
     name: AcuityLevel
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.AdmissionProviderDurableKey
     name: AdmissionProviderDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.AgeKey
     name: AgeKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.ArrivalDateKey
     name: ArrivalDateKey
-    type: INT
     nullable: false
+    type: INT
   - source: evf.ArrivalInstant
     name: ArrivalInstant
-    type: DATETIME2(7)
     nullable: false
+    type: DATETIME2(7)
   - source: evf.ArrivalMethod
     name: ArrivalMethod
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.ArrivalTimeOfDayKey
     name: ArrivalTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.AvsPrintInstant
     name: AvsPrintInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.AvsPrintTimeOfDayKey
     name: AvsPrintTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BedAssignedDateKey
     name: BedAssignedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BedAssignedInstant
     name: BedAssignedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.BedAssignedTimeOfDayKey
     name: BedAssignedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BedRequestDateKey
     name: BedRequestDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BedRequestInstant
     name: BedRequestInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.BedRequestTimeOfDayKey
     name: BedRequestTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BoardingHoursEndDateKey
     name: BoardingHoursEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BoardingHoursEndInstant
     name: BoardingHoursEndInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.BoardingHoursEndTimeOfDayKey
     name: BoardingHoursEndTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BoardingHoursStartDateKey
     name: BoardingHoursStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.BoardingHoursStartInstant
     name: BoardingHoursStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.BoardingHoursStartTimeOfDayKey
     name: BoardingHoursStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.CodingComplete_X
     name: CodingComplete_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: evf.CodingStatus_X
     name: CodingStatus_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: evf.CoverageComboKey_X
     name: CoverageComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.DepartureDateKey
     name: DepartureDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.DepartureInstant
     name: DepartureInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.DepartureTimeOfDayKey
     name: DepartureTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.DerivedEncounterStatus_X
     name: DerivedEncounterStatus_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.DischargeDisposition
     name: DischargeDisposition
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.DispositionDateKey
     name: DispositionDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.DispositionInstant
     name: DispositionInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.DispositionTimeOfDayKey
     name: DispositionTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.EdVisitKey
     name: EdVisitKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: evf.EdGenericDispo
     name: EdGenericDispo
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.EncounterKey
     name: EncounterKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: evf.EncounterSourceComboKey_X
     name: EncounterSourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.FinancialClass
     name: FinancialClass
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: evf.FirstAttendingAssignedDateKey
     name: FirstAttendingAssignedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstAttendingAssignedInstant
     name: FirstAttendingAssignedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstAttendingAssignedTimeOfDayKey
     name: FirstAttendingAssignedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstCodeEndDateKey
     name: FirstCodeEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstCodeEndInstant
     name: FirstCodeEndInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstCodeEndTimeOfDayKey
     name: FirstCodeEndTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstCodeStartDateKey
     name: FirstCodeStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstCodeStartInstant
     name: FirstCodeStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstCodeStartTimeOfDayKey
     name: FirstCodeStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstEdRegisteredNurseAssignedDateKey
     name: FirstEdRegisteredNurseAssignedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstEdRegisteredNurseAssignedInstant
     name: FirstEdRegisteredNurseAssignedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstEdRegisteredNurseAssignedTimeOfDayKey
     name: FirstEdRegisteredNurseAssignedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstProviderContactDateKey
     name: FirstProviderContactDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstProviderContactInstant
     name: FirstProviderContactInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstProviderContactTimeOfDayKey
     name: FirstProviderContactTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstTraumaEndDateKey
     name: FirstTraumaEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstTraumaEndInstant
     name: FirstTraumaEndInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstTraumaEndTimeOfDayKey
     name: FirstTraumaEndTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstTraumaStartDateKey
     name: FirstTraumaStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstTraumaStartInstant
     name: FirstTraumaStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstTraumaStartTimeOfDayKey
     name: FirstTraumaStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.HospitalAdmissionKey
     name: HospitalAdmissionKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.LeftAgainstMedicalAdvice
     name: LeftAgainstMedicalAdvice
-    type: BIT
     nullable: true
+    type: BIT
   - source: evf.LeftWithoutBeingSeen
     name: LeftWithoutBeingSeen
-    type: BIT
     nullable: true
+    type: BIT
   - source: evf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: evf.PayorComboKey_X
     name: PayorComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.PrimaryPayorKey_X
     name: PrimaryPayorKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: evf.RoomedDateKey
     name: RoomedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.RoomedInstant
     name: RoomedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.RoomedTimeOfDayKey
     name: RoomedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.AvsPrintDateKey
     name: AvsPrintDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstEkgCompletedDateKey
     name: FirstEkgCompletedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstEkgCompletedInstant
     name: FirstEkgCompletedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstEkgCompletedTimeOfDayKey
     name: FirstEkgCompletedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstSedationEndDateKey
     name: FirstSedationEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstSedationEndInstant
     name: FirstSedationEndInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstSedationEndTimeOfDayKey
     name: FirstSedationEndTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstSedationStartDateKey
     name: FirstSedationStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.FirstSedationStartInstant
     name: FirstSedationStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.FirstSedationStartTimeOfDayKey
     name: FirstSedationStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.ObservationStartedDateKey
     name: ObservationStartedDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.ObservationStartedInstant
     name: ObservationStartedInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.ObservationStartedTimeOfDayKey
     name: ObservationStartedTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.RegistrationCompleteDateKey
     name: RegistrationCompleteDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.RegistrationCompleteInstant
     name: RegistrationCompleteInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.RegistrationCompleteTimeOfDayKey
     name: RegistrationCompleteTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.TriageCompleteDateKey
     name: TriageCompleteDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.TriageCompleteInstant
     name: TriageCompleteInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.TriageCompleteTimeOfDayKey
     name: TriageCompleteTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.TriageStartDateKey
     name: TriageStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.TriageStartInstant
     name: TriageStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: evf.TriageStartTimeOfDayKey
     name: TriageStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: evf.UnderObservation
     name: UnderObservation
-    type: BIT
     nullable: true
+    type: BIT
   filter:
     from:
     - EdVisitFact as evf
     join:
     - "INNER JOIN DurationDim AS age ON age.DurationKey = evf.AgeKey"
-    - "INNER JOIN DiagnosisEventFact AS d ON d.EncounterKey = pk.EncounterKey AND\
-      \ d.PatientDurableKey = pk.PatientDurableKey"
+    - "INNER JOIN DiagnosisEventFact AS d ON d.EncounterKey = evf.EncounterKey AND\
+      \ d.PatientDurableKey = evf.PatientDurableKey"
     - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = d.DiagnosisKey"
     where:
     - "age.Years < 2"
     - "d._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
     - "evf.ArrivalDateKey >= 0"
     - "evf.ArrivalDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
     - "d.EmergencyDepartmentDiagnosis = 1"
     - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+    - "{{sql_condition('dt.Value', ICD_Value)}}"
+  dedup_keys:
+  - - EdVisitKey
+  dedup_order_by:
+  - ArrivalDateKey
+  vars:
+    ICD_Value:
+    - J12.1
+    - B97.4
 - name: HospitalAdmissionFact
   dest_table: HospitalAdmissionFact
   type: fact
   pull_this_cycle: true
   columns:
+  - source: haf.EncounterKey
+    name: EncounterKey
+    nullable: false
+    type: BIGINT
   - source: haf.AdmissionDateKey
     name: AdmissionDateKey
-    type: INT
     nullable: false
+    type: INT
   - source: haf.AdmittingProviderDurableKey
     name: AdmittingProviderDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.AgeKey
     name: AgeKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.CodingComplete_X
     name: CodingComplete_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.CodingStatus_X
     name: CodingStatus_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: haf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: haf.CoverageComboKey_X
     name: CoverageComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.DaysSincePriorAdmission_X
     name: DaysSincePriorAdmission_X
-    type: INT
     nullable: true
+    type: INT
   - source: haf.DepartmentKey
     name: DepartmentKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.DerivedEncounterStatus_X
     name: DerivedEncounterStatus_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: haf.DischargeDepartmentKey_X
     name: DischargeDepartmentKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.DischargeDisposition
     name: DischargeDisposition
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: haf.DischargeDateKey
     name: DischargeDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: haf.DischargeInstant
     name: DischargeInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: haf.DischargeTimeOfDayKey
     name: DischargeTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: haf.DischargingProviderDurableKey
     name: DischargingProviderDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.EncounterKey
     name: InpatientEncounterKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: haf.EncounterSourceComboKey_X
     name: EncounterSourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.EncounterType
     name: EncounterType
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: haf.FinancialClass
     name: FinancialClass
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: haf.HospitalAdmissionKey
     name: HospitalAdmissionKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: haf.InpatientAdmissionDateKey
     name: InpatientAdmissionDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: haf.InpatientAdmissionInstant
     name: InpatientAdmissionInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: haf.InpatientAdmissionTimeOfDayKey
     name: InpatientAdmissionTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: haf.InpatientLengthOfStayInDays
     name: InpatientLengthOfStayInDays
-    type: INT
     nullable: true
+    type: INT
   - source: haf.LengthOfStayInDays
     name: LengthOfStayInDays
-    type: INT
     nullable: true
+    type: INT
   - source: haf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: haf.PayorComboKey_X
     name: PayorComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.PrimaryPayorKey_X
     name: PrimaryPayorKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: haf.StartedAsHOV_X
     name: StartedAsHOV_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.StartedInED_X
     name: StartedInED_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.IsIndexAdmission_X
     name: IsIndexAdmission_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.IsUnplannedReadmission_X
     name: IsUnplannedReadmission_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.IsPlannedReadmission_X
     name: IsPlannedReadmission_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: haf.ReadmissionCausedByKey_X
     name: ReadmissionCausedByKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   filter:
     from:
     - HospitalAdmissionFact as haf
     join:
     - "INNER JOIN {{prefix}}_EDVisits AS ev ON haf.HospitalAdmissionKey = ev.HospitalAdmissionKey"
     where:
-    - "haf._IsDelete = 0"
+    - "haf._IsDeleted = 0"
     - haf.AdmissionDateKey IS NOT NULL
     - "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
 - name: RSVPatients
@@ -564,193 +578,193 @@ cohorts:
   columns:
   - source: pd.AgeInYears
     name: AgeInYears
-    type: INT
     nullable: true
+    type: INT
   - source: pd.BirthDate
     name: BirthDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.BirthDateAccuracy_X
     name: BirthDateAccuracy_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.EarliestPossibleBirthDate_X
     name: EarliestPossibleBirthDate_X
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.BloodType_X
     name: BloodType_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.BloodTypeAndRhesusFactor_X
     name: BloodTypeAndRhesusFactor_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Country
     name: Country
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.DeathDate
     name: DeathDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.DurableKey
     name: DurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: pd.Ethnicity
     name: Ethnicity
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FifthRace
     name: FifthRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FirstRace
     name: FirstRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FourthRace
     name: FourthRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.GenderIdentity
     name: GenderIdentity
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.HasPcp_X
     name: HasPcp_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: pd.IsCurrent
     name: IsCurrent
-    type: BIT
     nullable: false
+    type: BIT
   - source: pd.IsValid
     name: IsValid
-    type: BIT
     nullable: false
+    type: BIT
   - source: pd.LastImmunizationQueryInstantUtc
     name: LastImmunizationQueryInstantUtc
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.MaritalStatus
     name: MaritalStatus
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.MultiRacial
     name: MultiRacial
-    type: BIT
     nullable: true
+    type: BIT
   - source: pd.PreferredLanguage
     name: PreferredLanguage
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.PreliminaryCauseOfDeathDiagnosisKey
     name: PreliminaryCauseOfDeathDiagnosisKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pd.PrimaryRUCA_X
     name: PrimaryRUCA_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.ReliableSex
     name: ReliableSex
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.RhesusFactor_X
     name: RhesusFactor_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SecondRace
     name: SecondRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Sex
     name: Sex
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SexAssignedAtBirth
     name: SexAssignedAtBirth
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SourceComboKey_X
     name: SourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pd.SourceCountry_X
     name: SourceCountry_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.StateOrProvince
     name: StateOrProvince
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.StateOrProvinceAbbreviation
     name: StateOrProvinceAbbreviation
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Status
     name: Status
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
     name: SviHouseholdCharacteristicsPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHouseholdCompositionPctlRankingByZip2018_X
     name: SviHouseholdCompositionPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
     name: SviHousingTypeTransportationPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHousingTypeTransportationPctlRankingByZip2018_X
     name: SviHousingTypeTransportationPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviMinorityStatusLanguagePctlRankingByZip2018_X
     name: SviMinorityStatusLanguagePctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviOverallPctlRankByZip2020_X
     name: SviOverallPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviOverallPctlRankingByZip2018_X
     name: SviOverallPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
     name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviSocioeconomicPctlRankByZip2020_X
     name: SviSocioeconomicPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviSocioeconomicPctlRankingByZip2018_X
     name: SviSocioeconomicPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.ThirdRace
     name: ThirdRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.UseInCosmosAnalytics_X
     name: UseInCosmosAnalytics_X
-    type: BIT
     nullable: false
+    type: BIT
   filter:
     from:
     - PatientDim as pd
     join:
     - "INNER JOIN {{prefix}}_EDVisits AS ev ON pd.DurableKey = ev.PatientDurableKey"
     where:
-    - "p.IsValid = 1"
-    - "p.IsCurrent = 1"
-    - "p.UseInCosmosAnalytics_X = 1"
+    - "pd.IsValid = 1"
+    - "pd.IsCurrent = 1"
+    - "pd.UseInCosmosAnalytics_X = 1"
 - name: EDVitals
   dest_table: EDVitals
   type: fact
@@ -758,98 +772,99 @@ cohorts:
   columns:
   - source: vf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: BIT
   - source: vf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: BIT
   - source: vf.BodyMassIndex
     name: BodyMassIndex
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.CalculatedBodyMassIndex_X
     name: CalculatedBodyMassIndex_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: vf.DateKey
     name: DateKey
-    type: INT
     nullable: false
+    type: INT
   - source: vf.DiastolicBloodPressure
     name: DiastolicBloodPressure
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.EncounterKey
     name: EncounterKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: vf.HeadCircumference
     name: HeadCircumference
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.Height
     name: Height
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.LastKnownHeight_X
     name: LastKnownHeight_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: vf.PulseRate
     name: PulseRate
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.RespirationRate
     name: RespirationRate
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.SourceComboKey
     name: SourceComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: vf.SpO2
     name: SpO2
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.SystolicBloodPressure
     name: SystolicBloodPressure
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.TakenInstant
     name: TakenInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: vf.Temperature
     name: Temperature
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.VitalsKey
     name: VitalsKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: vf.Weight
     name: Weight
-    type: FLOAT
     nullable: true
+    type: FLOAT
   filter:
     from:
     - VitalsFact as vf
     join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON vf.PatientDurableKey = ev.PatientDurableKey"
+    - "INNER JOIN {{prefix}}_EDVisits AS ev ON ev.EncounterKey = vf.EncounterKey AND\
+      \ ev.PatientDurableKey = vf.PatientDurableKey"
     where:
     - "vf._IsDeleted = 0"
-    - "vf.DateKey = 'BETWEEN {{min_date_key}} AND {{max_date_key}}'"
-    - "\"vf.TakenInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND\
-      \ DATEADD(DAY, 1, haf.DischargeInstant)\""
+    - "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "vf.TakenInstant BETWEEN DATEADD(DAY, -1, ev.ArrivalInstant) AND DATEADD(DAY,\
+      \ 1, ev.DepartureInstant)"
 - name: PatientBirthEvent
   dest_table: PatientBirthEvent
   type: fact
@@ -857,356 +872,356 @@ cohorts:
   columns:
   - source: bf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: BIT
   - source: bf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: BIT
   - source: bf.AntenatalSteroids
     name: AntenatalSteroids
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.AugmentationUsed
     name: AugmentationUsed
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.BabyDischargeWeight
     name: BabyDischargeWeight
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: bf.BabyInpatientLengthOfStayInDays
     name: BabyInpatientLengthOfStayInDays
-    type: INT
     nullable: true
+    type: INT
   - source: bf.BabyPatientDurableKey
     name: BabyPatientDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthAnesthesiaComboKey
     name: BirthAnesthesiaComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthAugmentationComboKey
     name: BirthAugmentationComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthAugmentationIndicationComboKey
     name: BirthAugmentationIndicationComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthCervicalRipeningComboKey
     name: BirthCervicalRipeningComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthCesareanIndicationComboKey
     name: BirthCesareanIndicationComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthDateKey
     name: BirthDateKey
-    type: INT
     nullable: false
+    type: INT
   - source: bf.BirthEpisiotomyComboKey
     name: BirthEpisiotomyComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthInductionComboKey
     name: BirthInductionComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthInductionIndicationComboKey
     name: BirthInductionIndicationComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthInstant
     name: BirthInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.BirthKey
     name: BirthKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: bf.BirthLength
     name: BirthLength
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: bf.BirthRuptureTypeComboKey
     name: BirthRuptureTypeComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.BirthTimeOfDayKey
     name: BirthTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.BirthWeight
     name: BirthWeight
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: bf.BirthWeightGrams
     name: BirthWeightGrams
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: bf.BreastMilkGiven
     name: BreastMilkGiven
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.CervicalRipeningDateKey
     name: CervicalRipeningDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.CervicalRipeningInstant
     name: CervicalRipeningInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.CervicalRipeningTimeOfDayKey
     name: CervicalRipeningTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.CesareanDelivery
     name: CesareanDelivery
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.CesareanExpected
     name: CesareanExpected
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.CordClampDateKey
     name: CordClampDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.CordClampInstant
     name: CordClampInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.CordClampTimeOfDayKey
     name: CordClampTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: bf.DeliveryMethod
     name: DeliveryMethod
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.DilationCompleteInstant
     name: DilationCompleteInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.DilationCompleteDateKey
     name: DilationCompleteDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.DilationCompleteTimeOfDayKey
     name: DilationCompleteTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.EpiduralOrSpinalGiven
     name: EpiduralOrSpinalGiven
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.FirstStageLengthMinutes
     name: FirstStageLengthMinutes
-    type: INT
     nullable: true
+    type: INT
   - source: bf.ForcepsAttempted
     name: ForcepsAttempted
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.ForcepsDelivery
     name: ForcepsDelivery
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.GestationalAgeDays
     name: GestationalAgeDays
-    type: INT
     nullable: true
+    type: INT
   - source: bf.GestationalAgeZeroDateKey
     name: GestationalAgeZeroDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.HeadCircumference
     name: HeadCircumference
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: bf.InductionUsed
     name: InductionUsed
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.LaborAttempted
     name: LaborAttempted
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.LaborStartDateKey
     name: LaborStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.LaborStartInstant
     name: LaborStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.LaborStartTimeOfDayKey
     name: LaborStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.LaborType
     name: LaborType
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.LivingStatus
     name: LivingStatus
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.MotherAgeKey
     name: MotherAgeKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.MotherArrivalDateKey
     name: MotherArrivalDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.MotherArrivalInstant
     name: MotherArrivalInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.MotherArrivalTimeOfDayKey
     name: MotherArrivalTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.MotherEncounterKey
     name: MotherEncounterKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.MotherPatientDurableKey
     name: MotherPatientDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.MultipleDeliveryCount
     name: MultipleDeliveryCount
-    type: INT
     nullable: true
+    type: INT
   - source: bf.MultipleDeliveryOrder
     name: MultipleDeliveryOrder
-    type: INT
     nullable: true
+    type: INT
   - source: bf.NeonatalDemise
     name: NeonatalDemise
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.NonBreastMilkGiven
     name: NonBreastMilkGiven
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.PlacentaDeliveryDateKey
     name: PlacentaDeliveryDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.PlacentaDeliveryInstant
     name: PlacentaDeliveryInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.PlacentaDeliveryTimeOfDayKey
     name: PlacentaDeliveryTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.PlacentaMethod
     name: PlacentaMethod
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.PregnancyKey
     name: PregnancyKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.PresentationType
     name: PresentationType
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: bf.PresentationVertex
     name: PresentationVertex
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.PushingStartDateKey
     name: PushingStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.PushingStartInstant
     name: PushingStartInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.PushingStartTimeOfDayKey
     name: PushingStartTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.RuptureDateKey
     name: RuptureDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.RuptureInstant
     name: RuptureInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.RuptureOfMembranesToDeliverySeconds
     name: RuptureOfMembranesToDeliverySeconds
-    type: INT
     nullable: true
+    type: INT
   - source: bf.RuptureTimeOfDayKey
     name: RuptureTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.SecondStageLengthMinutes
     name: SecondStageLengthMinutes
-    type: INT
     nullable: true
+    type: INT
   - source: bf.SeverePerinealLacerationOccurred
     name: SeverePerinealLacerationOccurred
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.SkinToSkinDateKey
     name: SkinToSkinDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.SkinToSkinInstant
     name: SkinToSkinInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: bf.SkinToSkinTimeOfDayKey
     name: SkinToSkinTimeOfDayKey
-    type: INT
     nullable: true
+    type: INT
   - source: bf.SourceComboKey_X
     name: SourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: bf.SpontaneousVaginalDelivery
     name: SpontaneousVaginalDelivery
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.ThirdStageLengthMinutes
     name: ThirdStageLengthMinutes
-    type: INT
     nullable: true
+    type: INT
   - source: bf.TotalApgarFiveMinute
     name: TotalApgarFiveMinute
-    type: INT
     nullable: true
+    type: INT
   - source: bf.TotalApgarOneMinute
     name: TotalApgarOneMinute
-    type: INT
     nullable: true
+    type: INT
   - source: bf.TotalApgarTenMinute
     name: TotalApgarTenMinute
-    type: INT
     nullable: true
+    type: INT
   - source: bf.VacuumAttempted
     name: VacuumAttempted
-    type: BIT
     nullable: true
+    type: BIT
   - source: bf.VacuumDelivery
     name: VacuumDelivery
-    type: BIT
     nullable: true
+    type: BIT
   filter:
     from:
     - BirthFact as bf
@@ -1222,184 +1237,184 @@ cohorts:
   columns:
   - source: pd.AgeInYears
     name: AgeInYears
-    type: INT
     nullable: true
+    type: INT
   - source: pd.BirthDate
     name: BirthDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.BirthDateAccuracy_X
     name: BirthDateAccuracy_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.EarliestPossibleBirthDate_X
     name: EarliestPossibleBirthDate_X
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.BloodType_X
     name: BloodType_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.BloodTypeAndRhesusFactor_X
     name: BloodTypeAndRhesusFactor_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Country
     name: Country
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.DeathDate
     name: DeathDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.DurableKey
     name: DurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: pd.Ethnicity
     name: Ethnicity
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FifthRace
     name: FifthRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FirstRace
     name: FirstRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.FourthRace
     name: FourthRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.GenderIdentity
     name: GenderIdentity
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.HasPcp_X
     name: HasPcp_X
-    type: BIT
     nullable: true
+    type: BIT
   - source: pd.IsCurrent
     name: IsCurrent
-    type: BIT
     nullable: false
+    type: BIT
   - source: pd.IsValid
     name: IsValid
-    type: BIT
     nullable: false
+    type: BIT
   - source: pd.LastImmunizationQueryInstantUtc
     name: LastImmunizationQueryInstantUtc
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pd.MaritalStatus
     name: MaritalStatus
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.MultiRacial
     name: MultiRacial
-    type: BIT
     nullable: true
+    type: BIT
   - source: pd.PreferredLanguage
     name: PreferredLanguage
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.PreliminaryCauseOfDeathDiagnosisKey
     name: PreliminaryCauseOfDeathDiagnosisKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pd.PrimaryRUCA_X
     name: PrimaryRUCA_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.ReliableSex
     name: ReliableSex
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.RhesusFactor_X
     name: RhesusFactor_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SecondRace
     name: SecondRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Sex
     name: Sex
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SexAssignedAtBirth
     name: SexAssignedAtBirth
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SourceComboKey_X
     name: SourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pd.SourceCountry_X
     name: SourceCountry_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.StateOrProvince
     name: StateOrProvince
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.StateOrProvinceAbbreviation
     name: StateOrProvinceAbbreviation
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.Status
     name: Status
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
     name: SviHouseholdCharacteristicsPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHouseholdCompositionPctlRankingByZip2018_X
     name: SviHouseholdCompositionPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
     name: SviHousingTypeTransportationPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviHousingTypeTransportationPctlRankingByZip2018_X
     name: SviHousingTypeTransportationPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviMinorityStatusLanguagePctlRankingByZip2018_X
     name: SviMinorityStatusLanguagePctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviOverallPctlRankByZip2020_X
     name: SviOverallPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviOverallPctlRankingByZip2018_X
     name: SviOverallPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
     name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviSocioeconomicPctlRankByZip2020_X
     name: SviSocioeconomicPctlRankByZip2020_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.SviSocioeconomicPctlRankingByZip2018_X
     name: SviSocioeconomicPctlRankingByZip2018_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pd.ThirdRace
     name: ThirdRace
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: pd.UseInCosmosAnalytics_X
     name: UseInCosmosAnalytics_X
-    type: BIT
     nullable: false
+    type: BIT
   filter:
     from:
     - PatientDim as pd
@@ -1416,156 +1431,156 @@ cohorts:
   columns:
   - source: pf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: BIT
   - source: pf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: BIT
   - source: pf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: pf.EpisodeEndDateKey
     name: EpisodeEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: pf.EpisodeStartDateKey
     name: EpisodeStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: pf.HadCesarean
     name: HadCesarean
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.HadFetalDemise
     name: HadFetalDemise
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.HadNeonatalDemise
     name: HadNeonatalDemise
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.HasDelivery
     name: HasDelivery
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.HasDeliverySummary
     name: HasDeliverySummary
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.IsHistorical
     name: IsHistorical
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.LastDeliveryDateKey
     name: LastDeliveryDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: pf.LastDeliveryGestationalAge
     name: LastDeliveryGestationalAge
-    type: INT
     nullable: true
+    type: INT
   - source: pf.NumberOfFetuses
     name: NumberOfFetuses
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: pf.PostDeliveryBmi_X
     name: PostDeliveryBmi_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pf.PreDeliveryBmi_X
     name: PreDeliveryBmi_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pf.PregnancyAbortionCount
     name: PregnancyAbortionCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyEctopicCount
     name: PregnancyEctopicCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyEstimatedEndDate
     name: PregnancyEstimatedEndDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pf.PregnancyEstimatedEndDateKey
     name: PregnancyEstimatedEndDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyEstimatedStartDate
     name: PregnancyEstimatedStartDate
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: pf.PregnancyEstimatedStartDateKey
     name: PregnancyEstimatedStartDateKey
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyGravidaCount
     name: PregnancyGravidaCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyKey
     name: PregnancyKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: pf.PregnancyParaCount
     name: PregnancyParaCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyPretermCount
     name: PregnancyPretermCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyPriorFetalDemiseCount
     name: PregnancyPriorFetalDemiseCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyPriorLiveBirthCount
     name: PregnancyPriorLiveBirthCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancySpontaneousAbortionCount
     name: PregnancySpontaneousAbortionCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyStartAgeKey
     name: PregnancyStartAgeKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pf.PregnancyTermCount
     name: PregnancyTermCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregnancyTherapeuticAbortionCount
     name: PregnancyTherapeuticAbortionCount
-    type: INT
     nullable: true
+    type: INT
   - source: pf.PregravidBmi
     name: PregravidBmi
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pf.PregravidWeight
     name: PregravidWeight
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: pf.PriorCesarean
     name: PriorCesarean
-    type: BIT
     nullable: true
+    type: BIT
   - source: pf.SourceComboKey_X
     name: SourceComboKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: pf.WorkingEstimatedDateOfDeliveryKey
     name: WorkingEstimatedDateOfDeliveryKey
-    type: INT
     nullable: true
+    type: INT
   filter:
     from:
     - PregnancyFact as pf
@@ -1578,346 +1593,360 @@ cohorts:
   columns:
   - source: vf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: BIT
   - source: vf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: BIT
   - source: vf.BodyMassIndex
     name: BodyMassIndex
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.CalculatedBodyMassIndex_X
     name: CalculatedBodyMassIndex_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.Count
     name: Count
-    type: INT
     nullable: false
+    type: INT
   - source: vf.DateKey
     name: DateKey
-    type: INT
     nullable: false
+    type: INT
   - source: vf.DiastolicBloodPressure
     name: DiastolicBloodPressure
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.EncounterKey
     name: InpatientEncounterKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: vf.HeadCircumference
     name: HeadCircumference
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.Height
     name: Height
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.LastKnownHeight_X
     name: LastKnownHeight_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: vf.PulseRate
     name: PulseRate
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.RespirationRate
     name: RespirationRate
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.SourceComboKey
     name: SourceComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: vf.SpO2
     name: SpO2
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.SystolicBloodPressure
     name: SystolicBloodPressure
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.TakenInstant
     name: TakenInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: vf.Temperature
     name: Temperature
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: vf.VitalsKey
     name: VitalsKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: vf.Weight
     name: Weight
-    type: FLOAT
     nullable: true
+    type: FLOAT
   filter:
     from:
     - VitalsFact as vf
     where:
     - "vf._IsDeleted = 0"
+    - "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
     - "vf.TakenInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND\
       \ DATEADD(DAY, 1, haf.DischargeInstant)"
-    - "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    join:
+    - "INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = vf.EncounterKey"
 - name: EDLabTestComponents
   dest_table: EDLabTestComponents
   type: fact
   pull_this_cycle: true
   columns:
+  - source: lcd.LoincCode
+    name: ComponentLoincCode
+    nullable: true
+    type: NVARCHAR(900)
   - source: lcrf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: TINYINT
   - source: lcrf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: TINYINT
   - source: lcrf.Abnormal
     name: Abnormal
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: lcrf.CollectionInstant
     name: CollectionInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.Count
     name: Count
-    type: INT
     nullable: false
+    type: TINYINT
   - source: lcrf.EncounterKey
     name: EncounterKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.Flag
     name: Flag
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.IsBlankOrUnsuccessfulAttempt
     name: IsBlankOrUnsuccessfulAttempt
-    type: BIT
     nullable: true
+    type: TINYINT
   - source: lcrf.LabComponentKey
     name: LabComponentKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.LabComponentResultKey
     name: LabComponentResultKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.LabTestKey_X
     name: LabTestKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.NumericValue
     name: NumericValue
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericBoundaryValue_X
     name: NumericBoundaryValue_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericValueMaximum_X
     name: NumericValueMaximum_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericValueMinimum_X
     name: NumericValueMinimum_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.PrioritizedDateKey
     name: PrioritizedDateKey
-    type: INT
     nullable: true
+    type: BIGINT
   - source: lcrf.PrioritizedInstant_X
     name: PrioritizedInstant_X
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.ProcedureDurableKey
     name: ProcedureDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.ReferenceValueHigh_X
     name: ReferenceValueHigh_X
-    type: FLOAT
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ReferenceValueLow_X
     name: ReferenceValueLow_X
-    type: FLOAT
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ReferenceValueNormal_X
     name: ReferenceValueNormal_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ResultingLabDurableKey
     name: ResultingLabDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.ResultInstant
     name: ResultInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.SourceComboKey
     name: SourceComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.StructuredBoundaryOperator_X
     name: StructuredBoundaryOperator_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(50)
   - source: lcrf.Unit
     name: Unit
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(100)
   - source: lcrf.Value
     name: Value
-    type: VARCHAR(400)
     nullable: false
+    type: NVARCHAR(300)
   filter:
     from:
     - LabComponentResultFact as lcrf
     join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON lcrf.EncounterKey = ev.EncounterKey"
-    - "INNER JOIN LabComponentDim as lcd ON lcd.LabComponentKey = lcr.LabComponentKey"
+    - "INNER JOIN {{prefix}}_EDVisits AS ev ON ev.EncounterKey = lcrf.EncounterKey\
+      \ AND ev.PatientDurableKey = lcrf.PatientDurableKey"
+    - "INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
     where:
-    - "lcr.CollectionInstant BETWEEN DATEADD(DAY, -1, edv.ArrivalInstant) AND DATEADD(DAY,\
-      \ 1, edv.DepartureInstant)"
-    - "lcr.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
     - "lcrf._IsDeleted = 0"
+    - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, ev.ArrivalInstant) AND DATEADD(DAY,\
+      \ 1, ev.DepartureInstant)"
 - name: InpatientLabTestComponents
   dest_table: InpatientLabTestComponents
   type: fact
   pull_this_cycle: true
   columns:
+  - source: lcd.LoincCode
+    name: ComponentLoincCode
+    nullable: true
+    type: NVARCHAR(900)
   - source: lcrf._IsDeleted
     name: _IsDeleted
-    type: BIT
     nullable: false
+    type: TINYINT
   - source: lcrf._IsInferred
     name: _IsInferred
-    type: BIT
     nullable: false
+    type: TINYINT
   - source: lcrf.Abnormal
     name: Abnormal
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(900)
   - source: lcrf.CollectionInstant
     name: CollectionInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.Count
     name: Count
-    type: INT
     nullable: false
+    type: TINYINT
   - source: lcrf.EncounterKey
     name: EncounterKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.Flag
     name: Flag
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.IsBlankOrUnsuccessfulAttempt
     name: IsBlankOrUnsuccessfulAttempt
-    type: BIT
     nullable: true
+    type: TINYINT
   - source: lcrf.LabComponentKey
     name: LabComponentKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.LabComponentResultKey
     name: LabComponentResultKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.LabTestKey_X
     name: LabTestKey_X
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.NumericValue
     name: NumericValue
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericBoundaryValue_X
     name: NumericBoundaryValue_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericValueMaximum_X
     name: NumericValueMaximum_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.NumericValueMinimum_X
     name: NumericValueMinimum_X
-    type: FLOAT
     nullable: true
+    type: FLOAT
   - source: lcrf.PatientDurableKey
     name: PatientDurableKey
-    type: BIGINT
     nullable: false
+    type: BIGINT
   - source: lcrf.PrioritizedDateKey
     name: PrioritizedDateKey
-    type: INT
     nullable: true
+    type: BIGINT
   - source: lcrf.PrioritizedInstant_X
     name: PrioritizedInstant_X
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.ProcedureDurableKey
     name: ProcedureDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.ReferenceValueHigh_X
     name: ReferenceValueHigh_X
-    type: FLOAT
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ReferenceValueLow_X
     name: ReferenceValueLow_X
-    type: FLOAT
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ReferenceValueNormal_X
     name: ReferenceValueNormal_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(300)
   - source: lcrf.ResultingLabDurableKey
     name: ResultingLabDurableKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.ResultInstant
     name: ResultInstant
-    type: DATETIME2(7)
     nullable: true
+    type: DATETIME2(7)
   - source: lcrf.SourceComboKey
     name: SourceComboKey
-    type: BIGINT
     nullable: true
+    type: BIGINT
   - source: lcrf.StructuredBoundaryOperator_X
     name: StructuredBoundaryOperator_X
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(50)
   - source: lcrf.Unit
     name: Unit
-    type: VARCHAR(400)
     nullable: true
+    type: NVARCHAR(100)
   - source: lcrf.Value
     name: Value
-    type: VARCHAR(400)
     nullable: false
+    type: NVARCHAR(300)
   filter:
     from:
     - LabComponentResultFact as lcrf
     where:
-    - "lcr.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "lcr.CollectionInstant BETWEEN DATEADD(DAY, -1, edv.ArrivalInstant) AND DATEADD(DAY,\
-      \ 1, edv.DepartureInstant)"
-    - "_isDeleted = 0"
+    - "lcrf._IsDeleted = 0"
+    - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant)\
+      \ AND DATEADD(DAY, 1, haf.DischargeInstant)"
+    join:
+    - "INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = lcrf.EncounterKey"
+    - "INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"

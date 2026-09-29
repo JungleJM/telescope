@@ -2,3 +2,5 @@
 # adds to it and its Builder > Exports edits it; python3 makebundle.py queue carries it.
 UC_DxHxSxRx_intake.yaml
 Infant_RSV_intake.yaml
+UC_Visits_intake.yaml
+Crohns_PatientsFromUpload_intake.yaml

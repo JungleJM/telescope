@@ -610,8 +610,6 @@ cohorts:
   filter:
     from:
     - EdVisitFact as evf
-    join:
-    - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
 - name: HospitalAdmissions
   dest_table: HospitalAdmissions
   type: fact
@@ -760,8 +758,6 @@ cohorts:
   filter:
     from:
     - HospitalAdmissionFact as haf
-    join:
-    - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
 - name: MedOrderHistory
   dest_table: MedOrderHistory
   type: fact
@@ -890,10 +886,6 @@ cohorts:
   filter:
     from:
     - MedicationOrderFact as mof
-    join:
-    - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
-    where:
-    - "mof._IsDeleted = 0"
 - name: MedDispenseHistory
   dest_table: MedDispenseHistory
   type: fact
@@ -1022,10 +1014,6 @@ cohorts:
   filter:
     from:
     - MedicationDispenseFact as mdf
-    join:
-    - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
-    where:
-    - "mdf._IsDeleted = 0"
 - name: MedAdminHistory
   dest_table: MedAdminHistory
   type: fact
@@ -1094,7 +1082,3 @@ cohorts:
   filter:
     from:
     - MedicationAdministrationFact as maf
-    join:
-    - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
-    where:
-    - "maf._IsDeleted = 0"

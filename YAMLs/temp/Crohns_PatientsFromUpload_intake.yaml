@@ -1,0 +1,17 @@
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: Crohns_PatientsFromUpload
+vars: {}
+upload_cohorts: []
+multipliers: []
+batching: []
+cohorts: []
