@@ -327,6 +327,9 @@ class SessionTestCase(unittest.TestCase):
         def connect_fn(conn_str, **_):
             return order.pop(0)
 
+        # The progress lines (D136), kept rather than printed.
+        self.said: list[str] = []
+        kwargs.setdefault("say", self.said.append)
         return SessionRunner(
             self.manifest,
             self.manifest.sessions[0],
@@ -1035,6 +1038,96 @@ class ReadoutTests(SessionTestCase):
         self.assertTrue(warnings, out)
         self.assertLess(max(warnings), note)
         self.assertFalse(any("EncounterType" in line for line in lines if "warning" in line))
+
+
+class ProgressTests(SessionTestCase):
+    """D136: each step says when it starts and ends, as it happens."""
+
+    TIME = re.compile(r"^  \d\d:\d\d:\d\d  ")
+
+    def steps(self):
+        return [self.TIME.sub("", line) for line in self.said]
+
+    def test_every_line_has_its_time_and_the_steps_come_in_order(self):
+        with self.runner() as runner:
+            runner.execute()
+        self.assertTrue(all(self.TIME.match(line) for line in self.said), self.said)
+        steps = self.steps()
+        expected = [
+            "connected: Cosmos on et4003vpdsql032, Projects PROJECTD33A929",
+            "setup started", "setup done in",
+            "uploads started", "  HospitalICDCodes: into Projects started",
+            "  HospitalICDCodes: 2 rows into Projects in",
+            "  HospitalICDCodes: into Cosmos started", "  HospitalICDCodes: 3 rows into Cosmos in",
+            "uploads done in",
+            "pk started", "  Patients started", "  Patients: 10 rows (Cosmos",
+            "  Patients: writing parquet", "  Patients: 3 rows written to", "pk done in",
+            "run started", "  OtherHospitalizations started",
+            "  OtherHospitalizations: 10 rows (Cosmos", "run done in",
+        ]
+        position = 0
+        for want in expected:
+            found = next((i for i in range(position, len(steps)) if steps[i].startswith(want)), None)
+            self.assertIsNotNone(found, f"{want!r} not found in order in:\n" + "\n".join(steps))
+            position = found + 1
+
+    def test_the_table_in_flight_is_named_when_it_hangs_or_fails(self):
+        # What the log shows while a table runs: its start, and nothing after.
+        # It used to show nothing at all until the whole session ended.
+        with self.runner(cosmos={"failures": {r"INSERT INTO ##\w+_OtherHospitalizations": "timeout"}}) as runner:
+            runner.execute()
+        steps = self.steps()
+        self.assertIn("  OtherHospitalizations started", steps)
+        self.assertFalse([s for s in steps if s.startswith("  OtherHospitalizations: ")], steps)
+        self.assertTrue([s for s in steps if s.startswith("run FAILED after ") and s.endswith(": timeout")], steps)
+
+    def test_a_table_says_it_started_before_its_query_is_sent(self):
+        sent_before = {}
+
+        def say(line):
+            self.said.append(line)
+            if line.endswith("OtherHospitalizations started"):
+                sent_before["sql"] = list(self.cosmos.executed)
+
+        with self.runner(say=say) as runner:
+            self.said = []
+            runner.execute()
+        self.assertIn("sql", sent_before, self.said)
+        self.assertFalse([sql for sql in sent_before["sql"] if "_OtherHospitalizations (" in sql])
+        self.assertTrue([sql for sql in self.cosmos.executed if "_OtherHospitalizations (" in sql])
+
+    def test_a_blocked_phase_and_a_skipped_run_say_so(self):
+        with self.runner(projects={"failures": {r"CREATE TABLE PROJECTD": "no permission"}}) as runner:
+            runner.execute()
+        steps = self.steps()
+        self.assertIn("uploads blocked: an earlier phase failed", steps)
+        self.assertIn("run blocked: an earlier phase failed", steps)
+        with self.runner() as runner:
+            runner.execute()
+        self.assertTrue([s for s in self.steps() if s.startswith("setup skipped: failed")], self.steps())
+
+    def test_chunks_name_themselves(self):
+        self.declare_pk_key()
+        self.make_batched(runtime=[ChunkTests.CHUNK])
+        with self.runner(projects={"pk_rows": 4500}) as runner:
+            runner.execute()
+        steps = self.steps()
+        for batch in ("Female", "Male"):
+            self.assertIn(f"run {batch} started", steps)
+        for chunk in ("c1of3", "c2of3", "c3of3"):
+            self.assertEqual(steps.count(f"  {chunk} OtherHospitalizations started"), 2, steps)
+            self.assertEqual(len([s for s in steps if s.startswith(f"  {chunk} Patients: 3 PK rows into Cosmos")]), 2)
+
+    def test_execute_prints_them_as_it_goes(self):
+        # Through the command, to the console and so the log (D68): between the
+        # session's heading and its summary, not after it.
+        code, out = ReadoutTests.execute(self, {"EncounterType": [6, 9]})
+        lines = out.splitlines()
+        heading = lines.index("=== Patients ===")
+        summary = next(i for i, line in enumerate(lines) if line.startswith("  epoch "))
+        started = [i for i, line in enumerate(lines) if line.endswith("OtherHospitalizations started")]
+        self.assertEqual(len(started), 2, out)
+        self.assertTrue(all(heading < i < summary for i in started), out)
 
 
 class PkKeyTests(SessionTestCase):

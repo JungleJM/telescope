@@ -16,6 +16,7 @@ When an item here is built, delete it from this file and describe the result in 
 | Pullmanager: manifest, naming, rendering, dry run | Built and tested; used on the VM |
 | Pullmanager: connections, session execution, uploads, transfer (D50–D62) | **Proven live**: the first IBD Ancestry pull ran to the end from the terminal. It is being run again on the artifacts bundle |
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Built and tested on the Mac. On the VM from the second IBD Ancestry run; not yet reported |
+| Execute's progress lines: each step's start and end, timed, as it happens (D136) | Built and tested on the Mac; in the next bundle |
 | Launcher, now the app's Run half; its two dropdowns (D126) | Opened on the VM; Validate, Export split, Preview and Execute used there. The dropdowns not yet |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself goes in the next bundle |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; `stock.yaml` not yet |
@@ -35,20 +36,21 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 3.  **Celiac** first: its PK should be celiac patients (`K90.0`). The earlier Celiac run pulled Crohn's: the transfer sent had `K50.%`.
 4.  **The batching tests.** Crohns_PatientsFromUpload is every Crohn's patient's PatientDim row, the uploaded PK (1.2 million) in 100,000-row chunks: does each chunk land, and do the rows add up to the PK's? IBD_Ancestry is now all patients, not a sample, batched by sex and in 30,000-patient chunks (24 runs, each chunked once its PK exists): the test of chunking a generated PK.
 5.  **Infant_RSV**, **Crohns_DxHxSxRx** and **UC_Visits**. Infant_RSV's first run failed at `setup` with error 1105: the project database was full (Space In The Projects Database, in design.md). Its tables were dropped and three pulls restarted (29 September 2026); not yet reported. The log stood at 12.6 of its 20,000 MB, held by an open transaction: it is to be ended (an SSMS tab's `COMMIT`, or closing SSMS) and checked with `clear_projects_db`'s Refresh.
-6.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
+6.  **The progress lines** (D136), once the next bundle is in: the Pull Log tab shows each table as it starts and lands, with its rows and times. Crohns_PatientsFromUpload's upload lines time its two legs, file to Projects and Projects to Cosmos: the cost each table group adds (D134).
+7.  **Run** chooses from its two dropdowns; a running pull is under Running pulls only, and the dictionary line names `reference\datadictionary.yaml` in the extracted folder.
 
 ------------------------------------------------------------------------
 
 ## Next, Once The Pulls Run: Table Groups And Recipe Sets
 
-The first feature after the remade pulls succeed on the VM (D133, D134). In order:
+The first feature after the remade pulls succeed on the VM (D134, D135). In order:
 
-1.  **A table that reads one later in the order is an error**, naming both, grouped or not (D133). It stands alone, and groups rely on it.
+1.  **A table that reads one later in the order is an error**, naming both, grouped or not (D134). It stands alone, and groups rely on it.
 2.  **Table groups at run time**: a Cosmos connection per group inside the session, the PK temp refilled from Projects and the supporting tables it reads loaded; groups outside batches; the ungrouped tables one group; a table reading another group's an error; progress naming the group; a failed group retried alone. The split, the manifest, the dry run and the status all show groups.
 3.  **Table groups in the app**: their own section after Fact Tables, each fact table saying its group; Splitters' Separate tables renamed Separate PK per level.
 4.  **Recipe sets**: `recipe_sets:` in `recipes.yaml`, adding one as a group with its bindings set, and Save as recipe set.
 
-Before building 2, from Crohns_PatientsFromUpload's manifest: how long its upload phase took (the file to Projects, then Projects to Cosmos). A group repeats only the second part, so this is what each group adds.
+Before building 2, from Crohns_PatientsFromUpload's progress lines (D136): how long its upload's second leg took, Projects to Cosmos. A group repeats only that, so it is what each group adds.
 
 ------------------------------------------------------------------------
 

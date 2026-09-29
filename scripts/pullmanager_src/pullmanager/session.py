@@ -3,6 +3,9 @@
 The Cosmos connection is held open for the whole session, because every
 global temp (`##<prefix>_*`) dies with it. That single fact shapes everything here: the
 epoch, what a resume must replay, and why uploads travel through the client.
+
+Each step says when it starts and when it ends, as it happens (D136), so a
+table that takes hours shows as running rather than as silence.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -39,7 +43,7 @@ from .executor import (
     should_execute,
 )
 from .manifest import Manifest, Phase, Session
-from .models import now_iso
+from .models import format_duration, now_iso
 from .naming import destination, global_temp, temp_prefix
 from .normalize import cosmos_database
 from .uploads import UploadError
@@ -55,6 +59,25 @@ LARGE_ROW_WARNING = 80_000_000
 
 class SessionError(RuntimeError):
     """Raised when a session cannot proceed."""
+
+
+def say_now(line: str) -> None:
+    """Print a progress line at once, so the log shows it while the step runs."""
+    print(line, flush=True)
+
+
+def step_name(kind: str, node: Any) -> str:
+    """How the log names a unit: `setup`, `uploads`, `pk`, `run b2of4-LA-Male`."""
+    if kind == "upload_cohorts":
+        return "uploads"
+    if kind != "run":
+        return kind
+    name = str((getattr(node, "batch", None) or {}).get("name") or "")
+    return f"run {name}" if name else "run"
+
+
+def since(started: float) -> str:
+    return format_duration(time.monotonic() - started)
 
 
 @dataclass
@@ -92,8 +115,12 @@ class SessionRunner:
         connect_fn: Callable[..., Any] = connect,
         retry_failed: bool = False,
         upload_root: Path | None = None,
+        say: Callable[[str], None] = say_now,
     ):
         self.manifest = manifest
+        self._say_line = say
+        # Where a run is, for its lines: `c3of12`, `v2of5 (LA)`, or nothing.
+        self._where = ""
         self.session = session
         self.settings = settings
         self._connect = connect_fn
@@ -144,7 +171,12 @@ class SessionRunner:
             login_timeout=self.settings.login_timeout,
             query_timeout=self.settings.query_timeout,
         )
+        self.say(f"connected: Cosmos on {linked_server}, Projects {self.project_db}")
         self.manifest.save()
+
+    def say(self, text: str, depth: int = 0) -> None:
+        """One progress line: the time, then the step, indented under its unit."""
+        self._say_line(f"  {time.strftime('%H:%M:%S')}  {'  ' * depth}{text}")
 
     def _check_refresh(self) -> None:
         """Refuse to add to a pull whose Cosmos has been rebuilt under it (D51).
@@ -262,9 +294,11 @@ class SessionRunner:
         blocked = False
         for kind, node, path in iter_units(self.manifest, self.session):
             label = node.label
+            name = step_name(kind, node)
             if blocked:
                 node.block("an earlier phase in this session failed")
                 self.report.skipped.append(label)
+                self.say(f"{name} blocked: an earlier phase failed")
                 self.manifest.save()
                 continue
 
@@ -273,10 +307,14 @@ class SessionRunner:
             )
             if not execute:
                 self.report.skipped.append(f"{label} ({reason})")
+                self.say(f"{name} skipped: {reason}")
                 continue
 
             node.start()
             self.manifest.save()
+            self.say(f"{name} started")
+            started = time.monotonic()
+            self._where = ""
             try:
                 rows = self._run_unit(kind, node, path)
             except Exception as exc:
@@ -285,12 +323,15 @@ class SessionRunner:
                 self._rollback()
                 node.fail(str(exc), detail=type(exc).__name__)
                 self.report.failed.append((label, str(exc)))
+                self.say(f"{name} FAILED after {since(started)}: {exc}")
                 self.manifest.save()
                 if isinstance(node, Phase):
                     blocked = True
                 continue
             node.finish(rows=rows)
             self.report.completed.append(label)
+            counted = f", {rows:,} rows" if rows is not None else ""
+            self.say(f"{name} done in {since(started)}{counted}")
             self.manifest.save()
         return self.report
 
@@ -370,8 +411,13 @@ class SessionRunner:
                         "populations. Run --repull."
                     )
                 state = "kept" if self.resuming else "landed earlier in this pull"
+                self.say(f"{dest}: {state} in Projects", 1)
             else:
+                self.say(f"{dest}: into Projects started", 1)
+                started = time.monotonic()
                 rows = self._land_upload(cohort, copy)
+                counted = f"{rows:,} rows" if rows is not None else "copied"
+                self.say(f"{dest}: {counted} into Projects in {since(started)}", 1)
                 if not is_pk:
                     self.manifest.uploads_landed[dest] = {
                         "table": copy, "rows": rows, "landed_at": now_iso(),
@@ -379,11 +425,15 @@ class SessionRunner:
                     }
                 state = "landed"
             if is_pk or self._session_reads(dest):
+                self.say(f"{dest}: into Cosmos started", 1)
+                started = time.monotonic()
                 loaded = self._load_temp_from_copy(dest, copy)
+                self.say(f"{dest}: {loaded:,} rows into Cosmos in {since(started)}", 1)
                 uploaded += loaded
                 cosmos: Any = loaded
             else:
                 cosmos = "not read in this session"
+                self.say(f"{dest}: not sent to Cosmos, no table here reads it", 1)
             report[dest] = {"projects": state, "cosmos": cosmos}
         node.outputs["uploads"] = report
         return uploaded
@@ -484,6 +534,8 @@ class SessionRunner:
 
         pk_table = self.session.pk_table or ""
         path = pk_parquet_path(self.manifest.path, self._pk_cohort(doc) or {}, doc, pk_table)
+        self.say(f"{pk_table}: writing parquet", 1)
+        started = time.monotonic()
         try:
             rows = write_whole_table(self.projects, self.project_db, self._pk_copy(), path)
         except Exception as exc:  # noqa: BLE001 - reported; the pull goes on
@@ -497,6 +549,7 @@ class SessionRunner:
         except ValueError:
             shown = str(path)
         node.outputs["pk_parquet"] = {"file": shown, "rows": rows}
+        self.say(f"{pk_table}: {rows:,} rows written to {shown} in {since(started)}", 1)
 
     def _pk_cohort(self, doc: dict[str, Any]) -> dict[str, Any] | None:
         return next(
@@ -652,8 +705,10 @@ class SessionRunner:
         server_total: dict[str, int] = {}
         local_rows: dict[str, int] = {}
         for position, (value_label, batch) in enumerate(slices, start=1):
+            value_where = ""
             if value_label is not None:
-                node.outputs["value"] = f"v{position}of{len(slices)} ({value_label})"
+                value_where = node.outputs["value"] = f"v{position}of{len(slices)} ({value_label})"
+            self._where = value_where
             chunks = 1
             if size is not None:
                 total = self._count_batch(node, batch)
@@ -662,6 +717,7 @@ class SessionRunner:
             for index in range(chunks):
                 if size is not None:
                     node.outputs["chunk"] = f"c{index + 1}of{chunks}"
+                    self._where = " ".join(filter(None, (value_where, node.outputs["chunk"])))
                 self.manifest.save()
                 self._materialize_batch(node, chunk_index=index, batch=batch)
                 server_rows, local_rows = self._execute_unit(unit, clear=False)
@@ -770,16 +826,22 @@ class SessionRunner:
         else:
             # An uploaded PK's temp takes its copy's types.
             create_only = uploads.render_create(temp, self._describe(self._pk_copy()))
+        started = time.monotonic()
         self._execute(self.cosmos, create_only, label=f"{node.label} batch shell")
         if rows:
             bulk_insert(
                 self.cosmos, temp, columns, rows, chunk_size=self.settings.upload_chunk
             )
         self.cosmos.commit()
+        self.say(f"{self._at()}{pk_table}: {len(rows):,} PK rows into Cosmos in {since(started)}", 1)
         node.outputs["batch_pk_rows"] = len(rows)
         node.outputs["batch"] = selection.description
 
     # ------------------------------------------------------------- helpers
+
+    def _at(self) -> str:
+        """Where in its run a line is, as its prefix: `c3of12 `, or nothing."""
+        return f"{self._where} " if self._where else ""
 
     def _run_pair(self, unit: Unit) -> int | None:
         """Server blocks, then the local transfer, then compare both counts."""
@@ -808,12 +870,22 @@ class SessionRunner:
                 self._execute(self.projects, block.sql, label=block.block_id)
                 self.projects.commit()
         for block in unit.server_blocks:
+            self.say(f"{self._at()}{block.dest_table} started", 1)
+            started = time.monotonic()
             outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "RowCount"):
                 server_rows[str(row["DestTable"])] = int(row["RowCount"])
             self.cosmos.commit()
+            built = since(started)
+            started = time.monotonic()
             for local in [b for b in transfers if b.dest_table == block.dest_table]:
                 self._land(local, local_rows)
+            rows = server_rows.get(str(block.dest_table))
+            counted = f"{rows:,} rows" if rows is not None else "built"
+            self.say(
+                f"{self._at()}{block.dest_table}: {counted} "
+                f"(Cosmos {built}, into Projects {since(started)})", 1,
+            )
         landed = {b.dest_table for b in unit.server_blocks}
         for local in [b for b in transfers if b.dest_table not in landed]:
             self._land(local, local_rows)

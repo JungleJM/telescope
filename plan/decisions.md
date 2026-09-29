@@ -2463,7 +2463,7 @@ Artifacts reads. A lock timeout turns a silent hang into a message saying
 what to close. The name check keeps it off Cosmos and anything that is not a
 project database.
 
-### D133. Table groups: one Cosmos connection each, inside the session
+### D134. Table groups: one Cosmos connection each, inside the session
 
 **Amends D36** (one connection for the whole session).
 
@@ -2510,7 +2510,7 @@ every destination has a `_batch` column. Splitters' **Separate tables** is renam
 minutes. In return a stuck or failed group costs only itself, and progress names
 what is being pulled.
 
-### D134. Recipe sets: several recipes added as one table group
+### D135. Recipe sets: several recipes added as one table group
 
 **Decision.**
 
@@ -2529,3 +2529,32 @@ what is being pulled.
 
 **Why.** Birth, medications and visits are each two or three tables that are
 always pulled together and read each other.
+
+### D136. Execute says when each step starts and ends, as it happens
+
+**Amends D70** (the log's readout).
+
+**Context.** During Execute the log printed a session's name, then nothing
+until the whole session had ended. Each table was landed and committed as it
+went (D55), but no line said so. A table that took four hours looked the same as
+a hung pull, and so did every table before it in the run.
+
+**Decision.** Each step prints a line when it starts and when it ends, flushed at
+once so the console, the log and the Pull Log tab show it while it runs. Every
+line starts with the time (`HH:MM:SS`). Each line is one of:
+
+- the session's connections once they are open;
+- each phase and run: started, then done (with its time and rows), FAILED
+  (with its time and error), blocked or skipped (with why);
+- each upload: into Projects started, then its rows and time; into Cosmos
+  started, then its rows and time (or not sent to Cosmos, or kept);
+- each table: started, then its rows, with the time Cosmos took to build it and
+  the time it took to land in Projects;
+- a batch's PK rows going up to Cosmos, and the PK's parquet.
+
+Inside a run, a chunk or a value names itself (`c3of12`, `v2of5 (LA)`) at the
+start of its lines. The end-of-session summary is unchanged.
+
+**Why.** A table's start line with nothing after it is the table in flight, so a
+slow table and a hung one can be told apart, and the upload's two legs are timed
+separately (the question behind D134's cost).

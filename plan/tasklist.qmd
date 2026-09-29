@@ -14,29 +14,6 @@ That is all a new chat needs, because the rest is already written down. It reads
 
 # 
 
-# Seeing A Pull's Progress
-
-::: {.callout-note title="🟦 Claude: the log says nothing until a session ends"}
-Your answer to the table-group questions ("if the 8th table takes 4 hours... i can't see any updates") led me to the code, and I was wrong to say the log would show it. During Execute the log prints `=== <session> ===`, then **nothing until the whole session ends**, when it lists every run as done or failed ([cli.py:356](../scripts/pullmanager_src/pullmanager/cli.py)). Each table is landed and committed as it goes (D55), and each chunk updates the manifest, but no line in the log says so. So a table that takes four hours looks the same as a hung pull, grouped or not.
-
-**Recommendation:** a line as each thing starts and ends, flushed at once so the Pull Log tab shows it:
-
-``` text
-=== CrohnsPatients ===
-  pk             started 14:02
-  pk             done 14:04, 1,204,311 rows, 2m 10s
-  b1of1 c3of12   MedicationOrders: 412,006 rows in 3m 41s
-  b1of1 c3of12   MedicationAdministrations: started 14:31
-```
-
-The end-of-session summary stays as it is. This is small and needs no table groups. It would ship in the next bundle, so the remade pulls running now show it, and groups would later add their name to the same lines.
-
-**For you to decide:** build it now, before the table groups (roadmap, "Next, Once The Pulls Run")?
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-:::
-
 # Settled
 
-Nothing waiting. Table groups and recipe sets are D133 and D134, with the order in the roadmap ("Next, Once The Pulls Run").
+Nothing waiting. The progress lines are D136; table groups and recipe sets are D134 and D135, with the order in the roadmap ("Next, Once The Pulls Run").

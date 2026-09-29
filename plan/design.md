@@ -712,6 +712,26 @@ When the session opens, before anything runs: capture `@@SERVERNAME`, check the 
 
     A chunked run clears once, then for each chunk refills the PK temp with `ORDER BY <keys> OFFSET/FETCH` over the Projects copy, rebuilds the cohort temps and lands them. A failed chunk fails the run; a retry redoes all of it.
 
+**Progress** (D136). Each step prints a line when it starts and when it ends, flushed at once, so the console, the log and the Pull Log tab show it while it runs. Every line starts with the time:
+
+``` text
+=== Patients ===
+  14:34:02  connected: Cosmos on et4003vpdsql032, Projects PROJECTD33A929
+  14:34:02  uploads started
+  14:34:02    HospitalICDCodes: into Projects started
+  14:34:02    HospitalICDCodes: 2 rows into Projects in 0s
+  14:34:02    HospitalICDCodes: into Cosmos started
+  14:34:02    HospitalICDCodes: 3 rows into Cosmos in 0s
+  14:34:02  uploads done in 0s, 3 rows
+  14:34:03  run Female started
+  14:34:03    c1of3 Patients: 2,000 PK rows into Cosmos in 0s
+  14:34:03    c1of3 OtherHospitalizations started
+  14:34:03    c1of3 OtherHospitalizations: 10 rows (Cosmos 0s, into Projects 0s)
+  14:34:03  run Female done in 0s, 10 rows
+```
+
+A phase or run says started, then done (its time and rows), FAILED (its time and error), blocked or skipped (why). An upload times its two legs apart; a table gives its rows, the time Cosmos took to build it and the time it took to land. A chunk or a value (`v2of5 (LA)`) names itself at the start of its lines. A table's start line with nothing after it is the table in flight. The summary at the session's end is unchanged.
+
 After each run the Cosmos and Projects row counts are compared, counting only this run's `_batch` rows on the Projects side (a chunked run compares totals), and a mismatch warns. Counts past 80,000,000 warn. The widest value of each staged column is measured and reported, not applied (D34): at the end of each session, after its warnings, one table of each text column's declared type and widest value across all the session's batches, as a note (D70). A unit that fails rolls both connections back. Nothing runs in parallel: sessions, runs, chunks and cohorts go one after another.
 
 ### Uploads
@@ -874,7 +894,7 @@ Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 ``` bash
 python3 scope.py test                                      # all six, and which passed
 python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (187)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (475)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (486)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (79)
 python3 scripts/yamlmanager_model.py --tdd                  # the app's model (75)
 python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (30), needs a display
@@ -886,7 +906,7 @@ Tests that read or write parquet need `pyarrow` and skip without it: they cover 
 - **makeYaml** keeps its tests inline, including that a saved draft's empty lists and mappings read back empty, not null, one `TestCase` per `--tdd` group (`TEST_GROUPS`), so the file stays self-contained.
 - **Runtime** tests live in `pullmanager/tests/test_*.py`, discovered by name, and ship in the bundle. After extraction, `--tdd` proves the delivery with no network and no repo. Tests needing repo fixtures skip cleanly there.
 - **Bundle** tests cover the queue (every queued temp exported and carried in `bundle.py`, the queue emptied after and an old `bundle_with_yamls.py` removed; nothing queued, the software alone; a temp that does not validate, or is gone, stops the build naming it), YAMLs only (no software carried; extracting it places the YAMLs and leaves the runtime, `scope.py` and a file of yours inside the tree untouched; nothing to carry refused), `scope.py` and `utils.py` written beside the tree and an old generated `pullmanager.py` removed but one of yours kept, the stock files carried, tampering, determinism, extraction safety, `.local` preservation (including files a bundle stops shipping), transfer YAMLs carried with `yaml=` (placed beside `scope.py`, a different copy kept as `.local`, verified, in the content_id), and the VM pathway from one copied file: export a transfer YAML on the Mac, extract, split it with no recipes present, dry run.
-- **Artifacts** tests package the runtime fixture against a fake Projects connection and read the parquets back (types, `_batch` dropped, left-out tables, separated files, SneakPeek folders), check `contents.md`, check the progress lines and the summary, package every other table when one fails (exit 1, no partial file), copy the viewer and the stock `HOW_TO.md` with the pull filled in, and run the generated load scripts: Python for real, R through `Rscript` when R has `arrow`. The session tests check the PK parquet: written where Artifacts puts it, before any run, and a failure to write it only warns.
+- **Artifacts** tests package the runtime fixture against a fake Projects connection and read the parquets back (types, `_batch` dropped, left-out tables, separated files, SneakPeek folders), check `contents.md`, check the progress lines and the summary, package every other table when one fails (exit 1, no partial file), copy the viewer and the stock `HOW_TO.md` with the pull filled in, and run the generated load scripts: Python for real, R through `Rscript` when R has `arrow`. The session tests check the PK parquet: written where Artifacts puts it, before any run, and a failure to write it only warns. They check Execute's progress lines too (D136): every line timed and in order; a table saying it started before its query is sent, and a failing one leaving its start line with nothing after it; blocked and skipped steps saying so; each chunk naming itself; and the lines printed between the session's heading and its summary.
 - **The model** is tested on its own, in a scratch workspace with its own recipes and dictionary: the Project settings (Pull from as `cosmos_db`, neither being an error, flat or grouped settings edited where they are), one PK of any kind, column renames and drops reaching validation, pending files, splitters of both kinds writing the keys makeYaml reads and refusing a column before there is a PK, each variable's source, binding candidates (fits first, never picked), order by number, messages pointing at their section, a crash kept as a message, saving (never over another file) and the transfer to the working folder, then the same transfer adjusted as on the VM with no recipes; the table builder (columns from the dictionary, removed, restored, renamed and moved; joins refused on differing or unknown types; editing in place; as the PK) and Save as Recipe.
 - **The Author view** is tested on a real Tk, withdrawn, and skips without a display (D101), on intakes of its own in `scripts/yamlmanager_fixtures/temp/`, not the pulls in `YAMLs/temp/`, which change: every section built for every intake there, typing into a field edits the draft, a column renamed in the view is renamed in the template, the check marks the section, a refused edit is said, the table builder adds a table, Transfer saves and hands the file on, splitters by whether there is a PK, the binding picker binds what is chosen, a message goes to its field, and the exports and queue. The runtime's GUI tests check the app's wiring against the fake tkinter: the launcher built inside Run without touching the window, a transfer from Author loaded into Run, and Run opening without Author.
 - **Bundle** tests also adjust a transfer YAML with the model inside an extracted tree, with no recipes: open, change, save an intake, export again beside `scope.py`.
