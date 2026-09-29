@@ -128,7 +128,7 @@ class ListingTests(PullsTestCase):
         lines = listing(self.work)
         self.assertEqual(lines[0], "Which pull? Name one:")
         row = next(line for line in lines if "B_Halfway" in line)
-        self.assertIn("python pullmanager.py --execute B_Halfway", row)
+        self.assertIn("python scope.py --execute B_Halfway", row)
 
     def test_no_pulls_says_to_export_a_split(self):
         self.assertIn("Export split", listing(self.work)[0])
@@ -138,7 +138,7 @@ class ExecuteCommandTests(PullsTestCase):
     def test_a_pull_in_runs_is_named(self):
         manifest = self.make_pull("IBD_Ancestry")
         command, folder = execute_command(manifest, self.work)
-        self.assertEqual(command, "python pullmanager.py --execute IBD_Ancestry")
+        self.assertEqual(command, "python scope.py --execute IBD_Ancestry")
         self.assertEqual(folder, self.work)
 
     def test_a_manifest_elsewhere_is_given_by_its_path(self):
@@ -146,7 +146,7 @@ class ExecuteCommandTests(PullsTestCase):
         path.parent.mkdir()
         dump_yaml(SAMPLE_MANIFEST, path)
         command, folder = execute_command(path, self.work)
-        self.assertEqual(command, f'python pullmanager.py --execute "{Path("my split") / "pullmanifest.yaml"}"')
+        self.assertEqual(command, f'python scope.py --execute "{Path("my split") / "pullmanifest.yaml"}"')
         self.assertEqual(folder, self.work)
 
 
@@ -175,7 +175,7 @@ class ExecuteByNameTests(PullsTestCase):
         self.assertEqual(executed, [])
         self.assertEqual(code, 1)
         self.assertIn("Which pull?", out)
-        self.assertIn("python pullmanager.py --execute IBD_Ancestry", out)
+        self.assertIn("python scope.py --execute IBD_Ancestry", out)
 
     def test_an_unknown_name_pulls_nothing(self):
         self.make_pull("IBD_Ancestry")
@@ -211,7 +211,7 @@ class PreviewStatementTests(PullsTestCase):
         sql = Path("runs") / "IBD_Ancestry" / "sql"
         self.assertEqual(lines[-3], f"SQL written to {sql} for reading; Execute does not need it.")
         self.assertEqual(lines[-2], f"To pull it: press Execute, or in a terminal in {self.work} run:")
-        self.assertEqual(lines[-1], "    python pullmanager.py --execute IBD_Ancestry")
+        self.assertEqual(lines[-1], "    python scope.py --execute IBD_Ancestry")
         self.assertTrue(any((self.work / sql).iterdir()))
 
     def test_without_an_sql_folder_it_says_none_was_written(self):

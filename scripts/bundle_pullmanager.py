@@ -12,7 +12,7 @@ The VM cannot pull from git, so development happens as normal modules under
 On the VM:
 
     python bundle.py          # verify, show the content_id, y to extract (D64)
-    python pullmanager.py     # the launcher window
+    python scope.py           # the app (D123)
 
 Bundles are deterministic: the same sources always produce byte-identical
 output, so a rebuild with no source changes leaves git clean.
@@ -108,7 +108,7 @@ Built by scripts/bundle_pullmanager.py from scripts/pullmanager_src/.
 To change anything here, edit the source module and rebuild the bundle.
 
     python bundle.py                   # verify, show the content_id, y to extract
-    python pullmanager.py              # then: the launcher window
+    python scope.py                    # then: the app
     python bundle.py --verify-bundle   # or step by step: --list, --extract [DIR]
 """
 '''

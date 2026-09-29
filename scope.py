@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Telescope's front door (D112): the app, the tests, and Pullmanager's commands.
+"""Datascope's front door (D112, D123): the app, the tests, and Pullmanager's commands.
 
-    python3 datascope.py                         # the app: Author and Run
-    python3 datascope.py test                    # every test suite
-    python3 datascope.py --execute IBD_Ancestry  # anything else goes to pullmanager.py
+    python3 scope.py                         # the app: Author and Run
+    python3 scope.py test                    # every test suite
+    python3 scope.py --execute IBD_Ancestry  # anything else goes to Pullmanager
+
+The VM's `scope.py`, written by extraction, does the same but for `test`.
 
 It runs from the repository root wherever it is started, so datascope.json,
 the core files in reference/ and the runs folder are found (D111); a path typed

@@ -5,7 +5,7 @@ model); Run is the launcher (gui.py). Author saves an intake and exports its
 transfer YAML, which Run then takes (D94). Both are found from this
 package's location, as the launcher finds makeYaml.
 
-    python pullmanager.py          # no arguments: this window
+    python scope.py                # no arguments: this window (D123)
 """
 
 from __future__ import annotations

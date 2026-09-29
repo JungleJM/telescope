@@ -425,7 +425,7 @@ class ExtractionTests(BundleTestCase):
 
 
 class LauncherTests(BundleTestCase):
-    """D63: `pullmanager.py` in the working folder runs the extracted copy."""
+    """D63, D123: `scope.py` in the working folder runs the extracted copy."""
 
     def setUp(self):
         super().setUp()
@@ -451,7 +451,7 @@ class LauncherTests(BundleTestCase):
         before_prompt = run.stdout.split("[y/N]")[0]
         self.assertIn("content_id: ", before_prompt)
         self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
-        self.assertTrue((self.work / "pullmanager.py").is_file())
+        self.assertTrue((self.work / "scope.py").is_file())
         self.assertNotIn("extracted  ", run.stdout)
 
     def test_anything_but_yes_extracts_nothing(self):
@@ -461,7 +461,7 @@ class LauncherTests(BundleTestCase):
                 self.assertEqual(run.returncode, 0, run.stderr)
                 self.assertIn("Nothing extracted", run.stdout)
                 self.assertFalse((self.work / "pullmanager_runtime").exists())
-                self.assertFalse((self.work / "pullmanager.py").exists())
+                self.assertFalse((self.work / "scope.py").exists())
 
     def test_it_extracts_beside_itself_wherever_it_is_run_from(self):
         run = self.run_bundle_answering("y\n", cwd=self.tmp)
@@ -493,30 +493,43 @@ class LauncherTests(BundleTestCase):
         run = self.run_python("bundle.py", "--extract")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
-        self.assertIn("pullmanager.py", run.stdout)
-        version = self.run_python("pullmanager.py", "--version")
+        self.assertIn("scope.py", run.stdout)
+        version = self.run_python("scope.py", "--version")
         self.assertEqual(version.returncode, 0, version.stderr)
         self.assertIn("pullmanager", version.stdout)
 
     def test_the_launcher_works_beside_a_folder_of_its_own_name(self):
         # Extracted as `pullmanager`, the folder shares the launcher's name.
         self.assertEqual(self.run_python("bundle.py", "--extract", "pullmanager").returncode, 0)
-        version = self.run_python("pullmanager.py", "--version")
+        version = self.run_python("scope.py", "--version")
         self.assertEqual(version.returncode, 0, version.stderr)
         self.assertIn("pullmanager", version.stdout)
 
     def test_the_launcher_is_rewritten_by_every_extraction(self):
         self.run_python("bundle.py", "--extract")
-        (self.work / "pullmanager.py").write_text("print('edited')\n", encoding="utf-8")
+        (self.work / "scope.py").write_text("print('edited')\n", encoding="utf-8")
         self.run_python("bundle.py", "--extract", "elsewhere")
-        text = (self.work / "pullmanager.py").read_text(encoding="utf-8")
+        text = (self.work / "scope.py").read_text(encoding="utf-8")
         self.assertIn("'elsewhere'", text)
         self.assertNotIn("edited", text)
+
+    def test_the_old_launcher_goes_but_a_pullmanager_py_of_your_own_stays(self):
+        from bundle_extractor import LAUNCHER_TEMPLATE
+
+        old = self.work / "pullmanager.py"
+        old.write_text(LAUNCHER_TEMPLATE.format(folder="pullmanager_runtime"), encoding="utf-8")
+        run = self.run_python("bundle.py", "--extract")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertFalse(old.exists())
+        self.assertTrue((self.work / "scope.py").is_file())
+        old.write_text("print('mine')\n", encoding="utf-8")
+        self.run_python("bundle.py", "--extract")
+        self.assertEqual(old.read_text(encoding="utf-8"), "print('mine')\n")
 
     def test_a_missing_folder_says_to_extract_again(self):
         self.run_python("bundle.py", "--extract")
         shutil.rmtree(self.work / "pullmanager_runtime")
-        run = self.run_python("pullmanager.py", "--version")
+        run = self.run_python("scope.py", "--version")
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("python bundle.py --extract pullmanager_runtime", run.stderr)
 
@@ -580,7 +593,7 @@ class EndToEndTests(BundleTestCase):
     def test_the_apps_author_adjusts_a_transfer_yaml_on_the_vm(self):
         # D93, D94: in the extracted tree, with no recipes, the model opens a
         # transfer YAML from the working folder, saves the change as an intake,
-        # and exports the transfer again beside pullmanager.py.
+        # and exports the transfer again beside scope.py.
         work = self.tmp / "work"
         shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
         export = self.run_python(
@@ -691,7 +704,7 @@ class EndToEndTests(BundleTestCase):
 
 class TransferYamlTests(unittest.TestCase):
     """makebundle.py yaml=...: transfer YAMLs travel in the bundle and land
-    beside pullmanager.py on the VM, ready to run."""
+    beside scope.py on the VM, ready to run."""
 
     TRANSFER = "transfer:\n  from_template: IBD_Ancestry_temp.yaml\nproject_folder: IBD Ancestry\n" \
                "upload_cohorts:\n- name: Meds\n  file_loc: data/Meds/ibd/IBD_Meds.parquet\n"
@@ -730,7 +743,7 @@ class TransferYamlTests(unittest.TestCase):
         out = self.unpack_quietly()
         self.assertEqual((self.vm / "IBD_Ancestry_transfer.yaml").read_bytes(), self.ibd.read_bytes())
         self.assertTrue((self.vm / "Celiac_transfer.yaml").is_file())
-        self.assertTrue((self.vm / "pullmanager.py").is_file())
+        self.assertTrue((self.vm / "scope.py").is_file())
         # Not inside the extracted folder, which every update replaces.
         self.assertEqual(list((self.vm / "pullmanager_runtime").rglob("*_transfer.yaml")), [])
         self.assertIn("IBD_Ancestry_transfer.yaml", out)

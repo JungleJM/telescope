@@ -64,7 +64,7 @@ def project_name(text: str) -> str:
 
 def home_folders(cwd: Path | None = None) -> list[Path]:
     """Where `runs/` is looked for: the working directory, then the folder
-    holding `pullmanager.py`, which the extracted runtime sits in (D63)."""
+    holding `scope.py`, which the extracted runtime sits beside (D63, D123)."""
     here = Path(cwd or Path.cwd()).resolve()
     beside = Path(__file__).resolve().parents[2]
     return [here] if beside == here else [here, beside]
@@ -238,10 +238,10 @@ def execute_command(manifest: Path, cwd: Path | None = None,
     if manifest.name == MANIFEST_FILENAME and split.name == SPLIT_DIR:
         for home in [here, *home_folders(here)]:
             if config.runs_dir(home).resolve() == run_dir.parent:
-                return f"python pullmanager.py {option} {run_dir.name}", Path(home).resolve()
+                return f"python scope.py {option} {run_dir.name}", Path(home).resolve()
         if run_dir.parent.name == RUNS_DIR:
-            return f"python pullmanager.py {option} {run_dir.name}", run_dir.parent.parent
-    return f'python pullmanager.py {option} "{shown(manifest, here)}"', here
+            return f"python scope.py {option} {run_dir.name}", run_dir.parent.parent
+    return f'python scope.py {option} "{shown(manifest, here)}"', here
 
 
 def shown(path: Path, cwd: Path | None = None) -> str:

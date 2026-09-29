@@ -4,7 +4,7 @@ A thin tkinter view over launcher.py. It holds no logic of its own: every
 button builds a command through the controller and runs it as a subprocess,
 exactly as it would be typed. Anything worth testing lives in launcher.py.
 
-Run with:  python pullmanager.py --gui
+Run with:  python scope.py --gui
 """
 
 from __future__ import annotations

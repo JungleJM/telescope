@@ -38,9 +38,13 @@ MANIFEST_FILENAME = ".bundle-manifest.json"
 
 # Where the runtime goes when no folder is named: beside the bundle itself, so
 # where it was run from does not matter. The launcher is written beside that
-# folder, so `python pullmanager.py` works from there (D63, D64).
+# folder, so `python scope.py` works from there (D63, D64, D123).
 DEFAULT_TARGET = "pullmanager_runtime"
-LAUNCHER_NAME = "pullmanager.py"
+LAUNCHER_NAME = "scope.py"
+# What earlier bundles wrote instead, removed if it is still their own file.
+OLD_LAUNCHER_NAME = "pullmanager.py"
+LAUNCHER_SIGNATURE = '''#!/usr/bin/env python3
+"""Runs Pullmanager from '''
 LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
 """Runs Pullmanager from {folder}, the folder bundle.py extracted beside this file.
 
@@ -65,7 +69,7 @@ runpy.run_path(str(ENTRY), run_name="__main__")
 # rather than overwritten.
 POLICY_REPLACE = "replace"
 # A transfer YAML carried with `makebundle.py yaml=...`: verified with the rest,
-# but written beside pullmanager.py, not into the extracted folder, ready to
+# but written beside scope.py, not into the extracted folder, ready to
 # run. A different copy already there is kept as <name>.local.
 ROOT_POLICY = "root"
 ROOT_PREFIX = "root/"
@@ -252,7 +256,7 @@ def previous_extraction_hashes(target: Path) -> dict[str, str]:
 
 
 def root_paths(manifest: dict) -> set[str]:
-    """The published paths of the files that go beside pullmanager.py."""
+    """The published paths of the files that go beside scope.py."""
     return {
         entry["path"] for entry in manifest.get("files", [])
         if isinstance(entry, dict) and entry.get("policy") == ROOT_POLICY
@@ -412,14 +416,23 @@ def place_root_files(bundle_path: Path, target: Path) -> list[tuple[Path, bool]]
 
 
 def write_launcher(target: Path) -> Path:
-    """Write `pullmanager.py` beside the extracted folder, pointing into it (D63).
+    """Write `scope.py` beside the extracted folder, pointing into it (D63, D123).
 
     Always rewritten, whatever is there: it is a generated shortcut, and the
     folder it points at may have been extracted under another name this time.
+    The `pullmanager.py` an earlier bundle wrote there goes, so there is one
+    way in; a `pullmanager.py` of the user's own is left alone.
     """
     target = Path(target).resolve()
     launcher = target.parent / LAUNCHER_NAME
     launcher.write_bytes(LAUNCHER_TEMPLATE.format(folder=target.name).encode("utf-8"))
+    old = target.parent / OLD_LAUNCHER_NAME
+    try:
+        if old.is_file() and old.read_bytes().startswith(LAUNCHER_SIGNATURE.encode("utf-8")):
+            old.unlink()
+            print(f"Removed {old}: the app now opens with `python {LAUNCHER_NAME}`.")
+    except OSError:
+        pass
     return launcher
 
 

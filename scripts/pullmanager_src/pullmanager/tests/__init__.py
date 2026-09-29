@@ -3,8 +3,8 @@
 Uses stdlib unittest so it stays dependency-free and runs unchanged from an
 extracted bundle on the VM:
 
-    python pullmanager.py --tdd            # everything
-    python pullmanager.py --tdd manifest   # one module
+    python scope.py --tdd            # everything
+    python scope.py --tdd manifest   # one module
 """
 
 from __future__ import annotations

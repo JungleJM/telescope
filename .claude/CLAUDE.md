@@ -26,7 +26,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Layout
 
-- `python3 datascope.py` opens the app (Author and Run); `datascope.py test` runs the suites (D112).
+- `python3 scope.py` opens the app (Author and Run); `scope.py test` runs the suites (D112, D123). On the VM, extraction writes a `scope.py` that opens the same app.
 - The core files (data dictionary, recipes, template, the VM's package list and `requirements-vm.txt`) are in `reference/`; `datascope.json` at the root says where each is and where runs go, and is the one place to change if they move (D111).
 - `YAMLs/` holds the pulls: intakes in `YAMLs/temp/`, test templates in `YAMLs/manager_test_cases/`. Runs and the Python cache go to `cleanup/`, which is disposable (D113).
 
@@ -39,7 +39,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Working Conventions
 
-- Tests are stdlib `unittest`. Run every suite before committing: `python3.13 datascope.py test` runs all five and says which passed (`scripts/makeYaml.py`, `scripts/pullmanager_src/pullmanager.py`, `scripts/bundle_pullmanager.py`, `scripts/yamlmanager_model.py`, and `scripts/yamlmanager_tk.py`, the app's Author view on a real Tk, which skips without a display; each also runs alone with `--tdd`). Upload tests need `pyarrow` and skip without it.
+- Tests are stdlib `unittest`. Run every suite before committing: `python3.13 scope.py test` runs all five and says which passed (`scripts/makeYaml.py`, `scripts/pullmanager_src/pullmanager.py`, `scripts/bundle_pullmanager.py`, `scripts/yamlmanager_model.py`, and `scripts/yamlmanager_tk.py`, the app's Author view on a real Tk, which skips without a display; each also runs alone with `--tdd`). Upload tests need `pyarrow` and skip without it.
 - A bug fix gets a test of the **outcome** (what data ends up where), confirmed to fail with the bug reintroduced. D46 is what happens otherwise.
 - Prefer a loud error that suggests a fix over inferring what the user meant. The user wants to make the choice (D28, D45).
 - Work on `main`. The long-lived `pullmanager` branch was merged into it (September 2026) and work continues on `main`. The user asks for commits and pushes; end commit messages with the `Co-Authored-By` line.

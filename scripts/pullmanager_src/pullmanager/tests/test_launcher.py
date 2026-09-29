@@ -486,7 +486,7 @@ class ConfigTests(unittest.TestCase):
         dump_yaml(SAMPLE_MANIFEST, manifest)
         self.assertEqual(pulls.resolve("IBD", self.home).resolve(), manifest.resolve())
         command, folder = pulls.execute_command(manifest, self.home)
-        self.assertEqual((command, folder), ("python pullmanager.py --execute IBD", self.home.resolve()))
+        self.assertEqual((command, folder), ("python scope.py --execute IBD", self.home.resolve()))
         self.assertTrue((launcher.save_settings(launcher.Paths(template="IBD_transfer.yaml"), self.home)
                          ).is_relative_to(self.home / "cleanup" / "runs"))
 

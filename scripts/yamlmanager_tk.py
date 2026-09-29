@@ -7,7 +7,7 @@ Builder's sections follow D96; Validate, Exports and YAML sit beside it.
 It is opened as one half of the app, beside Run (pullmanager/app.py):
 
     python pullmanager.py          # on the VM, in the working folder
-    python3 datascope.py           # on the Mac, at the root (D112)
+    python3 scope.py               # on the Mac, at the root (D112, D123)
 
 Standard library only (tkinter), as on the VM.
 """

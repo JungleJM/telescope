@@ -350,9 +350,9 @@ class ConsoleTests(GuiTestCase):
         self.app.watch_once()
         message = self.messagebox.showerror.call_args.args[1]
         self.assertIn("0xC0000142", message)
-        self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+        self.assertIn("python scope.py --execute IBD_Ancestry", message)
         self.assertIn(str(self.work), message)
-        self.assertIn("python pullmanager.py --execute IBD_Ancestry", self.pull_log())
+        self.assertIn("python scope.py --execute IBD_Ancestry", self.pull_log())
         self.assertEqual(self.app.buttons["Execute"].configure.call_args.kwargs["state"], "normal")
 
     def test_a_window_that_could_not_open_says_so_the_same_way(self):
@@ -363,7 +363,7 @@ class ConsoleTests(GuiTestCase):
         self.app.on_execute()
         message = self.messagebox.showerror.call_args.args[1]
         self.assertIn("Access is denied", message)
-        self.assertIn("python pullmanager.py --execute IBD_Ancestry", message)
+        self.assertIn("python scope.py --execute IBD_Ancestry", message)
 
     def test_a_pull_that_ran_ends_without_an_error(self):
         self.app.on_execute()
@@ -404,7 +404,7 @@ class ConsoleTests(GuiTestCase):
 
 
 class DefaultTests(GuiTestCase):
-    """D63, D93: `python pullmanager.py` with nothing after it opens the app."""
+    """D63, D93: `python scope.py` with nothing after it opens the app."""
 
     def setUp(self):
         super().setUp()

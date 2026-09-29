@@ -2,10 +2,10 @@
 """Launcher for the extracted Pullmanager runtime.
 
 Sits beside the `pullmanager/` package. On the VM it is reached through the
-`pullmanager.py` that `bundle.py --extract` writes into the working folder:
+`scope.py` that `bundle.py --extract` writes into the working folder:
 
-    python pullmanager.py                  # the launcher window
-    python pullmanager.py --tdd
+    python scope.py                        # the app (D123)
+    python scope.py --tdd
 """
 
 import sys
