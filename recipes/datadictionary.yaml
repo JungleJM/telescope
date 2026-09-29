@@ -1023,7 +1023,7 @@ DataDictionary:
         description: >
           Encounter during which the lab specimen/result was associated.
       Flag:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Result flag as provided by the source (e.g., H, L, critical).
@@ -1104,29 +1104,29 @@ DataDictionary:
         description: >
           On the dictionary page; description not yet transcribed.
       RawUnit_X:
-        type: string
+        type: nvarchar(100)
         nullable: true
         description: >
-          On the dictionary page (nvarchar(100)); description not yet transcribed.
+          On the dictionary page; description not yet transcribed.
       RawValue_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          On the dictionary page (nvarchar(300)); description not yet transcribed.
+          On the dictionary page; description not yet transcribed.
       ReferenceValueHigh_X:
-        type: string
+        type: nvarchar(300)
         nullable: false
         description: >
-          High end of the normal range for this result. Text (nvarchar(300)), not a
-          number: cast it yourself where it parses.
+          High end of the normal range for this result. Text, not a number: cast it
+          yourself where it parses.
       ReferenceValueLow_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Low end of the normal range for this result. Text (nvarchar(300)), not a
-          number: cast it yourself where it parses.
+          Low end of the normal range for this result. Text, not a number: cast it
+          yourself where it parses.
       ReferenceValueNormal_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Textual representation of the normal reference range or category.
@@ -1152,19 +1152,19 @@ DataDictionary:
         description: >
           On the dictionary page; description not yet transcribed.
       StructuredBoundaryOperator_X:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Encoded boundary operator for numeric results with thresholds (e.g., "<",
           ">=").
       Unit:
-        type: string
+        type: nvarchar(100)
         nullable: true
         description: >
           Unit of measure for NumericValue (e.g., mg/dL). For unitless values received
           before Oct 2022 this may be "each"; later values may have NULL.
       Value:
-        type: string
+        type: nvarchar(300)
         nullable: false
         description: >
           Categorical or string representation of the result when not numeric. For

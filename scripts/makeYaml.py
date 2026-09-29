@@ -4490,7 +4490,7 @@ class DataDictionaryTests(MakeYamlTest):
         written = {c["name"]: c for c in load_yaml(out)["cohorts"]}
         types = {c["name"]: c["type"] for c in written["Labs"]["columns"]}
         self.assertEqual(types["PatientDurableKey"], "BIGINT")
-        self.assertTrue(types["ReferenceValueHigh_X"].startswith("NVARCHAR("), types)
+        self.assertEqual(types["ReferenceValueHigh_X"], "NVARCHAR(300)")  # the page's own type
         self.assertEqual(types["_IsDeleted"], "TINYINT")
         # A recipe's columns are typed from the dictionary too.
         self.assertTrue(all(c.get("type") for c in written["Patients"]["columns"]))
