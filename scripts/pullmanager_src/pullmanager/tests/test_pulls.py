@@ -121,8 +121,10 @@ class ListingTests(PullsTestCase):
         states = {p.name: p.state for p in find_pulls(self.work)}
         self.assertEqual(states, {
             "A_Fresh": "not started",
-            "B_Halfway": "1 of 2 sessions done",
-            "C_Failed": "1 of 2 sessions done, 1 failed",
+            # No Execute recorded how it ended, and nothing is running: it
+            # ended by itself (D140).
+            "B_Halfway": "finished with errors (1 of 2 sessions done)",
+            "C_Failed": "finished with errors (1 of 2 sessions done, 1 failed)",
             "D_Finished": "finished",
         })
         lines = listing(self.work)
@@ -132,6 +134,56 @@ class ListingTests(PullsTestCase):
 
     def test_no_pulls_says_to_export_a_split(self):
         self.assertIn("Export split", listing(self.work)[0])
+
+
+class OutcomeTests(PullsTestCase):
+    """D140: how a pull that is not executing stands, for Run's dropdowns."""
+
+    def outcome(self, statuses, last=None):
+        data = manifest_with(*statuses)
+        if last is not None:
+            data["last_execute"] = {"started_at": "2026-09-29T08:12:15-05:00", **last}
+        self.make_pull("P", data)
+        [pull] = find_pulls(self.work)
+        return pull.outcome
+
+    def test_each_way_a_pull_can_stand(self):
+        ended = {"ended_at": "2026-09-29T09:00:00-05:00"}
+        cases = [
+            (("pending", "pending"), None, ""),
+            (("done", "done"), {**ended, "exit_code": 0, "how": "finished"}, "finished"),
+            # Every session done is finished, however the process then ended.
+            (("done", "done"), {"ended_at": None}, "finished"),
+            (("done", "failed"), {**ended, "exit_code": 1, "how": "finished with errors"},
+             "finished with errors"),
+            (("done", "running"), {**ended, "exit_code": 130, "how": "stopped by user"},
+             "stopped by user"),
+            (("done", "running"), {**ended, "exit_code": 1, "how": "stopped with errors"},
+             "stopped with errors"),
+            # Killed: it never wrote its end, even with nothing left running.
+            (("done", "pending"), {"ended_at": None, "how": None}, "stopped with errors"),
+            # An older manifest, left running: stopped with errors.
+            (("done", "running"), None, "stopped with errors"),
+        ]
+        for statuses, last, want in cases:
+            with self.subTest(statuses=statuses, last=last):
+                shutil.rmtree(self.work / "runs", ignore_errors=True)
+                self.assertEqual(self.outcome(statuses, last), want)
+
+    def test_a_stop_from_run_is_recorded_as_the_users(self):
+        path = self.make_pull("P", {**manifest_with("done", "running"),
+                                    "last_execute": {"started_at": "x", "ended_at": None}})
+        pulls.record_stopped_by_user(path, 1)
+        [pull] = find_pulls(self.work)
+        self.assertEqual(pull.outcome, "stopped by user")
+        self.assertEqual(pull.state, "stopped by user (1 of 2 sessions done)")
+
+    def test_an_end_execute_wrote_itself_is_kept(self):
+        path = self.make_pull("P", {**manifest_with("done", "done"), "last_execute": {
+            "started_at": "x", "ended_at": "y", "exit_code": 0, "how": "finished"}})
+        pulls.record_stopped_by_user(path, 1)
+        from ..manifest import Manifest
+        self.assertEqual(Manifest.load(path).last_execute["how"], "finished")
 
 
 class ExecuteCommandTests(PullsTestCase):

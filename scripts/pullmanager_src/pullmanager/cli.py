@@ -18,7 +18,14 @@ from .executor import (
     session_units,
     write_sql,
 )
-from .manifest import Manifest, ManifestError
+from .manifest import (
+    FINISHED,
+    FINISHED_WITH_ERRORS,
+    STOPPED_BY_USER,
+    STOPPED_WITH_ERRORS,
+    Manifest,
+    ManifestError,
+)
 from .models import FAILED
 from .naming import NamingError
 from .normalize import NormalizationError
@@ -175,29 +182,49 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
         except LockHeld as exc:
             print(f"ERROR {exc}", file=sys.stderr)
             return 1
+        # How it ends goes into the manifest (D140), so Run can tell a
+        # finished pull from one stopped by hand or by an error. A killed
+        # process records nothing, and its empty `ended_at` says so.
+        code, how = 1, STOPPED_WITH_ERRORS
         try:
+            record_execute(manifest.execute_started)
             if pull_lock.replaced:
                 stale = pull_lock.replaced
                 print(
                     f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
                     f"(last heartbeat {clock_time(stale.heartbeat)})."
                 )
-            return _execute(manifest, args, connect_fn)
+            code = _execute(manifest, args, connect_fn)
+            how = FINISHED if code == 0 else FINISHED_WITH_ERRORS
+            return code
         except Exception:
             # Each step records its own failure; this is anything else, which
             # used to reach only the console, and vanish when it closed.
             print("ERROR Execute stopped on an error it did not expect. What it was working "
                   "on stays 'running', and the next --execute pulls it again:", file=sys.stderr)
             traceback.print_exc()
+            code, how = 1, STOPPED_WITH_ERRORS
             return 1
         except KeyboardInterrupt:
             print(
                 "\nStopped (Ctrl+C). Whatever it was working on stays 'running' in the "
                 "manifest; the next --execute pulls it again."
             )
+            code, how = 130, STOPPED_BY_USER
             return 130
         finally:
+            record_execute(manifest.execute_ended, code, how)
             pull_lock.release()
+
+
+def record_execute(method, *args) -> None:
+    """Write how Execute began or ended; a manifest that cannot be written
+    must not hide why the pull stopped."""
+    try:
+        method(*args)
+    except Exception as exc:  # noqa: BLE001 - reported, never raised
+        print(f"warning  could not record how Execute ended in the manifest: {exc}",
+              file=sys.stderr)
 
 
 def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:

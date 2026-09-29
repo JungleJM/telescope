@@ -15,7 +15,14 @@ from pathlib import Path
 
 from . import config
 from .lock import LockInfo, age_words, clock_time, live_lock
-from .manifest import Manifest, ManifestError
+from .manifest import (
+    FINISHED,
+    FINISHED_WITH_ERRORS,
+    STOPPED_BY_USER,
+    STOPPED_WITH_ERRORS,
+    Manifest,
+    ManifestError,
+)
 from .models import DONE, FAILED, PENDING, RUNNING, SKIPPED
 from .yaml_io import load_yaml
 
@@ -165,6 +172,9 @@ class Pull:
     progress: str
     interrupted: bool = False  # the manifest says running, but no Execute is
     lock: LockInfo | None = None  # the live lock of the Execute pulling it
+    # Once it has run and is not executing (D140): finished, finished with
+    # errors, stopped by user or stopped with errors. Empty: never executed.
+    outcome: str = ""
 
     @property
     def state(self) -> str:
@@ -173,18 +183,41 @@ class Pull:
                 f"executing since {clock_time(self.lock.started)}, heartbeat "
                 f"{age_words(self.lock.age())} ago ({self.progress})"
             )
-        if self.interrupted:
-            return f"stopped mid-run ({self.progress})"
-        return self.progress
+        if not self.outcome or self.outcome == FINISHED:
+            return self.progress
+        return f"{self.outcome} ({self.progress})"
 
 
-def manifest_state(path: Path) -> tuple[str, bool]:
-    """What the manifest says of its sessions, in a few words, and whether it
-    says one is running."""
+def manifest_state(path: Path) -> tuple[str, bool, str]:
+    """What the manifest says of its sessions, in a few words, whether it
+    says one is running, and how it stands if it is not executing (D140)."""
     try:
         manifest = Manifest.load(path)
     except (ManifestError, OSError, ValueError) as exc:
-        return f"unreadable ({exc})", False
+        return f"unreadable ({exc})", False, STOPPED_WITH_ERRORS
+    progress, running = sessions_state(manifest)
+    return progress, running, outcome(manifest, progress, running)
+
+
+def outcome(manifest: Manifest, progress: str, running: bool) -> str:
+    """How a pull that is not executing stands (D140), from its sessions and
+    what its last Execute wrote as it ended. Every session done is finished,
+    however the process ended; a stop by hand is the user's; an Execute that
+    never wrote its end, or left a step running, stopped on an error."""
+    last = manifest.last_execute
+    if progress == "not started" and not last:
+        return ""
+    if progress == "finished":
+        return FINISHED
+    if last.get("how") == STOPPED_BY_USER:
+        return STOPPED_BY_USER
+    if running or last.get("how") == STOPPED_WITH_ERRORS or (last and not last.get("ended_at")):
+        return STOPPED_WITH_ERRORS
+    return FINISHED_WITH_ERRORS
+
+
+def sessions_state(manifest: Manifest) -> tuple[str, bool]:
+    """Its sessions in a few words, and whether one says it is running."""
     for session in manifest.sessions:
         session.recompute_status()  # in memory only, from its phases and runs
     statuses = [session.status for session in manifest.sessions]
@@ -202,10 +235,19 @@ def manifest_state(path: Path) -> tuple[str, bool]:
     return (f"{words}, {failed} failed" if failed else words), running
 
 
+def record_stopped_by_user(manifest_path: Path, exit_code: int | None) -> None:
+    """Stop ends Execute from outside, so it cannot write its own end (D140):
+    the window that stopped it writes it, unless Execute already did."""
+    manifest = Manifest.load(manifest_path)
+    if not manifest.last_execute.get("ended_at"):
+        manifest.execute_ended(exit_code, STOPPED_BY_USER)
+
+
 def pull_at(name: str, manifest: Path, home: Path) -> Pull:
-    progress, running = manifest_state(manifest)
+    progress, running, how = manifest_state(manifest)
     held = live_lock(manifest)
-    return Pull(name, manifest, home, progress, interrupted=running and not held, lock=held)
+    return Pull(name, manifest, home, progress, interrupted=running and not held, lock=held,
+                outcome=how)
 
 
 def find_pulls(cwd: Path | None = None) -> list[Pull]:

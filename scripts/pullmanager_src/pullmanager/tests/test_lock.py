@@ -149,7 +149,7 @@ class RunningListTests(LockTestCase):
         dump_yaml(data, self.manifest)
         with mock.patch.object(pulls, "home_folders", lambda cwd=None: [self.work]):
             state = pulls.find_pulls(self.work)[0].state
-        self.assertTrue(state.startswith("stopped mid-run"), state)
+        self.assertTrue(state.startswith("stopped with errors"), state)
 
 
 class MakeYamlAgreesTests(LockTestCase):
@@ -289,6 +289,27 @@ class UnexpectedErrorTests(LockTestCase):
         self.assertIn("did not expect", text)
         self.assertIn("RuntimeError: the driver fell over", text)
         self.assertIsNone(read_lock(self.manifest))
+
+    def test_how_it_ended_is_in_the_manifest(self):
+        # D140: Run tells a finished pull from a stopped one by what Execute wrote.
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+
+        def ended(**patch):
+            with mock.patch.object(cli, "_execute", **patch), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                code = cli.execute(Manifest.load(self.manifest), args)
+            return code, Manifest.load(self.manifest).last_execute
+
+        for patch, code, how in (
+            ({"return_value": 0}, 0, "finished"),
+            ({"return_value": 1}, 1, "finished with errors"),
+            ({"side_effect": KeyboardInterrupt}, 130, "stopped by user"),
+            ({"side_effect": RuntimeError("boom")}, 1, "stopped with errors"),
+        ):
+            with self.subTest(how=how):
+                got, last = ended(**patch)
+                self.assertEqual((got, last["exit_code"], last["how"]), (code, code, how))
+                self.assertTrue(last["started_at"] and last["ended_at"], last)
 
     def test_the_window_waits_for_exit_even_then(self):
         answers = iter(["exit"])

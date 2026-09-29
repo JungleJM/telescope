@@ -29,6 +29,12 @@ from .yaml_io import dump_yaml, load_yaml
 
 PHASE_ORDER = ("setup", "upload_cohorts", "pk")
 
+# How the latest Execute ended (D140), as `last_execute.how` records it.
+FINISHED = "finished"
+FINISHED_WITH_ERRORS = "finished with errors"
+STOPPED_BY_USER = "stopped by user"
+STOPPED_WITH_ERRORS = "stopped with errors"
+
 
 class ManifestError(ValueError):
     """Raised when a manifest does not match the expected contract."""
@@ -324,6 +330,23 @@ class Manifest:
     def cosmos_refresh(self) -> dict[str, str]:
         """Each Cosmos database's `create_date` when this manifest last ran (D51)."""
         return self._data.setdefault("cosmos_refresh", {})
+
+    @property
+    def last_execute(self) -> dict[str, Any]:
+        """When the latest Execute started and ended, its exit code and how
+        it ended (D140). Empty before the first; `ended_at` stays empty when
+        the process was killed, which is what says it did not end by itself."""
+        return self._data.get("last_execute") or {}
+
+    def execute_started(self) -> None:
+        self._data["last_execute"] = {"started_at": now_iso(), "ended_at": None,
+                                      "exit_code": None, "how": None}
+        self.save()
+
+    def execute_ended(self, exit_code: int | None, how: str) -> None:
+        record = self._data.setdefault("last_execute", {"started_at": None})
+        record.update(ended_at=now_iso(), exit_code=exit_code, how=how)
+        self.save()
 
     @property
     def uploads_landed(self) -> dict[str, Any]:

@@ -242,6 +242,39 @@ class RunningPullTests(GuiTestCase):
         self.app.choose_start("Celiac  (not run yet)")
         self.assertEqual(Path(self.app.vars["template"].get()), self.work / "Celiac_transfer.yaml")
 
+    def test_a_pull_that_has_run_is_under_finished_and_stopped_only(self):
+        # D140: three dropdowns; a pull that has run leaves Start run.
+        import copy
+
+        for name in ("IBD_Ancestry_transfer.yaml", "Celiac_transfer.yaml"):
+            (self.work / name).write_text("cohorts: []\n", encoding="utf-8")
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        for session in data["sessions"]:
+            for node in [*session["phases"].values(), *session["runs"]]:
+                node["status"] = "done"
+        data["last_execute"] = {"started_at": "x", "ended_at": "y", "exit_code": 0, "how": "finished"}
+        dump_yaml(data, self.manifest)
+        self.assertEqual(list(self.app.ended_choices()), ["IBD_Ancestry  (finished)"])
+        self.assertEqual(list(self.app.start_choices()), ["Celiac  (not run yet)"])
+        self.app.vars["template"].set("")
+        self.app.choose_ended("IBD_Ancestry  (finished)")
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_transfer.yaml")
+        # Executing, it is under Running pulls instead.
+        self.lock()
+        self.assertEqual(self.app.ended_choices(), {})
+
+    def test_stop_records_that_the_user_stopped_it(self):
+        from ..manifest import Manifest
+
+        data = dict(SAMPLE_MANIFEST, last_execute={"started_at": "x", "ended_at": None})
+        dump_yaml(data, self.manifest)
+        self.lock()
+        self.app.console.start(["python", "scope.py", "--execute", "IBD_Ancestry"])
+        self.messagebox.askyesno.return_value = True
+        self.app.on_stop()
+        self.assertTrue(self.app.console.stopped)
+        self.assertEqual(Manifest.load(self.manifest).last_execute["how"], "stopped by user")
+
     def test_the_dictionary_line_names_the_file_it_found(self):
         self.assertIn("datadictionary.yaml", self.app.dictionary_found())
         self.app.set_dictionary(str(self.work / "mine.yaml"))

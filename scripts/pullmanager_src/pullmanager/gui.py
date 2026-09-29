@@ -98,10 +98,13 @@ class LauncherApp:
 
         for attr, _ in FIELDS:
             self.vars[attr] = tk.StringVar()
-        # Two dropdowns (D126): the pulls executing now, and the ones to start.
+        # Three dropdowns (D126, D140): the pulls executing now, the ones that
+        # have run, and the ones to start.
         self.running_pick = tk.StringVar()
+        self.ended_pick = tk.StringVar()
         self.start_pick = tk.StringVar()
         self._running: dict[str, Path] = {}
+        self._ended: dict[str, Path] = {}
         self._startable: dict[str, Path] = {}
         ttk.Label(frame, text="Running pulls").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=2)
         running = ttk.Combobox(frame, textvariable=self.running_pick, state="readonly",
@@ -110,34 +113,42 @@ class LauncherApp:
         running.bind("<<ComboboxSelected>>", lambda e: self.choose_running(self.running_pick.get()))
         ttk.Label(frame, text="follow its log, status and Stop", foreground="#6e7781").grid(
             row=0, column=3, sticky="w")
-        ttk.Label(frame, text="Start run").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=2)
+        ttk.Label(frame, text="Finished and stopped pulls").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=2)
+        ended = ttk.Combobox(frame, textvariable=self.ended_pick, state="readonly",
+                             postcommand=lambda: ended.configure(values=list(self.ended_choices())))
+        ended.grid(row=1, column=1, sticky="ew", pady=2)
+        ended.bind("<<ComboboxSelected>>", lambda e: self.choose_ended(self.ended_pick.get()))
+        ttk.Label(frame, text="retry, resume, re-pull or package", foreground="#6e7781").grid(
+            row=1, column=3, sticky="w")
+        ttk.Label(frame, text="Start run").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=2)
         start = ttk.Combobox(frame, textvariable=self.start_pick, state="readonly",
                              postcommand=lambda: start.configure(values=list(self.start_choices())))
-        start.grid(row=1, column=1, sticky="ew", pady=2)
+        start.grid(row=2, column=1, sticky="ew", pady=2)
         start.bind("<<ComboboxSelected>>", lambda e: self.choose_start(self.start_pick.get()))
         ttk.Button(frame, text="Browse", command=lambda: self.browse("template", "file")).grid(
-            row=1, column=2, padx=(6, 6), pady=2)
+            row=2, column=2, padx=(6, 6), pady=2)
         ttk.Label(frame, text="transfer YAMLs here, by project", foreground="#6e7781").grid(
-            row=1, column=3, sticky="w")
+            row=2, column=3, sticky="w")
         self.loaded_line = ttk.Label(frame, text="", foreground="#6e7781")
-        self.loaded_line.grid(row=2, column=1, columnspan=3, sticky="w")
-        ttk.Label(frame, text="Data dictionary").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=2)
+        self.loaded_line.grid(row=3, column=1, columnspan=3, sticky="w")
+        ttk.Label(frame, text="Data dictionary").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=2)
         self.dictionary_line = ttk.Label(frame, text="")
-        self.dictionary_line.grid(row=3, column=1, sticky="w", pady=2)
+        self.dictionary_line.grid(row=4, column=1, sticky="w", pady=2)
         ttk.Button(frame, text="Browse", command=lambda: self.browse("datadictionary", "file")).grid(
-            row=3, column=2, padx=(6, 6), pady=2)
+            row=4, column=2, padx=(6, 6), pady=2)
         ttk.Button(frame, text="Use the bundled one", command=lambda: self.set_dictionary("")).grid(
-            row=3, column=3, sticky="w")
+            row=4, column=3, sticky="w")
 
         options = ttk.Frame(frame)
-        options.grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        options.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 4))
         ttk.Checkbutton(options, text="Retry failed", variable=self.retry_failed).pack(side="left")
         ttk.Checkbutton(
             options, text="Re-pull everything", variable=self.repull
         ).pack(side="left", padx=(12, 0))
 
         actions = ttk.Frame(frame)
-        actions.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+        actions.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(4, 0))
         for text, handler in (
             ("Validate", self.on_validate),
             ("Export split", self.on_export_split),
@@ -215,15 +226,24 @@ class LauncherApp:
                          for pull in pulls.find_pulls(self.workdir) if pull.lock is not None}
         return self._running
 
+    def ended_choices(self) -> dict[str, Path]:
+        """Every pull that has run and is not executing, with how it stands:
+        finished, finished with errors, stopped by user or stopped with errors
+        (D140)."""
+        self._ended = {f"{pull.name}  ({pull.state})": self.transfer_for(pull.name)
+                       for pull in pulls.find_pulls(self.workdir)
+                       if pull.lock is None and pull.outcome}
+        return self._ended
+
     def start_choices(self) -> dict[str, Path]:
-        """The transfer YAMLs in the working folder by project, with how each
-        last ran, leaving out the ones executing now (D126)."""
+        """The transfer YAMLs in the working folder by project that have not
+        run yet: never split, or split and not executed (D126, D140)."""
         states = {pull.name.lower(): pull for pull in pulls.find_pulls(self.workdir)}
         self._startable = {}
         for path in sorted(self.workdir.glob("*_transfer.yaml"), key=lambda p: p.name.lower()):
             project = pulls.run_folder_name(path.name)
             pull = states.get(project.lower())
-            if pull is not None and pull.lock is not None:
+            if pull is not None and (pull.lock is not None or pull.outcome):
                 continue
             self._startable[f"{project}  ({pull.state if pull else NOT_RUN})"] = path
         return self._startable
@@ -239,6 +259,12 @@ class LauncherApp:
         path = self._running.get(label) or self.running_choices().get(label)
         if path is not None:
             self.load(path, "Following it: Pull Log, Status and Stop are this pull's.")
+
+    def choose_ended(self, label: str) -> None:
+        path = self._ended.get(label) or self.ended_choices().get(label)
+        if path is not None:
+            self.load(path, "Execute resumes it; Retry failed and Re-pull everything are above; "
+                            "Artifacts packages it; Status shows its tables.")
 
     def choose_start(self, label: str) -> None:
         path = self._startable.get(label) or self.start_choices().get(label)
@@ -389,9 +415,14 @@ class LauncherApp:
             except Exception:
                 pass
             manifest = self._manifest()
-            # Ended from outside, it could not remove its own lock.
+            # Ended from outside, it could not remove its own lock, nor say
+            # how it ended (D140).
             if manifest is not None:
                 clear_lock_of(manifest, pid)
+                try:
+                    pulls.record_stopped_by_user(manifest, self.console.returncode)
+                except Exception:
+                    pass
             self.watch_once()
 
     def run(self, label: str, build) -> None:
