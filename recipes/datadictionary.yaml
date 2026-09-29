@@ -978,6 +978,7 @@ DataDictionary:
 
   # Types, keys and ReferenceValueHigh_X's nullability checked against the Cosmos
   # dictionary page (screenshots, 2026-09-29). Other nullability not yet checked.
+  # Only columns with the database icon; SD-only columns left out (D116).
   LabComponentResultFact:
     description: >
       Lab component result fact table. One row per lab component result for a patient,
@@ -1032,11 +1033,6 @@ DataDictionary:
         nullable: true
         description: >
           Indicates the result represents a blank measurement or an unsuccessful attempt.
-      IsFinal:
-        type: tinyint (flag)
-        nullable: true
-        description: >
-          On the dictionary page; description not yet transcribed.
       LabComponentKey:
         type: bigint (foreign key to LabComponentDim)
         nullable: false
@@ -1098,21 +1094,6 @@ DataDictionary:
         nullable: true
         description: >
           Durable key for a procedure associated with the lab result, when mapped.
-      RawNumericValue_X:
-        type: float
-        nullable: true
-        description: >
-          On the dictionary page; description not yet transcribed.
-      RawUnit_X:
-        type: nvarchar(100)
-        nullable: true
-        description: >
-          On the dictionary page; description not yet transcribed.
-      RawValue_X:
-        type: nvarchar(300)
-        nullable: true
-        description: >
-          On the dictionary page; description not yet transcribed.
       ReferenceValueHigh_X:
         type: nvarchar(300)
         nullable: false
@@ -1146,11 +1127,6 @@ DataDictionary:
         nullable: true
         description: >
           Composite source key for the lab result; use to trace origin system.
-      SourceKey:
-        type: bigint (foreign key to SourceDim)
-        nullable: true
-        description: >
-          On the dictionary page; description not yet transcribed.
       StructuredBoundaryOperator_X:
         type: nvarchar(50)
         nullable: true
