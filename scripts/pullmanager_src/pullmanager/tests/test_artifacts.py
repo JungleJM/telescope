@@ -327,6 +327,54 @@ class CommandTests(ArtifactTestCase):
         self.assertFalse(self.out.exists())
 
 
+class AfterPullTests(ArtifactTestCase):
+    """D141: a clean pull packages itself; any other is left for Artifacts."""
+
+    def execute(self, db, *, code=0, runs="done"):
+        from unittest import mock
+
+        def pulled(manifest, args, connect_fn, done):
+            # The pull, as the manifest records it; Execute then decides.
+            for session in manifest.sessions:
+                for node in [*session.phases, *session.runs]:
+                    node.status = "done" if node in session.phases else runs
+                    done.append(node.label)
+            manifest.save()
+            return code
+
+        args = argparse.Namespace(env=None, repull=False, retry_failed=False)
+        out = io.StringIO()
+        with mock.patch.object(cli, "_execute", pulled), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            result = cli.execute(Manifest.load(self.split / "pullmanifest.yaml"), args,
+                                 connect_fn=lambda *a, **k: db)
+        return result, out.getvalue()
+
+    def test_a_clean_pull_is_packaged_by_execute(self):
+        # Before, only the PK's parquet existed until Artifacts was run by hand.
+        code, out = self.execute(self.projects())
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file(), out)
+        self.assertTrue((self.split.parent / "contents.md").is_file())
+        self.assertIn("packaging it (Artifacts)", out)
+
+    def test_a_pull_with_a_failure_is_not_packaged(self):
+        db = self.projects()
+        code, out = self.execute(db, code=1, runs="failed")
+        self.assertEqual(code, 1, out)
+        self.assertIn("Not packaged", out)
+        self.assertEqual(db.executed, [])
+        self.assertFalse(self.out.exists())
+
+    def test_packaging_that_fails_leaves_the_exit_code_the_pulls(self):
+        db = self.projects()
+        db.fail.add("Patients")
+        code, out = self.execute(db)
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARNING Artifacts did not write every table", out)
+        self.assertTrue((self.out / "Cosmos" / "OtherHospitalizations.parquet").is_file())
+
+
 class LoaderTests(ArtifactTestCase):
     """D75, D89: the files written beside contents.md open what was packaged."""
 

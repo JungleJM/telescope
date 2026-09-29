@@ -194,8 +194,10 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
                     f"Took over a stale lock: {stale.holder()} stopped without cleaning up "
                     f"(last heartbeat {clock_time(stale.heartbeat)})."
                 )
-            code = _execute(manifest, args, connect_fn)
+            pulled: list[str] = []
+            code = _execute(manifest, args, connect_fn, pulled)
             how = FINISHED if code == 0 else FINISHED_WITH_ERRORS
+            package_after_pull(manifest, args, connect_fn, code, bool(pulled))
             return code
         except Exception:
             # Each step records its own failure; this is anything else, which
@@ -217,6 +219,37 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
             pull_lock.release()
 
 
+def package_after_pull(manifest: Manifest, args: argparse.Namespace, connect_fn, code: int,
+                       pulled: bool) -> None:
+    """A clean pull packages itself, holding its lock (D141).
+
+    Clean: Execute ended with nothing failed and every session done, having
+    pulled something (an Execute with nothing left to pull packages nothing). If
+    Artifacts then fails, the exit code stays the pull's: its tables are safe
+    in Projects, and Artifacts can be run again.
+    """
+    from .pulls import sessions_state
+
+    progress, _ = sessions_state(manifest)
+    if code == 0 and not pulled:
+        return  # nothing left to pull: packaged already, or Artifacts does it
+    print()
+    if code != 0 or progress != "finished":
+        print(f"Not packaged: the pull did not finish cleanly ({progress}). Retry failed "
+              "finishes it; Artifacts packages the tables that are finished.")
+        return
+    print("The pull finished cleanly: packaging it (Artifacts).")
+    try:
+        packaged = artifacts(manifest, args, connect_fn, own_lock=True)
+    except Exception:  # noqa: BLE001 - the pull is done; say so and go on
+        traceback.print_exc()
+        packaged = None
+    if packaged != 0:
+        print("WARNING Artifacts did not write every table (above). The pull itself is safe "
+              "in Projects and its exit code is unchanged: run Artifacts again once the "
+              "cause is fixed.", file=sys.stderr)
+
+
 def record_execute(method, *args) -> None:
     """Write how Execute began or ended; a manifest that cannot be written
     must not hide why the pull stopped."""
@@ -227,15 +260,20 @@ def record_execute(method, *args) -> None:
               file=sys.stderr)
 
 
-def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
-    """Package the pull's finished tables (D72), then describe them (D73, D75)."""
+def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None, *,
+              own_lock: bool = False) -> int:
+    """Package the pull's finished tables (D72), then describe them (D73, D75).
+
+    `own_lock`: called by the Execute that holds the pull's lock (D141),
+    which is not another Execute to wait for.
+    """
     import time
 
     from .artifacts import ArtifactError, package, parquets_folder, seconds_text, size_text
     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
     from .lock import held_message, live_lock, pull_name
 
-    held = live_lock(manifest.path)
+    held = None if own_lock else live_lock(manifest.path)
     if held is not None:
         print(f"ERROR {held_message(held, manifest.path)} Package it once it has finished.",
               file=sys.stderr)
@@ -346,7 +384,10 @@ def set_console_title(text: str) -> None:
         pass
 
 
-def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> int:
+def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
+             pulled: list | None = None) -> int:
+    """Every session with work left, in turn. `pulled` gets each step this
+    Execute completed, which says whether there is anything new to package."""
     from . import refresh
     from .db import DatabaseError, Settings, connect, find_env_file, load_env_file
     from .normalize import cosmos_database
@@ -416,6 +457,8 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> i
             reports.append(None)
             continue
         reports.append(report)
+        if pulled is not None:
+            pulled.extend(report.completed)
         print(f"  epoch {report.epoch} on {report.linked_server}")
         for label in report.completed:
             print(f"  done     {label}")
