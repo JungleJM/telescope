@@ -1,5 +1,0 @@
-{
-  "markdown.copyFiles.destination": {
-    "**/*.{md,qmd}": "${documentWorkspaceFolder}/plan/images/markdowns/${documentBaseName}/${fileName}"
-  }
-}

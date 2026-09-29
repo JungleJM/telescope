@@ -2407,3 +2407,30 @@ not on the page, was removed from it.
 - **The Author view's tests open intakes of their own**
   (`scripts/yamlmanager_fixtures/temp/`): they used the pulls in
   `YAMLs/temp/`, and remaking those broke them.
+
+### D132. Pasted images stay where Quarto puts them; `scope.py images` deletes the ones no document mentions
+
+**Amends D128** (the paste folder).
+
+**Context.** `.vscode/settings.json` sent a paste to
+`plan/images/markdowns/<document name>/`, but only VS Code's Markdown view
+reads it. Quarto's visual editor, where the task list is written, puts a paste
+in `images/` beside the document, named `paste-<n>.png`, and has no setting to
+move it. It also draws callouts as plain boxes and shows raw HTML as code, so no
+CSS colours them there.
+
+**Decision.**
+
+- A pasted image stays in the visual editor's `images/` folder. The `.vscode`
+  setting is removed.
+- `python3 scope.py images` (`scripts/tidy_images.py`) deletes every `paste-*`
+  image in an `images/` folder under `plan/` that no `.md` or `.qmd` in the
+  repository names, by its path from that document or from the root (plain or
+  URL-quoted; `cleanup/` and `dist/` not read). "Update docs" runs it last.
+- Callout colours show only in Quarto Preview (a note blue, a warning orange);
+  in the editor the 🟦 and 🟧 in the titles carry them.
+
+**Why.** Deleting by mention lets a deleted document, or a settled task-list
+section, take its pictures at the next update, at no cost in tokens, and never
+touches an image not named `paste-`. A test holds it to the path: the same
+`paste-1.png` beside another document does not keep this one.

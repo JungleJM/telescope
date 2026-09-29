@@ -2,42 +2,15 @@
 title: "Task list"
 ---
 
-What is still under discussion (D128). Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `images/` beside this file (see Pasting images).
+What is still under discussion (D128). Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `images/` beside this file; `python3 scope.py images` deletes one once nothing mentions it (D132).
 
 **Starting a new chat.** Paste this, with the section's heading filled in:
 
-```text
+``` text
 Work on the task list section "<heading>" in plan/tasklist.qmd.
 ```
 
 That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
-
-# Pasting images
-
-::: {.callout-note title="🟦 Claude: the paste folder is set"}
-`.vscode/settings.json` now sends a pasted image to `plan/images/markdowns/<document name>/`. Paste one into this file to try it. It works in the source (Markdown) view. If you paste in Quarto's visual editor and the image still lands in an `images/` folder beside the file, tell me, and I'll set the visual editor's own option instead.
-
-The old `images/` folder at the root (paste-1 to 8) is referenced by nothing now, since those notes are decided. It's gitignored and untracked, so I've left it for you to delete.
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-Ok, here's an image: ![](images/paste-1.png)\
-\
-It seems to have saved it in the same folders' /image subfolder.\
-\
-Colors still aren't working. Is there no CSS that could do it? Could we have the sections designated as HTML and then do it that way? But honestly if this is where we are I'm fine with it.
-:::
-
-::: {.callout-note title="🟦 Claude: the visual editor has its own rules"}
-**Images:** your paste went to `plan/images/`, the `images/` folder beside the file. That is Quarto's visual editor, which ignores the `.vscode` setting (only the source view reads it), and I know of no setting that moves its folder. **Recommendation:** accept its `images/` folder, and make the cleanup do the work. "Update docs" deletes every pasted image (`paste-*.png`) in a `plan/images/` folder that no document mentions. Deleting a document then takes its pictures with it at the next update, and your reference images are never touched. The `.vscode` setting would then be unnecessary, and I'd remove it.
-
-**Colours:** there's no CSS the visual editor applies to callouts. It draws them as plain boxes, and raw HTML shows as code rather than being rendered. The 🟦/🟧 in the titles are as far as it goes; Quarto Preview shows the real colours.
-
-**For you to decide:** clean up by "no document mentions it", as above?
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-:::
 
 # 
 
@@ -58,6 +31,62 @@ Colors still aren't working. Is there no CSS that could do it? Could we have the
 ::: {.callout-note title="🟦 Claude: carried over from the last chat"}
 Background, not an answer: the Crohn's pull you describe above, running for hours with no news, had medication tables joined to nothing (CrohnsClinicalData), so it was reading all of MedicationOrderFact and MedicationDispenseFact in Cosmos, not your 1.2 million patients (D129, which now stops that on the Mac). Some of those hours were that, not the size of the cohort. The pulls now queued include two batching tests: Crohns_PatientsFromUpload, the uploaded PK in 100,000-row chunks; and IBD_Ancestry in 30,000-patient chunks (roadmap, The Remade Pulls). Their timings are evidence for this idea.
 :::
+
+::: {.callout-note title="🟦 Claude: groups at run time"}
+**What the code does today.** A session is one Cosmos connection, held open from setup to its last run (D36), because every `##` temp dies with it. It has one PK, and each multiplier level gets its own session. Inside it: setup, uploads, the PK, then one run per batch (chunks inside the run), each table built, landed in Projects and committed before the next (D55). Nothing runs in parallel.
+
+Two things already outlive a connection: the PK's Projects copy, which every batch refills the PK temp from (D18, D19), and each upload's `upload_<dest>` copy. So a group in a fresh connection needs its PK temp refilled from Projects, which costs about what your 2-minute upload did, plus the supporting tables it reads. Nothing else is needed, **as long as it reads no table another group made**. Your idea fits the runtime as a new level: session (one PK, built once) → **group (one connection)** → batch → chunk. With no groups, a session is one group, which is exactly today.
+
+**Questions:**
+
+1.  **Which leg took two minutes?** An uploaded PK travels twice: file to Projects, then Projects to the Cosmos temp through the client. A new connection repeats only the second. If you don't know, Crohns_PatientsFromUpload's log will say.
+2.  **What do you want from a group:** its own connection (a stuck or failed group costs only itself, and the next one still runs), a name in the progress ("UC · Meds · c3of12"), or both? And what could you not see mid-batch? Each table is already committed as it lands, so the log should say so. If it was the Crohn's run, that was one unjoined medication query (above), which no grouping would have split.
+3.  **A table that reads another group's table** (a visit table joined to a medication table): its temp is gone once the other group's connection closes. **Recommendation:** an error naming both groups ("put them in one group"), rather than quietly reloading it from Projects.
+4.  **Which is outer, groups or batches?** (a) Group outside: every chunk of UC Meds, then every chunk of UC Visits, one connection per group. (b) Batch outside: chunk 1's meds and visits, then chunk 2's. "Getting UC Meds block" reads as (a). **Recommendation:** (a).
+5.  **Leftovers:** do the tables in no group share one group (one connection, as today), or does each get its own? **Recommendation:** one shared group, so a template with no groups runs exactly as now. A table can still be put in a group of its own.
+
+I'll assume, unless you say otherwise, that a failed group is retried alone (`--retry-failed`) while finished groups are skipped, and that under `Dual` every SneakPeek session still runs first.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+::: {.callout-note title="🟦 Claude: cohort recipes"}
+**What the code does today.** Each entry under `recipes:` in `reference/recipes.yaml` is one table. A recipe that reads another generated table names it through a variable (`{{prefix}}_{{HospitalICDTable}}`), a table input, which the template must bind on the table; an unbound one is an error that names the tables that fit, and nothing is bound for you (D45).
+
+**Questions:**
+
+6.  **How are a set's tables connected?** This matters most. Is MedicationAdministrationFact pulled *for the orders already pulled* (a chain: the order table first, then the others joined to it), or is each of the three joined to the PK on its own? Birth sounds like a chain (the birth, then its mother, then the pregnancy), meds perhaps not. A chain needs one connection and an order inside the group; independent tables need neither.
+7.  **What does adding "Medications" put in the template?** **Recommendation:** its tables as ordinary fact tables, each editable and removable as a prefabricated table is now, with their table inputs to each other already bound, and a group holding them. After that, nothing special: it is not one unit you edit as a whole.
+8.  **Is a cohort recipe the same thing as a group?** **Recommendation:** no, two things. A recipe set brings a group with it, but you can move its tables out, and group hand-built tables with no recipe.
+9.  **Variables:** do a set's tables share any (a date window for all three medication tables, say), set once for the set? **Recommendation:** not at first. They take the template's and the PK's variables, as every table does now.
+10. **Where sets are kept and made:** a new `recipe_sets:` list in `recipes.yaml`, with a **Save as recipe set** on a group in the app, as Save as Recipe works for one table?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+::: {.callout-note title="🟦 Claude: names and where it goes in the app"}
+**What the code does today.** Splitters offers **Separate tables** (`split_after_build`: each level its own PK, session and tables, such as blackPatients and whitePatients, with an optional control) and **Pieces of one table** (batching: the rows land in one table, each labelled in a `_batch` column).
+
+**Questions:**
+
+11. **Rename "Separate tables"** to **"Separate PK per level"**? Its tables are separate too, so "Separate PK and tables per level" is the fuller version.
+12. **The word "batch" is taken.** Batching already means pieces of one table, and every destination has a `_batch` column. **Recommendation:** call these **table groups** in the app ("Add group", "Add table to group", "Remove group"), or **blocks**, your word for birth, meds and visits.
+13. **Where it goes.** A group gathers tables, not pieces of the PK, and needs the tables to exist first. **Recommendation:** its own section after Fact Tables, with the note "Tables in no group run together, as one group", and each fact table saying which group it is in.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+**Suggested order**
+
+1.  **Questions 1 to 5, groups at run time:** everything else sits on them. Question 1 can wait for Crohns_PatientsFromUpload's log.
+2.  **Question 6, how a set's tables connect:** it decides whether a group is only a connection or also an order.
+3.  **Questions 11 to 13, names and place:** quick, and they fix the words the roadmap entry will use.
+4.  **Questions 7 to 10, cohort recipes:** they build on groups, and could ship after them.
+
+Once these are answered I'll write the roadmap entry, first after The Remade Pulls, with what we settled.
 
 # Settled
 

@@ -13,7 +13,7 @@ Read before working:
 - A fact lives in one of those three documents only. Status lives only in the roadmap.
 - When code changes behaviour, update `design.md` in the same commit, except during a planned run of fixes (below), where the docs catch up after the user has discussed the results. When an item is built, delete it from the roadmap. When something is decided, add a numbered decision.
 - Do not add new design documents. A temporary brief for the VM (questions to put to its AI) is the exception; delete it once its answers are folded in. `plan/tasklist.qmd` is not a design document: it holds only what is still under discussion (D128).
-- **"Update docs"** means all four: bring `design.md`, `decisions.md` and `roadmap.md` up to date with the code by the rules above, then extend `plan/commemorating/thoroughhistory.qmd` from its stated cut-off to the latest commit (timeline, numbers, defects, decision index, open questions) and move the cut-off. Last, delete any `plan/images/markdowns/<name>/` whose document no longer exists. The history is a record, not a design document: it may repeat facts, and it keeps what the other three have since deleted.
+- **"Update docs"** means all four: bring `design.md`, `decisions.md` and `roadmap.md` up to date with the code by the rules above, then extend `plan/commemorating/thoroughhistory.qmd` from its stated cut-off to the latest commit (timeline, numbers, defects, decision index, open questions) and move the cut-off. Last, run `python3 scope.py images`, which deletes every pasted image (`paste-*`) in an `images/` folder under `plan/` that no document mentions (D132). The history is a record, not a design document: it may repeat facts, and it keeps what the other three have since deleted.
 
 ## Planning And Doing Work
 
@@ -40,7 +40,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 
 ## Working Conventions
 
-- Tests are stdlib `unittest`. Run every suite before committing: `python3.13 scope.py test` runs all five and says which passed (`scripts/makeYaml.py`, `scripts/pullmanager_src/pullmanager.py`, `scripts/bundle_pullmanager.py`, `scripts/yamlmanager_model.py`, and `scripts/yamlmanager_tk.py`, the app's Author view on a real Tk, which skips without a display; each also runs alone with `--tdd`). Upload tests need `pyarrow` and skip without it.
+- Tests are stdlib `unittest`. Run every suite before committing: `python3.13 scope.py test` runs all six and says which passed (`scripts/makeYaml.py`, `scripts/pullmanager_src/pullmanager.py`, `scripts/bundle_pullmanager.py`, `scripts/yamlmanager_model.py`, `scripts/yamlmanager_tk.py`, the app's Author view on a real Tk, which skips without a display, and `scripts/tidy_images.py`; each also runs alone with `--tdd`). Upload tests need `pyarrow` and skip without it.
 - A bug fix gets a test of the **outcome** (what data ends up where), confirmed to fail with the bug reintroduced. D46 is what happens otherwise.
 - Prefer a loud error that suggests a fix over inferring what the user meant. The user wants to make the choice (D28, D45).
 - Work on `main`. The long-lived `pullmanager` branch was merged into it (September 2026) and work continues on `main`. The user asks for commits and pushes; end commit messages with the `Co-Authored-By` line.

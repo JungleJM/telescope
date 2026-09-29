@@ -69,7 +69,7 @@ sudo /usr/local/bin/python3.13 -m pip install ruamel.yaml==0.17.17 pyyaml==6.0.3
 
 The artifact tests run the generated load scripts: the Python one under the running interpreter, the R one through `Rscript` when R has `arrow` (they skip otherwise). The Mac's R `arrow` is newer than the VM's, so the R check is close, not exact.
 
-Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All five suites pass under `python3.13` with nothing skipped (`python3.13 scope.py test`).
+Without a YAML package the runtime cannot read YAML at all (`No YAML backend available`); `makeYaml` alone falls back to Ruby, and names the Python that sent it there if Ruby then fails. Without `pyarrow`, nothing can read or write a parquet upload, and the tests that need it skip. All six suites pass under `python3.13` with nothing skipped (`python3.13 scope.py test`).
 
 `reference/requirements-vm.txt` pins those versions, for any Python 3.10 to 3.13 or venv: `python -m pip install -r reference/requirements-vm.txt`. Every Python on the Mac has the packages, so whichever one an editor picks can run the tools: the VM's versions in `python3.13`, uv's 3.11 and 3.13 and brew's 3.11; the newest that fit in brew's 3.14, Apple's 3.9 and the project venvs.
 
@@ -82,7 +82,7 @@ Dev box gotchas: an IDE Python console (Positron's `%run`) keeps a started `yaml
 ### The Repository And `datascope.json`
 
 ``` text
-scope.py            the front door: the app, `test`, or a Pullmanager command (D112, D123)
+scope.py            the front door: the app, `test`, `images` (D132), or a Pullmanager command (D112, D123)
 utils.py            the utilities window: a button per script in utils/ (D124)
 datascope.json      where the core files are, and where runs go (D111)
 makebundle.py       builds dist/bundle.py, or dist/yamls_to_transfer.py (D122)
@@ -90,7 +90,8 @@ reference/          the core files: datadictionary.yaml, recipes.yaml, template.
                     DSVM Plugins.yaml, requirements-vm.txt; DDict image refs/, the
                     dictionary pages' screenshots, one folder per table (D117)
 YAMLs/              the pulls: temp/ (intakes, their csv/), manager_test_cases/
-plan/               design, decisions, roadmap; commemorating/ (the history)
+plan/               design, decisions, roadmap, tasklist.qmd; commemorating/ (the history);
+                    a pasted image in images/ beside its document (D132)
 scripts/            makeYaml, the app's model and view, the bundler, pullmanager_src/
 cleanup/            disposable: the Python cache, runs/ (D113)
 dist/               bundles and content_id.txt; not committed (D106)
@@ -865,12 +866,13 @@ Descriptions are read from the split, so a changed description reaches `contents
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ``` bash
-python3 scope.py test                                      # all five, and which passed
+python3 scope.py test                                      # all six, and which passed
 python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (187)
 python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (475)
 python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (79)
 python3 scripts/yamlmanager_model.py --tdd                  # the app's model (75)
 python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (30), needs a display
+python3 scripts/tidy_images.py --tdd                        # the pasted-image cleanup (6)
 ```
 
 Tests that read or write parquet need `pyarrow` and skip without it: they cover CSV conversion, uploads, and every session test (the runtime fixture's upload is parquet).
@@ -883,6 +885,7 @@ Tests that read or write parquet need `pyarrow` and skip without it: they cover 
 - **The Author view** is tested on a real Tk, withdrawn, and skips without a display (D101), on intakes of its own in `scripts/yamlmanager_fixtures/temp/`, not the pulls in `YAMLs/temp/`, which change: every section built for every intake there, typing into a field edits the draft, a column renamed in the view is renamed in the template, the check marks the section, a refused edit is said, the table builder adds a table, Transfer saves and hands the file on, splitters by whether there is a PK, the binding picker binds what is chosen, a message goes to its field, and the exports and queue. The runtime's GUI tests check the app's wiring against the fake tkinter: the launcher built inside Run without touching the window, a transfer from Author loaded into Run, and Run opening without Author.
 - **Bundle** tests also adjust a transfer YAML with the model inside an extracted tree, with no recipes: open, change, save an intake, export again beside `scope.py`.
 - **Config** tests read a `datascope.json` that moves a core file and the runs folder, refuse a name nothing reads, check the repository's own finds every moved file, and hold makeYaml's and Pullmanager's defaults together; pulls are found, and settings saved, under a configured runs folder.
+- **Pasted images** (D132): an image a document names by its path stays and an orphan goes; a deleted document takes its pictures; the same `paste-1.png` beside another document does not keep it; a path from the root, URL-quoted or in HTML counts; nothing outside an `images/` folder under `plan/`, or not named `paste-`, is touched; a mention under `cleanup/` does not count.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no recipes file, gives byte-identical session YAMLs and uploads, and the same manifest (bar `source`), as the template split with recipes, for the tiny template and for test cases `01` and `02`.
 - **The app's later tests** cover the VM side (no pending, a missing file an error), Browse's relative paths, where lines by column and In supporting table reaching the transfer after the recipe's own, joins refused on differing or unknown types, the inline add panel and PK form, the Row key prefilled, the bundle's `content_id` kept on screen, and the quoted-name warning. Since D118 to D127: a written line naming an alias the table lacks refused (and said as it is typed), an alias rename rewriting the table's lines, where lines by every operator (BETWEEN's two values unquoted when they are variables; a `%` or a list under `=` refused), standard where lines arriving with a table, the join match following either side's column, the Validate mark going once nothing points there, imported table text written only when changed, Duplicate, the collapsed column list, Bundle YAMLs only emptying the queue, and a pasted CSV read, named and kept. The **makeYaml** SQL checks are tested on Infant_RSV's faults (an alias from a recipe, a where line's alias), UC_Visits' (a fact table joined to nothing), a subquery counting as joined, and dotted values in strings; the **runtime** tests add the Run dropdowns (a running pull left out of Start run), the dictionary line, `\r\n` in the log, the stock list, and the utilities window.
 
