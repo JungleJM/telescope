@@ -178,20 +178,24 @@ class Workspace:
 
 
 def sql_literal(value: str) -> str:
-    """A value typed in, as SQL: a number as it is, text quoted."""
+    """A value typed in, as SQL: a number or a `{{Variable}}` as it is, text quoted."""
     text = value.strip()
-    if re.fullmatch(r"-?\d+(\.\d+)?", text):
+    if re.fullmatch(r"-?\d+(\.\d+)?", text) or re.fullmatch(r"\{\{\s*\w+\s*\}\}", text):
         return text
     return "'" + text.replace("'", "''") + "'"
 
 
-WHERE_MODES = ("value", "in_table")
+# How a where line by column compares (D119); `in_table` reads a supporting table.
+WHERE_OPERATORS = ("=", "<>", "<", "<=", ">", ">=", "IN", "LIKE", "BETWEEN")
+WHERE_MODES = WHERE_OPERATORS + ("in_table",)
 
 
-def where_line(source: str, mode: str, value: str = "", table: str = "", column: str = "") -> str:
-    """A where line by column (D105). `value`: one value is `=`, several
-    (commas) `IN`, one with `%` `LIKE`. `in_table`: `IN` the column of a
-    supporting table, so a code listed twice cannot duplicate rows."""
+def where_line(source: str, mode: str, value: str = "", table: str = "", column: str = "",
+               higher: str = "") -> str:
+    """A where line by column (D105, D119). `mode` is an operator: `IN` takes
+    a comma list, `BETWEEN` a value and `higher`, the rest one value. Or
+    `in_table`: `IN` the column of a supporting table, so a code listed twice
+    cannot duplicate rows."""
     source = source.strip()
     if not source:
         raise DraftError("Choose the column the condition is on.")
@@ -199,16 +203,22 @@ def where_line(source: str, mode: str, value: str = "", table: str = "", column:
         if not table or not column:
             raise DraftError("Choose the supporting table and its column.")
         return f"{source} IN (SELECT [{column}] FROM {{{{prefix}}}}_{table})"
-    if mode != "value":
-        raise DraftError(f"A where line is by value or in a supporting table, not {mode}.")
-    values = split_list(value)
+    if mode not in WHERE_OPERATORS:
+        raise DraftError(f"A where line compares with {' '.join(WHERE_OPERATORS)}, or is in a supporting table, not {mode}.")
+    values = split_list(value) if mode == "IN" else ([value.strip()] if value.strip() else [])
     if not values:
-        raise DraftError("Type the value the column must have.")
-    if len(values) > 1:
+        raise DraftError("Type the lower value." if mode == "BETWEEN" else "Type the value the column must have.")
+    if mode == "IN":
         return f"{source} IN ({', '.join(sql_literal(v) for v in values)})"
-    if "%" in values[0]:
-        return f"{source} LIKE {sql_literal(values[0])}"
-    return f"{source} = {sql_literal(values[0])}"
+    if mode == "BETWEEN":
+        if not higher.strip():
+            raise DraftError("Type the higher value.")
+        return f"{source} BETWEEN {sql_literal(values[0])} AND {sql_literal(higher)}"
+    if mode != "LIKE" and "%" in values[0]:
+        raise DraftError(f"`{values[0]}` has a %, which only LIKE reads as a pattern: choose LIKE, or remove the %.")
+    if mode == "=" and "," in values[0]:
+        raise DraftError(f"`{values[0]}` has commas: choose IN for a list of values.")
+    return f"{source} {mode} {sql_literal(values[0])}"
 
 
 def join_line(join_type: str, source: str, operator: str, table: str, alias: str, column: str) -> str:
@@ -1311,8 +1321,8 @@ class Draft:
         self._changed()
 
     def add_where_by_column(self, index: int, source: str, mode: str, value: str = "",
-                            table: str = "", column: str = "") -> None:
-        self.add_line(index, "where", where_line(source, mode, value, table, column))
+                            table: str = "", column: str = "", higher: str = "") -> None:
+        self.add_line(index, "where", where_line(source, mode, value, table, column, higher))
 
     def add_join_to(self, index: int, source: str, table: str, column: str,
                     join_type: str = "INNER", operator: str = "=") -> None:
@@ -1733,10 +1743,11 @@ class TableBuilder:
             return False, "Choose a column of this table."
         return self.draft.join_check(str(self.columns[base].get("type") or ""), table, column, self.index)
 
-    def add_where_by_column(self, base: int, mode: str, value: str = "", table: str = "", column: str = "") -> None:
+    def add_where_by_column(self, base: int, mode: str, value: str = "", table: str = "", column: str = "",
+                            higher: str = "") -> None:
         if not (0 <= base < len(self.columns)):
             raise DraftError("Choose a column of this table.")
-        self.wheres.append(where_line(str(self.columns[base].get("source") or ""), mode, value, table, column))
+        self.wheres.append(where_line(str(self.columns[base].get("source") or ""), mode, value, table, column, higher))
 
     def add_join(self, base: int, table: str, column: str, join_type: str = "INNER", operator: str = "=") -> None:
         """A join to another table of the template, refused unless the types match."""
@@ -2632,11 +2643,29 @@ class FilterLineTests(ModelTest):
     """D105: where lines by column, and extra lines on a prefabricated table."""
 
     def test_a_where_line_is_written_by_column(self):
-        self.assertEqual(where_line("e.Dept", "value", "Cardiology"), "e.Dept = 'Cardiology'")
-        self.assertEqual(where_line("e.Key", "value", "12"), "e.Key = 12")
-        self.assertEqual(where_line("e.Dept", "value", "A, B"), "e.Dept IN ('A', 'B')")
-        self.assertEqual(where_line("dt.Value", "value", "K50.%"), "dt.Value LIKE 'K50.%'")
-        self.assertEqual(where_line("e.Name", "value", "O'Brien"), "e.Name = 'O''Brien'")
+        self.assertEqual(where_line("e.Dept", "=", "Cardiology"), "e.Dept = 'Cardiology'")
+        self.assertEqual(where_line("e.Key", "=", "12"), "e.Key = 12")
+        self.assertEqual(where_line("e.Key", "<>", "12"), "e.Key <> 12")
+        self.assertEqual(where_line("e.Key", ">=", "{{min_date_key}}"), "e.Key >= {{min_date_key}}")
+        self.assertEqual(where_line("e.Dept", "IN", "A, B"), "e.Dept IN ('A', 'B')")
+        self.assertEqual(where_line("dt.Value", "LIKE", "K50.%"), "dt.Value LIKE 'K50.%'")
+        self.assertEqual(where_line("e.Name", "=", "O'Brien"), "e.Name = 'O''Brien'")
+
+    def test_between_writes_its_two_values_unquoted_when_they_are_variables(self):
+        # Infant_RSV: Value mode wrote `vf.DateKey = 'BETWEEN {{min_date_key}} AND {{max_date_key}}'`.
+        self.assertEqual(where_line("vf.DateKey", "BETWEEN", "{{min_date_key}}", higher="{{max_date_key}}"),
+                         "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}")
+        self.assertEqual(where_line("e.Name", "BETWEEN", "A", higher="M"), "e.Name BETWEEN 'A' AND 'M'")
+        with self.assertRaises(DraftError):
+            where_line("vf.DateKey", "BETWEEN", "{{min_date_key}}")
+
+    def test_a_pattern_or_a_list_needs_its_own_operator(self):
+        with self.assertRaises(DraftError) as caught:
+            where_line("dt.Value", "=", "K50.%")
+        self.assertIn("LIKE", str(caught.exception))
+        with self.assertRaises(DraftError) as caught:
+            where_line("e.Dept", "=", "A, B")
+        self.assertIn("IN", str(caught.exception))
         self.assertEqual(where_line("m.MedicationKey", "in_table", table="MedCodes", column="Code"),
                          "m.MedicationKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)")
         with self.assertRaises(DraftError):
@@ -2660,7 +2689,7 @@ class FilterLineTests(ModelTest):
 
     def test_removing_the_last_line_leaves_no_filter_behind(self):
         draft = self.codes_draft()
-        draft.add_where_by_column(1, "e.EncounterKey", "value", "5")
+        draft.add_where_by_column(1, "e.EncounterKey", "=", "5")
         draft.remove_line(1, "where", 0)
         self.assertNotIn("filter", draft.doc["cohorts"][1])
 
@@ -2679,7 +2708,7 @@ class FilterLineTests(ModelTest):
         builder = TableBuilder(draft)
         builder.name = "Visits"
         builder.set_from_table("EncounterFact")
-        builder.add_where_by_column(3, "value", "Cardiology")
+        builder.add_where_by_column(3, "=", "Cardiology")
         index = builder.commit()
         self.assertEqual(draft.doc["cohorts"][index]["filter"]["where"], ["ef.Department = 'Cardiology'"])
         draft.add_line(index, "where", "ef.DateKey > 0")

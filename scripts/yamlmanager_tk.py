@@ -559,34 +559,42 @@ def var_editor(view: AuthorView, parent: Any, index: int) -> None:
 
 JOIN_EXPLAINED = ("INNER keeps only rows that match; LEFT keeps every row of this table, matched or not; "
                   "RIGHT and FULL keep the other table's rows too.")
-MODE_LABELS = {"Value": "value", "In supporting table": "in_table"}
+# The operator dropdown (D119): each operator as itself, and the supporting-table test.
+MODE_LABELS = {**{op: op for op in model.WHERE_OPERATORS}, "In supporting table": "in_table"}
 
 
 def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
-               add: Callable[[str, str, str, str, str], Any]) -> None:
-    """A where line by column: this table's column, then a value, or a
-    supporting table's column the value must be in (D105)."""
+               add: Callable[[str, str, str, str, str, str], Any]) -> None:
+    """A where line by column: this table's column, an operator and its value
+    (two for BETWEEN), or a supporting table's column the value must be in
+    (D105, D119)."""
     form = ttk.Frame(parent)
     form.pack(fill="x", pady=(4, 0))
     names = [name for name, _ in sources]
-    column, mode, value = tk.StringVar(value=names[0] if names else ""), tk.StringVar(value="Value"), tk.StringVar()
-    table, table_column = tk.StringVar(), tk.StringVar()
-    keep(form, column, mode, value, table, table_column)
+    column, mode, value = tk.StringVar(value=names[0] if names else ""), tk.StringVar(value="="), tk.StringVar()
+    higher, table, table_column = tk.StringVar(), tk.StringVar(), tk.StringVar()
+    keep(form, column, mode, value, higher, table, table_column)
     ttk.Label(form, text="By column:").pack(side="left")
     ttk.Combobox(form, textvariable=column, values=names, state="readonly", width=24).pack(side="left", padx=4)
     ttk.Combobox(form, textvariable=mode, values=list(MODE_LABELS), state="readonly", width=18).pack(side="left", padx=4)
     value_box = ttk.Entry(form, textvariable=value, width=30)
+    and_label = ttk.Label(form, text="and")
+    higher_box = ttk.Entry(form, textvariable=higher, width=30)
     supporting = view.draft.supporting_columns()
     table_box = ttk.Combobox(form, textvariable=table, values=list(supporting), state="readonly", width=22)
     column_box = ttk.Combobox(form, textvariable=table_column, state="readonly", width=22)
     button = ttk.Button(form, text="Add where", command=lambda: add(
-        dict(sources).get(column.get(), ""), MODE_LABELS[mode.get()], value.get(), table.get(), table_column.get()))
+        dict(sources).get(column.get(), ""), MODE_LABELS[mode.get()], value.get(), table.get(), table_column.get(),
+        higher.get()))
 
     def show(*_: Any) -> None:
-        for widget in (value_box, table_box, column_box, button):
+        for widget in (value_box, and_label, higher_box, table_box, column_box, button):
             widget.pack_forget()
-        if mode.get() == "Value":
+        if mode.get() in model.WHERE_OPERATORS:
             value_box.pack(side="left", padx=4)
+            if mode.get() == "BETWEEN":
+                and_label.pack(side="left")
+                higher_box.pack(side="left", padx=4)
         else:
             table_box.pack(side="left", padx=4)
             column_box.pack(side="left", padx=4)
@@ -595,7 +603,8 @@ def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
     table_box.bind("<<ComboboxSelected>>", lambda e: column_box.configure(values=supporting.get(table.get(), [])))
     mode.trace_add("write", show)
     show()
-    note(parent, "A value, several separated by commas (IN), or one with % (LIKE). In supporting table: the "
+    note(parent, "IN takes values separated by commas, LIKE a pattern with %, BETWEEN a lower and a higher. "
+                 "Numbers and {{Variables}} are written as they are, text in quotes. In supporting table: the "
                  "column's value must be in that table's column, as a code list uploaded for the pull.").pack(anchor="w")
 
 
@@ -658,8 +667,8 @@ def filter_editor(view: AuthorView, parent: Any, index: int) -> None:
     if not sources:
         note(box, "This table's columns are not known, so filters are written in the YAML.").pack(anchor="w")
         return
-    where_form(view, box, sources, lambda source, mode, value, table, column: view.edit(
-        lambda: draft.add_where_by_column(index, source, mode, value, table, column), rerender=True))
+    where_form(view, box, sources, lambda source, mode, value, table, column, higher: view.edit(
+        lambda: draft.add_where_by_column(index, source, mode, value, table, column, higher), rerender=True))
     lookup = dict(sources)
     join_form(view, box, sources, index,
               lambda name, table, column: draft.join_check(types.get(lookup.get(name, ""), ""), table, column, index),
@@ -1091,8 +1100,8 @@ class TableBuilderPanel:
             problem.pack(anchor="w")
         names = [b.source_column(c) for c in b.columns]
         where_form(self.view, box, [(name, name) for name in names],
-                   lambda source, mode, value, table, column: self.act(lambda: b.add_where_by_column(
-                       names.index(source) if source in names else -1, mode, value, table, column)))
+                   lambda source, mode, value, table, column, higher: self.act(lambda: b.add_where_by_column(
+                       names.index(source) if source in names else -1, mode, value, table, column, higher)))
         ttk.Button(box, text="Add a written condition", command=lambda: self.act(b.add_where)).pack(anchor="w", pady=(4, 0))
         note(box, "Dates as {{min_date_key}} and {{max_date_key}}; a variable as {{Name}}.").pack(anchor="w")
 
@@ -1930,7 +1939,9 @@ class FilterViewTests(ViewTest):
         combos = [w for w in widgets(box) if isinstance(w, ttk.Combobox)]
         column, mode = combos[0], combos[1]
         column.set(column.cget("values")[0])
-        self.assertEqual(mode.get(), "Value")
+        self.assertEqual(mode.get(), "=")
+        mode.set("LIKE")
+        self.root.update()
         entry = next(w for w in widgets(box) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox))
         entry.insert(0, "K50%")
         next(w for w in widgets(box) if isinstance(w, ttk.Button) and w.cget("text") == "Add where").invoke()
@@ -1941,6 +1952,27 @@ class FilterViewTests(ViewTest):
         self.assertTrue(added[0].endswith("LIKE 'K50%'"), added)
         labels = [str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
         self.assertIn(f"where: {added[0]}", labels)
+
+    def test_between_takes_a_lower_and_a_higher_value(self):
+        # Infant_RSV: a date range typed as one value came out as `= 'BETWEEN ...'`.
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("fact")
+        self.root.update()
+        box = self.filters_box()
+        combos = [w for w in widgets(box) if isinstance(w, ttk.Combobox)]
+        combos[0].set(combos[0].cget("values")[0])
+        combos[1].set("BETWEEN")
+        self.root.update()
+        entries = [w for w in widgets(box) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox)
+                   and w.winfo_ismapped()]
+        self.assertEqual(len(entries), 2)
+        entries[0].insert(0, "{{min_date_key}}")
+        entries[1].insert(0, "{{max_date_key}}")
+        next(w for w in widgets(box) if isinstance(w, ttk.Button) and w.cget("text") == "Add where").invoke()
+        self.root.update()
+        index = self.view.draft.fact_tables()[0][0]
+        self.assertTrue(self.view.draft.added_lines(index, "where")[-1].endswith(
+            " BETWEEN {{min_date_key}} AND {{max_date_key}}"), self.view.draft.added_lines(index, "where"))
 
     def test_in_supporting_table_offers_the_tables_and_their_columns(self):
         self.open("Celiac_intake.yaml")
