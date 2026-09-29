@@ -286,6 +286,43 @@ class ClearLockTests(LockTestCase):
         self.assertIsNone(read_lock(self.manifest))
 
 
+class QuickEditTests(unittest.TestCase):
+    """D143: a click in Execute's window must not freeze the pull."""
+
+    class Kernel32:
+        def __init__(self, mode, console=True):
+            self.mode, self.console, self.set_to = mode, console, None
+
+        def GetStdHandle(self, which):
+            return 7
+
+        def GetConsoleMode(self, handle, pointer):
+            if not self.console:
+                return 0
+            pointer._obj.value = self.mode
+            return 1
+
+        def SetConsoleMode(self, handle, mode):
+            self.set_to = mode
+            return 1
+
+    def test_quick_edit_is_turned_off_and_the_rest_kept(self):
+        kernel32 = self.Kernel32(mode=0x01F7)  # a console's usual input mode, QuickEdit on
+        self.assertTrue(cli.quick_edit_off(kernel32))
+        self.assertEqual(kernel32.set_to & cli.ENABLE_QUICK_EDIT_MODE, 0)
+        self.assertEqual(kernel32.set_to & cli.ENABLE_EXTENDED_FLAGS, cli.ENABLE_EXTENDED_FLAGS)
+        self.assertEqual(kernel32.set_to | cli.ENABLE_QUICK_EDIT_MODE, 0x01F7)
+
+    def test_without_a_console_nothing_is_changed(self):
+        kernel32 = self.Kernel32(mode=0x01F7, console=False)
+        self.assertFalse(cli.quick_edit_off(kernel32))
+        self.assertIsNone(kernel32.set_to)
+
+    def test_away_from_windows_it_does_nothing(self):
+        with mock.patch.object(cli.os, "name", "posix"):
+            self.assertFalse(cli.quick_edit_off())
+
+
 class UnexpectedErrorTests(LockTestCase):
     """An error no step catches reaches the log, and the window stays open."""
 

@@ -172,6 +172,7 @@ def execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> in
     from .lock import LockHeld, PullLock, clock_time, pull_name
     from .runlog import execute_log
 
+    quick_edit_off()
     with execute_log(manifest.path) as log:
         print(f"Execute {pull_name(manifest.path)}: {manifest.path}")
         print(f"Started {datetime.now():%Y-%m-%d %H:%M:%S}, process {os.getpid()}. "
@@ -382,6 +383,42 @@ def set_console_title(text: str) -> None:
         ctypes.windll.kernel32.SetConsoleTitleW(text)
     except Exception:
         pass
+
+
+# Windows console input modes (SetConsoleMode).
+ENABLE_QUICK_EDIT_MODE = 0x0040
+ENABLE_EXTENDED_FLAGS = 0x0080
+STD_INPUT_HANDLE = -10
+
+
+def quick_edit_off(kernel32=None) -> bool:
+    """Turn off QuickEdit in this console window, on Windows (D143).
+
+    With it on, a click in the window starts a selection ("Select" in the
+    title) and every print waits until it is cleared, so a pull that has
+    finished its work hangs before its summary, holding its lock. Returns
+    whether it was turned off; anywhere else, or with no console, nothing.
+    """
+    if kernel32 is None:
+        if os.name != "nt":
+            return False
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+        except Exception:
+            return False
+    try:
+        import ctypes
+
+        handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False  # not a console: redirected, or a terminal of its own
+        wanted = (mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+        return bool(kernel32.SetConsoleMode(handle, wanted))
+    except Exception:
+        return False
 
 
 def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,

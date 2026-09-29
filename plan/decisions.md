@@ -2690,3 +2690,16 @@ Names use underscores, not spaces. The manifest's paths stay relative to itself
 parquet folder with the rest. Run folders in the old layout are not moved or
 read specially: a pull that needs redoing is split again, which starts it over
 (the user: few runs have succeeded so far).
+
+### D143. Execute turns QuickEdit off in its console window
+
+**Context.** Crohns_PatientsFromUpload finished every step (29 September 2026),
+but its window sat at `=== CrohnsPatients ===` with the lock still held: its
+title read "Select". A click in a Windows console with QuickEdit on starts a
+selection, and every write to the console waits until it is cleared, so the
+first line after the session, and everything after it, waited.
+
+**Decision.** Execute turns QuickEdit off in its own console as it starts
+(`SetConsoleMode`, standard library `ctypes`), keeping every other input mode.
+Anywhere but a Windows console it does nothing. Selecting text with the mouse
+in that window no longer works; the log holds everything the window shows.
