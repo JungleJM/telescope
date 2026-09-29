@@ -2444,6 +2444,69 @@ def check_sql_references(
                 )
 
 
+def tables_read(cohort: dict[str, Any], marker: str, names: set[str]) -> list[str]:
+    """The tables this pull makes that a cohort's written SQL reads, in order.
+
+    A made table is named `{{prefix}}_<table>` before rendering and
+    `##<prefix>_<table>` after, in a from, join or where line (a subquery too).
+    """
+    pattern = re.compile(
+        r"(?:\{\{prefix\}\}_|" + re.escape(marker) + r")([A-Za-z0-9_]+)(?![A-Za-z0-9_])"
+    )
+    found: list[str] = []
+    for _, line in cohort_sql_lines(cohort):
+        for match in pattern.finditer(line):
+            name = match.group(1)
+            if name in names and name not in found:
+                found.append(name)
+    return found
+
+
+def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: CompileResult) -> None:
+    """A table that reads another fact table must come after it (D134).
+
+    A run builds its tables in Fact Tables order, one at a time, so a table
+    reading one further down reads a temp that does not exist yet: SQL
+    Server would stop it at Execute. Nothing is reordered for the author
+    (D45); each multiplier level's copy reports once.
+    """
+    said: set[tuple[str, str]] = set()
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for cohort in cohorts:
+        if isinstance(cohort, dict) and str(cohort.get("type", "")).lower() != "pk":
+            sessions.setdefault(str(cohort.get("session_pk") or ""), []).append(cohort)
+    def base(cohort: dict[str, Any]) -> str:
+        """Its name before a multiplier level's strat was put in front, as SQL writes it."""
+        dest = str(cohort.get("dest_table") or cohort.get("name"))
+        strat = str(cohort.get("_group_key") or "") or "".join(
+            str(level.get("strat") or "") for level in cohort.get("multiplier_levels") or []
+            if isinstance(level, dict))
+        return dest[len(strat):] if strat and dest.startswith(strat) else dest
+
+    for members in sessions.values():
+        position: dict[str, int] = {}
+        for i, c in enumerate(members):
+            position.setdefault(str(c.get("dest_table") or c.get("name")), i)
+            position.setdefault(base(c), i)
+        for index, cohort in enumerate(members):
+            own = {str(cohort.get("dest_table") or cohort.get("name")), base(cohort)}
+            for read in tables_read(cohort, marker, set(position) - own):
+                if position[read] < index:
+                    continue
+                pair = (base(cohort), base(members[position[read]]))
+                if pair in said:
+                    continue
+                said.add(pair)
+                result.error(
+                    "table_read_before_built",
+                    f"`{pair[0]}` reads `{pair[1]}`, which comes after it in Fact Tables, so "
+                    f"`{pair[1]}` does not exist yet when `{pair[0]}` is built.",
+                    f"{cohort_label(cohort)}.filter",
+                    fix=f"Move `{pair[0]}` below `{pair[1]}` in Fact Tables (give it a higher "
+                    f"number), or `{pair[1]}` above it.",
+                )
+
+
 _DATADICT_CACHE: dict[tuple[str, float], dict[str, Any]] = {}
 
 
@@ -2977,6 +3040,7 @@ def compile_yaml(
         check_sql_references(
             rendered_cohorts, dictionary, find_uploaded_pk_table(template, CompileResult()) or pk_cohort_name(rendered_cohorts), result
         )
+        check_table_order(rendered_cohorts, temp_marker(template), result)
         if not result.errors:
             # After the dictionary's own errors, which say why better.
             check_column_types(rendered_cohorts, result)
@@ -5924,6 +5988,44 @@ class AddedLinesTests(MakeYamlTest):
         self.assertHasError(res, "bad_added_lines")
 
 
+class TableOrderTests(MakeYamlTest):
+    """D134: a table that reads another fact table comes after it."""
+
+    def fact(self, name: str, source: str = "EdVisitFact", alias: str = "evf", reads: str = "Patients",
+             col: str = "PatientDurableKey") -> str:
+        return (
+            f"  - name: {name}\n    type: fact\n"
+            f"    columns:\n      - source: {alias}.PatientDurableKey\n        name: PatientDurableKey\n"
+            f"    filter:\n      from: {source} AS {alias}\n"
+            f"      join:\n        - \"INNER JOIN {{{{prefix}}}}_{reads} AS r ON r.{col} = {alias}.PatientDurableKey\"\n"
+        )
+
+    def test_a_table_reading_one_further_down_is_refused(self):
+        # Admins read Orders, but Orders is built after them: the temp does not exist yet.
+        res = self.compile_template(extra=self.fact("Admins", reads="Orders") + self.fact("Orders"))
+        self.assertHasError(res, "table_read_before_built")
+        message = next(m for m in res.errors if m.code == "table_read_before_built")
+        self.assertIn("`Admins` reads `Orders`", message.message)
+        self.assertIn("Move `Admins` below `Orders`", message.fix)
+
+    def test_in_order_it_compiles(self):
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders"))
+        self.assertCompiles(res)
+
+    def test_reading_the_pk_or_an_upload_is_not_an_order(self):
+        res = self.compile_template(extra=self.fact("Visits"))
+        self.assertCompiles(res)
+
+    def test_each_multiplier_level_reports_once(self):
+        extra = self.fact("Admins", reads="Orders") + self.fact("Orders") + (
+            "multipliers:\n  - name: IBDType\n    stage: during_build\n    levels:\n"
+            "      - strat: UC\n        vars: {ICD_Value: [K51]}\n"
+            "      - strat: Crohns\n        vars: {ICD_Value: [K50]}\n"
+        )
+        res = self.compile_template(extra=extra)
+        self.assertEqual(len([m for m in res.errors if m.code == "table_read_before_built"]), 1, summarize_result(res))
+
+
 class SqlReferenceTests(MakeYamlTest):
     """D118: written join and where lines are read before SQL Server reads them."""
 
@@ -6164,6 +6266,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
     "sql_references": SqlReferenceTests,
+    "table_order": TableOrderTests,
     "added_lines": AddedLinesTests,
     "config": ConfigTests,
     "upload_column_changes": UploadColumnChangeTests,
