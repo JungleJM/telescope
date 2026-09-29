@@ -1,0 +1,348 @@
+transfer:
+  from_template: Celiac_intake.yaml
+  recipes_sha256: 385ab4edfa4d
+  recipes_used:
+  - IndexDiagnosis
+  - OtherDiagnoses
+  - PatientWithDx
+cosmos_vars:
+  project_db: PROJECTD33A929
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: Celiac
+vars:
+upload_cohorts:
+- name: HospitalICDCodes
+  dest_table: HospitalICDCodes
+  file_type: csv
+  file_loc: csv/HospitalICDCodes.csv
+  scope: global
+  push_this_cycle: true
+multipliers:
+batching:
+cohorts:
+- name: CeDPatients
+  description: Diagnosis event fact table. Rows represent diagnoses associated with
+    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+    for prevalence; rows are at the billing/event grain. First DiagnosisEvent of disease
+    X for patient, with patient info (sex, birthdate etc) and Index Event info (Age
+    at Diagnosis, ICD code, etc.)
+  granularity: One DiagnosisEvent, only the earliest found, for each patient (by PatientDurableKey).
+  type: PK
+  pull_this_cycle: true
+  dest_table: Patients
+  dedup_keys:
+  - - PatientDurableKey
+  dedup_order_by:
+  - IndexDate
+  columns:
+  - source: dxf.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: p.Sex
+    name: Sex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.NameAndCode
+    name: ICDName
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dur.Years
+    name: AgeAtIndexDiagnosis
+    nullable: true
+    description: Duration expressed in years. Age in Years of patient at earliest
+      diagnosis of index condition
+    type: INT
+  - source: p.BirthDate
+    name: BirthDate
+    nullable: true
+    type: DATE
+  - source: p.StateOrProvince
+    name: StateOrProvince
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.StateOrProvinceAbbreviation
+    name: StateOrProvinceAbbreviation
+    nullable: false
+    type: NVARCHAR(300)
+  - source: p.Country
+    name: Country
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.Value
+    name: ICDCode
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dxf.StartDateKey
+    name: IndexDate
+    nullable: true
+    type: BIGINT
+  - source: dxf.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: dxf.EncounterKey
+    name: IndexEncounter
+    nullable: false
+    type: BIGINT
+  - source: p.DurableKey
+    name: DurableKey
+    nullable: false
+    type: BIGINT
+  - source: p.FirstRace
+    name: FirstRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SecondRace
+    name: SecondRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.ThirdRace
+    name: ThirdRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FourthRace
+    name: FourthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FifthRace
+    name: FifthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviOverallPctlRankByZip2020_X
+    name: SviOverallPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviSocioeconomicPctlRankByZip2020_X
+    name: SviSocioeconomicPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  filter:
+    from:
+    - DiagnosisEventFact as dxf
+    join:
+    - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+    - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
+    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey"
+    where:
+    - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dxf.StartDateKey >= 0"
+    - "dxf._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
+    - "p.IsValid = 1"
+    - "p.IsCurrent = 1"
+    - "p.UseInCosmosAnalytics_X = 1"
+    - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
+    - "{{sql_condition('dt.Value', ICD_Value)}}"
+  vars:
+    ICD_Value: K90.0
+- name: IndexDiagnosis
+  description: Diagnosis event fact table. Rows represent diagnoses associated with
+    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+    for prevalence; rows are at the billing/event grain. Each patient's first diagnosis
+    of each of the disease's codes (ICD_Value), with date, age at diagnosis, event
+    data
+  granularity: One diagnoses of a disease by ICD code, for each PatientDurableKey.
+  dedup_keys:
+  - - PatientDurableKey
+    - BillingCodeValue
+  dedup_order_by:
+  - StartDateKey
+  pull_this_cycle: true
+  type: fact
+  dest_table: IndexDiagnosis
+  columns:
+  - source: def.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: tc.StandardName
+    name: BillingCodeType
+    nullable: true
+    description: Standardized or normalized name for the concept, used to harmonize
+      naming across contributors and terminologies. ICD code type
+    type: NVARCHAR(900)
+  - source: dt.Value
+    name: BillingCodeValue
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.NameAndCode
+    name: NameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dur.Years
+    name: AgeAtDiagnosis
+    nullable: true
+    type: INT
+  - source: def.IsPrimary
+    name: IsPrimary
+    nullable: true
+    type: TINYINT
+  - source: dt.ReferenceBillingCode
+    name: IsReferenceBillingCode
+    nullable: true
+    description: "1/0 flag (tinyint) on its dictionary page: whether this row's code\
+      \ is the reference billing code. Not the code itself; that is in Value. 0/1\
+      \ of if this was used as the code for Billing submission"
+    type: TINYINT
+  - source: def.Type
+    name: TypeOfDx
+    nullable: true
+    type: NVARCHAR(350)
+  - source: tc.Concept
+    name: TerminologyConcept
+    nullable: true
+    type: NVARCHAR(900)
+  - source: tc.Name
+    name: TerminologyName
+    nullable: true
+    type: NVARCHAR(900)
+  - source: def.Status
+    name: Status
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.StartDateKey
+    name: StartDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.EndDateKey
+    name: EndDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: def.DiagnosisKey
+    name: DiagnosisKey
+    nullable: false
+    type: BIGINT
+  - source: def.EncounterKey
+    name: EncounterKey
+    nullable: false
+    type: BIGINT
+  filter:
+    from:
+    - DiagnosisEventFact AS def
+    join:
+    - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey"
+    - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+    - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+    where:
+    - "def._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
+    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+    - "{{sql_condition('dt.Value', ICD_Value)}}"
+- name: OtherDiagnoses
+  description: Diagnosis event fact table. Rows represent diagnoses associated with
+    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+    for prevalence; rows are at the billing/event grain. Patient's diagnoses besides
+    the index diagnosis - one per patient per diagnosis code, not time-based. For
+    seeing if they have other conditions
+  granularity: One diagnoses of a disease by ICD code, for each PatientDurableKey.
+  dedup_keys:
+  - - PatientDurableKey
+    - BillingCodeValue
+  dedup_order_by:
+  - StartDateKey
+  pull_this_cycle: true
+  type: fact
+  dest_table: OtherDiagnoses
+  columns:
+  - source: def.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: tc.StandardName
+    name: BillingCodeType
+    nullable: true
+    description: Standardized or normalized name for the concept, used to harmonize
+      naming across contributors and terminologies. ICD code type
+    type: NVARCHAR(900)
+  - source: dt.Value
+    name: BillingCodeValue
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.NameAndCode
+    name: NameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dur.Years
+    name: AgeAtDiagnosis
+    nullable: true
+    type: INT
+  - source: def.IsPrimary
+    name: IsPrimary
+    nullable: true
+    type: TINYINT
+  - source: dt.ReferenceBillingCode
+    name: IsReferenceBillingCode
+    nullable: true
+    description: "1/0 flag (tinyint) on its dictionary page: whether this row's code\
+      \ is the reference billing code. Not the code itself; that is in Value. 0/1\
+      \ of if this diagnosis was used for Billing submission"
+    type: TINYINT
+  - source: def.Type
+    name: TypeOfDx
+    nullable: true
+    type: NVARCHAR(350)
+  - source: tc.Concept
+    name: TerminologyConcept
+    nullable: true
+    type: NVARCHAR(900)
+  - source: tc.Name
+    name: TerminologyName
+    nullable: true
+    type: NVARCHAR(900)
+  - source: def.Status
+    name: Status
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.StartDateKey
+    name: StartDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.EndDateKey
+    name: EndDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: def.DiagnosisKey
+    name: DiagnosisKey
+    nullable: false
+    type: BIGINT
+  - source: def.EncounterKey
+    name: EncounterKey
+    nullable: false
+    type: BIGINT
+  filter:
+    from:
+    - DiagnosisEventFact AS def
+    join:
+    - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey\
+      \ AND pk.DiagnosisEventKey <> def.DiagnosisEventKey"
+    - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+    - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+    where:
+    - "def._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
+    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"

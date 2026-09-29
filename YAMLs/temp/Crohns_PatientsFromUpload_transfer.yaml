@@ -1,0 +1,239 @@
+transfer:
+  from_template: Crohns_PatientsFromUpload_intake.yaml
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: Crohns_PatientsFromUpload
+vars: {}
+upload_cohorts:
+- name: CrohnsPatients
+  dest_table: CrohnsPatients
+  type: pk
+  file_type: parquet
+  file_loc: CrohnsPatients.parquet
+  key_columns:
+  - PatientDurableKey
+  pending_transfer: true
+  push_this_cycle: true
+multipliers: []
+batching:
+- name: chunk
+  kind: row_chunk
+  rows_per_batch: 100000
+  applies_to: PKTable
+cohorts:
+- name: PatientInfo
+  dest_table: PatientInfo
+  type: fact
+  pull_this_cycle: true
+  description: "Core patient dimension table. One row per patient, carrying demographics,\
+    \ vital status, and several social vulnerability and geography attributes. Use\
+    \ PatientDim.DurableKey to join to facts (note: this is the patient durable key)."
+  granularity: One row per patient (patient-level dimension).
+  columns:
+  - source: pd._IsDeleted
+    name: _IsDeleted
+    nullable: false
+    type: TINYINT
+  - source: pd._IsInferred
+    name: _IsInferred
+    nullable: false
+    type: TINYINT
+  - source: pd.AgeInYears
+    name: AgeInYears
+    nullable: true
+    type: TINYINT
+  - source: pd.BirthDate
+    name: BirthDate
+    nullable: true
+    type: DATE
+  - source: pd.BirthDateAccuracy_X
+    name: BirthDateAccuracy_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: pd.EarliestPossibleBirthDate_X
+    name: EarliestPossibleBirthDate_X
+    nullable: true
+    type: DATE
+  - source: pd.BloodType_X
+    name: BloodType_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: pd.BloodTypeAndRhesusFactor_X
+    name: BloodTypeAndRhesusFactor_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: pd.Country
+    name: Country
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.DeathDate
+    name: DeathDate
+    nullable: true
+    type: DATE
+  - source: pd.DurableKey
+    name: DurableKey
+    nullable: false
+    type: BIGINT
+  - source: pd.Ethnicity
+    name: Ethnicity
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.FifthRace
+    name: FifthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.FirstRace
+    name: FirstRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.FourthRace
+    name: FourthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.GenderIdentity
+    name: GenderIdentity
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.HasPcp_X
+    name: HasPcp_X
+    nullable: true
+    type: TINYINT
+  - source: pd.IsCurrent
+    name: IsCurrent
+    nullable: false
+    type: BIT
+  - source: pd.IsValid
+    name: IsValid
+    nullable: false
+    type: TINYINT
+  - source: pd.LastImmunizationQueryInstantUtc
+    name: LastImmunizationQueryInstantUtc
+    nullable: true
+    type: DATETIME2(7)
+  - source: pd.MaritalStatus
+    name: MaritalStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.MultiRacial
+    name: MultiRacial
+    nullable: true
+    type: TINYINT
+  - source: pd.PreferredLanguage
+    name: PreferredLanguage
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.PreliminaryCauseOfDeathDiagnosisKey
+    name: PreliminaryCauseOfDeathDiagnosisKey
+    nullable: true
+    type: BIGINT
+  - source: pd.PrimaryRUCA_X
+    name: PrimaryRUCA_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: pd.ReliableSex
+    name: ReliableSex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.RhesusFactor_X
+    name: RhesusFactor_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: pd.SecondRace
+    name: SecondRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.Sex
+    name: Sex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.SexAssignedAtBirth
+    name: SexAssignedAtBirth
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.SourceComboKey_X
+    name: SourceComboKey_X
+    nullable: true
+    type: BIGINT
+  - source: pd.SourceCountry_X
+    name: SourceCountry_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.StateOrProvince
+    name: StateOrProvince
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.StateOrProvinceAbbreviation
+    name: StateOrProvinceAbbreviation
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.Status
+    name: Status
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
+    name: SviHouseholdCharacteristicsPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: pd.SviHouseholdCompositionPctlRankingByZip2018_X
+    name: SviHouseholdCompositionPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
+    name: SviHousingTypeTransportationPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: pd.SviHousingTypeTransportationPctlRankingByZip2018_X
+    name: SviHousingTypeTransportationPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: pd.SviMinorityStatusLanguagePctlRankingByZip2018_X
+    name: SviMinorityStatusLanguagePctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: pd.SviOverallPctlRankByZip2020_X
+    name: SviOverallPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: pd.SviOverallPctlRankingByZip2018_X
+    name: SviOverallPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: pd.SviSocioeconomicPctlRankByZip2020_X
+    name: SviSocioeconomicPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: pd.SviSocioeconomicPctlRankingByZip2018_X
+    name: SviSocioeconomicPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: pd.ThirdRace
+    name: ThirdRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: pd.UseInCosmosAnalytics_X
+    name: UseInCosmosAnalytics_X
+    nullable: false
+    type: TINYINT
+  filter:
+    from:
+    - PatientDim as pd
+    join:
+    - "INNER JOIN {{prefix}}_CrohnsPatients AS pk ON pk.PatientDurableKey = pd.DurableKey"
+    where:
+    - "pd.IsCurrent = 1"
+    - "pd.IsValid = 1"
+    - "pd.UseInCosmosAnalytics_X = 1"
+    - "pd._IsDeleted = 0"
