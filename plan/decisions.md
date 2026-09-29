@@ -1656,6 +1656,8 @@ already names each one and where it goes.
 
 ### D91. Save & Refresh queues a temp for the bundle; `makebundle.py queue` carries the queue
 
+**Amended by D122:** the queue is emptied after each bundle, and `makebundle.py` always carries it.
+
 **Amended by D95:** the queue lists intakes.
 
 **Decision.**
@@ -1953,6 +1955,8 @@ where no relative one exists (another drive), or where you type one.
 
 ### D105. Extra lines on any table: `add_where` and `add_join`; where lines by column
 
+**Amended by D119:** Value mode becomes an operator dropdown, with BETWEEN.
+
 **Context.** A prefabricated table cannot take a filter of its own: a
 template's `filter.where` on a recipe cohort replaces the recipe's whole
 list. The user needs, for one, medication tables limited to an uploaded list
@@ -1974,6 +1978,8 @@ of medication codes.
   well as their type, with what each type does beside it.
 
 ### D106. `dist/` is not committed; two bundles, one with the queued YAMLs
+
+**Amended by D122:** one `makebundle.py` carries the queue; `bundle_with_yamls.py` is retired; YAMLs can travel alone.
 
 **Amends D63 and D64** (the committed bundle), **D79** (its consequence) and
 **D102** (the committed bundle built from the commit).
@@ -2037,6 +2043,8 @@ Table's "Table from the dictionary" opens the same way.
 
 ### D111. The core files live in `recipes/`, found through `datascope.json`
 
+**Amended by D117:** the folder is `reference/`.
+
 **Context.** `YAMLs/` held two kinds of file: the core ones the tools read
 (the data dictionary, recipes, the template, the VM's package list) and the
 pulls' own (intakes, test templates). The user wants `YAMLs/` for the pulls,
@@ -2058,6 +2066,8 @@ and the core files somewhere they can be moved without editing code.
   extraction, or kept as `.local` if it was edited (D42).
 
 ### D112. The browser UI is retired; `datascope.py` opens the app
+
+**Amended by D123:** the entry script is `scope.py`.
 
 **Retires the browser UI (D92), amends D79** (`yamlmgr.py`).
 
@@ -2161,3 +2171,156 @@ Five were added to `LabComponentResultFact` from its page (`IsFinal`,
 `RawNumericValue_X`, `RawUnit_X`, `RawValue_X`, `SourceKey`) before the
 icons were read, and are removed.
 
+
+### D117. The core files' folder is `reference/`, not `recipes/`
+
+**Amends D111.** `recipes/` is renamed `reference/`, and `datascope.json`,
+the defaults in makeYaml and Pullmanager, and the bundle (which publishes
+`reference/datadictionary.yaml`) follow. The folder holds more than recipes:
+the dictionary, the template, the VM's package list, and the dictionary
+pages' screenshots (`reference/DDict image refs/`). The extracted tree is
+replaced whole (D42), so the VM's old `recipes/` goes on the next extraction.
+
+### D118. Every table's written SQL is checked against its own aliases
+
+**Context.** Infant_RSV's first Execute stopped at its PK on `pk.EncounterKey`:
+a join carried from a recipe named an alias the intake's table did not have.
+Eight more of the kind were in the same intake. Validate, Export split and
+Preview SQL all passed, because none reads join or where lines; SQL Server
+was the first reader.
+
+**Decision.**
+
+- makeYaml checks each table's join and where lines, wherever Validate runs
+  (Mac, app, VM). An alias used but not defined by the table's `from` or its
+  joins is an **error** naming the aliases it has. A column the dictionary
+  does not list for that table, a fact table joining no generated table, and
+  a PK joining a many-rows table without `dedup_keys` are **warnings**.
+- The builder runs the same check on a written line as it is added, and
+  refuses one naming an alias the table lacks.
+- Changing a table's alias rewrites its own join and where lines, as it
+  already rewrites its columns.
+
+### D119. A built where line picks its operator
+
+**Amends D105.** The builder's Value mode wrote only `=` and quoted what it
+was given, so `BETWEEN {{min_date_key}} AND {{max_date_key}}` became
+`= 'BETWEEN …'`. It becomes an operator dropdown: `=`, `<>`, `<`, `<=`, `>`,
+`>=`, `IN` (a comma list), `LIKE`, `BETWEEN` (with Lower and Higher fields),
+and In supporting table as now. Numbers and `{{Variables}}` are written
+unquoted, text quoted.
+
+### D120. Each table's standard where lines live in the dictionary
+
+**Decision.** A table in `datadictionary.yaml` may carry `standard_where`, a
+short list of conditions written without the alias. When the builder adds
+the table, the lines arrive as ordinary where lines under its alias, which
+the user may remove. The lists are seeded: `_IsDeleted = 0` on each of the
+15 tables that have it, and `IsCurrent = 1`, `IsValid = 1` on PatientDim.
+`_IsInferred = 0` is not standard. Each list is written out in full on its
+table, never applied as a hidden rule, so the dictionary shows what is added.
+
+**Why.** The user adds the same lines to nearly every table, and they make
+the pulls smaller and faster.
+
+### D121. A table's description and granularity are imported, and editable
+
+**Decision.**
+
+- A table built from the dictionary starts with the dictionary's description
+  and granularity.
+- A recipe table's description is the dictionary's description of its source
+  table followed by the recipe's own; its granularity is the recipe's.
+- Either may be kept, cleared, or added to. Nothing is written as an override
+  unless it differs from what was imported.
+- Recipes follow a convention: a recipe's description says only what the
+  recipe adds, and never repeats the dictionary's text.
+
+**Why.** The user wants to see what is there and extend it, not write an
+override blind. A recipe reshapes its source, so the source's granularity
+would be wrong for it; its description, though, is an addition to the
+source's.
+
+### D122. One `makebundle.py`, which carries the queue; YAMLs can travel alone
+
+**Amends D106** (two bundles) **and D91** (the queue).
+
+- `python3 makebundle.py` builds the runtime, and carries the transfer YAML
+  of every queued intake; with nothing queued, the runtime alone.
+  `bundle_with_yamls.py` is retired.
+- Exports gets **Bundle With Manager**, which does the same, and **Bundle
+  YAMLs only**, which writes `dist/yamls_to_transfer.py`. Extracting that
+  places its transfer YAMLs beside the entry script (keeping `.local` copies
+  as now) and leaves the runtime alone.
+- The queue is emptied after each bundle.
+- Exports lists projects (`Infant_RSV`), each as "intake → transfer YAML",
+  not file names.
+
+**Why.** The user always meant transfer YAMLs to travel with the bundle (see
+the roadmap's correction of D79 and D106), and wants to send a new pull
+without replacing the software.
+
+### D123. Datascope, Telescope, and `scope.py`
+
+**Amends D112.** The product is **Datascope**. Editions for a particular
+source get their own names: Epic Cosmos's is **Telescope**; others (census,
+genetics) will be themed later. The entry script is `scope.py` on both
+machines: on the Mac it replaces `datascope.py`, and on the VM extraction
+writes it in place of `pullmanager.py` and deletes an older `pullmanager.py`
+it had written, so there is one way in. The runtime package keeps its name.
+
+### D124. `utils.py`, and a stock list
+
+**Decision.**
+
+- `utils.py` opens a small window with a button for each script in `utils/`,
+  each started as its own process. It sits at the Mac's root, and extraction
+  writes one beside `scope.py` on the VM.
+- `viewparquets.py` moves to `utils/`.
+- `stock/stock.yaml` lists, by path, what Artifacts copies into every run
+  folder (`HOW_TO.md`, `../utils/viewparquets.py`, R scripts later), grouped
+  as the user likes. `HOW_TO.md` keeps its `{project}` fill-in.
+
+### D125. The builder's layout: join rows, Duplicate, and collapsed columns
+
+- A join row reads as its SQL does: type, JOIN, the other table and its
+  column, the operator, then "by column" and this table's column.
+- A table's buttons are Edit, Duplicate, Remove, Save as Recipe. Duplicate
+  copies the table as `<name>_copy` with its own destination, and opens a
+  built table for editing.
+- A table's column list sits under a "Columns (n)" header that starts
+  collapsed, remembered per table while the draft is open.
+
+### D126. Run chooses a pull from two dropdowns
+
+- **Running pulls**: every pull whose Execute is live, with how far it has
+  got. Choosing one follows its log, shows its status, and lets Stop reach it.
+- **Start run**: the transfer YAMLs in the working folder, by project name
+  and with their last state, running ones left out; Browse beside it.
+- The Split folder and SQL folder fields are removed: they are always
+  `runs/<project>/split` and `/sql` (D57), said as a line of text.
+- The data dictionary field shows the file it found, in full, with Browse.
+
+### D127. A CSV can be pasted into a supporting table
+
+In Supporting tables, **Paste** beside Browse opens a box for CSV text. As it
+is pasted, the columns, row count and first rows show; a ragged row or a
+missing header is an error naming the line. On adding, it asks for a name
+and writes `YAMLs/temp/csv/<name>.csv` on the Mac, which the table then
+reads as any upload. The rows are not written into the YAML, so the file can
+be reused.
+
+### D128. `plan/tasklist.qmd` holds what is under discussion
+
+**Amends the rule that there are three plan documents** (`.claude/CLAUDE.md`).
+
+- `plan/tasklist.qmd` is the standing list of the user's ideas and notes
+  still being discussed. Under each, Claude answers in a blue callout
+  (`🟦 Claude: …`) followed by an empty orange one (`🟧 Your response`).
+- A `# Settled` section sits at the bottom. What is agreed moves there, and
+  from there, promptly, into decisions, the roadmap or design, and is then
+  deleted. New notes go above it.
+- It holds no settled facts, so it is not a fourth design document.
+- A pasted image goes in `plan/images/markdowns/<document name>/` (set in
+  `.vscode/settings.json`), and "update docs" deletes the folder of any
+  document that no longer exists.
