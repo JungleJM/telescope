@@ -13,10 +13,26 @@ The old `images/` folder at the root (paste-1 to 8) is referenced by nothing now
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
+Ok, here's an image: ![](images/paste-1.png)\
+\
+It seems to have saved it in the same folders' /image subfolder. \
+\
+Colors still aren't working. Is there no CSS that could do it? Could we have the sections designated as HTML and then do it that way? But honestly if this is where we are I'm fine with it.
+:::
+
+::: {.callout-note title="🟦 Claude: the visual editor has its own rules"}
+**Images:** your paste went to `plan/images/`, the `images/` folder beside the file. That is Quarto's visual editor, which ignores the `.vscode` setting (only the source view reads it), and I know of no setting that moves its folder. **Recommendation:** accept its `images/` folder, and make the cleanup do the work. "Update docs" deletes every pasted image (`paste-*.png`) in a `plan/images/` folder that no document mentions. Deleting a document then takes its pictures with it at the next update, and your reference images are never touched. The `.vscode` setting would then be unnecessary, and I'd remove it.
+
+**Colours:** there's no CSS the visual editor applies to callouts. It draws them as plain boxes, and raw HTML shows as code rather than being rendered. The 🟦/🟧 in the titles are as far as it goes; Quarto Preview shows the real colours.
+
+**For you to decide:** clean up by "no document mentions it", as above?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
 
 :::
 
-# Thoughts on Cohort
+# Future Breakdown of Cohort
 
 - So I wanted to do an ambitious cohort poll on all 1.2 million Crohn's patients. As I had gotten the 1.2 million rows in the recipe PatientWithDx. I thought it was going to be a huge upload, taking a long time, and that it be a major time sink in relation to doing a large poll. It turns out that it wasn't the case that it took about two minutes to do the upload of 1.2 million rows with probably ten columns, which I am surprised by. But it gives me some perspective on how bad it would be to split out a single cohort, even if I need to have the same PK table.
 
@@ -27,8 +43,6 @@ The old `images/` folder at the root (paste-1 to 8) is referenced by nothing now
 - I think this is a little more like what I had intended to do in the original set, but was afraid of the sort of cohort upload block being this huge delay. I think now we can look at it more flexibly. Say there are 9 tables, 3 in a birth block (birth fact, mother info, pregnancy fact/dim), 3 in a med block (med order, admin, dispense), visits block (edvisits, hospitaladmissions, etc.). Say I have a multiplier of, say, 'IBD' - UC, Crohns. Well if I get the PK table for all of UC, then I can move through the three blocks as their own batch, so that way we can say "getting UC Meds block" instead of "getting all UC data". I actually think this may be a bit confustin because it's kind of confusing when you have 'separate tables' meaning that the splitter duplicates the tables for a new splitter variable. Instead, that should be renamed to 'separate PKs per splitter', or somethign like that. Then, this table batch option could be 'group tables into a batch' and then once it's opened, you can just add different groups, give them a group name, and then it has an 'add table to group' oand 'remove table from group' and 'remove group' buttons. It should say that 'anything left over will be its own group batch' or something.
 
   - I think this is low priority right now - i want to ensure the current features work first. To that end, tell me your questions, but once we have mutual understanding, this should be added to 'roadmap' and deleted rather than waiting for implementation.
-
--
 
 # Settled
 
