@@ -39,13 +39,14 @@ STATUS_COLOURS = {
     "pending": "#24292f",
 }
 
+# What the window remembers: the loaded transfer YAML, and a data dictionary
+# chosen instead of the bundled one. A pull's split and SQL folders are always
+# runs/<project>/split and /sql (D57), so they are not asked for (D126).
 FIELDS = (
-    # attribute, label, kind, hint
-    ("template", "Transfer YAML", "file", "from the Mac: makeYaml --export-transfer"),
-    ("datadictionary", "Data dictionary", "file", "blank = bundled copy"),
-    ("split_dir", "Split folder", "dir", "blank = runs\\<project>\\split"),
-    ("sql_dir", "SQL folder", "dir", "blank = runs\\<project>\\sql"),
+    ("template", "Transfer YAML"),
+    ("datadictionary", "Data dictionary"),
 )
+NOT_RUN = "not run yet"
 
 
 class LauncherApp:
@@ -95,25 +96,48 @@ class LauncherApp:
         frame.pack(fill="x", padx=10, pady=(10, 4))
         frame.columnconfigure(1, weight=1)
 
-        for row, (attr, label, kind, hint) in enumerate(FIELDS):
-            var = tk.StringVar()
-            self.vars[attr] = var
-            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
-            ttk.Entry(frame, textvariable=var).grid(row=row, column=1, sticky="ew", pady=2)
-            ttk.Button(
-                frame, text="Browse", command=lambda a=attr, k=kind: self.browse(a, k)
-            ).grid(row=row, column=2, padx=(6, 6), pady=2)
-            ttk.Label(frame, text=hint, foreground="#6e7781").grid(row=row, column=3, sticky="w")
+        for attr, _ in FIELDS:
+            self.vars[attr] = tk.StringVar()
+        # Two dropdowns (D126): the pulls executing now, and the ones to start.
+        self.running_pick = tk.StringVar()
+        self.start_pick = tk.StringVar()
+        self._running: dict[str, Path] = {}
+        self._startable: dict[str, Path] = {}
+        ttk.Label(frame, text="Running pulls").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=2)
+        running = ttk.Combobox(frame, textvariable=self.running_pick, state="readonly",
+                               postcommand=lambda: running.configure(values=list(self.running_choices())))
+        running.grid(row=0, column=1, sticky="ew", pady=2)
+        running.bind("<<ComboboxSelected>>", lambda e: self.choose_running(self.running_pick.get()))
+        ttk.Label(frame, text="follow its log, status and Stop", foreground="#6e7781").grid(
+            row=0, column=3, sticky="w")
+        ttk.Label(frame, text="Start run").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=2)
+        start = ttk.Combobox(frame, textvariable=self.start_pick, state="readonly",
+                             postcommand=lambda: start.configure(values=list(self.start_choices())))
+        start.grid(row=1, column=1, sticky="ew", pady=2)
+        start.bind("<<ComboboxSelected>>", lambda e: self.choose_start(self.start_pick.get()))
+        ttk.Button(frame, text="Browse", command=lambda: self.browse("template", "file")).grid(
+            row=1, column=2, padx=(6, 6), pady=2)
+        ttk.Label(frame, text="transfer YAMLs here, by project", foreground="#6e7781").grid(
+            row=1, column=3, sticky="w")
+        self.loaded_line = ttk.Label(frame, text="", foreground="#6e7781")
+        self.loaded_line.grid(row=2, column=1, columnspan=3, sticky="w")
+        ttk.Label(frame, text="Data dictionary").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=2)
+        self.dictionary_line = ttk.Label(frame, text="")
+        self.dictionary_line.grid(row=3, column=1, sticky="w", pady=2)
+        ttk.Button(frame, text="Browse", command=lambda: self.browse("datadictionary", "file")).grid(
+            row=3, column=2, padx=(6, 6), pady=2)
+        ttk.Button(frame, text="Use the bundled one", command=lambda: self.set_dictionary("")).grid(
+            row=3, column=3, sticky="w")
 
         options = ttk.Frame(frame)
-        options.grid(row=len(FIELDS), column=0, columnspan=4, sticky="w", pady=(8, 4))
+        options.grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 4))
         ttk.Checkbutton(options, text="Retry failed", variable=self.retry_failed).pack(side="left")
         ttk.Checkbutton(
             options, text="Re-pull everything", variable=self.repull
         ).pack(side="left", padx=(12, 0))
 
         actions = ttk.Frame(frame)
-        actions.grid(row=len(FIELDS) + 1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+        actions.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(4, 0))
         for text, handler in (
             ("Validate", self.on_validate),
             ("Export split", self.on_export_split),
@@ -180,16 +204,88 @@ class LauncherApp:
     # ------------------------------------------------------------ settings
 
     def paths(self) -> Paths:
-        return Paths(**{attr: self.vars[attr].get() for attr, *_ in FIELDS},
+        return Paths(**{attr: self.vars[attr].get() for attr, _ in FIELDS},
                      runs=str(config.runs_setting(self.workdir)))
+
+    # ------------------------------------------------------- choosing a pull
+
+    def running_choices(self) -> dict[str, Path]:
+        """Every pull executing now, as "<project>: executing since ..." (D126)."""
+        self._running = {f"{pull.name}: {pull.state}": self.transfer_for(pull.name)
+                         for pull in pulls.find_pulls(self.workdir) if pull.lock is not None}
+        return self._running
+
+    def start_choices(self) -> dict[str, Path]:
+        """The transfer YAMLs in the working folder by project, with how each
+        last ran, leaving out the ones executing now (D126)."""
+        states = {pull.name.lower(): pull for pull in pulls.find_pulls(self.workdir)}
+        self._startable = {}
+        for path in sorted(self.workdir.glob("*_transfer.yaml"), key=lambda p: p.name.lower()):
+            project = pulls.run_folder_name(path.name)
+            pull = states.get(project.lower())
+            if pull is not None and pull.lock is not None:
+                continue
+            self._startable[f"{project}  ({pull.state if pull else NOT_RUN})"] = path
+        return self._startable
+
+    def transfer_for(self, project: str) -> Path:
+        """The working folder's transfer YAML for a project, or where it would be."""
+        for path in self.workdir.glob("*.yaml"):
+            if pulls.run_folder_name(path.name).lower() == project.lower():
+                return path
+        return self.workdir / f"{project}_transfer.yaml"
+
+    def choose_running(self, label: str) -> None:
+        path = self._running.get(label) or self.running_choices().get(label)
+        if path is not None:
+            self.load(path, "Following it: Pull Log, Status and Stop are this pull's.")
+
+    def choose_start(self, label: str) -> None:
+        path = self._startable.get(label) or self.start_choices().get(label)
+        if path is not None:
+            self.load(path, "Validate, Export split, Preview SQL, then Execute.")
+
+    def load(self, path: Path, then: str) -> None:
+        self.vars["template"].set(str(path))
+        self._save_settings()
+        self.show_loaded()
+        self.refresh_status()
+        self.bar.configure(text=f"Loaded {Path(path).name}. {then}")
+
+    def show_loaded(self) -> None:
+        """The loaded pull, where its split and SQL go, and the dictionary used."""
+        try:
+            run_dir = self.paths().run_dir()
+        except LauncherError:
+            self.loaded_line.configure(text="Nothing loaded: choose a pull above.")
+        else:
+            self.loaded_line.configure(text=f"Loaded {Path(self.vars['template'].get()).name}: its split goes to "
+                                            f"{run_dir / 'split'}, its SQL to {run_dir / 'sql'}")
+        self.dictionary_line.configure(text=self.dictionary_found())
+
+    def dictionary_found(self) -> str:
+        chosen = self.vars["datadictionary"].get().strip()
+        if chosen:
+            path = Path(chosen) if Path(chosen).is_absolute() else self.workdir / chosen
+            return f"{path}  (chosen{'' if path.is_file() else '; NOT FOUND'})"
+        # Where makeYaml finds it: beside its scripts/ folder, the repository on
+        # the Mac and the extracted folder on the VM (D111).
+        path = config.core_path("datadictionary", Path(self.tools.make_yaml).resolve().parent.parent)
+        return f"{path}  ({'the one makeYaml uses' if path.is_file() else 'NOT FOUND: extract the bundle again'})"
+
+    def set_dictionary(self, path: str) -> None:
+        self.vars["datadictionary"].set(path)
+        self._save_settings()
+        self.show_loaded()
 
     def options(self) -> Options:
         return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()))
 
     def _load_settings(self) -> None:
         saved = launcher.load_settings(self.workdir)
-        for attr, *_ in FIELDS:
+        for attr, _ in FIELDS:
             self.vars[attr].set(getattr(saved, attr))
+        self.show_loaded()
 
     def _save_settings(self) -> None:
         try:
@@ -207,7 +303,10 @@ class LauncherApp:
                 filetypes=[("YAML", "*.yaml *.yml"), ("All files", "*.*")],
             )
         if chosen:
-            self.vars[attr].set(chosen)
+            if attr == "template":
+                self.load(Path(chosen), "Validate, Export split, Preview SQL, then Execute.")
+            else:
+                self.set_dictionary(chosen)
 
     # ------------------------------------------------------------- actions
 
@@ -464,10 +563,7 @@ class LauncherApp:
 
     def use_transfer(self, path: Path) -> None:
         """Take a transfer YAML the Author half exported (D94)."""
-        self.vars["template"].set(str(path))
-        self._save_settings()
-        self.refresh_status()
-        self.bar.configure(text=f"Loaded {Path(path).name}. Validate, Export split, then Execute.")
+        self.load(Path(path), "Validate, Export split, then Execute.")
 
     def close(self) -> bool:
         """Ready the launcher to close; False if the user chose to keep it open.

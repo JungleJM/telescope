@@ -111,10 +111,8 @@ class GuiTestCase(unittest.TestCase):
 
 class ConstructionTests(GuiTestCase):
     def test_builds_a_field_for_every_input(self):
-        self.assertEqual(
-            set(self.app.vars),
-            {"template", "datadictionary", "split_dir", "sql_dir"},
-        )
+        # No split or SQL folder: always runs/<project>/split and /sql (D126).
+        self.assertEqual(set(self.app.vars), {"template", "datadictionary"})
 
     def test_starts_from_the_defaults(self):
         # Blank: the project's own runs/<project>/ folders (D57).
@@ -224,6 +222,32 @@ class RunningPullTests(GuiTestCase):
     def states(self):
         return {text: button.configure.call_args.kwargs["state"]
                 for text, button in self.app.buttons.items()}
+
+    def test_start_run_lists_projects_and_leaves_out_the_running_one(self):
+        # D126: two dropdowns; a pull executing is under Running pulls only.
+        for name in ("IBD_Ancestry_transfer.yaml", "Celiac_transfer.yaml"):
+            (self.work / name).write_text("cohorts: []\n", encoding="utf-8")
+        self.assertEqual(self.app.running_choices(), {})
+        start = self.app.start_choices()
+        self.assertEqual(list(start), ["Celiac  (not run yet)", "IBD_Ancestry  (not started)"])
+        self.lock()
+        running = self.app.running_choices()
+        self.assertEqual(len(running), 1)
+        label = next(iter(running))
+        self.assertTrue(label.startswith("IBD_Ancestry: executing since"), label)
+        self.assertEqual(list(self.app.start_choices()), ["Celiac  (not run yet)"])
+        self.app.vars["template"].set("")
+        self.app.choose_running(label)
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_transfer.yaml")
+        self.app.choose_start("Celiac  (not run yet)")
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "Celiac_transfer.yaml")
+
+    def test_the_dictionary_line_names_the_file_it_found(self):
+        self.assertIn("datadictionary.yaml", self.app.dictionary_found())
+        self.app.set_dictionary(str(self.work / "mine.yaml"))
+        self.assertIn("NOT FOUND", self.app.dictionary_found())
+        self.app.set_dictionary("")
+        self.assertNotIn("mine.yaml", self.app.dictionary_found())
 
     def test_a_live_pull_greys_export_split_and_execute_only(self):
         self.lock()
