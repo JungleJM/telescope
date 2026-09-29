@@ -14,6 +14,7 @@ Standard library only (tkinter), as on the VM.
 
 from __future__ import annotations
 
+import re
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -639,9 +640,13 @@ def join_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]], exc
         if column.get() and other.get() and other_column.get():
             ok, text = check(column.get(), other.get(), other_column.get())
             result.configure(text=text, foreground=COLOURS["pass" if ok else "error"])
+        else:
+            result.configure(text="")
 
     table_box.bind("<<ComboboxSelected>>", columns_of_table)
     column_box.bind("<<ComboboxSelected>>", update)
+    # This table's column counts as much as the other's: a stale "match" misleads.
+    column.trace_add("write", update)
     ttk.Button(form, text="Add join", command=lambda: add(
         kind.get(), column.get(), operator.get(), other.get(), other_column.get())).pack(side="left", padx=6)
     result.pack(side="left")
@@ -1487,6 +1492,11 @@ class ValidatePanel:
             self.messages[iid] = message
         if not validation.messages:
             self.tree.insert("", "end", text="Valid", values=("", "Nothing to fix."), tags=("pass",))
+        # "Validate points here" lasts only while a message still points there.
+        mark = self.view.highlight
+        if mark is not None and not any(m.field == mark for m in validation.messages):
+            self.view.highlight = None
+            self.view.render_soon()
         self.fix.configure(text="Choose a message to see its fix; double-click it to go there.",
                            foreground=COLOURS["muted"])
 
@@ -1819,6 +1829,21 @@ class ValidateAndExportViewTests(ViewTest):
         marks = [w.cget("text") for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
         self.assertTrue(any(str(text).startswith("Validate points here") for text in marks))
 
+    def test_the_mark_goes_once_no_message_points_there(self):
+        self.open("IBD_Ancestry_intake.yaml")
+        self.pump()
+        panel = self.view.validate_panel
+        first = panel.tree.get_children()[0]
+        message = panel.messages[first]
+        panel.tree.selection_set(first)
+        panel.go()
+        self.root.update()
+        name = re.search(r"variable `(\w+)`", message.text).group(1)
+        self.view.edit(lambda: self.view.draft.set_var(message.field.index, name, "K50%"))
+        self.pump()
+        marks = [w.cget("text") for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
+        self.assertFalse(any(str(text).startswith("Validate points here") for text in marks), marks)
+
     def test_the_steps_show_pending(self):
         self.open("Celiac_intake.yaml")
         index = self.view.draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
@@ -2008,6 +2033,41 @@ class FilterViewTests(ViewTest):
         entry.insert(0, "ef.DateKey > 20200101")
         self.root.update()
         self.assertEqual(shown(), [])
+
+    def test_the_match_follows_this_tables_column_too(self):
+        # "number match" stayed after this table's column became FourthRace.
+        self.open("Celiac_intake.yaml")
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
+        joins = next(w for w in widgets(self.view._last_builder.win)
+                     if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Joins")
+        combos = [w for w in widgets(joins) if isinstance(w, ttk.Combobox)]
+        _, column, _, other, other_column = combos[:5]
+        other.set(next(v for v in other.cget("values")))
+        other.event_generate("<<ComboboxSelected>>")
+        self.root.update()
+        builder = self.view._last_builder.b
+        names = [builder.source_column(c) for c in builder.columns]
+        texts = {}
+        for name in names:
+            column.set(name)
+            for candidate in other_column.cget("values"):
+                other_column.set(candidate)
+                other_column.event_generate("<<ComboboxSelected>>")
+                self.root.update()
+                label = next(w for w in widgets(joins) if isinstance(w, ttk.Label) and
+                             ("match" in str(w.cget("text")) or " vs " in str(w.cget("text"))
+                              or "no declared" in str(w.cget("text"))))
+                texts[(name, candidate)] = str(label.cget("text"))
+        good = next(k for k, v in texts.items() if v.endswith("match"))
+        bad = next(k for k, v in texts.items() if " vs " in v and k[1] == good[1])
+        column.set(good[0]); other_column.set(good[1]); other_column.event_generate("<<ComboboxSelected>>")
+        self.root.update()
+        column.set(bad[0])  # only this table's column changes
+        self.root.update()
+        label = [str(w.cget("text")) for w in widgets(joins) if isinstance(w, ttk.Label)
+                 and (" vs " in str(w.cget("text")) or str(w.cget("text")).endswith("match"))]
+        self.assertTrue(label and " vs " in label[0], label)
 
     def test_the_builder_offers_the_join_operator(self):
         self.open("Celiac_intake.yaml")
