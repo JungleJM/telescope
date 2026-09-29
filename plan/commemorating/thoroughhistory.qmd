@@ -14,18 +14,18 @@ This is the full record of the Telescope work, including what was later edited
 away, as raw material for a resume section and a portfolio piece. It is not
 the finished document.
 
-- **Sources.** Every commit up to `87f10d7` (28 Sep), every planning
+- **Sources.** Every commit up to `94e8b7c` (28 Sep), every planning
   document committed by then (most since deleted, recovered from git), the
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `87f10d7` (28 Sep), your first recipe written in the new
-  layout and the Infant RSV intake queued for the VM. Section 2's last column
-  is as of `00bfcd3` (07:31); only two commits followed. Earlier versions of
-  this record stopped at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13),
-  `b4dec41` (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28) and `00bfcd3` (28 Sep,
-  07:31); everything after each was added from the commits and the three
-  design documents.
+- **Cut-off.** `94e8b7c` (28 Sep, 21:06), the Infant RSV intake repaired
+  after its first Execute stopped. Section 2's last column is as of `00bfcd3`
+  (07:31); only four commits followed. Earlier versions of this record
+  stopped at `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13), `b4dec41`
+  (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28), `00bfcd3` (28 Sep, 07:31) and
+  `87f10d7` (28 Sep); everything after each was added from the commits and
+  the three design documents.
 - **Where things are.** `QMDs/` became `plan/` on 28 Sep (`3b6efb6`), and
   `CLAUDE.md` moved to `.claude/CLAUDE.md`; commits before then name the old
   paths, which is what Section 12's commands use.
@@ -935,6 +935,35 @@ alongside all night.
   advised, and the assistant added the age column. With it, the
   `Infant_RSV` intake, queued for the next bundle with `UC_DxHxSxRx`.
 
+### 28 Sep, Evening: Infant RSV Stops At Execute (2 commits)
+
+- **The docs** (`4c3c152`) extended this record to `87f10d7` and opened the
+  bundle question in the roadmap.
+- **The first Execute of Infant RSV stopped at its PK**: SQL Server could not
+  bind `pk.EncounterKey`. The join had come over from your recipe, where the
+  table's alias is `pk`; in the intake it was `evf`. You asked for the fault
+  and, "more importantly", why nothing caught it.
+- **The fault.** A check of every alias against its table's `from` and
+  `join`, and every column against the dictionary, found eight more of the
+  same kind across the intake: `p.` for `pd.`, `_IsDelete`, `lcr.` and `edv.`
+  for `lcrf.` and `ev.`, a vitals table reading `haf.` without joining it, a
+  date range written as `= 'BETWEEN …'`, and two inpatient tables joining
+  nothing, which would have pulled every row of VitalsFact and
+  LabComponentResultFact. All were fixed as the earlier RSV pull had them
+  (`94e8b7c`), with the RSV codes (`J12.1`, `B97.4`), one row per ED visit,
+  and the LOINC code you had added to the lab tables. Validate, the dry run
+  and a scan of the 80 rendered SQL files then came back clean.
+- **Why nothing caught it.** Validate checks output columns, variables,
+  bindings, uploads and batching; join and where lines pass through as text,
+  and Export split and Preview SQL render them without reading them. SQL
+  Server was the first reader. You had built most of the tables with the
+  app's dropdowns and suspected them; checked, each writes the right alias.
+  The errors came through the typed boxes, the carried-over recipe line, and
+  one app fault (#57). A gap showed too: renaming a table's alias rewrites its
+  columns but not its joins or wheres. The three checks proposed in reply (an
+  alias check in makeYaml, a check as a line is added, and alias renames that
+  reach the lines) await your answer in `response.md`.
+
 ---
 
 ## 6. The Work, By Role
@@ -1433,7 +1462,8 @@ design document.
   who spotted each problem is **[Ask]**. #43 to #45 are from your notes.
 - **#43 to #46** were fixed on 27 Sep, between 12:19 and 12:26; #47 to #51 on
   28 Sep, while the app was built; #52 to #56 that morning, #52 and #53 from
-  the app's first VM run.
+  the app's first VM run; #57 and #58 that evening, from Infant RSV's first
+  Execute.
 
 | # | Defect | What it would have done | Surfaced by | Ref |
 | --- | --- | --- | --- | --- |
@@ -1493,6 +1523,8 @@ design document.
 | 54 | The test runner's one-line summary took a pipe's exit code, not the suites' | A commit went in with one suite showing a failure (a concurrent dictionary edit; the commit was sound) | Reading the output after the commit | `2fad9b8`; runner fixed |
 | 55 | The launcher read `datascope.json` from where Python started, not its working folder | Split and SQL folders under another folder's runs setting | The runtime tests, while moving the core files | D111, `fd81719` |
 | 56 | Three new dictionary tables pasted at the file's top level, outside `DataDictionary:` | Nothing could see them: 17 tables read, not 20 | Counting the tables before committing them | `319fc26` |
+| 57 | The Builder's Value mode writes only `=`, quoting what it is given | A date range became `vf.DateKey = 'BETWEEN {{min_date_key}} AND {{max_date_key}}'` | Checking Infant RSV after its Execute stopped | Open; `response.md` |
+| 58 | Infant RSV's intake named aliases its tables did not have, misspelled `_IsDeleted`, and left two inpatient tables unjoined; Validate reads no join or where line | Execute stopped at the PK; the unjoined tables would have pulled whole fact tables | Your first Execute of the pull, on the VM | `94e8b7c`; the check is open |
 
 ---
 
@@ -1756,6 +1788,8 @@ resume line.
     or said.)
 25. **The Infant RSV pull.** Its question, and whether one row per ED visit
     (not per child) is what it needs.
+26. **Infant RSV's second Execute.** Did the repaired intake run through, and
+    what did it return?
 
 **Attribution, and my recommendation.**
 
