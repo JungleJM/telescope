@@ -1,0 +1,3479 @@
+# The data dictionary, checked against the Cosmos dictionary pages
+# (screenshots in plan/images/Data Dictionary/, 2026-09-29). A copy of
+# datadictionary.yaml: nothing reads this file until it replaces that one.
+#
+# A checked table has a comment above it saying so. Its types are the page's,
+# lowercase, with any key after them in parentheses (D114, D115); only columns
+# with the database icon are listed (D116).
+#
+# standard_checks, at the bottom of each checked table: the WHERE conditions a
+# pull on that table normally carries (a live row, and a date window on the
+# partition key), written without an alias. A record for authors; no code
+# reads them yet.
+#
+# Tables still to check are listed at the bottom of this file.
+DataDictionary:
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/PatientDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  PatientDim:
+    description: >
+      Core patient dimension table. One row per patient, carrying demographics,
+      vital status, and several social vulnerability and geography attributes.
+      Use PatientDim.DurableKey to join to facts (note: this is the patient durable key).
+    granularity: >
+      One row per patient (patient-level dimension).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      AgeInYears:
+        type: tinyint
+        nullable: true
+        description: >
+          Patient's age in years at the time Cosmos snapshot was created or last updated.
+      BirthDate:
+        type: date
+        nullable: true
+        description: >
+          De-identified patient date of birth. Subject to date shifting per Cosmos
+          policies.
+      BirthDateAccuracy_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Categorical flag describing the precision of BirthDate (e.g., day/month/year
+          known).
+      EarliestPossibleBirthDate_X:
+        type: date
+        nullable: true
+        description: >
+          Lower bound date when only an age range or imprecise birth date is known.
+      BloodType_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          ABO blood group if available (e.g., A, B, AB, O); de-identified and sparse.
+      BloodTypeAndRhesusFactor_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Combined ABO and Rh factor (e.g., A+, O?) if documented and mapped.
+      Country:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Country associated with the patient's primary address at last update.
+      DeathDate:
+        type: date
+        nullable: true
+        description: >
+          De-identified date of death when known. Empty for living or unknown status.
+      DurableKey:
+        type: bigint (durable key, one per patient; PatientKey, the table's own key, is SD only)
+        nullable: false
+        description: >
+          Patient durable key, unique identifier for the patient in Cosmos.
+          This is the key you join to PatientDurableKey on fact tables.
+      Ethnicity:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Patient-reported or registration ethnicity category (e.g., Hispanic or Latino).
+      FifthRace:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Fifth race component for multi-racial patients; supports up to 5 race values.
+      FirstRace:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Primary race component; for single-race patients this is the sole race value.
+      FourthRace:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Fourth race component for multi-racial patients.
+      GenderIdentity:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Patient's recorded gender identity (e.g., woman, man, nonbinary).
+      HasPcp_X:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Flag indicating if a primary care provider is associated with the patient.
+      IsCurrent:
+        type: bit (flag)
+        nullable: false
+        description: >
+          Indicates whether the row is the current record for the patient.
+      IsValid:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates whether the record is considered valid for analytics use.
+      LastImmunizationQueryInstantUtc:
+        type: datetime (UTC)
+        nullable: true
+        description: >
+          Timestamp in UTC when immunization data was last queried or refreshed for this
+          patient.
+      MaritalStatus:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Patient's marital status as captured in registration (e.g., Married, Single).
+      MultiRacial:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that multiple race fields are populated for this patient.
+      PreferredLanguage:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Preferred language for care and communication (e.g., English, Spanish).
+      PreliminaryCauseOfDeathDiagnosisKey:
+        type: bigint (foreign key to DiagnosisDim)
+        nullable: true
+        description: >
+          Key referencing preliminary cause-of-death diagnosis, if coded.
+      PrimaryRUCA_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Primary Rural-Urban Commuting Area (RUCA) classification for patient's
+          residence.
+      ReliableSex:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Derived sex field cleaned for analytic use; more stable than raw sex
+          assignments.
+      RhesusFactor_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Rh factor (positive/negative) when available.
+      SecondRace:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Second race component for multi-racial patients.
+      Sex:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Administrative sex field used in general workflows (e.g., Female, Male).
+      SexAssignedAtBirth:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Sex assigned at birth when documented (e.g., female, male).
+      SourceComboKey_X:
+        type: bigint (foreign key to PatientSourceBridgeX)
+        nullable: true
+        description: >
+          Composite key linking to data source metadata for the patient record.
+      SourceCountry_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Country of the source organization contributing this patient's data.
+      StateOrProvince:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          State or province of the patient's primary address.
+      StateOrProvinceAbbreviation:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Abbreviated state/province (e.g., WI, TX) based on primary address.
+      Status:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          High-level patient status (e.g., active, inactive, deceased).
+      SviHouseholdCharacteristicsPctlRankByZip2020_X:
+        type: numeric(6,4)
+        nullable: true
+        description: >
+          Social Vulnerability Index percentile rank (household characteristics) for
+          ZIP, 2020.
+      SviHouseholdCompositionPctlRankingByZip2018_X:
+        type: numeric(10,4)
+        nullable: true
+        description: >
+          SVI percentile for household composition, ZIP-level, 2018 version.
+      SviHousingTypeTransportationPctlRankByZip2020_X:
+        type: numeric(6,4)
+        nullable: true
+        description: >
+          SVI percentile for housing type & transportation, ZIP-level, 2020 version.
+      SviHousingTypeTransportationPctlRankingByZip2018_X:
+        type: numeric(10,4)
+        nullable: true
+        description: >
+          SVI percentile for housing type & transportation, ZIP-level, 2018.
+      SviMinorityStatusLanguagePctlRankingByZip2018_X:
+        type: numeric(10,4)
+        nullable: true
+        description: >
+          SVI percentile for minority & language status, ZIP-level, 2018.
+      SviOverallPctlRankByZip2020_X:
+        type: numeric(6,4)
+        nullable: true
+        description: >
+          Overall SVI percentile rank for ZIP, 2020 ACS-based SVI.
+      SviOverallPctlRankingByZip2018_X:
+        type: numeric(10,4)
+        nullable: true
+        description: >
+          Overall SVI percentile rank for ZIP, 2018 SVI.
+      SviRacialEthnicMinorityStatusPctlRankByZip2020_X:
+        type: numeric(6,4)
+        nullable: true
+        description: >
+          SVI percentile for racial/ethnic minority status for ZIP, 2020.
+      SviSocioeconomicPctlRankByZip2020_X:
+        type: numeric(6,4)
+        nullable: true
+        description: >
+          SVI socioeconomic percentile for ZIP, 2020 version.
+      SviSocioeconomicPctlRankingByZip2018_X:
+        type: numeric(10,4)
+        nullable: true
+        description: >
+          SVI socioeconomic percentile for ZIP, 2018 version.
+      ThirdRace:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Third race component for multi-racial patients.
+      UseInCosmosAnalytics_X:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates whether the patient record is approved for use in Cosmos analytics.
+    standard_checks:
+      - "IsCurrent = 1"
+      - "IsValid = 1"
+      - "UseInCosmosAnalytics_X = 1"
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/EdVisitFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  EdVisitFact:
+    description: >
+      Emergency department (ED) visit fact table. One row per ED visit/contact,
+      linked to encounters via EncounterKey and to patients via PatientDurableKey.
+      Includes ED timing milestones, acuity, payor, and disposition.
+    granularity: >
+      One row per ED visit (ED-visit-level fact), usually one per ED encounter.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      AcuityLevel:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          ED triage acuity (e.g., ESI level) recorded at arrival.
+      AdmissionProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for the provider associated with admission decision from ED.
+      AgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key representing patient age at the time of the ED visit.
+      ArrivalDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: false
+        description: >
+          DateKey for ED arrival date. Join to DateDim for calendar attributes.
+      ArrivalInstant:
+        type: datetime
+        nullable: false
+        description: >
+          Timestamp of arrival in ED, de-identified and time-shifted.
+      ArrivalMethod:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Method of arrival (e.g., walk-in, ambulance, transfer).
+      ArrivalTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          TimeOfDay key for ED arrival time; join to TimeOfDayDim for hour/minute
+          buckets.
+      AvsPrintDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when After-Visit Summary was printed, if applicable.
+      AvsPrintInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the AVS was printed.
+      AvsPrintTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for AVS print time.
+      BedAssignedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when ED bed was assigned.
+      BedAssignedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when ED bed assignment occurred.
+      BedAssignedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for bed assignment.
+      BedRequestDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when bed request for admission/placement was placed.
+      BedRequestInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for bed request.
+      BedRequestTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for bed request.
+      BoardingHoursEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey marking the end of ED boarding period, if tracked.
+      BoardingHoursEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when boarding ended.
+      BoardingHoursEndTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for boarding end time.
+      BoardingHoursStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when boarding started.
+      BoardingHoursStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp marking start of boarding.
+      BoardingHoursStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for boarding start.
+      CodingComplete_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates whether ED visit coding is complete at source organization.
+      CodingStatus_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Categorical coding status (e.g., pending, complete).
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real rows.
+      CoverageComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite coverage key for the ED visit's primary coverage.
+      DepartureDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when the patient physically left the ED.
+      DepartureInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of ED departure (may differ from disposition decision time).
+      DepartureTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for ED departure time.
+      DerivedEncounterStatus_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Derived status for the ED visit (e.g., completed, cancelled).
+      DischargeDisposition:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Disposition from ED (e.g., admitted, discharged home, left AMA).
+      DispositionDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey of disposition decision.
+      DispositionInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of disposition decision.
+      DispositionTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for disposition.
+      EdVisitKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for ED visit fact row.
+      EdGenericDispo:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Generalized disposition category, harmonized across organizations.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: false
+        description: >
+          Key linking the ED visit to its underlying encounter.
+      EncounterSourceComboKey_X:
+        type: bigint (foreign key to EncounterSourceBridge)
+        nullable: true
+        description: >
+          Composite source key describing origin of the encounter data.
+      FinancialClass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Financial class category (e.g., commercial, Medicare).
+      FirstAttendingAssignedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first attending provider was assigned in ED.
+      FirstAttendingAssignedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when first attending was assigned.
+      FirstAttendingAssignedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for first attending assignment.
+      FirstCodeEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first resuscitation/code event ended, if documented.
+      FirstCodeEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp marking end of first code event.
+      FirstCodeEndTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for code end.
+      FirstCodeStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first code event started.
+      FirstCodeStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when first code started.
+      FirstCodeStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for code start.
+      FirstEdRegisteredNurseAssignedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first ED RN was assigned.
+      FirstEdRegisteredNurseAssignedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of first ED RN assignment.
+      FirstEdRegisteredNurseAssignedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for first RN assignment.
+      FirstEkgCompletedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first ECG/EKG was completed in ED.
+      FirstEkgCompletedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of first EKG completion.
+      FirstEkgCompletedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for first EKG completion.
+      FirstProviderContactDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first provider saw the patient in ED.
+      FirstProviderContactInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of first provider contact.
+      FirstProviderContactTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for provider contact.
+      FirstSedationEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for end of first recorded sedation episode.
+      FirstSedationEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for sedation end.
+      FirstSedationEndTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for sedation end.
+      FirstSedationStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for start of first recorded sedation episode.
+      FirstSedationStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of sedation start.
+      FirstSedationStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for sedation start.
+      FirstTraumaEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when first trauma bay period ended.
+      FirstTraumaEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for end of trauma bay period.
+      FirstTraumaEndTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for trauma end.
+      FirstTraumaStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when trauma bay period started.
+      FirstTraumaStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of trauma bay start.
+      FirstTraumaStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for trauma start.
+      HospitalAdmissionKey:
+        type: bigint (foreign key to HospitalAdmissionFact)
+        nullable: true
+        description: >
+          Links ED visit to a subsequent hospital admission record when applicable.
+      LeftAgainstMedicalAdvice:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates patient left against medical advice (AMA) from ED.
+      LeftWithoutBeingSeen:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates patient left ED without being seen by a provider.
+      ObservationStartedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when ED observation status began.
+      ObservationStartedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp marking start of observation.
+      ObservationStartedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for observation start.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Durable key identifying the patient associated with the ED visit.
+      PayorComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite key identifying payor information associated with the ED visit.
+      PrimaryPayorKey_X:
+        type: bigint (foreign key to CoverageDim)
+        nullable: true
+        description: >
+          Key for primary payor for the ED visit.
+      RegistrationCompleteDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when ED registration was completed.
+      RegistrationCompleteInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for registration completion.
+      RegistrationCompleteTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for registration completion.
+      RoomedDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when patient was assigned to an ED room.
+      RoomedInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for room assignment.
+      RoomedTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for rooming time.
+      TriageCompleteDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when triage was completed.
+      TriageCompleteInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for triage completion.
+      TriageCompleteTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for triage completion.
+      TriageStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when triage started.
+      TriageStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for triage start.
+      TriageStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for triage start.
+      UnderObservation:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates whether visit included an ED observation phase.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "ArrivalDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/DiagnosisEventFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  DiagnosisEventFact:
+    description: >
+      Diagnosis event fact table. Rows represent diagnoses associated with encounters,
+      problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+      for prevalence; rows are at the billing/event grain.
+    granularity: >
+      One row per diagnosis event per encounter/context at billing/event grain.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      AgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key for patient at time of diagnosis event.
+      Chronic:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates diagnosis is flagged as chronic in the source system.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count; typically 1 for real diagnosis event rows.
+      DiagnosisEventKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the diagnosis event record.
+      DiagnosisKey:
+        type: bigint (foreign key to DiagnosisDim)
+        nullable: false
+        description: >
+          Key referencing the diagnosis concept; use DiagnosisTerminologyDim for code
+          details.
+      DocumentedInstant_X:
+        type: datetime
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with this diagnosis event; note that billing diagnoses
+          can repeat across linked encounters.
+      EndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing diagnosis end date or inactivation, when present.
+      EmergencyDepartmentDiagnosis:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates diagnosis was documented in the ED context.
+      IsPrimary:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates diagnosis is marked as primary or principal for the encounter.
+      NotedDateKey_X:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          The noted date of a diagnosis from the Hospital Problem List. If only a month
+          or year was documented, this is the earliest date in that month or year. This
+          is only populated for encounter diagnoses that ... (the rest is cut off in the
+          screenshot).
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the diagnosis event.
+      PresentOnAdmission:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Indicates the present on admission status for the diagnosis
+      SourceComboKey:
+        type: bigint (foreign key to DiagnosisEventSourceBridge)
+        nullable: true
+        description: >
+          Composite key linking to data source metadata for this diagnosis record.
+      StartDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: true
+        description: >
+          DateKey representing when diagnosis became active or was first recorded.
+      Status:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Diagnosis status (e.g., active, resolved, ruled out) depending on context.
+      Type:
+        type: nvarchar(350)
+        nullable: true
+        description: >
+          Diagnosis type (e.g., billing, problem list, admission, discharge), per source.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/HospitalAdmissionFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  HospitalAdmissionFact:
+    description: >
+      Hospital admission fact table. One row per hospital admission episode,
+      including inpatient and some observation stays, linked to encounters and patients.
+      Contains admission/discharge timing, LOS, payor, and readmission flags.
+    granularity: >
+      One row per hospital admission episode (admission-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      AdmissionDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: false
+        description: >
+          DateKey for hospital admission date; join to DateDim for calendar attributes.
+      AdmittingProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for provider recorded as admitting provider.
+      AgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key at time of admission.
+      CodingComplete_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates coding for the hospital admission is complete.
+      CodingStatus_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Categorical coding status (e.g., pending, complete) for the admission.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count; typically 1 for real hospital admission rows.
+      CoverageComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite coverage key representing coverage for the admission.
+      DaysSincePriorAdmission_X:
+        type: int
+        nullable: true
+        description: >
+          Days between this admission and prior admission, when computable.
+      DepartmentKey:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department representing admitting or primary inpatient department.
+      DerivedEncounterStatus_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Derived status of the admission encounter (e.g., completed, cancelled).
+      DischargeDepartmentKey_X:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department key for the department from which the patient was discharged.
+      DischargeDisposition:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Discharge disposition (e.g., home, SNF, expired).
+      DischargeDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing discharge date.
+      DischargeInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of discharge; de-identified and time-shifted.
+      DischargeTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for discharge time.
+      DischargingProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for provider recorded as discharging provider.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: false
+        description: >
+          Encounter key linking to the underlying hospital encounter record.
+      EncounterSourceComboKey_X:
+        type: bigint (foreign key to EncounterSourceBridge)
+        nullable: true
+        description: >
+          Composite source key describing origin of the encounter data.
+      EncounterType:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Type of encounter associated with this admission (e.g., inpatient,
+          observation).
+      FinancialClass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Financial class for the admission (e.g., commercial, Medicaid).
+      HospitalAdmissionKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the hospital admission fact record.
+      InpatientAdmissionDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when the inpatient portion of the admission started (may differ from
+          hospital arrival).
+      InpatientAdmissionInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for inpatient admission start.
+      InpatientAdmissionTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for inpatient admission time.
+      InpatientLengthOfStayInDays:
+        type: smallint
+        nullable: true
+        description: >
+          Length of stay in days for inpatient portion only.
+      LengthOfStayInDays:
+        type: smallint
+        nullable: true
+        description: >
+          Total length of stay in days for the hospital admission episode.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the hospital admission.
+      PayorComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite payor key associated with the admission.
+      PrimaryPayorKey_X:
+        type: bigint (foreign key to CoverageDim)
+        nullable: true
+        description: >
+          Key identifying primary payor for the admission.
+      StartedAsHOV_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates admission started as a hospital outpatient visit (HOV) before
+          inpatient conversion.
+      StartedInED_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates admission started from an ED visit.
+      IsIndexAdmission_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Flag used in readmission logic to indicate index admission in a readmission
+          series.
+      IsUnplannedReadmission_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates admission is categorized as an unplanned readmission relative to a
+          prior stay.
+      IsPlannedReadmission_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates admission is categorized as a planned readmission.
+      ReadmissionCausedByKey_X:
+        type: bigint (foreign key to HospitalAdmissionFact)
+        nullable: true
+        description: >
+          Key referencing cause-of-readmission concept when mapped (e.g., another
+          admission or diagnosis).
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/LabComponentResultFact/): columns, types, and
+  # keys from its ER diagram.
+  # ReferenceValueHigh_X's nullability from the page; other nullability not yet checked.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  LabComponentResultFact:
+    description: >
+      Lab component result fact table. One row per lab component result for a patient,
+      linked to specific lab tests and encounters. Numeric results are stored in
+      NumericValue with units in Unit; categorical/string results are stored in Value.
+      LabComponentKey = -1 indicates an unmapped component; exclude or handle separately.
+      Partitioned on PrioritizedDateKey.
+    granularity: >
+      One row per lab component result per patient per event.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Flag indicating the row has been logically deleted in the source. Filter this
+          out for most analytic use cases.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Flag indicating the row was inferred rather than directly sourced; used for
+          lineage and data quality checks.
+      Abnormal:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          A 1/0 flag (tinyint) on its dictionary page; description not yet transcribed.
+      CollectionInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the specimen was collected. De-identified and time-shifted.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator, typically 1 for real rows. Placeholder rows
+          have nonpositive keys and may carry NULL Count.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter during which the lab specimen/result was associated.
+      Flag:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Result flag as provided by the source (e.g., H, L, critical).
+      IsBlankOrUnsuccessfulAttempt:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates the result represents a blank measurement or an unsuccessful attempt.
+      LabComponentKey:
+        type: bigint (foreign key to LabComponentDim)
+        nullable: false
+        description: >
+          Key identifying the lab component. Value -1 is the unspecified sentinel for
+          unmapped components and should be handled explicitly.
+      LabComponentResultKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the lab component result fact row.
+      LabTestKey_X:
+        type: bigint (foreign key to LabTestFact)
+        nullable: true
+        description: >
+          Key linking this component result to the parent lab test record.
+      NumericValue:
+        type: float
+        nullable: true
+        description: >
+          Numeric representation of the lab result when the raw value parses as a number.
+          Value is NULL for categorical/string results. Selecting on NumericValue
+          preferentially pulls abnormal results; use with care.
+      NumericBoundaryValue_X:
+        type: float
+        nullable: true
+        description: >
+          Numeric boundary value when the result uses inequality or thresholds (e.g.,
+          "<5").
+      NumericValueMaximum_X:
+        type: float
+        nullable: true
+        description: >
+          Maximum numeric value when the lab result represents a range.
+      NumericValueMinimum_X:
+        type: float
+        nullable: true
+        description: >
+          Minimum numeric value when the lab result represents a range.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the lab result.
+      PrioritizedDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: true
+        description: >
+          DateKey for the prioritized result date (usually the result date); use for
+          date filtering and reporting.
+      PrioritizedInstant_X:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for the prioritized result date/time (result or collection, depending
+          on configuration).
+      ProcedureDurableKey:
+        type: bigint (foreign key to ProcedureDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for a procedure associated with the lab result, when mapped.
+      ReferenceValueHigh_X:
+        type: nvarchar(300)
+        nullable: false
+        description: >
+          High end of the normal range for this result. Text, not a number: cast it
+          yourself where it parses.
+      ReferenceValueLow_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Low end of the normal range for this result. Text, not a number: cast it
+          yourself where it parses.
+      ReferenceValueNormal_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Textual representation of the normal reference range or category.
+      ResultingLabDurableKey:
+        type: bigint (foreign key to LabDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key identifying the lab facility or system that produced the result.
+      ResultInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the result was finalized/reported. Often used as the main
+          result time for analyses.
+      SourceComboKey:
+        type: bigint (foreign key to LabComponentResultSourceBridge)
+        nullable: true
+        description: >
+          Composite source key for the lab result; use to trace origin system.
+      StructuredBoundaryOperator_X:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Encoded boundary operator for numeric results with thresholds (e.g., "<",
+          ">=").
+      Unit:
+        type: nvarchar(100)
+        nullable: true
+        description: >
+          Unit of measure for NumericValue (e.g., mg/dL). For unitless values received
+          before Oct 2022 this may be "each"; later values may have NULL.
+      Value:
+        type: nvarchar(300)
+        nullable: false
+        description: >
+          Categorical or string representation of the result when not numeric. For
+          numeric results, Value is the sentinel "*Not Applicable". Values of "*Masked in De-ID"
+          represent results masked during de-identification.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/EncounterFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  EncounterFact:
+    description: >
+      General encounter fact table. One row per encounter across settings, with
+      admission/discharge timing, department, encounter type, and coverage/payor
+      attributes. EncounterKey is the principal link to many other fact tables.
+    granularity: >
+      One row per encounter across settings (encounter-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the encounter record.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the encounter record has been inferred rather than directly sourced.
+      AdmissionDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for encounter admission date (for inpatient/observation encounters).
+      AdmissionInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of admission; de-identified and time-shifted where applicable.
+      AdmittingProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for admitting provider associated with the encounter.
+      AgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key representing patient age at time of encounter.
+      ArrivalMeans:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Means of arrival, where applicable (e.g., ambulance, walk-in).
+      AttendingProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for attending provider for the encounter.
+      CodingComplete_X:
+        type: bit (flag)
+        nullable: true
+        description: >
+          Indicates coding for the encounter has been marked complete.
+      CodingStatus_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Categorical status of encounter coding (e.g., pending, complete, in progress).
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real encounter rows.
+      CoverageComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite key representing coverage for the encounter.
+      Date:
+        type: datetime
+        nullable: true
+        description: >
+          General encounter date field (often the start date); use DateKey for filtering.
+      DateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: false
+        description: >
+          Primary encounter date key; join to DateDim for calendar attributes.
+      DepartmentKey:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department associated with the encounter (e.g., clinic, inpatient unit).
+      DerivedEncounterStatus:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Derived status of the encounter (e.g., completed, cancelled), harmonized
+          across organizations.
+      DerivedEncounterType_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Derived encounter type category (e.g., ED visit, inpatient, outpatient visit).
+      DischargeDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for discharge date or encounter end date.
+      DischargeDisposition:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Discharge disposition (e.g., home, SNF, expired, left AMA).
+      DischargeInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of discharge or encounter end.
+      DischargeProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key for provider documented as discharging provider.
+      EncounterKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the encounter fact row. Used widely for linking other facts.
+      EndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing the encounter end date.
+      EndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp representing the encounter end time.
+      IsEdVisit:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that the encounter is an ED visit. ED-specific detail is in
+          EdVisitFact.
+      IsHospitalAdmission:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates the encounter represents a hospital admission episode.
+      IsHospitalOutpatientVisit:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates a hospital outpatient encounter (e.g., same-day surgery, diagnostic).
+      IsOutpatientFaceToFaceVisit:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates a face-to-face outpatient visit (clinic, office).
+      IsPregnant_X:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Derived flag indicating the patient was pregnant at time of encounter when
+          documentation supports it.
+      MarkedDoNotBillInsurance:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates encounter was flagged as not to be billed to insurance.
+      MarkedSelfPay:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates encounter was flagged as self-pay.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Durable key identifying the patient associated with the encounter.
+      PayorComboKey_X:
+        type: bigint (foreign key to CoverageBridgeX)
+        nullable: true
+        description: >
+          Composite key representing payor information associated with the encounter.
+      PlaceOfServiceType_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Place of service category (e.g., office, inpatient hospital).
+      PrimaryCoverageFinancialClass_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Financial class derived from primary coverage for the encounter.
+      PrimaryPayorKey_X:
+        type: bigint (foreign key to CoverageDim)
+        nullable: true
+        description: >
+          Key for the primary payor associated with the encounter.
+      ProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          Provider durable key; may reflect the primary provider associated with the
+          encounter.
+      SourceComboKey:
+        type: bigint (foreign key to EncounterSourceBridge)
+        nullable: true
+        description: >
+          Composite source key providing origin metadata for the encounter.
+      Type:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Encounter type as captured at the source (e.g., inpatient, outpatient,
+          emergency), prior to derived categorization.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  LabComponentDim:
+    description: >
+      Lab component dimension table. One row per lab test component (e.g., specific
+      analyte/measurement). Contains naming, LOINC codes, units, and data type.
+    granularity: >
+      One row per lab component concept (component-level dimension).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the component definition.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the component record has been inferred.
+      Abbreviation:
+        type: string
+        nullable: true
+        description: >
+          Short abbreviation used for the component name in clinical workflows.
+      BaseName:
+        type: string
+        nullable: true
+        description: >
+          Base name representing the core analyte or concept underlying the component.
+      CommonName:
+        type: string
+        nullable: true
+        description: >
+          Common display name for the component as used in clinical practice.
+      DataType:
+        type: string
+        nullable: true
+        description: >
+          Data type expected for results of this component (e.g., numeric, string).
+      DefaultUnit:
+        type: string
+        nullable: true
+        description: >
+          Default unit for numeric results for this component (e.g., mg/dL).
+      LabComponentKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the lab component dimension row. Join from
+          LabComponentResultFact on LabComponentKey.
+      LoincCode:
+        type: string
+        nullable: true
+        description: >
+          LOINC code associated with the component, when mapped.
+      LoincName:
+        type: string
+        nullable: true
+        description: >
+          LOINC long/common name associated with the component.
+      Name:
+        type: string
+        nullable: true
+        description: >
+          Full display name for the component.
+      Subtype:
+        type: string
+        nullable: true
+        description: >
+          Component subtype used for further categorization within the type.
+      Type:
+        type: string
+        nullable: true
+        description: >
+          High-level component type (e.g., lab analyte, vital-related component).
+
+  LabComponentSetDim:
+    description: >
+      Lab component set dimension, representing value sets or curated lists of
+      lab components. Used to group components for cohorts or measure logic.
+    granularity: >
+      One row per lab component set membership (LabComponentSetKey, LabComponentKey).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the set.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the set record has been inferred.
+      DisplayName:
+        type: string
+        nullable: true
+        description: >
+          End-user-friendly display name for the component set.
+      LabComponentKey:
+        type: bigint (foreign key to LabComponentDim)
+        nullable: false
+        description: >
+          Component key that is a member of this set.
+      LabComponentSetKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the lab component set dimension row.
+      Name:
+        type: string
+        nullable: true
+        description: >
+          Internal name for the component set.
+      Trusted:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates whether the set is marked as trusted for use in analytics.
+      ValueSetEpicId:
+        type: string
+        nullable: true
+        description: >
+          Epic value set identifier for the component set when applicable.
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/BirthFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  BirthFact:
+    description: >
+      Birth fact table. One row per birth event, with linkages between mother and
+      baby, gestational age, delivery method, and labor/delivery timing and
+      characteristics.
+    granularity: >
+      One row per infant birth event (birth-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the birth record.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the record has been inferred.
+      AntenatalSteroids:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Documentation of antenatal steroid use (e.g., yes/no or categorical detail).
+      AugmentationUsed:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that labor augmentation was used.
+      BabyDischargeWeight:
+        type: numeric(10,3)
+        nullable: true
+        description: >
+          Baby's discharge weight, de-identified and potentially unit normalized.
+      BabyEncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      BabyInpatientLengthOfStayInDays:
+        type: smallint
+        nullable: true
+        description: >
+          Baby's inpatient length of stay in days.
+      BabyPatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key identifying the infant patient.
+      BirthAnesthesiaComboKey:
+        type: bigint (foreign key to BirthAnesthesiaBridge)
+        nullable: true
+        description: >
+          Composite key referencing anesthesia categories used during birth.
+      BirthAugmentationComboKey:
+        type: bigint (foreign key to BirthAugmentationBridge)
+        nullable: true
+        description: >
+          Composite key referencing labor augmentation methods.
+      BirthAugmentationIndicationComboKey:
+        type: bigint (foreign key to BirthAugmentationIndicationBridge)
+        nullable: true
+        description: >
+          Composite key referencing indication(s) for augmentation.
+      BirthCervicalRipeningComboKey:
+        type: bigint (foreign key to BirthCervicalRipeningBridge)
+        nullable: true
+        description: >
+          Composite key representing cervical ripening methods.
+      BirthCesareanIndicationComboKey:
+        type: bigint (foreign key to BirthCesareanIndicationBridge)
+        nullable: true
+        description: >
+          Composite key representing indications for cesarean delivery.
+      BirthComplicationComboKey:
+        type: bigint (foreign key to BirthComplicationBridge)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      BirthDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: false
+        description: >
+          DateKey for the birth date.
+      BirthEpisiotomyComboKey:
+        type: bigint (foreign key to BirthEpisiotomyBridge)
+        nullable: true
+        description: >
+          Composite key representing episiotomy data.
+      BirthInductionComboKey:
+        type: bigint (foreign key to BirthInductionBridge)
+        nullable: true
+        description: >
+          Composite key referencing induction methods.
+      BirthInductionIndicationComboKey:
+        type: bigint (foreign key to BirthInductionIndicationBridge)
+        nullable: true
+        description: >
+          Composite key for indications for induction.
+      BirthInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of birth; de-identified and time-shifted.
+      BirthKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the birth fact record.
+      BirthLength:
+        type: numeric(8,3)
+        nullable: true
+        description: >
+          Infant length at birth (e.g., centimeters).
+      BirthRuptureTypeComboKey:
+        type: bigint (foreign key to BirthRuptureTypeBridge)
+        nullable: true
+        description: >
+          Composite key representing type of membrane rupture associated with birth.
+      BirthTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for birth time.
+      BirthWeight:
+        type: numeric(10,3)
+        nullable: true
+        description: >
+          Birth weight measure; often redundant with BirthWeightGrams but may use
+          different units.
+      BirthWeightGrams:
+        type: numeric(10,3)
+        nullable: true
+        description: >
+          Birth weight in grams.
+      BreastMilkGiven:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates breast milk was given to the infant during the birth encounter.
+      CervicalRipeningDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when cervical ripening started.
+      CervicalRipeningInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when cervical ripening began.
+      CervicalRipeningTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for cervical ripening start time.
+      CesareanDelivery:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates the delivery was cesarean.
+      CesareanExpected:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates whether a cesarean delivery was expected/planned.
+      CordClampDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when the umbilical cord was clamped.
+      CordClampInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of cord clamp.
+      CordClampTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for cord clamp time.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real birth records.
+      DeliveryMethod:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Delivery method category (e.g., spontaneous vaginal, assisted, cesarean).
+      DilationCompleteInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when cervical dilation reached completion.
+      DilationCompleteDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for dilation completion.
+      DilationCompleteTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for dilation completion.
+      EpiduralOrSpinalGiven:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates whether epidural or spinal anesthesia was given.
+      FirstStageLengthMinutes:
+        type: int
+        nullable: true
+        description: >
+          Duration in minutes of first stage of labor.
+      ForcepsAttempted:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates forceps were attempted during delivery.
+      ForcepsDelivery:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates delivery ultimately used forceps.
+      GestationalAgeDays:
+        type: int
+        nullable: true
+        description: >
+          Gestational age in days at birth.
+      GestationalAgeZeroDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing gestational age zero point (e.g., conception or
+          standardized reference).
+      HeadCircumference:
+        type: numeric(8,3)
+        nullable: true
+        description: >
+          Infant head circumference measured at birth.
+      InductionUsed:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates labor induction was used.
+      LaborAttempted:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates labor was attempted (may be false for pre-labor cesarean).
+      LaborStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when labor started.
+      LaborStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when labor started.
+      LaborStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for labor start.
+      LaborType:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Categorical description of labor type (e.g., spontaneous, induced, augmented).
+      LivingStatus:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Infant living status at birth (e.g., liveborn, stillborn).
+      MotherAgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key representing mother's age at time of delivery.
+      MotherArrivalDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when mother arrived at the birthing facility.
+      MotherArrivalInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of mother's arrival at the birthing facility.
+      MotherArrivalTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for mother's arrival time.
+      MotherEncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter key for mother's delivery encounter.
+      MotherPatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key identifying the mother.
+      MultipleDeliveryCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Number of infants delivered in a multiple birth (e.g., twins, triplets).
+      MultipleDeliveryOrder:
+        type: tinyint
+        nullable: true
+        description: >
+          Order of the infant within multiple delivery (e.g., first of twins).
+      NeonatalDemise:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates neonatal demise occurred.
+      NonBreastMilkGiven:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates non-breast milk was given to the infant.
+      PlacentaDeliveryDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when placenta was delivered.
+      PlacentaDeliveryInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of placenta delivery.
+      PlacentaDeliveryTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for placenta delivery.
+      PlacentaMethod:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Method of placenta delivery (e.g., spontaneous, manual removal).
+      PregnancyKey:
+        type: bigint (foreign key to PregnancyFact)
+        nullable: true
+        description: >
+          Key linking the birth to the pregnancy episode.
+      PresentationType:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Fetal presentation type (e.g., vertex, breech).
+      PresentationVertex:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates vertex presentation.
+      PushingStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when pushing started.
+      PushingStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when pushing began.
+      PushingStartTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for pushing start.
+      RuptureDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when membranes ruptured.
+      RuptureInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp of membrane rupture.
+      RuptureOfMembranesToDeliverySeconds:
+        type: bigint
+        nullable: true
+        description: >
+          Duration in seconds between membrane rupture and delivery.
+      RuptureTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for rupture time.
+      SecondStageLengthMinutes:
+        type: int
+        nullable: true
+        description: >
+          Duration in minutes of second stage of labor.
+      SeverePerinealLacerationOccurred:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates severe perineal laceration (e.g., 3rd/4th degree) occurred.
+      SkinToSkinDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey when skin-to-skin contact first occurred.
+      SkinToSkinInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when skin-to-skin contact began.
+      SkinToSkinTimeOfDayKey:
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
+        nullable: true
+        description: >
+          Time-of-day key for skin-to-skin start.
+      SourceComboKey_X:
+        type: bigint (foreign key to BirthSourceBridgeX)
+        nullable: true
+        description: >
+          Composite source key describing origin of the birth record.
+      SpontaneousVaginalDelivery:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates delivery was spontaneous vaginal.
+      ThirdStageLengthMinutes:
+        type: int
+        nullable: true
+        description: >
+          Duration in minutes of third stage of labor (placental).
+      TotalApgarFiveMinute:
+        type: tinyint
+        nullable: true
+        description: >
+          Total Apgar score at 5 minutes.
+      TotalApgarOneMinute:
+        type: tinyint
+        nullable: true
+        description: >
+          Total Apgar score at 1 minute.
+      TotalApgarTenMinute:
+        type: tinyint
+        nullable: true
+        description: >
+          Total Apgar score at 10 minutes.
+      VacuumAttempted:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates vacuum assistance was attempted.
+      VacuumDelivery:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates delivery ultimately used vacuum assistance.
+    standard_checks:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/MedicationOrderFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  MedicationOrderFact:
+    description: >
+      Medication order fact table. One row per medication order at the order grain.
+      Holds order-level fields like quantity, route, frequency, and indications.
+      MedicationKey = -1 for mixtures; use MedicationOrderComponentFact to identify
+      ingredients when mixtures are in scope.
+    granularity: >
+      One row per medication order (order-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the medication order.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the order record has been inferred.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; often 1 for real orders.
+      DepartmentKey:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department associated with the order (e.g., ordering department).
+      DiscontinueReason:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Reason documented for discontinuing the order.
+      DoseUnit:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Unit for ordered dose (e.g., mg, mL, each). Unitless medications before Oct
+          2022 often use "each"; later data may use NULL.
+      DurationKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Key referencing the duration category of order when explicitly specified.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the order. For administrations in another context,
+          this may be the ordering encounter, not administering encounter.
+      EndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          Order end date key. Often represents discontinuation or system stop and is
+          not a reliable indicator of actual therapy stop.
+      FifthIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Fifth indication for use associated with the order, when documented.
+      FirstIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Primary indication for medication use as documented on the order.
+      FourthIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Fourth indication for use.
+      Frequency:
+        type: nvarchar(100)
+        nullable: true
+        description: >
+          Ordered frequency (e.g., BID, q6h, PRN text). Values vary across orgs;
+          map carefully when computing daily dose.
+      IsOutpatientMode:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates order mode flagged as outpatient. Mode is not the same as care
+          setting; clinic-administered medications may be inpatient mode.
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: false
+        description: >
+          Key to the medication record. Value -1 indicates mixture orders, which must
+          be resolved via MedicationOrderComponentFact for ingredients.
+      MedicationOrderKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the medication order fact record.
+      MinimumDose:
+        type: numeric(19,4)
+        nullable: true
+        description: >
+          Minimum dose per administration, used for titrated or range orders.
+      Mode:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Order mode (e.g., inpatient, outpatient). Distinct from Type_X and care
+          setting.
+      MorphineEquivalentDailyDosage:
+        type: numeric(18,3)
+        nullable: true
+        description: >
+          Computed morphine-equivalent daily dose for opioid orders when mapping is
+          available.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient associated with the medication order.
+      Quantity:
+        type: numeric(19,4)
+        nullable: true
+        description: >
+          Total quantity ordered (usually per fill for outpatient orders).
+      RefillsWritten:
+        type: smallint
+        nullable: true
+        description: >
+          Number of refills originally written on the order.
+      Route:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Route associated with the medication record for the order (e.g., oral, IV).
+          Use this to scope medications by route.
+      SecondIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Second indication for use.
+      SixthIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Sixth indication for use.
+      SourceComboKey_X:
+        type: bigint (foreign key to MedicationEventSourceBridge)
+        nullable: true
+        description: >
+          Composite source key providing origin metadata for the order.
+      StartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          Start date key for the order. Masked or defaulted for some patient-reported
+          and masked medications.
+      ThirdIndicationForUse:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Third indication for use.
+      Type_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Order type category (e.g., prescription, administered medication, historical).
+    standard_checks:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/MedicationOrderComponentFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  MedicationOrderComponentFact:
+    description: >
+      Medication order component fact table: the components of a medication order.
+      MedicationOrderFact's entry says to use it for a mixture's ingredients (its
+      MedicationKey is -1 there). Overview tab not screenshotted; not yet transcribed.
+    granularity: >
+      One row per medication order component (Overview tab not yet transcribed).
+    columns:
+      MedicationOrderComponentKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          On the dictionary page; description not yet transcribed.
+      ComponentType_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      Count:
+        type: tinyint
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      DoseUnit_X:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      EndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      Frequency_X:
+        type: nvarchar(100)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      MedicationOrderKey:
+        type: bigint (foreign key to MedicationOrderFact)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      MinimumDose_X:
+        type: numeric(19,4)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      Route_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      SourceComboKey_X:
+        type: bigint (foreign key to MedicationEventSourceBridge)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      StartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      Type_X:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+    standard_checks:
+      - "_IsDeleted = 0"
+
+  MedicationDispenseFact:
+    description: >
+      Outpatient medication dispense fact table. Rows represent fills/dispenses
+      from ambulatory or external pharmacies. Includes days supply, NDC, refills,
+      and dispense timing. Only outpatient dispenses are present.
+    granularity: >
+      One row per outpatient dispense/fill event (dispense-level fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the dispense record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the record has been inferred.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; usually 1 for real dispenses.
+      DaysSupply:
+        type: integer
+        nullable: true
+        description: >
+          Number of days of therapy the dispense is expected to cover.
+      DispenseDataSourceType_X:
+        type: string
+        nullable: true
+        description: >
+          Source type for the dispense (e.g., Willow Dispense History vs external).
+          Use to distinguish internal vs external dispenses.
+      DoseUnit_X:
+        type: string
+        nullable: true
+        description: >
+          Dose unit representation for the dispense, when captured.
+      FilledDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing dispense/fill date (or claim filed date for external).
+      FilledInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for dispense/fill date. For mail order, this is not delivery date.
+      FilledTimeOfDayKey:
+        type: integer (TimeOfDayKey)
+        nullable: true
+        description: >
+          Time-of-day key for fill time.
+      FillNumber:
+        type: integer
+        nullable: true
+        description: >
+          Fill number (0 for initial, >0 for refills) for Willow dispenses; inconsistent
+          for external dispenses.
+      FirstDispense:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates this row represents the first dispense for the corresponding order
+          for Willow; less reliable for external.
+      Frequency_X:
+        type: string
+        nullable: true
+        description: >
+          Dispensed frequency text when carried at dispense level.
+      MedicationDispenseKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the dispense fact record.
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: false
+        description: >
+          Medication associated with the dispense. Masked medications may appear under
+          generic "Masked Medication".
+      MedicationOrderKey:
+        type: bigint (foreign key to MedicationOrderFact)
+        nullable: true
+        description: >
+          Order key associated with the dispense. Reliable for Willow ambulatory;
+          inconsistent for external dispenses.
+      MedicationOrderWrittenDateKey_X:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey referencing when associated medication order was written.
+      MinimumDose_X:
+        type: numeric
+        nullable: true
+        description: >
+          Minimum dose per administration reflected in this dispense, if provided.
+      Mode:
+        type: string
+        nullable: true
+        description: >
+          Order mode associated with the dispense; may reflect outpatient/inpatient
+          mode, but external interfaces vary.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient associated with the dispense.
+      PrimaryComponentQuantity:
+        type: numeric
+        nullable: true
+        description: >
+          Quantity of primary component dispensed.
+      PrimaryComponentQuantityUnit:
+        type: string
+        nullable: true
+        description: >
+          Unit associated with primary component quantity.
+      PrimaryComponentUnformattedNdc:
+        type: string
+        nullable: true
+        description: >
+          Unformatted NDC representing potential package for the medication record;
+          not necessarily the exact NDC dispensed.
+      RawCodeSystem_X:
+        type: string
+        nullable: true
+        description: >
+          Original code system of the dispense record (e.g., NDC).
+      RawCodeValue_X:
+        type: string
+        nullable: true
+        description: >
+          Raw code value representing the product in the source system.
+      ReadyToDispenseDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing when the medication became ready to dispense; equivalent
+          to FilledDateKey for Willow; claim filed date for external dispenses.
+      RefillsRemaining_X:
+        type: integer
+        nullable: true
+        description: >
+          Remaining refills after this dispense. Reliable for Willow; external mappings
+          vary and can go negative when splits occur.
+      RefillsWritten_X:
+        type: integer
+        nullable: true
+        description: >
+          Number of refills written, as represented at the dispense level. Pre-2019
+          external data primarily uses this.
+      Route_X:
+        type: string
+        nullable: true
+        description: >
+          Route representation at dispense level when documented.
+      SourceComboKey_X:
+        type: bigint
+        nullable: true
+        description: >
+          Composite source key for the dispense.
+      SupplyEndDateKey_X:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey approximating when the supply would end; often derived from days
+          supply and fill date.
+
+  MedicationAdministrationFact:
+    description: >
+      Medication administration fact table representing MAR actions. Contains
+      administrations and non-given actions except Due. Filter using
+      ActionIsMedAdministration or AdministrationAction values when selecting
+      given doses. Incomplete data for some encounters; union with
+      MedicationOrderComponentFact where Type_X = 'Administered Medication'
+      can improve completeness.
+    granularity: >
+      One row per MAR action for a medication order (administration-action-level fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the administration row.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates an inferred administration record.
+      AdministrationDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing administration date for the MAR action.
+      AdministrationDepartmentKey:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department where the administration action occurred or was recorded.
+      AdministrationInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp for the administration action (e.g., Given, Held). De-identified.
+      AdministrationRoute:
+        type: string
+        nullable: true
+        description: >
+          Route documented at administration time (e.g., PO, IV). Some intraoperative
+          medications may have route only at administration.
+      AgeKey:
+        type: bigint
+        nullable: true
+        description: >
+          Age key representing age at administration time.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real MAR rows. Placeholder rows
+          have nonpositive keys and often NULL Count.
+      EncounterAdmissionInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp representing admission associated with the encounter, carried
+          on the administration record.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the medication order; for administrations in a
+          different contact, this remains the ordering encounter.
+      MedicationAdministrationKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the medication administration fact row.
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: false
+        description: >
+          Key to the medication record. Value -1 for mixture administrations; identify
+          ingredients from order components when mixtures are in scope.
+      MedicationOrderKey:
+        type: bigint (foreign key to MedicationOrderFact)
+        nullable: true
+        description: >
+          Links administration to its parent medication order. Never join directly to
+          MedicationOrderComponentFact; route through MedicationOrderFact.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient associated with the medication administration action.
+      SourceComboKey_X:
+        type: bigint
+        nullable: true
+        description: >
+          Composite source key for the administration action, referencing origin system.
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/PregnancyFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  PregnancyFact:
+    description: >
+      Pregnancy episode fact table. One row per pregnancy episode, with
+      episode-level dates, parity/gravida counts, delivery outcomes, and
+      pre-/post-delivery anthropometrics. Linked to patients via PatientDurableKey
+      and to births via BirthFact.PregnancyKey.
+    granularity: >
+      One row per pregnancy episode per patient (pregnancy-episode-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the pregnancy episode record.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the pregnancy record has been inferred rather than directly sourced.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real pregnancy episode rows.
+      EpisodeEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing end of the pregnancy episode (e.g., delivery, loss).
+      EpisodeStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: true
+        description: >
+          DateKey representing start of the pregnancy episode, often based on
+          estimated conception or first documentation.
+      HadCesarean:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that at least one delivery in the pregnancy was cesarean.
+      HadFetalDemise:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that fetal demise occurred during this pregnancy.
+      HadNeonatalDemise:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that neonatal demise occurred for at least one infant in this
+          pregnancy.
+      HasDelivery:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates that the pregnancy episode includes at least one delivery event.
+      HasDeliverySummary:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates a delivery summary record exists for this pregnancy.
+      IsHistorical:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates pregnancy is historical (documented retrospectively rather than
+          managed in real time).
+      LastDeliveryDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for the most recent delivery associated with this pregnancy.
+      LastDeliveryGestationalAge:
+        type: int
+        nullable: true
+        description: >
+          Gestational age (e.g., in weeks or days) at the most recent delivery.
+      NumberOfFetuses:
+        type: tinyint
+        nullable: true
+        description: >
+          Number of fetuses associated with this pregnancy (e.g., singleton, twins).
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient associated with this pregnancy episode.
+      PostDeliveryBmi_X:
+        type: numeric(18,4)
+        nullable: true
+        description: >
+          BMI measured post-delivery, derived by source logic and de-identified.
+      PreDeliveryBmi_X:
+        type: numeric(18,4)
+        nullable: true
+        description: >
+          BMI measured pre-delivery, derived by source logic. Use carefully as
+          measurement timing may vary.
+      PregnancyAbortionCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of abortions (therapeutic or spontaneous) documented for this pregnancy
+          episode if tracked at episode level.
+      PregnancyEctopicCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of ectopic pregnancies associated with this episode context.
+      PregnancyEstimatedEndDate:
+        type: date
+        nullable: true
+        description: >
+          Estimated pregnancy end date (e.g., EDD); use PregnancyEstimatedEndDateKey
+          for filtering and reporting.
+      PregnancyEstimatedEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for estimated pregnancy end date.
+      PregnancyEstimatedStartDate:
+        type: date
+        nullable: true
+        description: >
+          Estimated pregnancy start date (e.g., based on LMP or ultrasound).
+      PregnancyEstimatedStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for estimated pregnancy start date.
+      PregnancyGravidaCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Gravida count (number of prior pregnancies including current) at the time
+          of this pregnancy.
+      PregnancyOutcomeComboKey:
+        type: bigint (foreign key to PregnancyOutcomeBridge)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      PregnancyKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the pregnancy episode fact record. Links to
+          BirthFact.PregnancyKey.
+      PregnancyParaCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Para count (number of prior pregnancies resulting in viable births).
+      PregnancyPretermCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of prior preterm births associated with this pregnancy context.
+      PregnancyPriorFetalDemiseCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of prior fetal demises documented for the patient at the time of this
+          pregnancy.
+      PregnancyPriorLiveBirthCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Number of prior live births documented at the time of this pregnancy.
+      PregnancySpontaneousAbortionCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of spontaneous abortions associated with this pregnancy context.
+      PregnancyStartAgeKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key representing the patient's age at pregnancy start.
+      PregnancyTermCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Number of term births associated with this pregnancy episode.
+      PregnancyTherapeuticAbortionCount:
+        type: tinyint
+        nullable: true
+        description: >
+          Count of therapeutic abortions associated with this pregnancy context.
+      PregravidBmi:
+        type: numeric(18,1)
+        nullable: true
+        description: >
+          BMI measured prior to pregnancy (pregravid), when documented.
+      PregravidWeight:
+        type: numeric(18,1)
+        nullable: true
+        description: >
+          Weight prior to pregnancy (pregravid), de-identified and possibly unit
+          normalized.
+      PriorCesarean:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates the patient has a history of prior cesarean delivery before this
+          pregnancy.
+      SourceComboKey_X:
+        type: bigint (foreign key to BirthSourceBridgeX)
+        nullable: true
+        description: >
+          Composite source key representing origin metadata for the pregnancy record.
+      WorkingEstimatedDateOfDeliveryKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey for working estimated date of delivery (EDD) used during pregnancy
+          care.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "EpisodeStartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/DiagnosisTerminologyDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  DiagnosisTerminologyDim:
+    description: >
+      Diagnosis terminology dimension table. One row per diagnosis code representation
+      in a particular terminology (e.g., ICD-10-CM, SNOMED). Preferred source for
+      code-level details for diagnoses used in DiagnosisEventFact and other tables.
+    granularity: >
+      One row per diagnosis code representation in a terminology (diagnosis-code-level
+      dimension).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the diagnosis terminology record.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the terminology record has been inferred.
+      DiagnosisKey:
+        type: bigint (foreign key to DiagnosisDim)
+        nullable: false
+        description: >
+          Key linking this terminology record to the core diagnosis concept in
+          DiagnosisDim.
+      DiagnosisTerminologyKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the diagnosis terminology dimension row.
+      DisplayString:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Human-readable display string for the diagnosis concept, often combining
+          name and code in a user-friendly format.
+      GroupedNameAndCode:
+        type: nvarchar(850)
+        nullable: true
+        description: >
+          Grouped representation combining name and code for analytic grouping and
+          reporting.
+      NameAndCode:
+        type: nvarchar(850)
+        nullable: true
+        description: >
+          Concatenation of diagnosis name and code, often used as a canonical label.
+      ReferenceBillingCode:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 flag (tinyint) on its dictionary page: whether this row's code is the
+          reference billing code. Not the code itself; that is in Value.
+      Parent:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          A 1/0 flag (tinyint) on its dictionary page; description not yet transcribed.
+      TerminologyConceptKey:
+        type: bigint (foreign key to TerminologyConceptDim)
+        nullable: true
+        description: >
+          Key to the underlying terminology concept record.
+      Type:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Terminology type (e.g., ICD-10-CM, SNOMED CT, internal code set).
+      Value:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Raw value for the terminology representation; often the code or canonical
+          identifier.
+    standard_checks:
+      - "_IsDeleted = 0"
+
+  DurationDim:
+    description: >
+      Duration dimension table. Encodes durations in days, weeks, months, years
+      and display strings. Used to represent duration fields as dimensional keys
+      (e.g., MedicationOrderFact.DurationKey).
+    granularity: >
+      One row per distinct duration concept (duration-level dimension).
+    columns:
+      DurationKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the duration dimension row.
+      Days:
+        type: integer
+        nullable: true
+        description: >
+          Duration expressed in days.
+      DaysDisplayString:
+        type: string
+        nullable: true
+        description: >
+          Human-readable display string for duration in days (e.g., "7 days").
+      DisplayString:
+        type: string
+        nullable: true
+        description: >
+          General display string representation for the duration, potentially combining
+          multiple units.
+      Months:
+        type: integer
+        nullable: true
+        description: >
+          Duration expressed in months.
+      MonthsDisplayString:
+        type: string
+        nullable: true
+        description: >
+          Human-readable display string for duration in months (e.g., "3 months").
+      Weeks:
+        type: integer
+        nullable: true
+        description: >
+          Duration expressed in weeks.
+      WeeksDisplayString:
+        type: string
+        nullable: true
+        description: >
+          Human-readable display string for duration in weeks (e.g., "2 weeks").
+      Years:
+        type: integer
+        nullable: true
+        description: >
+          Duration expressed in years.
+      YearsDisplayString:
+        type: string
+        nullable: true
+        description: >
+          Human-readable display string for duration in years (e.g., "1 year").
+
+  ProblemListFact:
+    description: >
+      Problem list fact table. One row per problem list entry for a patient,
+      containing diagnosis keys, dates, chronic flags, and status. Used for
+      longitudinal conditions separate from billing diagnoses.
+    granularity: >
+      One row per problem list entry per patient (problem-entry-level fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the problem list entry.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the problem list record has been inferred.
+      AgeKey:
+        type: bigint
+        nullable: true
+        description: >
+          Age key representing patient age at the time the problem was recorded.
+      Chronic:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the problem is flagged as chronic in the source system.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real problem list entries.
+      DiagnosisKey:
+        type: bigint (foreign key to DiagnosisDim/DiagnosisTerminologyDim)
+        nullable: false
+        description: >
+          Key referencing the diagnosis concept associated with the problem list entry.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with initial documentation or modification of the problem.
+      EndDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing when the problem was resolved or inactivated.
+      IsCancerProblem:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the problem is classified as a cancer-related problem.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient associated with the problem list entry.
+      ProblemListKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the problem list fact record.
+      SourceComboKey_X:
+        type: bigint
+        nullable: true
+        description: >
+          Composite source key for the problem list record, used for origin metadata.
+      StartDateKey:
+        type: integer (DateKey)
+        nullable: true
+        description: >
+          DateKey representing when the problem was first recorded or became active.
+      Status:
+        type: string
+        nullable: true
+        description: >
+          Problem status (e.g., active, resolved, inactive).
+      Type:
+        type: string
+        nullable: true
+        description: >
+          Problem type category (e.g., medical, surgical, social), depending on local
+          configuration.
+
+  TerminologyConceptDim:
+    description: >
+      Terminology concept dimension table. One row per concept in a terminology
+      (e.g., a code or concept in ICD-10-CM, SNOMED CT, RxNorm, ATC, internal
+      value set). Serves as a generic concept backbone that other terminology-
+      specific dimensions (such as DiagnosisTerminologyDim or MedicationCodeDim)
+      reference via TerminologyConceptKey.
+    granularity: >
+      One row per terminology concept (concept-level dimension).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the terminology concept record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the terminology concept record has been inferred rather than
+          directly sourced; useful for lineage and data quality checks.
+      Concept:
+        type: string
+        nullable: true
+        description: >
+          Concept identifier string as used within the terminology or value set
+          (for example, a code or concept ID).
+      Name:
+        type: string
+        nullable: true
+        description: >
+          Human-readable name or label for the terminology concept.
+      StandardName:
+        type: string
+        nullable: true
+        description: >
+          Standardized or normalized name for the concept, used to harmonize
+          naming across contributors and terminologies.
+      TerminologyConceptKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the terminology concept dimension row. Referenced by
+          other terminology tables such as DiagnosisTerminologyDim and
+          TerminologyConceptSetDim.
+
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # plan/images/Data Dictionary/ProcedureEventFact/): columns, types, and
+  # keys from its ER diagram.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  ProcedureEventFact:
+    description: >
+      Procedure event fact table. Rows represent documented procedures
+      associated with encounters, with code, modifiers, quantity, and
+      timing fields. Use ProcedureDurableKey to link to ProcedureDim
+      when needed for code-level detail.
+    granularity: >
+      One row per documented procedure event per encounter
+      (procedure-event-level fact).
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the procedure event record.
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          Indicates the procedure event record has been inferred rather than
+          directly sourced; useful for lineage and data quality checks.
+      AgeAtProcedureDateKey:
+        type: bigint (foreign key to DurationDim)
+        nullable: true
+        description: >
+          Age key representing patient age at the time of the procedure.
+      Count:
+        type: tinyint
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real procedure event rows.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the procedure event. Many analyses use
+          DISTINCT EncounterKey when counting procedures per encounter.
+      FirstModifier:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          First procedure modifier code, when present (e.g., -26, -TC).
+      FourthModifier:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Fourth procedure modifier code, when present.
+      IsUnsuccessfulAttempt:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          Indicates the procedure was attempted but not successfully completed.
+          Use this flag when distinguishing completed procedures from attempts.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the procedure event.
+      PerformingProviderDurableKey:
+        type: bigint (foreign key to ProviderDim.DurableKey)
+        nullable: true
+        description: >
+          On the dictionary page; description not yet transcribed.
+      ProcedureCode:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Procedure code value as captured for the event (e.g., CPT, HCPCS,
+          internal code), interpreted together with ProcedureCodeSet.
+      ProcedureCodeSet:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Code set for ProcedureCode (e.g., CPT, HCPCS, internal). Use this
+          when grouping procedures by coding system.
+      ProcedureDurableKey:
+        type: bigint (foreign key to ProcedureDim.DurableKey)
+        nullable: true
+        description: >
+          Durable key linking the event to the procedure dimension record
+          for additional code-level attributes.
+      ProcedureEndDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          DateKey representing procedure end date when documented. Join to
+          DateDim for calendar attributes if needed for presentation.
+      ProcedureEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the procedure ended, de-identified and time-shifted.
+      ProcedureEventKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the procedure event fact record.
+      ProcedureStartDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: true
+        description: >
+          DateKey representing procedure start date. Prefer DateKey filtering
+          rather than joining to DateDim for performance.
+      ProcedureStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the procedure started, de-identified and time-shifted.
+      Quantity:
+        type: numeric(18,5)
+        nullable: true
+        description: >
+          Quantity associated with the procedure event (for example, number of
+          units or repeats). Interpret in context of the specific procedure.
+      SecondModifier:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Second procedure modifier code, when present.
+      SourceComboKey:
+        type: bigint (foreign key to ProcedureEventSourceBridge)
+        nullable: true
+        description: >
+          Composite source key for the procedure event, used to identify
+          origin system and mapping lineage.
+      ThirdModifier:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Third procedure modifier code, when present.
+      Type:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Procedure event type category (e.g., professional, facility,
+          surgical), depending on local configuration.
+    standard_checks:
+      - "_IsDeleted = 0"
+      - "ProcedureStartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  VitalsFact:
+    description: >
+      Vitals fact table. Rows represent individual vital sign measurements
+      (e.g., blood pressure, heart rate, weight, height) associated with
+      encounters and patients. Numeric values are de-identified and may be
+      unit-normalized. Placeholder rows with nonpositive primary keys should
+      be excluded from most analyses.
+    granularity: >
+      One row per vital sign measurement per encounter (vital-measurement-level
+      fact).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the vitals record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the vitals record has been inferred rather than directly
+          sourced; useful for lineage and data quality checks.
+      BodyMassIndex:
+        type: numeric
+        nullable: true
+        description: >
+          BMI value associated with the measurement. May be source-calculated
+          or derived using height and weight; use CalculatedBodyMassIndex_X
+          to distinguish source vs derived in some implementations.
+      CalculatedBodyMassIndex_X:
+        type: numeric
+        nullable: true
+        description: >
+          BMI calculated by source logic or derived mapping, separate from
+          raw BodyMassIndex when both are present.
+      Count:
+        type: integer
+        nullable: false
+        description: >
+          Cosmos row count indicator; typically 1 for real vitals rows.
+      DateKey:
+        type: integer (DateKey)
+        nullable: false
+        description: >
+          DateKey representing when the vital sign was taken. Use this
+          for filtering by date without joining to DateDim.
+      DiastolicBloodPressure:
+        type: numeric
+        nullable: true
+        description: >
+          Diastolic blood pressure measurement (e.g., mmHg) for this vitals row.
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Encounter associated with the vitals measurement. Some vitals may be
+          recorded outside a specific encounter and have NULL EncounterKey.
+      HeadCircumference:
+        type: numeric
+        nullable: true
+        description: >
+          Head circumference measurement (often pediatric) for this vitals row.
+      Height:
+        type: numeric
+        nullable: true
+        description: >
+          Height measurement (e.g., centimeters or inches). Unit-normalization
+          may occur in Cosmos de-identification.
+      LastKnownHeight_X:
+        type: numeric
+        nullable: true
+        description: >
+          Derived last-known height for the patient at the time of measurement,
+          used when explicit height is missing for a vitals row.
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: false
+        description: >
+          Patient durable key associated with the vitals measurement.
+      PulseRate:
+        type: numeric
+        nullable: true
+        description: >
+          Heart rate/pulse measurement (beats per minute).
+      RespirationRate:
+        type: numeric
+        nullable: true
+        description: >
+          Respiration rate measurement (breaths per minute).
+      SourceComboKey:
+        type: bigint (foreign key to VitalsSourceBridge/SourceDim)
+        nullable: true
+        description: >
+          Composite source key describing origin of the vitals record.
+      SpO2:
+        type: numeric
+        nullable: true
+        description: >
+          Oxygen saturation (SpO2) measurement, typically as percentage.
+      SystolicBloodPressure:
+        type: numeric
+        nullable: true
+        description: >
+          Systolic blood pressure measurement (e.g., mmHg) for this vitals row.
+      TakenInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Timestamp when the vital sign was taken, de-identified and
+          time-shifted. Often used for intra-encounter ordering.
+      Temperature:
+        type: numeric
+        nullable: true
+        description: >
+          Body temperature measurement (e.g., degrees Celsius or Fahrenheit),
+          potentially unit-normalized in Cosmos.
+      VitalsKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the vitals fact record. Guard on VitalsKey > 0
+          when excluding placeholder rows.
+      Weight:
+        type: numeric
+        nullable: true
+        description: >
+          Weight measurement (e.g., kilograms or pounds). De-identified and
+          possibly unit-normalized.
+
+  CoverageDim:
+    description: >
+      Coverage dimension table. Represents coverage and payor concepts such
+      as financial class, payor vs coverage flags, and self-pay. Referenced
+      from encounter- and admission-level facts via CoverageComboKey_X
+      through CoverageBridgeX.
+    granularity: >
+      One row per coverage/payor concept (coverage-level dimension).
+    columns:
+      _IsDeleted:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Logical deletion flag for the coverage record.
+      _IsInferred:
+        type: boolean (flag)
+        nullable: false
+        description: >
+          Indicates the coverage record has been inferred rather than directly
+          sourced; used for lineage and data quality checks.
+      CoverageFinancialClass:
+        type: string
+        nullable: true
+        description: >
+          Financial class category associated with this coverage (e.g.,
+          commercial, Medicare, Medicaid, self-pay surrogate).
+      CoverageKey:
+        type: bigint
+        nullable: false
+        description: >
+          Primary key for the coverage dimension row. Used in CoverageBridgeX to
+          form composite keys referenced by encounter and admission facts.
+      IsCoverage:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the record represents a coverage concept rather than a
+          pure payor-only concept in mixed configurations.
+      IsPayor:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Indicates the record represents a payor concept. Some records may
+          serve as both payor and coverage depending on local mapping.
+      IsSelfPay:
+        type: boolean (flag)
+        nullable: true
+        description: >
+          Flag indicating self-pay. When true, this coverage concept represents
+          a self-pay situation for encounters/admissions linked via
+          CoverageComboKey_X.
+      ReferenceFinancialClass:
+        type: string
+        nullable: true
+        description: >
+          Reference or normalized financial class value for this coverage
+          concept, used to harmonize financial classes across organizations.
+      ReferencePayer:
+        type: string
+        nullable: true
+        description: >
+          Reference or normalized payer name associated with this coverage
+          concept, used for cross-organization payer grouping.
+
+# ---------------------------------------------------------------------------
+# Still to check (as of 2026-09-29)
+#
+# In this dictionary, with no screenshot yet (types still abstract, or as the
+# VM's AI transcribed them; no standard_checks):
+#   - LabComponentDim
+#   - LabComponentSetDim
+#   - MedicationDispenseFact
+#   - MedicationAdministrationFact
+#   - DurationDim
+#   - ProblemListFact
+#   - TerminologyConceptDim
+#   - VitalsFact
+#   - CoverageDim
+#
+# Partly seen:
+#   - PatientDim, DiagnosisTerminologyDim: no ER diagram on their pages, so the
+#     column each foreign key lands on is not seen.
+#   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
+#     (description, granularity) not screenshotted.
+#   - Every checked table: descriptions cut off at the right of the screenshots,
+#     and no row expanded, so new columns' descriptions and all nullability are
+#     not from the page.
+#
+# Not in this dictionary, but a checked table's foreign key points at them.
+# Screenshot one before a pull joins it:
+#   - DateDim, TimeOfDayDim, DurationDim (above)
+#   - DiagnosisDim, ProcedureDim, ProviderDim, DepartmentDim, MedicationDim,
+#     LabDim, LabTestFact
+#   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim), CoverageDim (above)
+#   - Source bridges: DiagnosisEventSourceBridge, EncounterSourceBridge,
+#     LabComponentResultSourceBridge, MedicationEventSourceBridge,
+#     ProcedureEventSourceBridge, PatientSourceBridgeX, BirthSourceBridgeX; and
+#     SourceDim, which each bridge links to
+#   - Birth bridges (BirthAnesthesiaBridge, BirthAugmentationBridge,
+#     BirthAugmentationIndicationBridge, BirthCervicalRipeningBridge,
+#     BirthCesareanIndicationBridge, BirthComplicationBridge,
+#     BirthEpisiotomyBridge, BirthInductionBridge, BirthInductionIndicationBridge,
+#     BirthRuptureTypeBridge), PregnancyOutcomeBridge, and CategoryDim, which
+#     they link to
