@@ -627,6 +627,7 @@ def import_recipes(
             merged = deep_merge(copy.deepcopy(recipes[recipe_name]), cohort)
             merged["_recipe"] = recipe_name
             merged.pop("recipe", None)
+            collate_recipe_text(merged, cohort, dictionary)
         else:
             merged = copy.deepcopy(cohort)
         merged["_source"] = f"cohorts[{idx}]"
@@ -649,6 +650,58 @@ def import_recipes(
         fill_column_types(merged, dictionary)
         imported.append(merged)
     return imported
+
+
+def collate(base: Any, addition: Any) -> str:
+    """The dictionary's text, then what a recipe adds to it (D121)."""
+    base, addition = " ".join(str(base or "").split()), " ".join(str(addition or "").split())
+    if not base or base in addition:
+        return addition
+    if not addition:
+        return base
+    return f"{base} {addition}"
+
+
+def source_table(cohort: dict[str, Any]) -> str | None:
+    """The table a cohort's rows come from: its first `from` entry's."""
+    block = cohort.get("filter") or {}
+    first = block.get("from")
+    first = first[0] if isinstance(first, list) and first else first
+    found = declared_sql_tables(str(first or ""), is_from=True)
+    return found[0][1] if found else None
+
+
+def collate_recipe_text(merged: dict[str, Any], own: dict[str, Any], dictionary: dict[str, Any] | None) -> None:
+    """A recipe's description adds to the dictionary's for its source table,
+    and a recipe column's to its dictionary column's (D121); what the template
+    writes itself is the whole text. Granularity stays the recipe's."""
+    if not dictionary:
+        return
+    table = dictionary.get(source_table(merged) or "") or {}
+    if "description" not in own and isinstance(table, dict):
+        text = collate(table.get("description"), merged.get("description"))
+        if text:
+            merged["description"] = text
+    if "columns" in own:
+        return
+    aliases = cohort_aliases(merged)
+    for column in merged.get("columns") or []:
+        if not isinstance(column, dict) or not column.get("description"):
+            continue
+        entry = dictionary_column_entry(column, aliases, dictionary)
+        if entry and entry.get("description"):
+            column["description"] = collate(entry.get("description"), column["description"])
+
+
+def dictionary_column_entry(column: dict[str, Any], aliases: dict[str, str],
+                            dictionary: dict[str, Any]) -> dict[str, Any] | None:
+    """The dictionary's entry for a column's `alias.Column` source, if any."""
+    match = _SIMPLE_SOURCE.match(str(column.get("source") or "").strip())
+    table = aliases.get(match.group("alias")) if match else None
+    if not table or table not in dictionary:
+        return None
+    entry = ((dictionary[table] or {}).get("columns") or {}).get(match.group("column"))
+    return entry if isinstance(entry, dict) else None
 
 
 ADDED_LINES = (("add_where", "where"), ("add_join", "join"))
@@ -5136,7 +5189,23 @@ class DescriptionFieldTests(MakeYamlTest):
         pk = pk_doc["cohorts"][0]
         self.assertEqual(pk["granularity"], "One row per patient")
         sex = next(c for c in pk["columns"] if c["name"] == "Sex")
-        self.assertEqual(sex["description"], "Sex at registration")
+        # The recipe's text adds to the dictionary's, once, through transfer and split (D121).
+        dictionary = load_datadictionary(None, CompileResult())
+        base = " ".join(dictionary["PatientDim"]["columns"]["Sex"]["description"].split())
+        self.assertEqual(sex["description"], f"{base} Sex at registration")
+
+    def test_a_recipes_description_adds_to_the_dictionarys_and_its_own_wins(self):
+        dictionary = load_datadictionary(None, CompileResult())
+        recipes = load_yaml(write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes()))
+        table = source_table(recipe_index(recipes)["OtherDx"])
+        base = " ".join(str(dictionary[table]["description"]).split())
+        own = {"cohorts": [{"recipe": "OtherDx", "name": "A"},
+                           {"recipe": "OtherDx", "name": "B", "description": "My whole text."}]}
+        a, b = import_recipes(own, recipes, CompileResult(), dictionary)
+        recipe_text = " ".join(str(recipe_index(recipes)["OtherDx"].get("description") or "").split())
+        self.assertEqual(a["description"], f"{base} {recipe_text}".strip())
+        self.assertEqual(b["description"], "My whole text.")
+        self.assertEqual(a.get("granularity"), recipe_index(recipes)["OtherDx"].get("granularity"))
 
     def test_a_template_can_turn_off_a_recipes_separate_parquets(self):
         # What the Builder writes when Separate parquets is unticked on a recipe that sets it.

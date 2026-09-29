@@ -1125,6 +1125,47 @@ class Draft:
         self._changed()
         return len(self.doc["cohorts"]) - 1
 
+    TABLE_TEXTS = ("description", "granularity")
+
+    def table_text(self, index: int, key: str) -> str:
+        """A table's description or granularity as it will be written: its own,
+        else its recipe's collated with the dictionary's (D121)."""
+        if key not in self.TABLE_TEXTS:
+            raise DraftError(f"A table's text is its description or granularity, not {key}.")
+        merged = self._merged_cohort(index) or self._cohort(index)
+        return " ".join(str(merged.get(key) or "").split())
+
+    def set_table_text(self, index: int, key: str, text: str) -> None:
+        """Keep, clear or extend the imported text. Only a change is written:
+        the same text as imported writes nothing of the table's own (D121)."""
+        cohort = self._cohort(index)
+        cohort.pop(key, None)
+        imported = self.table_text(index, key)
+        text = " ".join(str(text or "").split())
+        if text != imported:
+            cohort[key] = text
+        self._changed()
+
+    def duplicate_table(self, index: int) -> int:
+        """A copy of a fact table after it, as `<name>_copy` with its own
+        destination, to change a name or a line (D125). Returns its place."""
+        cohort = self._cohort(index)
+        if self.cohort_is_pk(cohort):
+            raise DraftError("That is the PK; a template has one PK.")
+        copy_of = copy.deepcopy(cohort)
+        taken = {str(c.get(k) or "") for c in self.doc["cohorts"] if isinstance(c, dict) for k in ("name", "dest_table")}
+        base = str(cohort.get("name") or cohort.get("recipe") or "Table")
+        name = f"{base}_copy"
+        number = 2
+        while name in taken:
+            name, number = f"{base}_copy{number}", number + 1
+        copy_of["name"] = name
+        # Its own, always: a recipe's would land both tables in one destination.
+        copy_of["dest_table"] = name
+        self.doc["cohorts"].insert(index + 1, copy_of)
+        self._changed()
+        return index + 1
+
     def rename_table(self, index: int, name: str) -> None:
         self._cohort(index)["name"] = name.strip()
         self._changed()
@@ -1605,6 +1646,7 @@ class TableBuilder:
         if index is not None:
             self.pk = draft.cohort_is_pk(cohort)
         self.name = str(cohort.get("name") or "")
+        self._imported: dict[str, str] = {}
         self.dest_table = str(cohort.get("dest_table") or "")
         self.description = str(cohort.get("description") or "")
         self.granularity = str(cohort.get("granularity") or "")
@@ -1678,6 +1720,13 @@ class TableBuilder:
         self.joins = []
         # The table's standard lines, as ordinary where lines to keep or remove (D120).
         self.wheres = standard_where_lines(self.dictionary.get(table), self.alias)
+        # Its description and granularity, to keep, clear or add to (D121); a
+        # text left from the table chosen before is replaced too.
+        entry = self.dictionary.get(table) or {}
+        for key in ("description", "granularity"):
+            if not getattr(self, key).strip() or getattr(self, key) == self._imported.get(key):
+                setattr(self, key, " ".join(str(entry.get(key) or "").split()))
+                self._imported[key] = getattr(self, key)
 
     def set_alias(self, alias: str) -> None:
         """Rename the from table's alias in its columns, joins and where lines (D118)."""
@@ -2472,6 +2521,14 @@ class TableBuilderTests(ModelTest):
                 with self.subTest(table=table, line=line):
                     self.assertIn(column, entry.get("columns") or {})
 
+    def test_a_new_table_starts_with_the_dictionarys_description_and_granularity(self):
+        draft = self.draft()
+        builder = self.encounters(draft)
+        self.assertEqual(builder.description, "Encounters.")
+        builder.description += " Only the ones we need."
+        cohort = draft.doc["cohorts"][builder.commit()]
+        self.assertEqual(cohort["description"], "Encounters. Only the ones we need.")
+
     def test_the_template_keeps_no_type_the_dictionary_supplies(self):
         # A copy in the template goes stale when the dictionary is corrected.
         draft = self.draft()
@@ -2728,6 +2785,30 @@ class FilterLineTests(ModelTest):
         cohort = next(c for c in my.load_yaml(transfer)["cohorts"] if c["name"] == "Codes")
         self.assertEqual(cohort["filter"]["where"][-1], "e.EncounterKey IN (SELECT [Code] FROM {{prefix}}_Codes)")
         self.assertEqual(len(cohort["filter"]["where"]), 2)  # the recipe's own is kept
+
+    def test_a_recipe_tables_text_is_imported_and_written_only_when_changed(self):
+        # D121: shown in full, kept, cleared or added to; unchanged, nothing of its own.
+        draft = self.codes_draft()
+        imported = draft.table_text(1, "description")
+        draft.set_table_text(1, "description", imported)
+        self.assertNotIn("description", draft.doc["cohorts"][1])
+        draft.set_table_text(1, "description", imported + " Only 2020 on.")
+        self.assertEqual(draft.doc["cohorts"][1]["description"], f"{imported} Only 2020 on.".strip())
+        self.assertEqual(draft.table_text(1, "description"), f"{imported} Only 2020 on.".strip())
+        draft.set_table_text(1, "description", imported)
+        self.assertNotIn("description", draft.doc["cohorts"][1])
+
+    def test_a_duplicate_is_a_copy_with_its_own_name_and_destination(self):
+        draft = self.codes_draft()
+        draft.add_where_by_column(1, "e.EncounterKey", "=", "5")
+        at = draft.duplicate_table(1)
+        original, copied = draft.doc["cohorts"][1], draft.doc["cohorts"][at]
+        self.assertEqual(copied["name"], f"{original['name']}_copy")
+        self.assertEqual(copied["dest_table"], copied["name"])
+        self.assertEqual(copied["filter"], original["filter"])
+        copied["filter"]["add_where"].append("e.EncounterKey > 0")
+        self.assertEqual(len(original["filter"]["add_where"]), 1)  # a copy, not the same lines
+        self.assertEqual(draft.doc["cohorts"][draft.duplicate_table(1)]["name"], f"{original['name']}_copy2")
 
     def test_removing_the_last_line_leaves_no_filter_behind(self):
         draft = self.codes_draft()

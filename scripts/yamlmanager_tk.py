@@ -122,6 +122,8 @@ class AuthorView:
         self._file_paths: dict[str, Path] = {}
         self.section_key = "project"
         self.highlight: model.FieldRef | None = None
+        # Tables whose column list is open in the builder, while this draft is (D125).
+        self.open_columns: set[tuple[Any, str]] = set()
         self.inline_builder: model.TableBuilder | None = None  # the table being built in place (D110)
 
         self._build_top()
@@ -322,6 +324,7 @@ class AuthorView:
             self.exports_panel.chosen = None
         self.highlight = None
         self.inline_builder = None
+        self.open_columns = set()
         self._setting_name = True
         self.name_var.set(self.draft.project_name)
         self._setting_name = False
@@ -621,14 +624,16 @@ def join_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]], exc
     kind, column, operator = tk.StringVar(value="INNER"), tk.StringVar(value=names[0] if names else ""), tk.StringVar(value="=")
     other, other_column = tk.StringVar(value=tables[0][0] if tables else ""), tk.StringVar()
     keep(form, kind, column, operator, other, other_column)
+    # As the SQL reads (D125): INNER JOIN <table> . <its column> = <this table's column>.
     ttk.Combobox(form, textvariable=kind, values=list(model.JOIN_TYPES), width=7, state="readonly").pack(side="left")
-    ttk.Label(form, text="JOIN by column:").pack(side="left", padx=(4, 0))
-    ttk.Combobox(form, textvariable=column, values=names, width=22, state="readonly").pack(side="left", padx=4)
-    ttk.Combobox(form, textvariable=operator, values=list(model.JOIN_OPERATORS), width=4, state="readonly").pack(side="left")
+    ttk.Label(form, text="JOIN").pack(side="left", padx=(4, 0))
     table_box = ttk.Combobox(form, textvariable=other, values=[t[0] for t in tables], width=22, state="readonly")
     table_box.pack(side="left", padx=4)
     column_box = ttk.Combobox(form, textvariable=other_column, width=22, state="readonly")
     column_box.pack(side="left", padx=4)
+    ttk.Combobox(form, textvariable=operator, values=list(model.JOIN_OPERATORS), width=4, state="readonly").pack(side="left")
+    ttk.Label(form, text="by column").pack(side="left", padx=(4, 0))
+    ttk.Combobox(form, textvariable=column, values=names, width=22, state="readonly").pack(side="left", padx=4)
     result = note(form, "")
 
     def columns_of_table(*_: Any) -> None:
@@ -1018,10 +1023,24 @@ class TableBuilderPanel:
         self.joins(parent)
         self.wheres(parent)
 
+    def columns_key(self) -> tuple[Any, str]:
+        return (self.b.index, self.b.from_table)
+
+    def toggle_columns(self) -> None:
+        self.view.open_columns ^= {self.columns_key()}
+        self.render()
+
     def columns(self, parent: Any) -> None:
+        """Under a header that starts closed, and stays as it was left for this
+        table while the draft is open (D125)."""
         b = self.b
+        shown = self.columns_key() in self.view.open_columns
+        ttk.Button(parent, text=f"Columns ({len(b.columns)}) {'▾' if shown else '▸'}",
+                   command=self.toggle_columns).pack(anchor="w", pady=(8, 0))
+        if not shown:
+            return
         box = ttk.LabelFrame(parent, text="Columns", padding=8)
-        box.pack(fill="x", pady=8)
+        box.pack(fill="x", pady=(2, 8))
         dictionary = b.dictionary_columns()
         for col, text in enumerate(("#", "Column", "Output name", "Description (for contents.md)", "")):
             ttk.Label(box, text=text, foreground=COLOURS["muted"]).grid(row=0, column=col, sticky="w", padx=3)
@@ -1373,13 +1392,25 @@ def build_fact(view: AuthorView, parent: Any) -> None:
         ttk.Label(head, text="Name").pack(side="left")
         text_field(view, head, cohort.get("name"), lambda v, i=index: draft.rename_table(i, v)).pack(side="left", padx=6)
         editing = view.inline_builder is not None and view.inline_builder.index == index
-        if not cohort.get("recipe") and not editing:
+        built = not cohort.get("recipe")
+        if built and not editing:
             ttk.Button(head, text="Edit", command=lambda i=index: open_table_builder(view, i)).pack(side="left", padx=4)
-            if view.ws.has_recipes:
-                ttk.Button(head, text="Save as Recipe", command=lambda i=index: save_as_recipe(view, i)).pack(side="left")
+        if not editing:
+            ttk.Button(head, text="Duplicate", command=lambda i=index, b=built: duplicate_table(view, i, b)
+                       ).pack(side="left", padx=4)
         ttk.Button(head, text="Remove", command=lambda i=index: view.edit(
-            lambda: draft.remove_fact_table(i), rerender=True)).pack(side="right")
+            lambda: draft.remove_fact_table(i), rerender=True)).pack(side="left", padx=4)
+        if built and not editing and view.ws.has_recipes:
+            ttk.Button(head, text="Save as Recipe", command=lambda i=index: save_as_recipe(view, i)).pack(side="left", padx=4)
         note(box, "Type a position and press Enter to move it; the PK keeps its place.").pack(anchor="w")
+        if not built:
+            texts = ttk.Frame(box)
+            texts.pack(fill="x", pady=(4, 0))
+            for row, (label, key) in enumerate((("Description", "description"), ("Granularity", "granularity"))):
+                grid_row(texts, row, label, text_field(view, texts, draft.table_text(index, key),
+                                                       lambda v, i=index, k=key: draft.set_table_text(i, k, v), 90))
+            note(box, "Imported from the recipe and the dictionary: keep it, clear it or add to it; "
+                      "only a change is written (D121).").pack(anchor="w")
         if editing:
             TableBuilderPanel(view, view.inline_builder, box)
         var_editor(view, box, index)
@@ -1426,6 +1457,21 @@ def add_fact_panel(view: AuthorView, parent: Any) -> None:
                                                                    name=table_name.get()))
     note(inner, "Choosing a dictionary table opens its whole form here.").pack(anchor="w")
     ttk.Separator(parent).pack(fill="x", pady=(0, 6))
+
+
+def duplicate_table(view: AuthorView, index: int, built: bool) -> None:
+    """Copy a fact table after it; a built one opens for editing (D125)."""
+    try:
+        at = view.draft.duplicate_table(index)
+    except model.DraftError as exc:
+        view.say(str(exc), "error")
+        return
+    view.changed()
+    if built:
+        open_table_builder(view, at)
+    else:
+        view.render()
+    view.say(f"Copied as {view.draft.doc['cohorts'][at]['name']}.", "pass")
 
 
 def save_as_recipe(view: AuthorView, index: int) -> None:
@@ -2050,7 +2096,7 @@ class FilterViewTests(ViewTest):
         joins = next(w for w in widgets(self.view._last_builder.win)
                      if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Joins")
         combos = [w for w in widgets(joins) if isinstance(w, ttk.Combobox)]
-        _, column, _, other, other_column = combos[:5]
+        _, other, other_column, _, column = combos[:5]
         other.set(next(v for v in other.cget("values")))
         other.event_generate("<<ComboboxSelected>>")
         self.root.update()
@@ -2076,6 +2122,44 @@ class FilterViewTests(ViewTest):
         label = [str(w.cget("text")) for w in widgets(joins) if isinstance(w, ttk.Label)
                  and (" vs " in str(w.cget("text")) or str(w.cget("text")).endswith("match"))]
         self.assertTrue(label and " vs " in label[0], label)
+
+    def test_a_recipe_card_shows_its_text_and_duplicates(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("fact")
+        self.root.update()
+        index = self.view.draft.fact_tables()[0][0]
+        imported = self.view.draft.table_text(index, "description")
+        values = [w.get() for w in widgets(self.view.body.inner) if isinstance(w, ttk.Entry)
+                  and not isinstance(w, ttk.Combobox)]
+        self.assertIn(imported, values)
+        before = len(self.view.draft.fact_tables())
+        buttons = [w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Button)]
+        order = [str(w.cget("text")) for w in buttons if str(w.cget("text")) in ("Duplicate", "Remove")][:2]
+        self.assertEqual(order, ["Duplicate", "Remove"])
+        next(w for w in buttons if w.cget("text") == "Duplicate").invoke()
+        self.root.update()
+        self.assertEqual(len(self.view.draft.fact_tables()), before + 1)
+
+    def test_the_column_list_starts_closed_and_stays_as_left(self):
+        self.open("Celiac_intake.yaml")
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
+
+        def frames() -> list[str]:
+            return [str(w.cget("text")) for w in widgets(self.view._last_builder.win) if isinstance(w, ttk.LabelFrame)]
+
+        def header() -> ttk.Button:
+            return next(w for w in widgets(self.view._last_builder.win) if isinstance(w, ttk.Button)
+                        and str(w.cget("text")).startswith("Columns ("))
+
+        self.assertNotIn("Columns", frames())
+        self.assertIn("▸", header().cget("text"))
+        header().invoke()
+        self.root.update()
+        self.assertIn("Columns", frames())
+        self.view.render()  # anything else re-drawing the page keeps it open
+        self.root.update()
+        self.assertIn("Columns", frames())
 
     def test_the_builder_offers_the_join_operator(self):
         self.open("Celiac_intake.yaml")
