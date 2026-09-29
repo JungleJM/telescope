@@ -138,6 +138,7 @@ class SplitRun:
     error: dict[str, Any] | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    group: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -152,6 +153,8 @@ class SplitRun:
         }
         if self.batch is not None:
             out["batch"] = self.batch
+        if self.group is not None:
+            out["group"] = self.group
         return out
 
 
@@ -2444,6 +2447,92 @@ def check_sql_references(
                 )
 
 
+# The run of the tables in no group is `<session>__run`, so no group may take its name.
+RESERVED_GROUP_IDS = {"run"}
+
+
+def apply_table_groups(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """Check `table_groups` and record each fact table's group on it (D134).
+
+    A group is a named list of the template's fact tables, pulled on a Cosmos
+    connection of its own. The list at the top is the only place a table's
+    group is set: a `table_group` written on a table is replaced.
+    """
+    for cohort in cohorts:
+        if isinstance(cohort, dict):
+            cohort.pop("table_group", None)
+    groups = template.get("table_groups")
+    if groups in (None, [], {}):
+        return
+    example = "`table_groups:` then `- name: Meds` and `tables: [MedicationOrders, MedicationAdministrations]`"
+    if not isinstance(groups, list):
+        result.error("bad_table_groups", "`table_groups` must be a list of groups.", "table_groups",
+                     fix=f"Write {example}.")
+        return
+    by_name = {str(c.get("name")): c for c in cohorts if isinstance(c, dict) and c.get("name")}
+    facts = [n for n, c in by_name.items() if str(c.get("type", "")).lower() != "pk"]
+    ids: dict[str, str] = {}
+    owner: dict[str, str] = {}
+    for index, group in enumerate(groups):
+        where = f"table_groups[{index}]"
+        name = str(group.get("name") or "").strip() if isinstance(group, dict) else ""
+        if not name:
+            result.error("bad_table_group", "A table group needs a name and a list of tables.", where,
+                         fix=f"Write {example}.")
+            continue
+        where = f"{where} ({name})"
+        group_id = safe_id(name, "group")
+        if group_id.lower() in RESERVED_GROUP_IDS:
+            result.error("bad_table_group", f"A table group cannot be called `{name}`: the tables in no "
+                         "group run under that name.", where, fix="Give the group another name.")
+            continue
+        if group_id in ids:
+            result.error("duplicate_table_group", f"Two table groups are called `{name}`"
+                         + (f" (as `{ids[group_id]}`)." if ids[group_id] != name else "."), where,
+                         fix="Give each group its own name.")
+            continue
+        ids[group_id] = name
+        tables = group.get("tables")
+        if tables is None or tables == []:
+            result.warn("empty_table_group", f"Table group `{name}` has no tables, so it pulls nothing.",
+                        where, fix="Add tables to it, or remove it.")
+            continue
+        if not isinstance(tables, list):
+            result.error("bad_table_group", f"Table group `{name}`'s `tables` must be a list.", where,
+                         fix=f"Write `tables: [{', '.join(facts[:2]) or 'MedicationOrders'}]`.")
+            continue
+        for table in (str(t) for t in tables):
+            cohort = by_name.get(table)
+            if cohort is None:
+                result.error("unknown_group_table",
+                             f"Table group `{name}` lists `{table}`, which is not a table in this template.",
+                             where, fix=f"Use a fact table's name: {', '.join(facts) or 'none yet'}.")
+            elif str(cohort.get("type", "")).lower() == "pk":
+                result.error("pk_in_table_group",
+                             f"Table group `{name}` lists the PK, `{table}`. The PK is built before any "
+                             "group runs, and every group reads it.", where,
+                             fix=f"Remove `{table}` from the group.")
+            elif table in owner:
+                result.error("table_in_two_groups",
+                             f"`{table}` is in table groups `{owner[table]}` and `{name}`; a table runs "
+                             "in one group.", where, fix=f"Remove `{table}` from one of them.")
+            else:
+                owner[table] = name
+                cohort["table_group"] = name
+
+
+def group_order(finished_yaml: dict[str, Any], cohorts: list[dict[str, Any]]) -> list[str | None]:
+    """The groups these tables run in: as `table_groups` lists them, then no group."""
+    present = {c.get("table_group") for c in cohorts}
+    order: list[str | None] = [
+        str(g["name"]).strip() for g in finished_yaml.get("table_groups") or []
+        if isinstance(g, dict) and str(g.get("name") or "").strip() in present
+    ]
+    if None in present:
+        order.append(None)
+    return order
+
+
 def tables_read(cohort: dict[str, Any], marker: str, names: set[str]) -> list[str]:
     """The tables this pull makes that a cohort's written SQL reads, in order.
 
@@ -2491,9 +2580,24 @@ def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: Compil
         for index, cohort in enumerate(members):
             own = {str(cohort.get("dest_table") or cohort.get("name")), base(cohort)}
             for read in tables_read(cohort, marker, set(position) - own):
+                other = members[position[read]]
+                pair = (base(cohort), base(other))
+                mine, theirs = cohort.get("table_group"), other.get("table_group")
+                if mine != theirs:
+                    if pair not in said:
+                        said.add(pair)
+                        named = {g: f"table group `{g}`" if g else "no group" for g in (mine, theirs)}
+                        result.error(
+                            "table_reads_another_group",
+                            f"`{pair[0]}` ({named[mine]}) reads `{pair[1]}` ({named[theirs]}). Each "
+                            "group runs on its own Cosmos connection, and a table's temp is gone once "
+                            "its group's connection closes.",
+                            f"{cohort_label(cohort)}.filter",
+                            fix=f"Put `{pair[0]}` and `{pair[1]}` in one group.",
+                        )
+                    continue
                 if position[read] < index:
                     continue
-                pair = (base(cohort), base(members[position[read]]))
                 if pair in said:
                     continue
                 said.add(pair)
@@ -3020,6 +3124,7 @@ def compile_yaml(
 
     dictionary = load_datadictionary(datadictionary_path, result)
     cohorts = import_recipes(template, recipes_doc, result, dictionary)
+    apply_table_groups(template, cohorts, result)
     check_dedup(cohorts, result)
     check_random_sample(template, cohorts, result)
     cohorts = expand_multipliers(template, cohorts, result)
@@ -3259,6 +3364,33 @@ def session_runs(
     return runs
 
 
+def grouped_runs(session_id: str, runs: list[SplitRun], groups: list[str | None]) -> list[SplitRun]:
+    """Every batch once per table group, group by group (D134).
+
+    Groups are outside batches: every batch of Meds, then every batch of
+    Visits. The tables in no group keep the runs they had, so a template with
+    no groups splits exactly as before.
+    """
+    if groups in ([], [None]):
+        return runs
+    out: list[SplitRun] = []
+    base = f"sessions/{session_id}/runs"
+    for group in groups:
+        for run in runs:
+            if group is None:
+                out.append(run)
+                continue
+            gid = safe_id(group, "group")
+            name = (run.batch or {}).get("name")
+            out.append(SplitRun(
+                run_id=f"{session_id}__{gid}__{name}" if name else f"{session_id}__{gid}",
+                yaml=f"{base}/{gid}__{name}.yaml" if name else f"{base}/{gid}.yaml",
+                batch=copy.deepcopy(run.batch),
+                group=group,
+            ))
+    return out
+
+
 def session_multiplier_context(pk_cohort: dict[str, Any], session_id: str) -> dict[str, Any] | None:
     context: dict[str, Any] = {"session_label": session_id}
     if pk_cohort.get("split_after_build"):
@@ -3315,6 +3447,11 @@ def build_split_plan_from_finished(
             "pk": SplitPhase("pk", paths["pk"], pk_source=source),
         }
         runs = session_runs(session_id, pk_cohort, result)
+        members = [
+            c for c in cohorts if isinstance(c, dict) and str(c.get("type", "")).lower() != "pk"
+            and (pk_table is None or c.get("session_pk") in (None, pk_table))
+        ]
+        runs = grouped_runs(session_id, runs, group_order(finished_yaml, members))
         sessions.append(
             SplitSession(
                 session_id=session_id,
@@ -3393,6 +3530,8 @@ def split_base_document(finished_yaml: dict[str, Any]) -> dict[str, Any]:
     doc.pop("batching", None)
     doc.pop("example_cohorts", None)
     doc.pop("transfer", None)
+    # Applied: each run holds its group's tables and says which (D134).
+    doc.pop("table_groups", None)
     return doc
 
 
@@ -3407,6 +3546,8 @@ def split_pull_context(session: dict[str, Any], phase: str, run: dict[str, Any] 
         context["run_id"] = run.get("run_id")
         if run.get("batch") is not None:
             context["batch"] = run.get("batch")
+        if run.get("group") is not None:
+            context["group"] = run.get("group")
     if session.get("multiplier") is not None:
         context["multiplier"] = session.get("multiplier")
     pk_phase = (session.get("phases") or {}).get("pk") or {}
@@ -3443,7 +3584,8 @@ def split_phase_document(
     elif phase == "pk":
         doc["cohorts"] = copy.deepcopy(pk_cohorts)
     elif phase == "run":
-        doc["cohorts"] = copy.deepcopy(fact_cohorts)
+        group = (run or {}).get("group")
+        doc["cohorts"] = copy.deepcopy([c for c in fact_cohorts if c.get("table_group") == group])
     else:
         doc["cohorts"] = []
     return doc
@@ -6026,6 +6168,131 @@ class TableOrderTests(MakeYamlTest):
         self.assertEqual(len([m for m in res.errors if m.code == "table_read_before_built"]), 1, summarize_result(res))
 
 
+class TableGroupTests(MakeYamlTest):
+    """D134: each table group runs on its own, every batch of it before the next group."""
+
+    fact = TableOrderTests.fact
+
+    GROUPS = (
+        "table_groups:\n"
+        "  - name: Meds\n    tables: [Orders, Admins]\n"
+        "  - name: Visits\n    tables: [Visits]\n"
+    )
+
+    def tables(self) -> str:
+        return self.fact("Orders") + self.fact("Admins", reads="Orders") + self.fact("Visits")
+
+    def split(self, extra: str) -> tuple[CompileResult, Path]:
+        out_dir = self.tmp / "split"
+        res = write_split_artifacts(*self.write_pair(extra=extra), output_dir=out_dir)
+        return res, out_dir
+
+    def run_tables(self, out_dir: Path) -> list[tuple[str, str | None, list[str]]]:
+        session = load_yaml(out_dir / "pullmanifest.yaml")["sessions"][0]
+        found = []
+        for run in session["runs"]:
+            doc = load_yaml(out_dir / run["yaml"])
+            self.assertEqual(doc["pull_context"].get("group"), run.get("group"))
+            found.append((run["run_id"], run.get("group"), [c["name"] for c in doc["cohorts"]]))
+        return found
+
+    def test_each_group_runs_its_own_tables_and_the_rest_run_last(self):
+        res, out_dir = self.split(self.tables() + self.GROUPS)
+        self.assertCompiles(res)
+        self.assertEqual(self.run_tables(out_dir), [
+            ("Patients__Meds", "Meds", ["Orders", "Admins"]),
+            ("Patients__Visits", "Visits", ["Visits"]),
+            ("Patients__run", None, ["OtherDx"]),
+        ])
+        # Applied, so a run document cannot apply it again.
+        self.assertNotIn("table_groups", load_yaml(out_dir / "sessions/Patients/runs/Meds.yaml"))
+
+    def test_groups_are_outside_batches(self):
+        batching = "batching:\n  - sex: {values: [Female]}\n"
+        res, out_dir = self.split(self.tables() + self.GROUPS + batching)
+        self.assertCompiles(res)
+        self.assertEqual([(run_id, tables) for run_id, _, tables in self.run_tables(out_dir)], [
+            ("Patients__Meds__b1of2-Female", ["Orders", "Admins"]),
+            ("Patients__Meds__b2of2-sex-other", ["Orders", "Admins"]),
+            ("Patients__Visits__b1of2-Female", ["Visits"]),
+            ("Patients__Visits__b2of2-sex-other", ["Visits"]),
+            ("Patients__b1of2-Female", ["OtherDx"]),
+            ("Patients__b2of2-sex-other", ["OtherDx"]),
+        ])
+
+    def test_no_groups_splits_as_before(self):
+        res, out_dir = self.split(self.tables())
+        self.assertCompiles(res)
+        self.assertEqual(self.run_tables(out_dir), [
+            ("Patients__run", None, ["OtherDx", "Orders", "Admins", "Visits"]),
+        ])
+
+    def test_each_multiplier_level_gets_its_groups(self):
+        extra = self.tables() + self.GROUPS + (
+            "multipliers:\n  - name: IBDType\n    stage: during_build\n    levels:\n"
+            "      - strat: UC\n        vars: {ICD_Value: [K51]}\n"
+            "      - strat: Crohns\n        vars: {ICD_Value: [K50]}\n"
+        )
+        res = self.plan_split(extra=extra)
+        self.assertCompiles(res)
+        sessions = res.analysis["split_plan"]["sessions"]
+        self.assertEqual([[r["run_id"] for r in s["runs"]] for s in sessions], [
+            ["UCPatients__Meds", "UCPatients__Visits", "UCPatients__run"],
+            ["CrohnsPatients__Meds", "CrohnsPatients__Visits", "CrohnsPatients__run"],
+        ])
+
+    def test_reading_a_table_in_another_group_is_refused(self):
+        groups = "table_groups:\n  - name: Meds\n    tables: [Orders]\n  - name: Admin\n    tables: [Admins]\n"
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + groups)
+        self.assertHasError(res, "table_reads_another_group")
+        message = next(m for m in res.errors if m.code == "table_reads_another_group")
+        self.assertIn("`Admins` (table group `Admin`) reads `Orders` (table group `Meds`)", message.message)
+        self.assertEqual(message.fix, "Put `Admins` and `Orders` in one group.")
+
+    def test_reading_from_no_group_into_a_group_is_refused_too(self):
+        groups = "table_groups:\n  - name: Meds\n    tables: [Admins]\n"
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + groups)
+        self.assertHasError(res, "table_reads_another_group")
+        self.assertIn("reads `Orders` (no group)", next(
+            m.message for m in res.errors if m.code == "table_reads_another_group"))
+
+    def test_what_a_group_may_not_list(self):
+        cases = {
+            "unknown_group_table": "  - name: Meds\n    tables: [Nope]\n",
+            "pk_in_table_group": "  - name: Meds\n    tables: [Patients]\n",
+            "table_in_two_groups": "  - name: Meds\n    tables: [Orders]\n  - name: More\n    tables: [Orders]\n",
+            "duplicate_table_group": "  - name: Meds\n    tables: [Orders]\n  - name: Meds\n    tables: [Visits]\n",
+            "bad_table_group": "  - name: run\n    tables: [Orders]\n",
+        }
+        for code, groups in cases.items():
+            with self.subTest(code=code):
+                res = self.compile_template(extra=self.fact("Orders") + self.fact("Visits") + "table_groups:\n" + groups)
+                self.assertHasError(res, code)
+
+    def test_an_empty_group_warns(self):
+        res = self.compile_template(extra=self.fact("Orders") + "table_groups:\n  - name: Meds\n    tables: []\n")
+        self.assertCompiles(res)
+        self.assertHasWarning(res, "empty_table_group")
+
+    def test_a_group_written_on_a_table_is_not_its_group(self):
+        # The list at the top is the one place a group is set.
+        res = self.compile_template(extra=self.fact("Orders").replace(
+            "    type: fact\n", "    type: fact\n    table_group: Meds\n"))
+        self.assertCompiles(res)
+        self.assertNotIn("table_group", self.cohorts_by_name(res)["Orders"])
+
+    def test_the_transfer_carries_its_groups_and_splits_the_same(self):
+        template, recipes = self.write_pair(extra=self.tables() + self.GROUPS)
+        transfer = build_transfer(template, recipes, output_path=self.tmp / "t_transfer.yaml", write=True)
+        self.assertCompiles(transfer)
+        self.assertEqual(load_yaml(self.tmp / "t_transfer.yaml")["table_groups"][0]["tables"], ["Orders", "Admins"])
+        direct = write_split_artifacts(template, recipes, output_dir=self.tmp / "a")
+        moved = write_split_artifacts(self.tmp / "t_transfer.yaml", self.tmp / "none.yaml", output_dir=self.tmp / "b")
+        self.assertCompiles(direct)
+        self.assertCompiles(moved)
+        self.assertEqual(self.run_tables(self.tmp / "a"), self.run_tables(self.tmp / "b"))
+
+
 class SqlReferenceTests(MakeYamlTest):
     """D118: written join and where lines are read before SQL Server reads them."""
 
@@ -6267,6 +6534,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "pending_transfer": PendingTransferTests,
     "sql_references": SqlReferenceTests,
     "table_order": TableOrderTests,
+    "table_groups": TableGroupTests,
     "added_lines": AddedLinesTests,
     "config": ConfigTests,
     "upload_column_changes": UploadColumnChangeTests,

@@ -169,6 +169,11 @@ class Run(Node):
     def batch(self) -> dict[str, Any] | None:
         return self._data.get("batch")
 
+    @property
+    def group(self) -> str | None:
+        """Its table group (D134), pulled on a Cosmos connection of its own; None if none."""
+        return self._data.get("group")
+
 
 class Session(Node):
     def __init__(self, data: dict[str, Any]):

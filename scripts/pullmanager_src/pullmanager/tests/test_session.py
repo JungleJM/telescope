@@ -20,7 +20,8 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import cli
-from ..db import Settings
+from ..db import DatabaseError, Settings
+from ..executor import plan_session
 from ..manifest import Manifest
 from ..session import LARGE_ROW_WARNING, SessionRunner
 from ..yaml_io import dump_yaml, load_yaml
@@ -103,8 +104,10 @@ class FakeConnection:
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
-                 widths=None, found_values=None):
+                 widths=None, found_values=None, instance=INSTANCE):
         self.side = side
+        # The instance `@@SERVERNAME` reports: a new one on every connection.
+        self.instance = instance
         # What `SELECT DISTINCT [column]` finds in the PK copy, for values: all.
         self.found_values = found_values
         # Column -> the widest value each measurement of it reports, in turn.
@@ -195,7 +198,7 @@ class FakeConnection:
 
     def results_for(self, sql):
         if "@@SERVERNAME" in sql:
-            return [(["CosmosServerName"], [(INSTANCE,)])]
+            return [(["CosmosServerName"], [(self.instance,)])]
         if match := re.search(r"SELECT OBJECT_ID\(N'(PROJECTD[^']+)', N'U'\)", sql):
             return [(["id"], [(99 if match.group(1) in self._working() else None,)])]
         if "INFORMATION_SCHEMA.COLUMNS" in sql:
@@ -1128,6 +1131,158 @@ class ProgressTests(SessionTestCase):
         started = [i for i, line in enumerate(lines) if line.endswith("OtherHospitalizations started")]
         self.assertEqual(len(started), 2, out)
         self.assertTrue(all(heading < i < summary for i in started), out)
+
+
+class TableGroupTests(SessionTestCase):
+    """D134: each table group is pulled on a Cosmos connection of its own."""
+
+    ADMISSIONS = "PROJECTD33A929.dbo.Admissions"
+
+    def setUp(self):
+        super().setUp()
+        self.tables: dict[str, Counter] = {}
+
+    def make_grouped(self, visits_reads_upload=True):
+        """Meds holds the fixture's table; Visits a copy of it, Admissions."""
+        import copy
+
+        runs_dir = self.root / "sessions" / "Patients" / "runs"
+        doc = load_yaml(runs_dir / "run.yaml")
+        meds = doc["cohorts"][0]
+        visits = copy.deepcopy(meds)
+        visits["name"] = visits["dest_table"] = "Admissions"
+        if not visits_reads_upload:
+            block = visits["filter"]
+            for key in ("join", "where"):
+                block[key] = [line for line in block.get(key) or []
+                              if "HospitalICDCodes" not in line and "ih." not in line]
+        runs = []
+        for group, cohort in (("Meds", meds), ("Visits", visits)):
+            part = copy.deepcopy(doc)
+            part["cohorts"] = [cohort]
+            part["pull_context"].update(group=group, run_id=f"Patients__{group}")
+            dump_yaml(part, runs_dir / f"{group}.yaml")
+            runs.append({"run_id": f"Patients__{group}", "yaml": f"sessions/Patients/runs/{group}.yaml",
+                         "status": "pending", "group": group})
+        data = load_yaml(self.root / "pullmanifest.yaml")
+        data["sessions"][0]["runs"] = runs
+        dump_yaml(data, self.root / "pullmanifest.yaml")
+
+    def execute(self, *, refuse_after=None, retry_failed=False):
+        """Each Cosmos connection a fake of its own, `inst1`, `inst2`...; the
+        Cosmos connections after the first `refuse_after` are refused."""
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.cosmoses: list[FakeConnection] = []
+        self.projects = FakeConnection("projects", tables=self.tables)
+        self.said = []
+
+        def connect_fn(conn_str, **_):
+            if "PROJECTD" in conn_str:
+                return self.projects
+            if refuse_after is not None and len(self.cosmoses) >= refuse_after:
+                raise DatabaseError("Could not connect to COSMOS (COSMOS): login timeout")
+            conn = FakeConnection("cosmos", instance=f"inst{len(self.cosmoses) + 1}")
+            self.cosmoses.append(conn)
+            return conn
+
+        runner = SessionRunner(
+            self.manifest, self.manifest.sessions[0],
+            Settings(projects_server="PROJ", projects_database="PROJECTD33A929"),
+            connect_fn=connect_fn, upload_root=self.root, say=self.said.append,
+            retry_failed=retry_failed,
+        )
+        with runner:
+            return runner.execute()
+
+    @staticmethod
+    def built(conn, table):
+        return [sql for sql in conn.executed if f"_{table} (" in sql and "INSERT INTO ##" in sql]
+
+    @staticmethod
+    def loaded(conn, table):
+        return [sql for sql, _ in conn.inserted if f"##manvalbas_{table} " in sql]
+
+    def test_each_group_is_pulled_on_its_own_connection(self):
+        self.make_grouped()
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        first, second = self.cosmoses
+        self.assertTrue(first.closed)
+        self.assertTrue(self.built(first, "OtherHospitalizations"))
+        self.assertFalse(self.built(first, "Admissions"))
+        self.assertTrue(self.built(second, "Admissions"))
+        self.assertFalse(self.built(second, "OtherHospitalizations"))
+        # And the rows land where they should, once each.
+        self.assertEqual(self.tables[DEST], Counter({"all": 10}))
+        self.assertEqual(self.tables[self.ADMISSIONS], Counter({"all": 10}))
+
+    def test_the_new_connection_gets_the_pk_and_the_uploads_its_tables_read(self):
+        self.make_grouped()
+        self.execute()
+        second = self.cosmoses[1]
+        self.assertTrue(self.loaded(second, "Patients"), second.inserted)
+        self.assertTrue(self.loaded(second, "HospitalICDCodes"), second.inserted)
+
+    def test_an_upload_no_table_of_the_group_reads_is_not_loaded(self):
+        self.make_grouped(visits_reads_upload=False)
+        self.execute()
+        self.assertTrue(self.loaded(self.cosmoses[1], "Patients"))
+        self.assertFalse(self.loaded(self.cosmoses[1], "HospitalICDCodes"))
+
+    def test_each_group_lands_through_its_own_instance(self):
+        # The instance name changes with every connection (D37): OPENQUERY
+        # must name the one the group's temps are on.
+        self.make_grouped()
+        self.execute()
+        to_projects = [sql for sql in self.projects.executed if "OPENQUERY" in sql]
+        meds = [sql for sql in to_projects if "_OtherHospitalizations" in sql]
+        visits = [sql for sql in to_projects if "_Admissions" in sql]
+        self.assertTrue(meds and all("inst1" in sql for sql in meds), meds)
+        self.assertTrue(visits and all("inst2" in sql for sql in visits), visits)
+        self.assertEqual(self.manifest.sessions[0].runtime["linked_server"], "inst2")
+
+    def test_a_group_that_cannot_connect_fails_alone_and_a_retry_pulls_it(self):
+        self.make_grouped()
+        report = self.execute(refuse_after=1)
+        self.assertEqual([label for label, _ in report.failed], ["Patients__Visits"])
+        self.assertIn("Could not connect to COSMOS", report.failed[0][1])
+        self.assertIn("Patients__Meds", report.completed)
+        self.assertEqual(self.tables[DEST], Counter({"all": 10}))
+        again = self.execute(retry_failed=True)
+        self.assertTrue(again.ok, again.failed)
+        self.assertNotIn("Patients__Meds", again.completed)
+        self.assertEqual(self.tables[self.ADMISSIONS], Counter({"all": 10}))
+        self.assertEqual(self.tables[DEST], Counter({"all": 10}))
+
+    def test_the_progress_names_the_group(self):
+        self.make_grouped()
+        self.execute()
+        steps = [re.sub(r"^  \d\d:\d\d:\d\d  ", "", line) for line in self.said]
+        self.assertIn("run Meds started", steps)
+        self.assertIn("run Visits started", steps)
+        self.assertIn("table group Visits: new Cosmos connection on inst2", steps)
+        self.assertEqual(len([s for s in steps if "new Cosmos connection" in s]), 1)
+
+    def test_artifacts_packages_every_group_and_a_finished_one_alone(self):
+        from .. import artifacts
+
+        self.make_grouped()
+        self.execute(refuse_after=1)
+        planned = artifacts.plan(Manifest.load(self.root / "pullmanifest.yaml"))
+        self.assertIn("OtherHospitalizations", [t.dest for t in planned.tables])
+        self.assertIn("Admissions", [dest for dest, _ in planned.left_out])
+        self.execute(retry_failed=True)
+        planned = artifacts.plan(Manifest.load(self.root / "pullmanifest.yaml"))
+        self.assertEqual({t.dest for t in planned.tables if t.kind == "run"},
+                         {"OtherHospitalizations", "Admissions"})
+
+    def test_the_dry_run_says_where_a_connection_opens(self):
+        self.make_grouped()
+        units = plan_session(Manifest.load(self.root / "pullmanifest.yaml"),
+                             Manifest.load(self.root / "pullmanifest.yaml").sessions[0])
+        notes = {unit.unit_id: unit.notes for unit in units}
+        self.assertFalse([n for n in notes["Patients__Meds"] if "new Cosmos connection" in n])
+        self.assertIn("table group Visits", notes["Patients__Visits"][0])
 
 
 class PkKeyTests(SessionTestCase):

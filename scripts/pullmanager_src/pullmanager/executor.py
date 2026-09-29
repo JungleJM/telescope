@@ -165,9 +165,23 @@ def session_cohorts(manifest: Manifest, session: Session) -> list[dict[str, Any]
 
 def session_reads(manifest: Manifest, session: Session, dest: str, prefix: str) -> bool:
     """Whether any cohort the session builds names this upload's temp (D61)."""
+    return reads_temp(manifest, session, dest, prefix)
+
+
+def group_reads(manifest: Manifest, session: Session, dest: str, prefix: str, group: str | None) -> bool:
+    """Whether a table group's runs name this upload's temp, to load it on its connection (D134)."""
+    return reads_temp(manifest, session, dest, prefix, runs_of=group, grouped=True)
+
+
+def reads_temp(
+    manifest: Manifest, session: Session, dest: str, prefix: str,
+    *, runs_of: str | None = None, grouped: bool = False,
+) -> bool:
     temp = global_temp(dest, prefix).lower()
-    for kind, _, path in iter_units(manifest, session):
+    for kind, node, path in iter_units(manifest, session):
         if kind not in ("pk", "run") or not path.is_file():
+            continue
+        if grouped and (kind != "run" or getattr(node, "group", None) != runs_of):
             continue
         for cohort in (load_yaml(path) or {}).get("cohorts") or []:
             if temp in json.dumps(cohort, default=str).lower():
@@ -290,6 +304,7 @@ def plan_session(
         return []
     resuming = session_resumes(session)
     units: list[Unit] = []
+    connection_group: Any = NO_RUN_YET
     for kind, node, path, execute, reason in session_units(
         manifest, session, retry_failed=retry_failed
     ):
@@ -297,8 +312,26 @@ def plan_session(
             continue
         unit = plan_unit(manifest, session, kind, node, path, linked_server, resuming=resuming)
         unit.reason = reason if execute else f"included anyway ({reason})"
+        if kind == "run":
+            group = getattr(node, "group", None)
+            if connection_group is not NO_RUN_YET and group != connection_group:
+                unit.notes.insert(0, group_connection_note(group))
+            connection_group = group
         units.append(unit)
     return units
+
+
+# Before the session's first run, whichever group it is in shares the
+# connection that built the PK.
+NO_RUN_YET = object()
+
+
+def group_connection_note(group: str | None) -> str:
+    name = f"table group {group}" if group else "the tables in no group"
+    return (
+        f"a new Cosmos connection opens for {name}: the PK temp, and the uploads these "
+        "tables read, are loaded again from their Projects copies (D134)"
+    )
 
 
 def plan(

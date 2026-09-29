@@ -403,7 +403,8 @@ def manifest_rows(manifest_path: Path) -> list[StatusRow]:
         rows.append(StatusRow(session.session_id, "session", session.session_id, session.status))
         for child in [*session.phases, *session.runs]:
             is_phase = child in session.phases
-            name = child.name if is_phase else (child.batch or {}).get("name") or child.label
+            name = child.name if is_phase else " ".join(filter(None, (
+                child.group, (child.batch or {}).get("name")))) or child.label
             duration = (child.data.get("duration") or {}).get("display", "")
             detail = (child.error or {}).get("message") or child.note or ""
             rows.append(

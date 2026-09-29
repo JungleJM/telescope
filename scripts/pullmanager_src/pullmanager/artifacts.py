@@ -107,15 +107,16 @@ def file_name(dest: str, label: str) -> str:
     return f"{dest}_{label}.parquet"
 
 
-def separate_parts(session: Session, kind: str) -> list[Part]:
+def separate_parts(session: Session, kind: str, runs: list[Any] | None = None) -> list[Part]:
     """One part per combination of the separated dimensions' values (D72).
 
     A run's table is chosen by its `_batch` labels; a PK table, which has no
-    `_batch`, by the dimensions' own predicates on its columns.
+    `_batch`, by the dimensions' own predicates on its columns. `runs` are
+    the runs that fill the table: its table group's (D134).
     """
     groups: dict[str, list[Any]] = {}
     group_dims: dict[str, list[dict[str, Any]]] = {}
-    for run in session.runs:
+    for run in session.runs if runs is None else runs:
         dims = [d for d in (run.batch or {}).get("dimensions") or [] if d.get("separate")]
         if not dims:
             continue
@@ -166,9 +167,15 @@ def plan(manifest: Manifest) -> Plan:
                     dest, "pk", session.session_id, database_folder(cohort, doc), cohort, doc,
                     separate_parts(session, "pk"),
                 ))
-        if session.runs:
-            doc = load_yaml(manifest.resolve(session.runs[0])) or {}
-            unsettled = [run for run in session.runs if not is_settled(run)]
+        # Each table group's runs hold its own tables (D134), so each group's
+        # first run names them, and a finished group is packaged even while
+        # another is not.
+        by_group: dict[Any, list[Any]] = {}
+        for run in session.runs:
+            by_group.setdefault(run.group, []).append(run)
+        for runs in by_group.values():
+            doc = load_yaml(manifest.resolve(runs[0])) or {}
+            unsettled = [run for run in runs if not is_settled(run)]
             for cohort in doc.get("cohorts") or []:
                 if not isinstance(cohort, dict) or not cohort.get("dest_table"):
                     continue
@@ -179,12 +186,12 @@ def plan(manifest: Manifest) -> Plan:
                 if unsettled:
                     states = ", ".join(sorted({run.status for run in unsettled}))
                     result.left_out.append(
-                        (dest, f"{len(unsettled)} of its {len(session.runs)} run(s) are not done ({states})")
+                        (dest, f"{len(unsettled)} of its {len(runs)} run(s) are not done ({states})")
                     )
                     continue
                 result.tables.append(TableSpec(
                     dest, "run", session.session_id, database_folder(cohort, doc), cohort, doc,
-                    separate_parts(session, "run"),
+                    separate_parts(session, "run", runs),
                 ))
         upload_phase = phases.get("upload_cohorts")
         if upload_phase is not None and upload_phase.yaml:

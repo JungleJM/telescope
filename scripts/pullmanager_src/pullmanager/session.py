@@ -3,6 +3,8 @@
 The Cosmos connection is held open for the whole session, because every
 global temp (`##<prefix>_*`) dies with it. That single fact shapes everything here: the
 epoch, what a resume must replay, and why uploads travel through the client.
+A table group is the exception (D134): its runs get a connection of their own,
+into which the PK temp and the uploads they read are loaded again from Projects.
 
 Each step says when it starts and when it ends, as it happens (D136), so a
 table that takes hours shows as running rather than as silence.
@@ -31,7 +33,9 @@ from .batches import (
 )
 from .db import DatabaseError, Settings, bulk_insert, capture_server_name, connect, execute_script
 from .executor import (
+    NO_RUN_YET,
     control_samples,
+    group_reads,
     Unit,
     iter_units,
     plan_unit,
@@ -72,8 +76,8 @@ def step_name(kind: str, node: Any) -> str:
         return "uploads"
     if kind != "run":
         return kind
-    name = str((getattr(node, "batch", None) or {}).get("name") or "")
-    return f"run {name}" if name else "run"
+    batch = str((getattr(node, "batch", None) or {}).get("name") or "")
+    return " ".join(filter(None, ("run", getattr(node, "group", None), batch)))
 
 
 def since(started: float) -> str:
@@ -121,6 +125,10 @@ class SessionRunner:
         self._say_line = say
         # Where a run is, for its lines: `c3of12`, `v2of5 (LA)`, or nothing.
         self._where = ""
+        # The table group whose runs this Cosmos connection serves (D134), and
+        # whether the PK temp must be built again in it before a run reads it.
+        self._connection_group: Any = NO_RUN_YET
+        self._pk_temp_missing = False
         self.session = session
         self.settings = settings
         self._connect = connect_fn
@@ -148,19 +156,9 @@ class SessionRunner:
     def _open(self) -> None:
         """Open the connection whose lifetime defines the session."""
         doc = self._phase_doc("setup")
-        self.cosmos = self._connect(
-            self.settings.cosmos_connection_string(cosmos_database(doc.get("cosmos_db"))),
-            login_timeout=self.settings.login_timeout,
-            query_timeout=self.settings.query_timeout,
-        )
-        # Captured per connection: the instance name changes every time, so a
-        # cached one would aim OPENQUERY at a server that is no longer ours.
-        linked_server = capture_server_name(self.cosmos)
-        self._check_refresh()
+        linked_server = self._open_cosmos()
         self._choose_prefix()
-        epoch = self.session.begin_epoch(linked_server=linked_server)
-        self.report.epoch = epoch
-        self.report.linked_server = linked_server
+        self._begin_epoch(linked_server)
 
         project_db = doc.get("project_db")
         if not project_db:
@@ -177,6 +175,56 @@ class SessionRunner:
     def say(self, text: str, depth: int = 0) -> None:
         """One progress line: the time, then the step, indented under its unit."""
         self._say_line(f"  {time.strftime('%H:%M:%S')}  {'  ' * depth}{text}")
+
+    def _open_cosmos(self) -> str:
+        """Connect to Cosmos and return the instance it landed on."""
+        doc = self._phase_doc("setup")
+        self.cosmos = self._connect(
+            self.settings.cosmos_connection_string(cosmos_database(doc.get("cosmos_db"))),
+            login_timeout=self.settings.login_timeout,
+            query_timeout=self.settings.query_timeout,
+        )
+        # Captured per connection: the instance name changes every time, so a
+        # cached one would aim OPENQUERY at a server that is no longer ours.
+        linked_server = capture_server_name(self.cosmos)
+        self._check_refresh()
+        return linked_server
+
+    def _begin_epoch(self, linked_server: str) -> None:
+        self.report.epoch = self.session.begin_epoch(linked_server=linked_server)
+        self.report.linked_server = linked_server
+
+    def _connect_group(self, group: str | None) -> None:
+        """A Cosmos connection of the group's own, ready for its runs (D134).
+
+        The last group's temps die with its connection, the PK's included, so
+        the PK temp is built again from its Projects copy before the first run
+        reads it, and each upload the group's tables read is loaded again
+        from its copy. The temp prefix stays the session's.
+        """
+        name = f"table group {group}" if group else "tables in no group"
+        old, self.cosmos = self.cosmos, None
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+        linked_server = self._open_cosmos()
+        self._begin_epoch(linked_server)
+        self._pk_temp_missing = True
+        self.say(f"{name}: new Cosmos connection on {linked_server}")
+        doc = self._phase_doc("upload_cohorts")
+        for cohort in uploads.enabled_uploads(doc):
+            dest = uploads.upload_dest(cohort)
+            if str(cohort.get("type", "")).lower() == "pk":
+                continue  # the PK temp, built again as a run starts
+            if not group_reads(self.manifest, self.session, dest, self.planned_prefix or self.prefix, group):
+                continue
+            self.say(f"{dest}: into Cosmos started", 1)
+            started = time.monotonic()
+            loaded = self._load_temp_from_copy(dest, destination(self.project_db, uploads.copy_table(dest)))
+            self.say(f"{dest}: {loaded:,} rows into Cosmos in {since(started)}", 1)
+        self.manifest.save()
 
     def _check_refresh(self) -> None:
         """Refuse to add to a pull whose Cosmos has been rebuilt under it (D51).
@@ -316,6 +364,11 @@ class SessionRunner:
             started = time.monotonic()
             self._where = ""
             try:
+                if kind == "run":
+                    group = getattr(node, "group", None)
+                    if self._connection_group is not NO_RUN_YET and group != self._connection_group:
+                        self._connect_group(group)
+                    self._connection_group = group
                 rows = self._run_unit(kind, node, path)
             except Exception as exc:
                 # Nothing a failed unit wrote should be committed along with the
@@ -786,8 +839,12 @@ class SessionRunner:
             # rebuild it whole from the Projects copy. A sampled control's
             # temp still holds every row it was built with, so it too is
             # rebuilt from its copy, the sample (D59). An uploaded PK was
-            # rebuilt by the upload phase.
-            if not ((self.resuming or self._pk_sampled()) and self._pk_is_generated()):
+            # rebuilt by the upload phase. A table group's new connection has
+            # no PK temp at all, of either kind (D134).
+            needed = self._pk_temp_missing or (
+                (self.resuming or self._pk_sampled()) and self._pk_is_generated()
+            )
+            if not needed:
                 return
             batch = {"name": local_sql.UNBATCHED_LABEL, "dimensions": [], "runtime": []}
         pk_table = self.session.pk_table
@@ -833,6 +890,7 @@ class SessionRunner:
                 self.cosmos, temp, columns, rows, chunk_size=self.settings.upload_chunk
             )
         self.cosmos.commit()
+        self._pk_temp_missing = False
         self.say(f"{self._at()}{pk_table}: {len(rows):,} PK rows into Cosmos in {since(started)}", 1)
         node.outputs["batch_pk_rows"] = len(rows)
         node.outputs["batch"] = selection.description

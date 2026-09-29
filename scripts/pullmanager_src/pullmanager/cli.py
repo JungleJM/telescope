@@ -42,6 +42,8 @@ def summarize(manifest: Manifest) -> None:
             print(f"    phase {phase.name:<15} {phase.status:<8} {phase.yaml}")
         for run in session.runs:
             batch = run.batch.get("name") if run.batch else "-"
+            if run.group:
+                batch = f"{run.group} {batch}" if run.batch else run.group
             print(f"    run   {batch:<15} {run.status:<8} {run.yaml}")
         print()
 
