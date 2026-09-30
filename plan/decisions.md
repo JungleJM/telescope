@@ -2703,3 +2703,27 @@ first line after the session, and everything after it, waited.
 (`SetConsoleMode`, standard library `ctypes`), keeping every other input mode.
 Anywhere but a Windows console it does nothing. Selecting text with the mouse
 in that window no longer works; the log holds everything the window shows.
+
+### D144. Run shows the manifest in a tab of its own
+
+**Context.** A failure's full record (its error's message and detail, and
+everything else the manifest holds) was seen only by opening
+`pullmanifest.yaml` in an editor; Status shows the first line of the error.
+
+**Decision.** A **Pull Manifest** tab between Pull Log and Status shows the
+loaded pull's `pullmanifest.yaml` as it is, with line numbers, refreshed with
+Status and keeping its scroll position. Every `status:` line is coloured as the
+Status tab colours it, and each `error:` block with a message is red.
+Double-clicking a row in Status shows that entry's lines, highlighted, or its
+`error:` lines when it has one; the entry is found by its own id, never by
+searching for text. The tab is read-only: the running pull rewrites the file,
+so an edit there would be lost or would overwrite the pull's record.
+
+### D145. Every window says who made it
+
+**Context.** The user built these tools for their own work on the VM. They
+are not the VM company's, whose name should not be attached to their bugs.
+
+**Decision.** Every window (the app, the utilities window and each utility,
+the parquet viewer copied into each pull's folder included) says "Designed and
+built by Jason Mathias" at its foot, small and grey.

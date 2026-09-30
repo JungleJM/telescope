@@ -46,6 +46,16 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+Agreed on 29 September 2026. One commit each, with its outcome tests.
+
+1.  **The credit line** (D145): every window says who made it. Smallest.
+2.  **The Pull Manifest tab** (D144): Run's window only.
+3.  **The parquet viewer** (task list, Parquet Viewer): waits on the user's answers to its questions 1 to 3. The copy Artifacts puts in each pull's folder stays, so a client can open the parquets there.
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
