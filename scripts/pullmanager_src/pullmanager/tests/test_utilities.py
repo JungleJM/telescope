@@ -81,6 +81,30 @@ print(seen[-1] if seen and seen[-1] else "NO CREDIT")
 """
 
 
+class GroupTests(unittest.TestCase):
+    """D148: utilities sorted for whom they are; a script at the top still shows."""
+
+    def test_client_and_manager_show_under_their_headings(self):
+        utilities = load_utilities()
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            for rel in ("mine.py", "client/viewparquets.py", "manager/clear_projects_db.py",
+                        "client/_private.py"):
+                (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+                (folder / rel).write_text("", encoding="utf-8")
+            self.assertEqual([(h, [p.name for p in ps]) for h, ps in utilities.sections(folder)], [
+                ("", ["mine.py"]),
+                ("Client", ["viewparquets.py"]),
+                ("Manager", ["clear_projects_db.py"]),
+            ])
+
+    def test_the_shipped_ones_are_sorted(self):
+        utilities = load_utilities()
+        shipped = {h: [p.name for p in ps] for h, ps in utilities.sections()}
+        self.assertEqual(shipped.get("Client"), ["transcription_viewer.py", "viewparquets.py"])
+        self.assertEqual(shipped.get("Manager"), ["clear_projects_db.py"])
+
+
 class CreditTests(unittest.TestCase):
     """D145: every window says who made it."""
 
@@ -102,14 +126,14 @@ class CreditTests(unittest.TestCase):
     def test_each_window_says_who_made_it(self):
         windows = {
             "the utilities window": (self.SRC, "import utilities; utilities.window()"),
-            "the parquet viewer": (self.SRC / "utils", "import viewparquets; viewparquets.main()"),
-            "clear_projects_db": (self.SRC / "utils", "import clear_projects_db; clear_projects_db.main([])"),
+            "the parquet viewer": (self.SRC / "utils" / "client", "import viewparquets; viewparquets.main()"),
+            "clear_projects_db": (self.SRC / "utils" / "manager", "import clear_projects_db; clear_projects_db.main([])"),
             "the app": (self.SRC, "from pullmanager import app; app.main()"),
         }
         try:
             import PIL  # noqa: F401  the transcription viewer draws with Pillow
             windows["the transcription viewer"] = (
-                self.SRC / "utils", "import transcription_viewer; transcription_viewer.main([])")
+                self.SRC / "utils" / "client", "import transcription_viewer; transcription_viewer.main([])")
         except ImportError:
             pass
         # D147: beside it, the bundle each window runs from; none from source.

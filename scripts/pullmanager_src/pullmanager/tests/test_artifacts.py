@@ -410,8 +410,9 @@ class LoaderTests(ArtifactTestCase):
 
     def test_the_load_scripts_viewer_and_how_to_are_written_at_the_run_folders_root(self):
         written = self.write()
-        self.assertEqual(sorted(p.name for p in written), [
-            "HOW_TO.md", "load_parquets.R", "load_parquets.py", "viewparquets.py",
+        self.assertEqual(sorted(p.relative_to(self.out).as_posix() for p in written), [
+            "HOW_TO.md", "load_parquets.R", "load_parquets.py",
+            "utils.py", "utils/client/transcription_viewer.py", "utils/client/viewparquets.py",
         ])
         self.assertIn(self.out.resolve().as_posix(), (self.out / "load_parquets.R").read_text())
         self.assertFalse(list(self.out.glob("examine_parquets.*")))
@@ -422,8 +423,23 @@ class LoaderTests(ArtifactTestCase):
         from ..loaders import stamp_bundle
 
         self.write()
-        self.assertEqual((self.out / "viewparquets.py").read_bytes(),
-                         stamp_bundle((STOCK_DIR.parent / "utils" / "viewparquets.py").read_bytes()))
+        self.assertEqual((self.out / "utils" / "client" / "viewparquets.py").read_bytes(),
+                         stamp_bundle((STOCK_DIR.parent / "utils" / "client" / "viewparquets.py").read_bytes()))
+
+    def test_the_pull_folder_gets_a_utilities_window_with_the_client_tools_only(self):
+        # D148: the user's own window, with only what the client is meant to have.
+        import importlib.util
+
+        old = self.out / "viewparquets.py"  # where an earlier Artifacts put it
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_text("# old\n", encoding="utf-8")
+        self.write()
+        self.assertFalse(old.exists())
+        spec = importlib.util.spec_from_file_location("client_utilities", self.out / "utils.py")
+        window = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(window)
+        self.assertEqual([(heading, [p.name for p in paths]) for heading, paths in window.sections()],
+                         [("Client", ["transcription_viewer.py", "viewparquets.py"])])
 
     def test_the_viewer_copy_says_the_bundle_it_was_packaged_with(self):
         # D147: in a pull's folder there is no bundle above it to read.
@@ -434,8 +450,9 @@ class LoaderTests(ArtifactTestCase):
 
         with mock.patch.object(config, "bundle_id", return_value="ca0fa906"):
             self.write()
-        copy = self.out / "viewparquets.py"
+        copy = self.out / "utils" / "client" / "viewparquets.py"
         self.assertIn('\nBUNDLE = "ca0fa906"', copy.read_text(encoding="utf-8"))
+        self.assertIn('\nBUNDLE = "ca0fa906"', (self.out / "utils.py").read_text(encoding="utf-8"))
         spec = importlib.util.spec_from_file_location("packaged_viewer", copy)
         viewer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(viewer)

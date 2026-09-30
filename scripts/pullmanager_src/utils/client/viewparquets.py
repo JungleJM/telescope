@@ -183,8 +183,9 @@ def runtime_pulls(cwd: Path | None = None) -> list[tuple[str, Path]] | None:
     """Each pull that has run or is running, as Run shows it (D140, D146),
     with its run folder; None where the runtime is not beside this file (the
     copy in a pull's folder). Run's own code reads them, so the two agree."""
-    source = Path(__file__).resolve().parent.parent
-    if not (source / "pullmanager" / "pulls.py").is_file():
+    source = next((folder for folder in Path(__file__).resolve().parents
+                   if (folder / "pullmanager" / "pulls.py").is_file()), None)
+    if source is None:
         return None
     if str(source) not in sys.path:
         sys.path.insert(0, str(source))
@@ -202,9 +203,12 @@ def runtime_pulls(cwd: Path | None = None) -> list[tuple[str, Path]] | None:
 
 
 def own_pull() -> Path | None:
-    """The pull folder this copy sits in, when it has parquet folders."""
-    here = Path(__file__).resolve().parent
-    return here if any((here / folder).is_dir() for _, folder in PARQUET_FOLDERS) else None
+    """The pull folder this copy sits in (in its utils/client/, D148), when it
+    has parquet folders."""
+    for here in list(Path(__file__).resolve().parents)[:3]:
+        if any((here / folder).is_dir() for _, folder in PARQUET_FOLDERS):
+            return here
+    return None
 
 
 def parquets_in(folder: Path) -> list[Path]:
@@ -568,8 +572,8 @@ class ParquetViewer(tk.Tk):
     def browse(self) -> None:
         start = self.folder if self.folder is not None and self.folder.is_dir() else None
         if start is None:
-            beside = Path(__file__).resolve().parent / "cosmos_parquets"
-            start = beside if beside.is_dir() else None
+            own = own_pull()
+            start = own / "cosmos_parquets" if own and (own / "cosmos_parquets").is_dir() else None
         paths = filedialog.askopenfilenames(
             title="Open Parquet file",
             initialdir=str(start) if start else None,

@@ -8,7 +8,7 @@ Python `pyarrow`, and tkinter for the viewer.
 
 What else goes in every run folder is listed in `stock/stock.yaml` (D124),
 beside this package, which the user edits and the bundle carries: HOW_TO.md,
-and `viewparquets.py` from `utils/`, to begin with.
+the utilities window as `utils.py`, and `utils/client/` (D148).
 """
 
 from __future__ import annotations
@@ -100,13 +100,24 @@ def stock_entries(stock_dir: Path | None = None) -> tuple[list[tuple[Path, Path]
     for entry in (doc.get("files") if isinstance(doc, dict) else None) or []:
         if isinstance(entry, dict):
             name, into = str(entry.get("file") or ""), str(entry.get("into") or "")
+            renamed, whole = str(entry.get("as") or ""), str(entry.get("folder") or "")
         else:
-            name, into = str(entry), ""
+            name, into, renamed, whole = str(entry), "", "", ""
+        if whole:
+            # Every script in the folder (D148): one added there needs no entry.
+            source_dir = (folder / whole).resolve()
+            if not source_dir.is_dir():
+                problems.append(f"{STOCK_LIST} lists folder {whole!r}, which is not in {folder}: not copied.")
+                continue
+            for source in sorted(source_dir.iterdir(), key=lambda path: path.name.lower()):
+                if source.is_file() and not source.name.startswith(("_", ".")) and source.suffix != ".pyc":
+                    entries.append((source, Path(into) / source.name))
+            continue
         source = (folder / name).resolve() if name else None
         if source is None or not source.is_file():
             problems.append(f"{STOCK_LIST} lists {name or entry!r}, which is not in {folder}: not copied.")
             continue
-        entries.append((source, Path(into) / source.name if into else Path(source.name)))
+        entries.append((source, Path(into) / (renamed or source.name)))
     return entries, problems
 
 
@@ -118,6 +129,10 @@ def stock_how_to(project: str, parquets: Path, source: Path | None = None) -> st
     if start != -1 and end > start:
         text = text[:start] + text[end + 3:].lstrip("\n")
     return text.replace("{project}", project).replace("{parquets}", parquets.as_posix())
+
+
+# Stock files an earlier Artifacts put in a run folder and no longer does.
+RETIRED_STOCK = ("viewparquets.py",)
 
 
 def stamp_bundle(text: bytes) -> bytes:
@@ -146,6 +161,12 @@ def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
         path = run_dir / name
         path.write_text(text, encoding="utf-8")
         written.append(path)
+    for retired in RETIRED_STOCK:
+        # Put at the top by an earlier Artifacts; now in utils/client (D148).
+        try:
+            (run_dir / retired).unlink()
+        except OSError:
+            pass
     entries, problems = stock_entries()
     for source, destination in entries:
         path = run_dir / destination

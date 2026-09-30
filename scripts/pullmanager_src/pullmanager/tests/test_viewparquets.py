@@ -16,7 +16,7 @@ from unittest import mock
 from ..yaml_io import dump_yaml
 from .support import SAMPLE_MANIFEST
 
-VIEWER = Path(__file__).resolve().parents[2] / "utils" / "viewparquets.py"
+VIEWER = Path(__file__).resolve().parents[2] / "utils" / "client" / "viewparquets.py"
 
 
 def load_viewer():
@@ -46,8 +46,8 @@ class ViewerTestCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.work = Path(self._tmp.name).resolve()
         # Only the test's folder: on the VM, beside the runtime are real pulls.
-        if str(VIEWER.parents[1]) not in sys.path:
-            sys.path.insert(0, str(VIEWER.parents[1]))
+        if str(VIEWER.parents[2]) not in sys.path:
+            sys.path.insert(0, str(VIEWER.parents[2]))
         pulls = importlib.import_module("pullmanager.pulls")
         patcher = mock.patch.object(pulls, "home_folders", lambda cwd=None: [Path(cwd or self.work)])
         patcher.start()
@@ -119,8 +119,10 @@ class PullListTests(ViewerTestCase):
 
     def test_a_copy_away_from_the_runtime_has_no_list_and_opens_its_own_pull(self):
         run = self.make_pull("P", finished_manifest())
-        shutil.copyfile(VIEWER, run / "viewparquets.py")
-        spec = importlib.util.spec_from_file_location("copied_viewer", run / "viewparquets.py")
+        copy = run / "utils" / "client" / "viewparquets.py"  # where Artifacts puts it (D148)
+        copy.parent.mkdir(parents=True)
+        shutil.copyfile(VIEWER, copy)
+        spec = importlib.util.spec_from_file_location("copied_viewer", copy)
         copied = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(copied)
         self.assertIsNone(copied.runtime_pulls(self.work))
@@ -172,7 +174,7 @@ class WindowTests(ViewerTestCase):
         except Exception as exc:  # noqa: BLE001 - no display, no window to check
             self.skipTest(f"needs a display ({exc})")
         done = subprocess.run([sys.executable, "-c", WINDOW_PROBE, str(viewer), str(self.work),
-                               str(VIEWER.parents[1])],
+                               str(VIEWER.parents[2])],
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout.splitlines()
@@ -193,8 +195,10 @@ class WindowTests(ViewerTestCase):
 
     def test_the_copy_in_a_pulls_folder_opens_on_that_pull(self):
         run = self.make_pull("Infant_RSV", finished_manifest(), tables=("EDVisits",))
-        shutil.copyfile(VIEWER, run / "viewparquets.py")
-        out = self.probe(run / "viewparquets.py")
+        copy = run / "utils" / "client" / "viewparquets.py"  # where Artifacts puts it (D148)
+        copy.parent.mkdir(parents=True)
+        shutil.copyfile(VIEWER, copy)
+        out = self.probe(copy)
         self.assertEqual(out[0], "OWN Infant_RSV")
         self.assertEqual(out[1], "BUTTONS EDVisits  5")
         self.assertEqual(out[2], "SHOWN EDVisits.parquet PANES 1")

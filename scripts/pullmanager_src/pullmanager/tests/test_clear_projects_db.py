@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[2] / "utils" / "clear_projects_db.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "utils" / "manager" / "clear_projects_db.py"
 
 
 def load():

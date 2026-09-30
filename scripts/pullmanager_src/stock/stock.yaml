@@ -1,9 +1,15 @@
-# What Artifacts copies into every pull's run folder (D124), by path from this
-# folder. A plain entry lands at the run folder's top; `into:` puts it in a
-# folder of its own there. HOW_TO.md has {project} and {parquets} filled in;
-# everything else is copied as it is. Add a file here and every pull gets it.
+# What Artifacts copies into every pull's run folder (D124, D148), by path from
+# this folder. A plain entry lands at the run folder's top; `into:` puts it in a
+# folder of its own there, and `as:` gives it another name. `folder:` copies
+# every script in a folder, so a script added to utils/client/ reaches every
+# pull without an entry here. HOW_TO.md has {project} and {parquets} filled
+# in; a script's `BUNDLE = ""` gets the bundle (D147); everything else is
+# copied as it is.
 files:
   - HOW_TO.md
-  - ../utils/viewparquets.py
+  - file: ../utilities.py      # the client's utilities window, the user's own
+    as: utils.py
+  - folder: ../utils/client    # only what the client is meant to have
+    into: utils/client
   # - file: ../utils/some_script.R
   #   into: R

@@ -134,7 +134,8 @@ class BuildTests(BundleTestCase):
         sections, _ = read_bundle(self.bundle)
         published = {section["path"] for section in sections}
         self.assertIn("stock/HOW_TO.md", published)
-        self.assertIn("utils/viewparquets.py", published)
+        self.assertIn("utils/client/viewparquets.py", published)
+        self.assertIn("utils/manager/clear_projects_db.py", published)
         self.assertIn("stock/stock.yaml", published)
 
     def test_companion_paths_let_makeyaml_find_its_own_defaults(self):
