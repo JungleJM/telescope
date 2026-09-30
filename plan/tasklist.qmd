@@ -20,6 +20,62 @@ I'm thinking of basically doing a backup of 'runs' in data/ for each finished pr
 
 I think that backup folder should have the
 
+::: {.callout-note title="🟦 Claude: what can be overwritten today"}
+Your note stops at "I think that backup folder should have the". What were you going to say it should have?
+
+What replaces a pull's data today, and so what a backup has to cover:
+
+- **Artifacts** deletes the three `*_parquets` folders and writes them again (D72, D142). A clean pull now does this by itself at its end (D141).
+- **Export split again, or Re-pull everything**, starts the pull over. Setup drops and recreates its Projects tables (D52), so once it runs, the parquets are the only copy of the old data, and the next packaging replaces those too.
+- **Re-running the same pull** replaces its run folder's files in place: the manifest, `contents.md`, the log (the old logs are kept in `older_logs/`).
+
+So the case you describe (a wrong pull noticed after the fact) is lost at the moment Artifacts replaces the parquets.
+:::
+
+::: {.callout-note title="🟦 Claude: git, and what the VM has"}
+The VM has **Git 2.55** and **GitLens 14.0.1** in VSCodium. It has no Git LFS and no backup tool (restic, borg or similar); duckdb and pyarrow are there.
+
+**Git works for this, but not well.** A local repository that is never pushed would keep each version, and GitLens would show the history. But:
+
+- Git keeps every version of every parquet whole. A compressed parquet barely shrinks against its last version, so each re-pull of a 2 GB table adds about 2 GB, forever, and pruning old versions is awkward.
+- It is a copy on the same disk, so it guards against overwriting, not against losing the disk.
+- One `git remote add` or a mistaken push would send patient-level data to GitLab, the thing you were advised against.
+
+**Your `data/` idea**, one backup tree with `runs/` overriding it per project, would work. But Run, Artifacts and the viewer would all need to know two places, and "which copy am I looking at" becomes a question every time. I'd avoid it.
+:::
+
+::: {.callout-note title="🟦 Claude: recommendation"}
+**Keep one previous version inside each run folder.** When Artifacts is about to replace a pull's parquets, it first moves the current ones aside instead of deleting them:
+
+``` text
+runs/Infant_RSV/
+  cosmos_parquets/ ...          the latest packaging
+  previous_packaging/
+    cosmos_parquets/ ...        the one before, as it was
+    sneakpeek_parquets/ ...
+    uploads_parquets/ ...
+    contents.md, pullmanifest.yaml   what it was, and how it was pulled
+```
+
+- **It's one backup per pull,** as you asked, and the next packaging replaces the backup. A move on the same disk is instant; nothing is copied.
+- **Only real changes are kept.** When a table's new parquet is byte-for-byte the old one, the backup doesn't keep a second copy of it. That is as close to incremental as it gets without a tool for it.
+- **Nothing reads the backup by itself.** The viewer lists it for a pull as a fourth, smaller button, "Previous", so you can look at the old tables. Getting it back is a move of folders, which I'd add as **Restore previous packaging** in Run, asking first.
+- **Starting a pull over** (Export split again, or Re-pull everything) asks, if the pull has parquets, whether you have what you need from them, since setup will drop its Projects tables.
+
+**Check first:** the folder is on a network share (`\\epic-nas\...`). Such shares often keep snapshots already. Right-click the `runs` folder in Explorer, then Properties, then **Previous Versions**. If versions are listed there, IT already backs it up, and the in-folder copy is only for convenience.
+
+**For you to decide:**
+
+1.  What the unfinished sentence was going to say.
+2.  One previous version per pull, inside its run folder: yes? Or more than one?
+3.  How big do a pull's parquets get? Is there room on the share for a second copy of each?
+4.  What does Previous Versions show on the `runs` folder?
+5.  Should starting a pull over ask first when it has parquets?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
 # Settled
 
 Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `0da7ee9d…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built. Extraction refusing while a pull executes, and every window showing its bundle (D147), are built.
