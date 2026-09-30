@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
-A small Tkinter Parquet viewer.
+A small Tkinter Parquet viewer (D89, D146).
+
+Opened from the utilities window, it lists the pulls under runs/ that have run
+or are running, with the words Run shows; choose one, then its Cosmos,
+Cosmos_SneakPeek or Uploads parquets, then up to two tables side by side.
+A copy of this file sits in every pull's folder (Artifacts puts it there), for
+someone who has only that folder: it opens on that pull. Browse... opens any
+parquet anywhere.
 
 Runtime requirement:
     One of these must be installed in the Python environment:
-      - duckdb
-      - pyarrow
-      - pandas with a parquet engine available
+      - pyarrow (the VM's; tables are kept in Arrow, only the page shown is Python)
+      - duckdb, or pandas with a parquet engine (the whole file is read)
 
 Tkinter ships with most Python installs, but Parquet decoding does not. This
 file intentionally avoids app plugins or extra project files so it can be copied
@@ -19,25 +25,21 @@ import math
 import os
 import sys
 import tkinter as tk
-from dataclasses import dataclass
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable, Iterable
 
 
 MAX_CELL_CHARS = 500
 DEFAULT_PAGE_SIZE = 1000
-CLOSE_TAB_PIXELS = 24
-
-
-@dataclass
-class TableData:
-    path: str
-    columns: list[str]
-    rows: list[tuple[Any, ...]]
-
-    @property
-    def name(self) -> str:
-        return os.path.basename(self.path) or self.path
+TABLE_BUTTONS_PER_ROW = 4
+# A pull's parquet folders (D142), and the button each gets.
+PARQUET_FOLDERS = (
+    ("Cosmos", "cosmos_parquets"),
+    ("Cosmos_SneakPeek", "sneakpeek_parquets"),
+    ("Uploads", "uploads_parquets"),
+)
+SHOWN_MARK = "● "  # before a shown table's name on its button
 
 
 def stringify(value: Any) -> str:
@@ -59,39 +61,91 @@ def sort_key(value: Any) -> tuple[int, Any]:
     return (0, str(value).casefold())
 
 
-def load_with_pyarrow(path: str) -> TableData:
+# ---------------------------------------------------------------- the tables
+
+class Table:
+    """One parquet as the viewer needs it: its columns, how many rows, and
+    one page of them at a time."""
+
+    def __init__(self, path: str, columns: list[str], row_count: int) -> None:
+        self.path = path
+        self.columns = columns
+        self.row_count = row_count
+
+    @property
+    def name(self) -> str:
+        return os.path.basename(self.path) or self.path
+
+    def page(self, offset: int, size: int) -> list[tuple[Any, ...]]:
+        raise NotImplementedError
+
+    def sorted(self, column: int, descending: bool) -> "Table":
+        raise NotImplementedError
+
+
+class ArrowTable(Table):
+    """Kept in Arrow: only the page on screen becomes Python values (D146), so
+    a large table opens without turning every value into an object."""
+
+    def __init__(self, path: str, table: Any) -> None:
+        super().__init__(path, [str(name) for name in table.column_names], table.num_rows)
+        self.table = table
+
+    def page(self, offset: int, size: int) -> list[tuple[Any, ...]]:
+        chunk = self.table.slice(offset, size).to_pydict()
+        return list(zip(*(chunk[name] for name in self.table.column_names))) if chunk else []
+
+    def sorted(self, column: int, descending: bool) -> "Table":
+        import pyarrow.compute as pc
+
+        order = "descending" if descending else "ascending"
+        indices = pc.sort_indices(self.table, sort_keys=[(self.table.column_names[column], order)],
+                                  null_placement="at_end")
+        return ArrowTable(self.path, self.table.take(indices))
+
+
+class RowsTable(Table):
+    """Read whole, where pyarrow is missing and duckdb or pandas read it."""
+
+    def __init__(self, path: str, columns: list[str], rows: list[tuple[Any, ...]]) -> None:
+        super().__init__(path, columns, len(rows))
+        self.rows = rows
+
+    def page(self, offset: int, size: int) -> list[tuple[Any, ...]]:
+        return self.rows[offset:offset + size]
+
+    def sorted(self, column: int, descending: bool) -> "Table":
+        rows = sorted(self.rows, key=lambda row: sort_key(row[column]), reverse=descending)
+        return RowsTable(self.path, self.columns, rows)
+
+
+def load_with_pyarrow(path: str) -> Table:
     import pyarrow.parquet as pq
 
-    table = pq.read_table(path)
-    columns = [str(name) for name in table.column_names]
-    data = table.to_pylist()
-    rows = [tuple(row.get(column) for column in columns) for row in data]
-    return TableData(path=path, columns=columns, rows=rows)
+    return ArrowTable(path, pq.read_table(path, memory_map=True))
 
 
-def load_with_pandas(path: str) -> TableData:
+def load_with_pandas(path: str) -> Table:
     import pandas as pd
 
     frame = pd.read_parquet(path)
     columns = [str(name) for name in frame.columns]
-    rows = [tuple(row) for row in frame.itertuples(index=False, name=None)]
-    return TableData(path=path, columns=columns, rows=rows)
+    return RowsTable(path, columns, [tuple(row) for row in frame.itertuples(index=False, name=None)])
 
 
-def load_with_duckdb(path: str) -> TableData:
+def load_with_duckdb(path: str) -> Table:
     import duckdb
 
     frame = duckdb.read_parquet(path).df()
     columns = [str(name) for name in frame.columns]
-    rows = [tuple(row) for row in frame.itertuples(index=False, name=None)]
-    return TableData(path=path, columns=columns, rows=rows)
+    return RowsTable(path, columns, [tuple(row) for row in frame.itertuples(index=False, name=None)])
 
 
-def load_parquet(path: str) -> TableData:
+def load_parquet(path: str) -> Table:
     errors: list[str] = []
-    loaders: list[tuple[str, Callable[[str], TableData]]] = [
-        ("duckdb", load_with_duckdb),
+    loaders: list[tuple[str, Callable[[str], Table]]] = [
         ("pyarrow", load_with_pyarrow),
+        ("duckdb", load_with_duckdb),
         ("pandas", load_with_pandas),
     ]
 
@@ -113,6 +167,82 @@ def load_parquet(path: str) -> TableData:
     )
 
 
+def row_count(path: Path) -> int | None:
+    """Its rows, from the file's own metadata: nothing is read."""
+    try:
+        import pyarrow.parquet as pq
+
+        return pq.read_metadata(str(path)).num_rows
+    except Exception:
+        return None
+
+
+# ------------------------------------------------------------------ the pulls
+
+def runtime_pulls(cwd: Path | None = None) -> list[tuple[str, Path]] | None:
+    """Each pull that has run or is running, as Run shows it (D140, D146),
+    with its run folder; None where the runtime is not beside this file (the
+    copy in a pull's folder). Run's own code reads them, so the two agree."""
+    source = Path(__file__).resolve().parent.parent
+    if not (source / "pullmanager" / "pulls.py").is_file():
+        return None
+    if str(source) not in sys.path:
+        sys.path.insert(0, str(source))
+    try:
+        from pullmanager import pulls
+    except Exception:
+        return None
+    found = []
+    for pull in pulls.find_pulls(Path(cwd or Path.cwd())):
+        if pull.lock is None and not pull.outcome:
+            continue  # not run yet: nothing to view
+        label = f"{pull.name}: {pull.state}" if pull.lock else f"{pull.name}  ({pull.state})"
+        found.append((label, pulls.run_folder(pull.manifest)))
+    return found
+
+
+def own_pull() -> Path | None:
+    """The pull folder this copy sits in, when it has parquet folders."""
+    here = Path(__file__).resolve().parent
+    return here if any((here / folder).is_dir() for _, folder in PARQUET_FOLDERS) else None
+
+
+def parquets_in(folder: Path) -> list[Path]:
+    try:
+        return sorted(folder.glob("*.parquet"), key=lambda path: path.name.lower())
+    except OSError:
+        return []
+
+
+class Columns:
+    """Which tables are on screen, left to right (D146): one fills the window,
+    a second splits it, a third replaces the older of the two."""
+
+    def __init__(self) -> None:
+        self.shown: list[str] = []
+        self._picked: dict[str, int] = {}
+        self._clock = 0
+
+    def pick(self, path: str) -> int | None:
+        """The column the table goes into; None when it is already shown."""
+        if path in self.shown:
+            return None
+        self._clock += 1
+        self._picked[path] = self._clock
+        if len(self.shown) < 2:
+            self.shown.append(path)
+            return len(self.shown) - 1
+        older = min(self.shown, key=lambda shown: self._picked[shown])
+        index = self.shown.index(older)
+        self.shown[index] = path
+        return index
+
+    def close(self, index: int) -> None:
+        del self.shown[index]
+
+
+# ---------------------------------------------------------------- the window
+
 # Who made this window, at its foot (D145). Packed ahead of the window's
 # contents, so a small window squeezes them and never this.
 CREDIT = "Designed and built by Jason Mathias"
@@ -129,24 +259,27 @@ def add_credit(root) -> None:
     label.pack(**placed)
 
 
-class DataTab(ttk.Frame):
-    def __init__(self, parent: tk.Misc, table: TableData) -> None:
+class DataColumn(ttk.Frame):
+    """One table: its name, a close button, pages, and sorting by a heading."""
+
+    def __init__(self, parent: tk.Misc, table: Table, on_close: Callable[[], None]) -> None:
         super().__init__(parent)
         self.table = table
-        self.view_rows = list(table.rows)
+        self.view = table
         self.page_size = DEFAULT_PAGE_SIZE
         self.page = 0
         self.sort_column: int | None = None
         self.sort_descending = False
 
-        self._build_toolbar()
+        self._build_toolbar(on_close)
         self._build_tree()
         self._refresh_tree()
 
-    def _build_toolbar(self) -> None:
+    def _build_toolbar(self, on_close: Callable[[], None]) -> None:
         toolbar = ttk.Frame(self)
         toolbar.pack(fill=tk.X, padx=8, pady=(8, 4))
 
+        ttk.Button(toolbar, text="✕", width=3, command=on_close).pack(side=tk.LEFT, padx=(0, 6))
         self.summary = ttk.Label(toolbar)
         self.summary.pack(side=tk.LEFT)
 
@@ -183,16 +316,14 @@ class DataTab(ttk.Frame):
             self.tree.column(column, width=150, minwidth=60, stretch=True)
 
     def page_count(self) -> int:
-        if not self.view_rows:
+        if not self.view.row_count:
             return 1
-        return math.ceil(len(self.view_rows) / self.page_size)
+        return math.ceil(self.view.row_count / self.page_size)
 
     def _refresh_tree(self) -> None:
         self.tree.delete(*self.tree.get_children())
 
-        start = self.page * self.page_size
-        end = min(start + self.page_size, len(self.view_rows))
-        for row in self.view_rows[start:end]:
+        for row in self.view.page(self.page * self.page_size, self.page_size):
             self.tree.insert("", tk.END, values=[stringify(value) for value in row])
 
         sort_text = ""
@@ -202,7 +333,7 @@ class DataTab(ttk.Frame):
 
         self.summary.configure(
             text=(
-                f"{self.table.name} | {len(self.table.rows):,} rows | "
+                f"{self.table.name} | {self.table.row_count:,} rows | "
                 f"{len(self.table.columns):,} columns | page {self.page + 1:,}/{self.page_count():,}"
                 f"{sort_text}"
             )
@@ -214,11 +345,11 @@ class DataTab(ttk.Frame):
         else:
             self.sort_column = column_index
             self.sort_descending = False
-
-        self.view_rows.sort(
-            key=lambda row: sort_key(row[column_index]),
-            reverse=self.sort_descending,
-        )
+        try:
+            self.view = self.table.sorted(column_index, self.sort_descending)
+        except Exception as exc:  # a type Arrow cannot order, such as a nested one
+            messagebox.showerror("Could not sort", f"{self.table.columns[column_index]}: {exc}")
+            return
         self.page = 0
         self._refresh_tree()
 
@@ -240,139 +371,192 @@ class DataTab(ttk.Frame):
 
 
 class ParquetViewer(tk.Tk):
-    def __init__(self, initial_files: Iterable[str] = ()) -> None:
+    def __init__(self, initial_files: Iterable[str] = (), cwd: Path | None = None) -> None:
         super().__init__()
         self.title("Parquet Viewer")
-        self.geometry("1100x720")
+        self.geometry("1280x800")
         self.minsize(800, 480)
 
-        self.tabs: list[DataTab] = []
-        self.active_notebook: ttk.Notebook | None = None
-        self.right_notebook: ttk.Notebook | None = None
+        self.cwd = Path(cwd or Path.cwd())
+        self.pulls: dict[str, Path] = {}
+        self.run_folder: Path | None = None
+        self.folder: Path | None = None
+        self.columns = Columns()
+        self.data_columns: list[DataColumn] = []
+        self.table_buttons: dict[str, ttk.Button] = {}
 
-        self._build_menu()
         self._build_layout()
         add_credit(self)
+        self._start()
 
         for path in initial_files:
-            self.open_file(path)
+            self.open_table(str(path))
 
-    def _build_menu(self) -> None:
-        menu = tk.Menu(self)
-        file_menu = tk.Menu(menu, tearoff=False)
-        file_menu.add_command(label="Open Parquet...", accelerator="Ctrl+O", command=self.pick_files)
-        file_menu.add_command(label="Close Tab", accelerator="Ctrl+W", command=self.close_active_tab)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.destroy)
-
-        menu.add_cascade(label="File", menu=file_menu)
-        self.configure(menu=menu)
-        self.bind("<Control-o>", lambda _event: self.pick_files())
-        self.bind("<Control-w>", lambda _event: self.close_active_tab())
+    # ------------------------------------------------------------- layout
 
     def _build_layout(self) -> None:
-        toolbar = ttk.Frame(self)
-        toolbar.pack(fill=tk.X, padx=8, pady=8)
-        ttk.Button(toolbar, text="Open Parquet...", command=self.pick_files).pack(side=tk.LEFT)
-        self.add_view_button = ttk.Button(toolbar, text="Add View", command=self.add_second_view)
-        self.add_view_button.pack(side=tk.LEFT, padx=(8, 0))
-        self.status = ttk.Label(toolbar, text="Open one or more .parquet files to begin.")
-        self.status.pack(side=tk.LEFT, padx=(12, 0))
+        style = ttk.Style(self)
+        style.configure("Big.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 8))
+
+        top = ttk.Frame(self)
+        top.pack(fill=tk.X, padx=8, pady=(8, 4))
+        ttk.Label(top, text="Pull").pack(side=tk.LEFT, padx=(0, 6))
+        self.pull_pick = tk.StringVar()
+        self.pull_box = ttk.Combobox(top, textvariable=self.pull_pick, state="readonly", width=70,
+                                     postcommand=self._fill_pulls)
+        self.pull_box.pack(side=tk.LEFT)
+        self.pull_box.bind("<<ComboboxSelected>>", lambda _e: self.choose_pull(self.pull_pick.get()))
+        self.pull_label = ttk.Label(top, text="")
+        ttk.Button(top, text="Browse...", command=self.browse).pack(side=tk.RIGHT)
+
+        folders = ttk.Frame(self)
+        folders.pack(fill=tk.X, padx=8, pady=4)
+        self.folder_buttons: dict[str, ttk.Button] = {}
+        for label, folder in PARQUET_FOLDERS:
+            button = ttk.Button(folders, text=label, state=tk.DISABLED,
+                                style="TButton" if folder == "uploads_parquets" else "Big.TButton",
+                                command=lambda f=folder: self.choose_folder(f))
+            button.pack(side=tk.LEFT, padx=(0, 8))
+            self.folder_buttons[folder] = button
+        self.status = ttk.Label(folders, text="", foreground="#6e7781")
+        self.status.pack(side=tk.LEFT, padx=(8, 0))
+
+        self.tables_frame = ttk.Frame(self)
+        self.tables_frame.pack(fill=tk.X, padx=8, pady=(0, 4))
 
         self.pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
-        self.left_notebook = ttk.Notebook(self.pane)
-        self.pane.add(self.left_notebook, weight=1)
-        self.active_notebook = self.left_notebook
-        self.left_notebook.bind("<<NotebookTabChanged>>", self._mark_active_notebook, add="+")
-        self.left_notebook.bind("<Button-1>", self._handle_tab_click, add="+")
-
-    def _mark_active_notebook(self, event: tk.Event) -> None:
-        widget = event.widget
-        if isinstance(widget, ttk.Notebook):
-            self.active_notebook = widget
-
-    def add_second_view(self) -> None:
-        if self.right_notebook is not None:
-            self.active_notebook = self.right_notebook
+    def _start(self) -> None:
+        found = runtime_pulls(self.cwd)
+        if found is None:
+            # The copy in a pull's folder: that pull, no dropdown (D146).
+            self.pull_box.pack_forget()
+            self.pull_label.pack(side=tk.LEFT)
+            own = own_pull()
+            if own is not None:
+                self.pull_label.configure(text=own.name)
+                self.show_pull(own)
+            else:
+                self.pull_label.configure(text="Browse... to open a parquet.")
             return
+        self._fill_pulls(found)
+        self.status.configure(text="Choose a pull." if found else "No pull has run yet: Browse...")
 
-        self.right_notebook = ttk.Notebook(self.pane)
-        self.right_notebook.bind("<<NotebookTabChanged>>", self._mark_active_notebook, add="+")
-        self.right_notebook.bind("<Button-1>", self._handle_tab_click, add="+")
-        self.pane.add(self.right_notebook, weight=1)
-        self.active_notebook = self.right_notebook
-        self.add_view_button.configure(state=tk.DISABLED)
-        self.status.configure(text="Second view added. Open files load into the selected view.")
+    def _fill_pulls(self, found: list[tuple[str, Path]] | None = None) -> None:
+        if found is None:
+            found = runtime_pulls(self.cwd) or []
+        self.pulls = dict(found)
+        self.pull_box.configure(values=list(self.pulls))
 
-    def _handle_tab_click(self, event: tk.Event) -> str | None:
-        notebook = event.widget
-        if not isinstance(notebook, ttk.Notebook):
-            return None
+    # ------------------------------------------------------------ choosing
 
+    def choose_pull(self, label: str) -> None:
+        folder = self.pulls.get(label)
+        if folder is not None:
+            self.show_pull(folder)
+
+    def show_pull(self, run_folder: Path) -> None:
+        """Its folder buttons, greyed where empty; the first with tables opens."""
+        self.run_folder = run_folder
+        first = None
+        for _label, folder in PARQUET_FOLDERS:
+            has = bool(parquets_in(run_folder / folder))
+            self.folder_buttons[folder].configure(state=tk.NORMAL if has else tk.DISABLED)
+            if has and first is None:
+                first = folder
+        if first is None:
+            self._show_tables([])
+            self.status.configure(text="No parquets yet: they appear when the pull is packaged.")
+            return
+        self.choose_folder(first)
+
+    def choose_folder(self, folder: str) -> None:
+        if self.run_folder is None:
+            return
+        self.folder = self.run_folder / folder
+        tables = parquets_in(self.folder)
+        self._show_tables(tables)
+        label = next(label for label, name in PARQUET_FOLDERS if name == folder)
+        self.status.configure(text=f"{label}: {len(tables)} table(s). Pick one, or two side by side.")
+
+    def _show_tables(self, tables: list[Path]) -> None:
+        for child in self.tables_frame.winfo_children():
+            child.destroy()
+        self.table_buttons = {}
+        for index, path in enumerate(tables):
+            rows = row_count(path)
+            text = path.stem if rows is None else f"{path.stem}  {rows:,}"
+            button = ttk.Button(self.tables_frame, text=text,
+                                command=lambda p=str(path): self.open_table(p))
+            button.grid(row=index // TABLE_BUTTONS_PER_ROW, column=index % TABLE_BUTTONS_PER_ROW,
+                        sticky="ew", padx=(0, 6), pady=2)
+            button.base_text = text
+            self.table_buttons[str(path)] = button
+        for column in range(TABLE_BUTTONS_PER_ROW):
+            self.tables_frame.columnconfigure(column, weight=1)
+        self._mark_shown()
+
+    def _mark_shown(self) -> None:
+        for path, button in self.table_buttons.items():
+            shown = path in self.columns.shown
+            button.configure(text=(SHOWN_MARK if shown else "") + button.base_text)
+
+    # ------------------------------------------------------------- columns
+
+    def open_table(self, path: str) -> None:
+        """Into a column by the rule (D146): one fills, two split, a third
+        replaces the older."""
+        path = str(Path(path).resolve())
+        if path in self.columns.shown:
+            return
         try:
-            tab_index = notebook.index(f"@{event.x},{event.y}")
-            x, _y, width, _height = notebook.bbox(tab_index)
-        except tk.TclError:
-            return None
-
-        if event.x < x + width - CLOSE_TAB_PIXELS:
-            return None
-
-        self._close_tab(notebook, tab_index)
-        return "break"
-
-    def close_active_tab(self) -> None:
-        notebook = self.active_notebook
-        if notebook is None or not notebook.tabs():
+            table = load_parquet(path)
+        except Exception as exc:
+            messagebox.showerror("Could not open Parquet", str(exc))
             return
+        index = self.columns.pick(path)
+        column = DataColumn(self.pane, table, on_close=lambda p=path: self.close_table(p))
+        if index < len(self.data_columns):
+            old = self.data_columns[index]
+            self.pane.insert(old, column, weight=1)
+            self.pane.forget(old)
+            old.destroy()
+            self.data_columns[index] = column
+        else:
+            self.pane.add(column, weight=1)
+            self.data_columns.append(column)
+        self._mark_shown()
 
-        try:
-            tab_index = notebook.index(notebook.select())
-        except tk.TclError:
+    def close_table(self, path: str) -> None:
+        if path not in self.columns.shown:
             return
+        index = self.columns.shown.index(path)
+        self.columns.close(index)
+        column = self.data_columns.pop(index)
+        self.pane.forget(column)
+        column.destroy()
+        self._mark_shown()
 
-        self._close_tab(notebook, tab_index)
+    def shown_names(self) -> list[str]:
+        """The tables on screen, left to right."""
+        return [column.table.name for column in self.data_columns]
 
-    def _close_tab(self, notebook: ttk.Notebook, tab_index: int) -> None:
-        tab_widget_name = notebook.tabs()[tab_index]
-        tab_widget = self.nametowidget(tab_widget_name)
-        notebook.forget(tab_index)
-        if isinstance(tab_widget, DataTab) and tab_widget in self.tabs:
-            self.tabs.remove(tab_widget)
-        tab_widget.destroy()
-        self.status.configure(text=f"Loaded {len(self.tabs):,} file(s).")
-
-    def pick_files(self) -> None:
-        # Beside a pull's files (Artifacts copies this script there), start in
-        # its COSMOS parquets folder (D142).
-        beside = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cosmos_parquets")
+    def browse(self) -> None:
+        start = self.folder if self.folder is not None and self.folder.is_dir() else None
+        if start is None:
+            beside = Path(__file__).resolve().parent / "cosmos_parquets"
+            start = beside if beside.is_dir() else None
         paths = filedialog.askopenfilenames(
             title="Open Parquet file",
-            initialdir=beside if os.path.isdir(beside) else None,
+            initialdir=str(start) if start else None,
             filetypes=[
                 ("Parquet files", "*.parquet *.parq"),
                 ("All files", "*.*"),
             ],
         )
         for path in paths:
-            self.open_file(path)
-
-    def open_file(self, path: str) -> None:
-        try:
-            table = load_parquet(path)
-        except Exception as exc:
-            messagebox.showerror("Could not open Parquet", str(exc))
-            return
-
-        target = self.active_notebook or self.left_notebook
-        tab = DataTab(target, table)
-        self.tabs.append(tab)
-        target.add(tab, text=f"{table.name}  x")
-        target.select(tab)
-        self.active_notebook = target
-        self.status.configure(text=f"Loaded {len(self.tabs):,} file(s).")
+            self.open_table(path)
 
 
 def main() -> int:
