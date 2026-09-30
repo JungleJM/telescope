@@ -113,6 +113,22 @@ def load_parquet(path: str) -> TableData:
     )
 
 
+# Who made this window, at its foot (D145). Packed ahead of the window's
+# contents, so a small window squeezes them and never this.
+CREDIT = "Designed and built by Jason Mathias"
+
+
+def add_credit(root) -> None:
+    from tkinter import ttk
+
+    label = ttk.Label(root, text=CREDIT, foreground="#8c959f", font="TkSmallCaptionFont")
+    placed = {"side": "bottom", "anchor": "e", "padx": 8, "pady": (0, 2)}
+    slaves = root.pack_slaves()
+    if slaves:
+        placed["before"] = slaves[0]
+    label.pack(**placed)
+
+
 class DataTab(ttk.Frame):
     def __init__(self, parent: tk.Misc, table: TableData) -> None:
         super().__init__(parent)
@@ -236,6 +252,7 @@ class ParquetViewer(tk.Tk):
 
         self._build_menu()
         self._build_layout()
+        add_credit(self)
 
         for path in initial_files:
             self.open_file(path)

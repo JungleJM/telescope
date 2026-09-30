@@ -49,6 +49,22 @@ FIELDS = (
 NOT_RUN = "not run yet"
 
 
+# Who made this window, at its foot (D145). Packed ahead of the window's
+# contents, so a small window squeezes them and never this.
+CREDIT = "Designed and built by Jason Mathias"
+
+
+def add_credit(root) -> None:
+    from tkinter import ttk
+
+    label = ttk.Label(root, text=CREDIT, foreground="#8c959f", font="TkSmallCaptionFont")
+    placed = {"side": "bottom", "anchor": "e", "padx": 8, "pady": (0, 2)}
+    slaves = root.pack_slaves()
+    if slaves:
+        placed["before"] = slaves[0]
+    label.pack(**placed)
+
+
 class LauncherApp:
     """The launcher. Given `parent`, it builds inside that frame, as the Run
     half of the app (D93), and leaves the window's title and closing to it."""
@@ -627,5 +643,6 @@ def main(workdir: Path | None = None) -> int:
         messagebox.showerror("Pullmanager", str(exc))
         return 1
     LauncherApp(root, tools, workdir)
+    add_credit(root)
     root.mainloop()
     return 0

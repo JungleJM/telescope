@@ -248,6 +248,22 @@ def safe_stem(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("_") or "transcription_pages"
 
 
+# Who made this window, at its foot (D145). Packed ahead of the window's
+# contents, so a small window squeezes them and never this.
+CREDIT = "Designed and built by Jason Mathias"
+
+
+def add_credit(root) -> None:
+    from tkinter import ttk
+
+    label = ttk.Label(root, text=CREDIT, foreground="#8c959f", font="TkSmallCaptionFont")
+    placed = {"side": "bottom", "anchor": "e", "padx": 8, "pady": (0, 2)}
+    slaves = root.pack_slaves()
+    if slaves:
+        placed["before"] = slaves[0]
+    label.pack(**placed)
+
+
 class TranscriptionViewer(tk.Tk):
     def __init__(self, initial_path: Path | None = None) -> None:
         super().__init__()
@@ -277,6 +293,7 @@ class TranscriptionViewer(tk.Tk):
         self.status_var = tk.StringVar(value="Open a file or paste text.")
 
         self._build_ui()
+        add_credit(self)
         self.bind("<Left>", lambda _event: self.prev_page())
         self.bind("<Right>", lambda _event: self.next_page())
         self.bind("<Prior>", lambda _event: self.prev_page())

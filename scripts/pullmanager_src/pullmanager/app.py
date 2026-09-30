@@ -18,7 +18,7 @@ from tkinter import messagebox, ttk
 from typing import Any
 
 from . import launcher
-from .gui import LauncherApp
+from .gui import LauncherApp, add_credit
 from .launcher import LauncherError
 
 TITLE = "Telescope"
@@ -64,6 +64,7 @@ class App:
                      "Run, in the other tab, works without it.",
             ).pack(anchor="nw")
             self.halves.select(self.run_frame)
+        add_credit(root)
 
     def set_title(self, text: str) -> None:
         self.root.title(f"{TITLE} - {text}")
