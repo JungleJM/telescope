@@ -554,7 +554,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to pullmanifest.yaml. With --execute, a project's name will do: "
              "IBD_Ancestry means runs/IBD_Ancestry/split/pullmanifest.yaml.",
     )
-    parser.add_argument("--version", action="version", version=f"pullmanager {__version__}")
+    from .config import bundle_id
+
+    found = bundle_id()
+    parser.add_argument("--version", action="version",
+                        version=f"pullmanager {__version__}" + (f", bundle {found}" if found else ""))
     parser.add_argument(
         "--dry-run",
         action="store_true",

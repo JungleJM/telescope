@@ -49,15 +49,21 @@ FIELDS = (
 NOT_RUN = "not run yet"
 
 
-# Who made this window, at its foot (D145). Packed ahead of the window's
-# contents, so a small window squeezes them and never this.
+# Who made this window, at its foot (D145), and which bundle it is (D147).
+# Packed ahead of the window's contents, so a small window squeezes them and
+# never this.
 CREDIT = "Designed and built by Jason Mathias"
+
+
+def credit_text() -> str:
+    found = config.bundle_id()
+    return f"{CREDIT} \u00b7 bundle {found}" if found else CREDIT
 
 
 def add_credit(root) -> None:
     from tkinter import ttk
 
-    label = ttk.Label(root, text=CREDIT, foreground="#8c959f", font="TkSmallCaptionFont")
+    label = ttk.Label(root, text=credit_text(), foreground="#8c959f", font="TkSmallCaptionFont")
     placed = {"side": "bottom", "anchor": "e", "padx": 8, "pady": (0, 2)}
     slaves = root.pack_slaves()
     if slaves:

@@ -26,6 +26,7 @@ import json
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 BEGIN_RE = re.compile(
@@ -262,6 +263,48 @@ def read_bundle(bundle_path: Path) -> tuple[list[dict], dict]:
     return sections, manifest
 
 
+# Pullmanager's lock on a pull it is executing (D67): stale once its heartbeat
+# is this old. The same rule as pullmanager/lock.py, which this file cannot
+# import; a runtime test holds the two together.
+PULL_LOCK_FILENAME = "pullmanifest.lock"
+PULL_LOCK_STALE_SECONDS = 120
+
+
+def executing_pulls(folder: Path) -> list[str]:
+    """The pulls under the working folder's runs folder executing now (D147),
+    in either run-folder layout: `runs/<pull>/` (D142) or `runs/<pull>/split/`."""
+    runs = folder / "runs"
+    try:
+        setting = json.loads((folder / "datascope.json").read_text(encoding="utf-8")).get("runs")
+        if setting:
+            runs = folder / setting
+    except (OSError, ValueError, AttributeError):
+        pass
+    found = []
+    locks = [*runs.glob(f"*/{PULL_LOCK_FILENAME}"), *runs.glob(f"*/split/{PULL_LOCK_FILENAME}")]
+    for lock in sorted(locks):
+        try:
+            heartbeat = lock.stat().st_mtime
+            data = json.loads(lock.read_text(encoding="utf-8"))
+            heartbeat = float(data["heartbeat"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # a lock caught mid-write is dated by its file
+        if time.time() - heartbeat < PULL_LOCK_STALE_SECONDS:
+            owner = lock.parent.parent if lock.parent.name == "split" else lock.parent
+            found.append(owner.name)
+    return found
+
+
+def refuse_while_executing(folder: Path) -> None:
+    running = executing_pulls(folder)
+    if running:
+        raise BundleError(
+            f"{', '.join(running)} {'is' if len(running) == 1 else 'are'} executing now, from the "
+            "software this would replace. Nothing was extracted. Let it finish, or stop it "
+            "(Stop in Run, or Ctrl+C in its window), then run the bundle again."
+        )
+
+
 def previous_extraction_hashes(target: Path) -> dict[str, str]:
     """Path to SHA-256 of every file the previous extraction wrote, or {}."""
     try:
@@ -475,17 +518,26 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
         print(f"The software in {Path(target).resolve().name} is left as it is. "
               f"Next: `python {LAUNCHER_NAME}`, and Run the pull.")
         return
+    refuse_while_executing(Path(target).resolve().parent)
+    old_files = 0
+    if (Path(target) / MANIFEST_FILENAME).is_file():
+        old_files = sum(1 for path in Path(target).rglob("*") if path.is_file())
     written = extract(bundle_path, target, force=force)
     if not quiet:
         for path in written:
             print(f"extracted  {path}")
     print(f"\nExtracted {len(written)} files to {target.resolve()}")
+    if old_files:
+        # Swapped, not merged (D6): nothing of the old version is left to run.
+        print(f"Removed the previous {Path(target).name} ({old_files} files); only the new "
+              "version is there.")
     launcher = write_launcher(target)
-    print(f"Wrote {launcher}")
+    print(f"Wrote {launcher}  (rewritten, pointing at the new version)")
     for path, kept in place_root_files(bundle_path, target):
         note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
         print(f"Wrote {path}{note}")
-    print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}")
+    print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}  (rewritten, pointing at the new version)")
+    print(f"Every window now says `bundle {manifest['content_id'][:8]}` at its foot.")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the app "
           f"(`python {LAUNCHER_NAME} --tdd` tests the delivery); `python {UTILS_LAUNCHER_NAME}` "
           "the utilities.")
@@ -502,6 +554,15 @@ def interactive(bundle_path: Path) -> int:
     print(f"OK  {len(sections)} files verified")
     print(f"content_id: {manifest['content_id']}")
     carried = sorted(Path(path).name for path in root_paths(manifest))
+    if not is_yamls_only(manifest):
+        try:
+            refuse_while_executing(bundle_path.parent)
+        except BundleError as exc:
+            print(f"ERROR {exc}", file=sys.stderr)
+            return 1
+        # A window opened before the update keeps the code it has loaded (D147).
+        print("Close the app and the utilities first: a window left open keeps running "
+              "the old version.")
     try:
         if is_yamls_only(manifest):
             answer = input(f"Write {', '.join(carried)} into {bundle_path.parent}, leaving the "

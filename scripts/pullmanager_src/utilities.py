@@ -60,15 +60,38 @@ def window(folder: Path = UTILS_DIR) -> None:
     root.mainloop()
 
 
-# Who made this window, at its foot (D145). Packed ahead of the window's
-# contents, so a small window squeezes them and never this.
+# Who made this window, at its foot (D145), and which bundle it is (D147).
+# Packed ahead of the window's contents, so a small window squeezes them and
+# never this.
 CREDIT = "Designed and built by Jason Mathias"
+BUNDLE = ""  # Artifacts writes the bundle here in the copy it puts in a pull's folder
+
+
+def bundle_id() -> str:
+    """The first 8 characters of the extracted bundle's content_id, from the
+    .bundle-manifest.json above this file; empty when run from source."""
+    import json
+    from pathlib import Path
+
+    for folder in Path(__file__).resolve().parents:
+        manifest = folder / ".bundle-manifest.json"
+        if manifest.is_file():
+            try:
+                return str(json.loads(manifest.read_text(encoding="utf-8"))["content_id"])[:8]
+            except (OSError, ValueError, KeyError, TypeError):
+                return ""
+    return BUNDLE
+
+
+def credit_text() -> str:
+    found = bundle_id()
+    return f"{CREDIT} \u00b7 bundle {found}" if found else CREDIT
 
 
 def add_credit(root) -> None:
     from tkinter import ttk
 
-    label = ttk.Label(root, text=CREDIT, foreground="#8c959f", font="TkSmallCaptionFont")
+    label = ttk.Label(root, text=credit_text(), foreground="#8c959f", font="TkSmallCaptionFont")
     placed = {"side": "bottom", "anchor": "e", "padx": 8, "pady": (0, 2)}
     slaves = root.pack_slaves()
     if slaves:

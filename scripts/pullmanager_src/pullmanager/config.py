@@ -69,3 +69,17 @@ def core_path(key: str, code_root: Path) -> Path:
     if key in config:
         return home / config[key]
     return Path(code_root) / CORE_DEFAULTS[key]
+
+
+def bundle_id() -> str:
+    """The first 8 characters of the extracted bundle's content_id (D147), from
+    the .bundle-manifest.json above this file; empty when run from source."""
+    for folder in Path(__file__).resolve().parents:
+        manifest = folder / ".bundle-manifest.json"
+        if manifest.is_file():
+            try:
+                return str(json.loads(manifest.read_text(encoding="utf-8"))["content_id"])[:8]
+            except (OSError, ValueError, KeyError, TypeError):
+                return ""
+    return ""
+

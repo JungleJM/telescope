@@ -470,6 +470,63 @@ class LauncherTests(BundleTestCase):
         self.assertTrue((self.work / "pullmanager_runtime").is_dir())
         self.assertFalse((self.tmp / "pullmanager_runtime").exists())
 
+    # ------------------------------------------------------------ D147
+
+    def lock(self, pull: str, age: float = 5, split: bool = False) -> None:
+        import time
+
+        folder = self.work / "runs" / pull / ("split" if split else "")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "pullmanifest.lock").write_text(json.dumps(
+            {"pid": 4242, "machine": "VM", "started": time.time() - 600,
+             "heartbeat": time.time() - age}), encoding="utf-8")
+
+    def test_it_refuses_while_a_pull_executes_in_either_layout(self):
+        # A pull executing from the old software would keep running it.
+        for split in (False, True):
+            with self.subTest(old_layout=split):
+                shutil.rmtree(self.work / "runs", ignore_errors=True)
+                self.lock("UC_Visits", split=split)
+                run = self.run_bundle_answering("y\n")
+                self.assertEqual(run.returncode, 1, run.stdout)
+                self.assertIn("UC_Visits is executing now", run.stderr)
+                self.assertNotIn("[y/N]", run.stdout)  # refused before asking
+                self.assertFalse((self.work / "pullmanager_runtime").exists())
+                self.assertFalse((self.work / "scope.py").exists())
+
+    def test_a_stale_lock_does_not_stop_it(self):
+        self.lock("UC_Visits", age=121)
+        run = self.run_bundle_answering("y\n")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
+
+    def test_it_says_to_close_open_windows_and_what_it_removed(self):
+        first = self.run_bundle_answering("y\n")
+        self.assertIn("Close the app and the utilities first", first.stdout.split("[y/N]")[0])
+        self.assertNotIn("Removed the previous", first.stdout)  # nothing there before
+        stale = self.work / "pullmanager_runtime" / "pullmanager" / "leftover.py"
+        stale.write_text("# from an older version\n", encoding="utf-8")
+        second = self.run_bundle_answering("y\n")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("Removed the previous pullmanager_runtime (", second.stdout)
+        self.assertFalse(stale.exists())
+
+    def test_the_version_names_the_bundle(self):
+        _, manifest = read_bundle(self.bundle)
+        self.run_bundle_answering("y\n")
+        run = self.run_python("scope.py", "--version")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn(f"bundle {manifest['content_id'][:8]}", run.stdout)
+
+    def test_its_lock_rule_is_pullmanagers(self):
+        import bundle_extractor
+
+        sys.path.insert(0, str(SOURCE_ROOT))
+        from pullmanager import lock
+
+        self.assertEqual(bundle_extractor.PULL_LOCK_FILENAME, lock.lock_path(Path("pullmanifest.yaml")).name)
+        self.assertEqual(bundle_extractor.PULL_LOCK_STALE_SECONDS, lock.STALE_SECONDS)
+
     def test_a_tampered_bundle_asks_nothing(self):
         text = (self.work / "bundle.py").read_text(encoding="utf-8")
         (self.work / "bundle.py").write_text(

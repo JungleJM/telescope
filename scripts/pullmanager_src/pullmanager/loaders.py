@@ -120,6 +120,18 @@ def stock_how_to(project: str, parquets: Path, source: Path | None = None) -> st
     return text.replace("{project}", project).replace("{parquets}", parquets.as_posix())
 
 
+def stamp_bundle(text: bytes) -> bytes:
+    """A stock script's `BUNDLE = ""` line given this bundle's id (D147): the
+    copy in a pull's folder has no bundle above it to read, so it says the
+    bundle it was packaged with. Anything else is copied as it is."""
+    from .config import bundle_id
+
+    found = bundle_id()
+    if not found:
+        return text
+    return text.replace(b'\nBUNDLE = ""', f'\nBUNDLE = "{found}"'.encode("utf-8"), 1)
+
+
 def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
     """Write the load scripts, and copy what stock.yaml lists (D124); returns
     what was written. An entry that cannot be copied is said, not fatal."""
@@ -140,6 +152,8 @@ def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
         path.parent.mkdir(parents=True, exist_ok=True)
         if source.name == HOW_TO:
             path.write_text(stock_how_to(project, location, source), encoding="utf-8")
+        elif source.suffix == ".py":
+            path.write_bytes(stamp_bundle(source.read_bytes()))
         else:
             shutil.copyfile(source, path)
         written.append(path)

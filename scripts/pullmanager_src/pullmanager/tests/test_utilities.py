@@ -58,11 +58,12 @@ def shown(root):
         widget = stack.pop()
         stack.extend(widget.winfo_children())
         try:
-            if widget.winfo_class() == "TLabel" and widget.cget("text") == "Designed and built by Jason Mathias":
-                return widget.winfo_manager() == "pack"
+            text = str(widget.cget("text")) if widget.winfo_class() == "TLabel" else ""
+            if text.startswith("Designed and built by Jason Mathias") and widget.winfo_manager() == "pack":
+                return text
         except tk.TclError:
             pass
-    return False
+    return None
 def fake_loop(self, n=0):
     self.update_idletasks()
     seen.append(shown(self))
@@ -76,7 +77,7 @@ def hidden(self, *args, **kwargs):  # never shown: the checks run on the VM too
 tk.Tk.__init__ = hidden
 sys.path.insert(0, sys.argv[1])
 exec(sys.argv[2])
-print("CREDIT" if seen and all(seen) else "NO CREDIT")
+print(seen[-1] if seen and seen[-1] else "NO CREDIT")
 """
 
 
@@ -111,7 +112,12 @@ class CreditTests(unittest.TestCase):
                 self.SRC / "utils", "import transcription_viewer; transcription_viewer.main([])")
         except ImportError:
             pass
+        # D147: beside it, the bundle each window runs from; none from source.
+        from ..config import bundle_id
+
+        found = bundle_id()
+        expected = "Designed and built by Jason Mathias" + (f" \u00b7 bundle {found}" if found else "")
         for name, (folder, code) in windows.items():
             with self.subTest(window=name):
-                self.assertEqual(self.probe(folder, code), ["CREDIT"])
+                self.assertEqual(self.probe(folder, code), [expected])
 
