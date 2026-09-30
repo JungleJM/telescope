@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -119,8 +120,10 @@ class CreditTests(unittest.TestCase):
             tk.Tk().destroy()
         except Exception as exc:  # noqa: BLE001 - no display, no window to check
             self.skipTest(f"needs a display ({exc})")
+        # UTF-8 both ways: on Windows a child's piped output is cp1252 (D147's ·).
         done = subprocess.run([sys.executable, "-c", CREDIT_PROBE, str(folder), code],
-                              capture_output=True, text=True, timeout=120, cwd=tempfile.gettempdir())
+                              capture_output=True, encoding="utf-8", timeout=120,
+                              cwd=tempfile.gettempdir(), env=dict(os.environ, PYTHONIOENCODING="utf-8"))
         return done.stdout.strip().splitlines()[-1:] or [done.stderr[-2000:]]
 
     def test_each_window_says_who_made_it(self):

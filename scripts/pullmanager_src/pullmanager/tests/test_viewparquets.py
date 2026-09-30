@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -173,9 +174,12 @@ class WindowTests(ViewerTestCase):
             tk.Tk().destroy()
         except Exception as exc:  # noqa: BLE001 - no display, no window to check
             self.skipTest(f"needs a display ({exc})")
+        # UTF-8 both ways: on Windows a child's piped output is cp1252, which
+        # has no ● for a shown table's button, and the print failed.
         done = subprocess.run([sys.executable, "-c", WINDOW_PROBE, str(viewer), str(self.work),
                                str(VIEWER.parents[2])],
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, encoding="utf-8", timeout=120,
+                              env=dict(os.environ, PYTHONIOENCODING="utf-8"))
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout.splitlines()
 
