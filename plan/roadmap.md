@@ -52,7 +52,7 @@ Agreed on 29 September 2026. One commit each, with its outcome tests.
 
 1.  **The credit line** (D145): every window says who made it. Smallest.
 2.  **The Pull Manifest tab** (D144): Run's window only.
-3.  **The parquet viewer** (task list, Parquet Viewer): waits on the user's answers to its questions 1 to 3. The copy Artifacts puts in each pull's folder stays, so a client can open the parquets there.
+3.  **The parquet viewer** (D146): reading only the shown page first, then the pull chooser, the folder and table buttons, and the two columns.
 
 ------------------------------------------------------------------------
 

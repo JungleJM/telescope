@@ -12,45 +12,6 @@ Work on the task list section "<heading>" in plan/tasklist.qmd.
 
 That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
 
-# Parquet Viewer
-
-After all that, currently parquet viewer is asking me to find a specific parquet and use the browse function. That's fine, but i wonder if we can utilize the 'runs' folder more fully, and the statuses we have made.
-
-Basically like the 'run' section of scope, we can have a dropdown of all the runs that are either pulled or pulling, with their info such as (finished) the same as in the run section. no need to find un-run ones, as this is a parquet viewer. We can then select a project, and have large buttons for Cosmos and Cosmos_SneakPeek. Then, a series of buttons per parquet, and you can pick any two and have them come up in two columns. selecting one just makes a single column, selecting two does two columns, and selecting a third just replaces the 2nd-to-last selected one.
-
-I'd also like to have a 'browse' function because i plan to also open other parquets that I've gotten other ways or moved somewhere.
-
-::: {.callout-note title="🟦 Claude: the viewer, today"}
-`utils/viewparquets.py` (D89) is one standalone script, and it is used two ways: from the utilities window (`python utils.py`, started from the working folder), and as a copy Artifacts puts in every run folder. Open Parquet... is a file dialog, which now starts in `cosmos_parquets/` (D142). Each file opens in a tab. **Add View** already splits the window into two side-by-side sets of tabs, and a file opens into whichever set was clicked last. Each tab pages 1,000 rows at a time and sorts by a column.
-
-It reads the **whole file into Python** first (`pq.read_table(...).to_pylist()`) and only then shows a page. Infant RSV's 186,963 rows by 91 columns is about 17 million Python values, which is slow but works. A lab table of tens of millions of rows would not open. This matters more once the window makes opening a table one click.
-:::
-
-::: {.callout-note title="🟦 Claude: recommendation"}
-**The pull chooser.** At the top, a dropdown of the pulls under `runs/` that have run or are running, each with the word Run shows: `Infant_RSV  (finished)`, `UC_Visits: executing since 08:10`. Pulls not yet run are left out. It reads them with Run's own code (`pulls.find_pulls`, D140), so the two can never disagree. That works when the viewer is opened from the utilities window, because the runtime sits beside it. The copy in a run folder has no runtime beside it. There it shows only the pull it sits in, without the status word, plus Browse.
-
-**Then the pull's parquets.** Large buttons, **Cosmos** and **Cosmos_SneakPeek**, for `cosmos_parquets/` and `sneakpeek_parquets/`, each greyed when the folder is empty. I'd add a smaller **Uploads** button for `uploads_parquets/`. Under them, a button per parquet in the chosen folder, with its rows (read from the file's metadata, instantly): `EDVisits  186,963`. A running pull shows what exists so far, which is its PK's parquet.
-
-**Two columns.** Pick one table and it fills the window. Pick a second and the window splits into two columns. Pick a third and it replaces the older of the two on screen, so the two most recent always show. The shown tables' buttons stay highlighted, and each column pages and sorts on its own. This replaces the tabs and Add View. **Browse...** opens any parquet anywhere into the columns by the same rule.
-
-**Reading only what is shown.** Keep the file as an Arrow table and turn only the visible page into Python, so a large table opens quickly and uses a fraction of the memory. Sorting stays whole-table, done in Arrow. This goes in the same change, or the new buttons would make the slow case easy to reach.
-
-**For you to decide:**
-
-1.  With A then B showing, picking C replaces A, the older one. Is that what you meant by "the 2nd-to-last selected"?
-2.  An **Uploads** button beside Cosmos and Cosmos_SneakPeek: yes or no?
-3.  Should the tabs go (my suggestion), or stay inside each column?
-4.  There are two ways to open the viewer. One is from the utilities window, which can see every pull. The other is the copy Artifacts puts inside each pull's folder, next to its parquets, for someone who opens that folder alone. That copy can't list the other pulls or say `(finished)`, so it would open straight onto its own pull's Cosmos and Cosmos_SneakPeek buttons, plus Browse. Is that acceptable? The other way is to stop putting a copy in each pull's folder, so the viewer is only ever opened from the utilities window.
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-4: Oh! That makes sense and yes we should do that. I wondered why there was a viewparquets.py in the output folder, but that does make sense. Definitely keep this - that way my client can see the parquets easily. (In chat.)
-:::
-
-**Suggested order**
-
-1.  **The viewer**, as one change once 1 to 3 are answered: reading only the shown page first, since the chooser makes large tables one click away, then the chooser, the buttons and the two columns.
-
 # Settled
 
-Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `77742a9a…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144) and a credit line in every window (D145) are agreed, in the roadmap's "Next: Fixes, In Order".
+Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `77742a9a…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are agreed, in the roadmap's "Next: Fixes, In Order".

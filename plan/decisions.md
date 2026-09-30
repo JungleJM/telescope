@@ -2727,3 +2727,31 @@ are not the VM company's, whose name should not be attached to their bugs.
 **Decision.** Every window (the app, the utilities window and each utility,
 the parquet viewer copied into each pull's folder included) says "Designed and
 built by Jason Mathias" at its foot, small and grey.
+
+### D146. The parquet viewer opens a pull's tables by buttons, two at a time
+
+**Amends D89.**
+
+**Context.** The viewer asked for a file through a dialog, and read the whole
+of it into Python before showing a page, so a table of tens of millions of
+rows would not open. The run folder (D142) and the pulls' states (D140) now
+say where every pull's parquets are and how the pull stands.
+
+**Decision.**
+
+- **A pull chooser.** A dropdown of the pulls that have run or are running,
+  each with the words Run shows, read with Run's own code (`pulls.find_pulls`).
+  Pulls not yet run are left out. This needs the runtime beside the viewer,
+  as it is when opened from the utilities window. The copy Artifacts puts in
+  each pull's folder, for a client who has only that folder, stays (the user:
+  "that way my client can see the parquets easily"); it opens on its own pull,
+  with no dropdown and no status word.
+- **Then its parquets.** Large **Cosmos** and **Cosmos_SneakPeek** buttons and a
+  smaller **Uploads** one, each greyed when its folder is empty; under them a
+  button per parquet with its rows, read from the file's metadata.
+- **Two columns.** One table fills the window; a second splits it in two; a
+  third replaces the older of the two on screen. The shown tables' buttons are
+  marked, and each column pages and sorts on its own. The tabs and Add View
+  go. **Browse...** opens any parquet anywhere by the same rule.
+- **Only what is shown is Python.** A table is kept in Arrow and only the page
+  on screen is turned into Python values; sorting is done in Arrow, whole-table.
