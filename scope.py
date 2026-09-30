@@ -4,6 +4,7 @@
     python3 scope.py                         # the app: Author and Run
     python3 scope.py test                    # every test suite
     python3 scope.py images                  # delete pasted images no document mentions (D132)
+    python3 scope.py dictionary-fix <audit>  # apply the VM's dictionary audit (D155)
     python3 scope.py --execute IBD_Ancestry  # anything else goes to Pullmanager
 
 The VM's `scope.py`, written by extraction, does the same but for `test`.
@@ -28,6 +29,7 @@ SUITES = (
     "scripts/yamlmanager_model.py",
     "scripts/yamlmanager_tk.py",
     "scripts/tidy_images.py",
+    "scripts/dictionary_fix.py",
 )
 
 
@@ -48,6 +50,10 @@ def main(argv: list[str]) -> int:
     os.chdir(ROOT)
     if argv[:1] == ["test"]:
         return run_tests()
+    if argv[:1] == ["dictionary-fix"]:
+        sys.argv = [str(ROOT / "scripts" / "dictionary_fix.py"), *argv[1:]]
+        runpy.run_path(sys.argv[0], run_name="__main__")
+        return 0
     if argv[:1] == ["images"]:
         sys.argv = [str(ROOT / "scripts" / "tidy_images.py")]
         runpy.run_path(sys.argv[0], run_name="__main__")

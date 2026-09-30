@@ -187,6 +187,16 @@ def command_backup_all(tools: Tools) -> list[str]:
     return [sys.executable, str(tools.pullmanager), "--backup"]
 
 
+def command_scan_runs(tools: Tools) -> list[str]:
+    """What every pull built against what it packaged (D152)."""
+    return [sys.executable, str(tools.pullmanager), "--scan-runs"]
+
+
+def command_audit_dictionary(tools: Tools) -> list[str]:
+    """The dictionary against Cosmos's columns (D155)."""
+    return [sys.executable, str(tools.pullmanager), "--audit-dictionary"]
+
+
 def child_environment() -> dict[str, str]:
     """Stream output live, in UTF-8, whatever the console code page is.
 

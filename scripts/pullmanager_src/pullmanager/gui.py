@@ -179,6 +179,9 @@ class LauncherApp:
             ("Preview SQL", self.on_dry_run),
             ("Execute", self.on_execute),
             ("Artifacts", self.on_artifacts),
+            # Every pull, and the dictionary, not the loaded pull (D152, D155).
+            ("Scan runs", self.on_scan_runs),
+            ("Audit dictionary", self.on_audit_dictionary),
         ):
             button = ttk.Button(actions, text=text, command=handler)
             button.pack(side="left", padx=(0, 6))
@@ -395,6 +398,12 @@ class LauncherApp:
 
     def on_backup_all(self) -> None:
         self.run("Back up all", lambda: launcher.command_backup_all(self.tools))
+
+    def on_scan_runs(self) -> None:
+        self.run("Scan runs", lambda: launcher.command_scan_runs(self.tools))
+
+    def on_audit_dictionary(self) -> None:
+        self.run("Audit dictionary", lambda: launcher.command_audit_dictionary(self.tools))
 
     def on_validate(self) -> None:
         self.run("Validate", lambda: launcher.command_validate(self.tools, self.paths()))

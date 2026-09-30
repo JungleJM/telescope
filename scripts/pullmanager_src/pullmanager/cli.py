@@ -335,6 +335,49 @@ def scan_runs(cwd: Path | None = None) -> int:
     return 1 if count else 0
 
 
+def audit_dictionary(args: argparse.Namespace, connect_fn=None, cwd: Path | None = None) -> int:
+    """Write and show the dictionary audit (D155); exit 1 when something is wrong."""
+    from . import config
+    from .audit import audit_dictionary as audit, write_report
+    from .contents import dictionary_path, load_dictionary
+    from .db import DatabaseError, Settings, connect, load_env_file
+    from .normalize import cosmos_database
+
+    path = dictionary_path()
+    dictionary = load_dictionary(path)
+    if not dictionary:
+        print(f"ERROR no data dictionary found (looked at {path}).", file=sys.stderr)
+        return 1
+    try:
+        load_env_file(args.env)
+    except DatabaseError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    settings = Settings.from_env()
+    database = cosmos_database(None)
+    print(f"Auditing {path} against {database}: {len(dictionary)} tables ...", flush=True)
+    try:
+        connection = (connect_fn or connect)(
+            settings.cosmos_connection_string(database),
+            login_timeout=settings.login_timeout, query_timeout=settings.query_timeout,
+        )
+    except DatabaseError as exc:
+        print(f"ERROR could not connect to Cosmos: {exc}", file=sys.stderr)
+        return 1
+    try:
+        result = audit(connection, dictionary, database)
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+    home = Path(cwd or Path.cwd())
+    written, text = write_report(result, config.runs_dir(home), config.bundle_id())
+    print(text, end="")
+    print(f"Written to {written}")
+    return 1 if result.wrong else 0
+
+
 def _package(manifest: Manifest, args: argparse.Namespace, connect_fn=None, *,
              own_lock: bool = False) -> int:
     """Package the pull's finished tables (D72), then describe them (D73, D75).
@@ -669,6 +712,12 @@ def build_parser() -> argparse.ArgumentParser:
              "what does not check out to runs/run_scan.yaml (D152).",
     )
     parser.add_argument(
+        "--audit-dictionary",
+        action="store_true",
+        help="Ask Cosmos for every dictionary table's columns and write what the dictionary "
+             "lists and Cosmos lacks to runs/dictionary_audit.yaml (D155).",
+    )
+    parser.add_argument(
         "--running",
         action="store_true",
         help="List every pull under runs/, whether it is executing, and its command.",
@@ -754,6 +803,9 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
     if args.scan_runs:
         return scan_runs()
+
+    if args.audit_dictionary:
+        return audit_dictionary(args)
 
     if args.running:
         for line in listing(heading=f"Pulls under {Path('runs')}{os.sep}:"):

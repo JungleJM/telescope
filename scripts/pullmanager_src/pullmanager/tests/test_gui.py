@@ -175,7 +175,8 @@ class NameTests(GuiTestCase):
     def test_the_buttons(self):
         self.assertEqual(
             [button.options["text"] for button in self.app.action_buttons],
-            ["Validate", "Export split", "Preview SQL", "Execute", "Artifacts"],
+            ["Validate", "Export split", "Preview SQL", "Execute", "Artifacts", "Scan runs",
+             "Audit dictionary"],
         )
 
     def test_the_tabs(self):
@@ -304,6 +305,7 @@ class RunningPullTests(GuiTestCase):
         self.assertEqual(self.states(), {
             "Validate": "normal", "Export split": "disabled",
             "Preview SQL": "normal", "Execute": "disabled", "Artifacts": "disabled",
+            "Scan runs": "normal", "Audit dictionary": "normal",
         })
         message = self.app.status_message.configure.call_args.kwargs["text"]
         self.assertIn("Executing since", message)
