@@ -12,6 +12,25 @@ Work on the task list section "<heading>" in plan/tasklist.qmd.
 
 That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
 
+## Supporting table csv issues
+
+I still get the issue where File Column lands with quotes ('DiagnosisCode'), and this prevents the connection on the fact table. Removing the quotes fixes it so it's a minor issue for next build. I even think i saw a warning about it in validate so it must reecognise it.
+
+![](images/paste-1.png)
+
+![](images/paste-2.png)
+
+::: {.callout-note title="🟦 Claude: Supporting table csv issues"}
+**What the code does today.** The file's header really is `'DiagnosisCode'`, quotes included: a CSV quotes with `"`, so single quotes are part of the name. Validate says so (`quoted_column_name`, D109), and its fix is the rename you did by hand. The app shows the file's name in "Lands as" as it is, so a recipe reading `DiagnosisCode` finds nothing until the quotes are taken out.
+
+**Recommendation.** In Supporting Tables, a file column whose name carries quotes gets a **Remove quotes** button beside it. The button writes the rename (`'DiagnosisCode'` lands as `DiagnosisCode`), visibly, in the same place you'd type it. The rename is still yours to press, as D45 wants. The warning stays for templates edited by hand. Alternatively, the app could fill in the clean name by itself, but that is the kind of guess you've preferred to make yourself.
+
+**For you to decide:** the button, or the automatic fill?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
 # Settled
 
-Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and on the VM in the bundle `e126f85b…` (its two failing window tests fixed in `0f81dc63…`): each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built. Extraction refusing while a pull executes, and every window showing its bundle (D147), are built. Backing up parquets, the deliverable pull folder with client utilities, and the dictionary line's removal (D148 to D150) are built.
+Nothing waiting.

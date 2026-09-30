@@ -1004,10 +1004,6 @@ cohorts:
     name: RawCodeValue_X
     nullable: true
     type: NVARCHAR(900)
-  - source: mdf.ReadyToDispenseDateKey
-    name: ReadyToDispenseDateKey
-    nullable: true
-    type: INT
   - source: mdf.RefillsRemaining_X
     name: RefillsRemaining_X
     nullable: true

@@ -622,9 +622,6 @@ cohorts:
       - source: mdf.RawCodeValue_X
         name: RawCodeValue_X
         nullable: true
-      - source: mdf.ReadyToDispenseDateKey
-        name: ReadyToDispenseDateKey
-        nullable: true
       - source: mdf.RefillsRemaining_X
         name: RefillsRemaining_X
         nullable: true

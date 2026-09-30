@@ -2841,3 +2841,159 @@ place (D149). `YAMLMANAGER_DATA_DICTIONARY` is read nowhere. `--datadictionary`
 stays for a single command typed by hand, and `datascope.json`'s
 `datadictionary` for a moved core file (D111); both are deliberate, and
 Validate and Export split name the dictionary they used.
+
+### D151. A failed statement anywhere in a batch fails it; every server message goes to the log
+
+**Context.** A generated script sends several statements in one batch (the
+landing's `SELECT … INTO #Local FROM OPENQUERY`, the `INSERT`, the `COMMIT`,
+then the telemetry `SELECT`s). pyodbc raises an error in any statement after
+the first only when the next result is asked for (`nextset()`), and `drain`
+caught every exception there as "no more results", since the first execution
+adapter. On 30 September 2026 IBD_Ancestry's white controls (1,232,900 and
+952,204 rows built in Cosmos) landed nothing in Projects, and the phases ended
+`done` with 0 rows and no warning: the count comparison never ran, because the
+telemetry after the failed statement was never read. A probe on the VM
+(`SELECT 1; SELECT 1/0; SELECT 2;` through `execute_script`) returned the first
+result and no error.
+
+**Decision.**
+
+- An exception from `nextset()`, or from fetching a result set, fails the batch
+  like one from `execute()`: a `DatabaseError` with the server's messages. A
+  statement with no result set is not fetched.
+- A cohort's landing that does not report its Projects row count is an error,
+  not a comparison skipped.
+- Every server message, from every statement of every batch (row counts aside:
+  they are not messages), goes to the execute log only, as `server: [<block>]
+  <message>`: informational notices such as "Null value is eliminated by an
+  aggregate" are kept to be looked at, and kept out of the console.
+
+**Consequences.** What was silent is loud. Tables pulled before this may have
+lost rows unseen; the run scan (D152) finds them.
+
+### D152. The run scan compares what each pull built with what it packaged
+
+**Context.** After D151, earlier pulls are suspect (IBD_Ancestry's white
+controls; Infant_RSV's PK of 186,963 where about 400,000 were expected). The
+parquets can go only by screenshot, so the report must be short.
+
+**Decision.** `--scan-runs` (the command, on the VM) reads every pull under the
+runs folder, without a database, and writes `runs/run_scan.yaml` listing only
+what did not check out, per pull:
+
+- **lost rows**: a table whose parquets hold fewer rows than the manifest says
+  it built;
+- **empty**: a table marked done with 0 rows;
+- **short controls**: a sampled control (D59) that kept fewer than `row_mult`
+  times its case in a batch, with the case's count;
+- **no count**: a finished run that recorded no row count for a table it makes;
+- **no parquet**: a finished table missing from a packaged pull. A pull never
+  packaged is said once.
+
+With nothing wrong the file is one line. The PK phase also records the rows
+Cosmos built (`cosmos_rows`) before a control is sampled, so later scans
+compare those too.
+
+### D153. A manifest save waits for the file, then stops loudly
+
+**Amends D10.**
+
+**Context.** On Windows a file open for reading cannot be replaced, and the
+share at the VM makes reads slow. The Run window, reading a running pull's
+manifest every 3 seconds, made saves fail with `WinError 5`, stopping whole
+pulls (IBD_Ancestry, Celiac, 29 and 30 September 2026). A probe on the VM
+confirmed one open reader is enough.
+
+**Decision.** The rename that ends a save is retried when refused:
+quickly first (0.1, 0.25, 0.5, 1 and 2 seconds), then once a minute for up to
+five minutes, each minute's wait printed. Then the save fails, naming the file
+and the likely holders (the Run window, antivirus, a program with it open).
+Trying the rename is the check: Windows cannot say who holds a file on a share.
+The backup's copy (D149) waits the same way. The lock's heartbeat already
+retries on its next beat.
+
+### D154. Readers let the manifest be replaced while they read, and Run reads it less
+
+**Context.** D153's cause, from the reader's side. Readers only read, but an
+ordinary open on Windows forbids replacing the file until it is closed.
+
+**Decision.**
+
+- On Windows, the runtime opens the manifest (and every YAML it reads) with
+  sharing that allows it to be deleted or replaced (`FILE_SHARE_DELETE`,
+  through `ctypes`); elsewhere, a plain open.
+- Run's Status refresh reads the manifest once, for both the tree and the Pull
+  Manifest tab, and not at all when the file's size and modified time have not
+  changed since the last read.
+
+**Consequences.** The Windows open is tested only on the VM; the Mac tests the
+fallback.
+
+### D155. The dictionary audit lists what the dictionary says and Cosmos lacks
+
+**Context.** `MedicationDispenseFact.ReadyToDispenseDateKey` was in the
+dictionary and not in Cosmos, and a Crohns_DxHxSxRx run failed on it after an
+11-minute query (30 September 2026). Nothing had checked the dictionary
+against the real tables.
+
+**Decision.**
+
+- **Audit dictionary**, a button in Run, and `--audit-dictionary`: for every
+  table in the bundle's dictionary, the columns Cosmos has (`sys.columns`, one
+  query per table, read-only). It writes `runs/dictionary_audit.yaml` with only
+  what did not check out: `tables_not_found`, and `columns_not_in_cosmos` by
+  table, each with its near matches. Columns Cosmos has that the dictionary
+  lacks need no fix and are left out. With nothing wrong, one line.
+- **`python3 scope.py dictionary-fix <file>`** on the Mac takes that file, as
+  transcribed, removes each listed column and table from
+  `reference/datadictionary.yaml`, and lists every intake and template under
+  `YAMLs/` that names a removed column, to be fixed and exported again.
+
+### D156. Each session checks its columns exist before it pulls
+
+**Context.** D155's error, caught per pull: a missing column costs one second
+at the start instead of a run.
+
+**Decision.** At the start of `setup`, the session gathers every plain
+`alias.Column` source in its cohorts, maps each alias to the Cosmos table it
+names (in the database the cohort reads), and reads each table's columns once.
+A source not there fails `setup`, naming each column, its cohort and table,
+and near matches, so the session is blocked and the other sessions go on
+(`--retry-failed` redoes it). A table whose columns cannot be read at all
+(not found, or not visible to the login) is a warning: the check cannot tell a
+missing table from one it may not see, and the query itself will say.
+Expressions and generated tables are not checked.
+
+### D157. Every table records its rows per join key
+
+**Context.** Celiac's other diagnoses, 124 per patient on average, looked like
+failed deduplication until the spread was measured by hand (median 93, 90th
+percentile 269, maximum 1,160; 30 September 2026). A table deduplicated to one
+row per key shows 1, 1, 1, which confirms it.
+
+**Decision.** When a run finishes, for each table it landed, and when the PK
+lands, one query in Projects over what that step landed (a run's `_batch`
+rows) groups by the table's **join column** and records the number of keys,
+the median, the 90th percentile and the maximum rows per key, as the step's
+`per_key` output. The join column is the landed column whose source is this
+table's side of the first equality in the cohort's first `JOIN`; the PK uses
+its own key. On by default; a failed measurement is a warning. Run's Status
+shows them after Rows and Duration: Median per key, P90, Max; the session
+summary lists them as a note, like the widths (D34).
+
+### D158. Chosen sessions can be re-pulled; a case brings its controls
+
+**Context.** IBD_Ancestry's white sessions finished `done` with 0 rows (D151).
+Retry failed skips them; Re-pull everything redoes the black ones too.
+
+**Decision.**
+
+- `--repull-session <name>`, repeatable: each named session starts over as a
+  new pull would (its steps pending, its tables dropped and made again by
+  `setup`); every other session, and uploads already landed (D61), stay.
+  `all` means `--repull`. An unknown name is an error listing the sessions.
+- A case brings its controls: re-pulling a session whose PK a control is
+  sampled against (D59) re-pulls that control too, and says so.
+- In Run, **Re-pull sessions** beside Re-pull everything opens a dropdown of
+  the loaded pull's finished sessions, `all` first, with Add, and the list of
+  those added, each removable. Execute passes them.
