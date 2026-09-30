@@ -1,1 +1,9 @@
 One other idea - right now the intake.yaml files are at root. I wanted that so I could find them easily during CLI. But i hink now I should put them in runs/pending, and then once they're run, move them to their specific project folder instead. That way the duplication doesn't have to happen. It can then be changed from project_name_intake.yaml to project_name_blueprint.yaml or something like that, and it leaves the root less cluttered.
+
+## Backing up parquets
+
+I've been advised against putting whole parquet files into the gitlab because of their size. Can we have the parquets keep a single backup copy of the parquets when you make artifacts? I'm thinking of if I do a pull, accidentally get the wrong thing, then realize it only after i've done an override. Ideally we could do something like a local git, but Is it possible to do this with vscodium, git, gitlens, and whatever plugins are in the DSVMplugins in reference?
+
+I'm thinking of basically doing a backup of 'runs' in data/ for each finished project. Then the scope.py runs can read from that, and only override for a specific project if there's a same-named one in the root 'runs' folder. But this seems messy, so i'm trying to figure out if there's a better way to do this if I can't use git for backup. Ideally it just saves the differences, incremental-backup-style, but I don't know how doable that is within the DSVM.
+
+I think that backup folder should have everythign the run folder has except the splits and sql queries - that will be generated from blueprint anyways. This turns it into a sort of minimally deliverable folder I can copy to a client with just the necessary files. Also, both run and this backup shoudl have a miniature version of utils - that is, same functionality as my utils, but should only have the parquet viewer and the transcription viewer. That way they can send me images of errors, and look at the parquets as needed.

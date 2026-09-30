@@ -52,6 +52,16 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+Agreed on 29 September 2026. One commit each, with its outcome tests.
+
+1.  **Client and manager utilities; each pull's folder a deliverable with its own utilities window** (D148): the stock list and the utilities window, and the rest is built on it.
+2.  **The dictionary line out, nothing quietly choosing another** (D150), and the Backup folder row in its place.
+3.  **The backup** at Artifacts, `runs/backup` when the folder can't be reached, and Back up all (D149).
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:

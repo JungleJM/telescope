@@ -2780,3 +2780,64 @@ loaded, and nothing on screen said which version a window was.
 - **Extraction says what it removed**: the previous extracted folder and how
   many files it held, and that `scope.py` and `utils.py` were rewritten.
 - **`.local` copies are kept**, as now (the user's choice).
+
+### D148. Each pull's folder is a deliverable, with a small utilities window; utilities are sorted into client and manager
+
+**Amends D89 and D124.**
+
+**Context.** A pull's folder, without its split and SQL, is everything a
+client needs: the parquets, `contents.md`, the load scripts, and what made the
+pull. The user wants the client able to look at the parquets and send images
+of errors, with the same tools the user has.
+
+**Decision.** `utils/` has two subfolders: `client/` (the parquet viewer and the
+transcription viewer, for now) and `manager/` (`clear_projects_db.py`). The
+user's utilities window shows both, under their names; a script left at
+`utils/`'s top still shows. Artifacts copies the utilities window into each
+pull's folder as `utils.py`, with `utils/client/`, so the client's window is the
+user's own, with only the client's scripts. `viewparquets.py` no longer sits at
+a pull folder's top; one an earlier Artifacts put there is removed. The viewer
+opens on the pull whose folder it is in.
+
+### D149. Artifacts backs a pull up before replacing its parquets
+
+**Context.** A wrong pull noticed late is lost when Artifacts replaces the
+parquets (D72), and the Projects tables are dropped when a pull starts over
+(D52). Parquets are too large for GitLab; the VM has Git but no Git LFS and no
+backup tool. A "previous" folder inside the run folder was considered and
+dropped: one backup folder, on another drive, is simpler.
+
+**Decision.**
+
+- **A backup folder**, set in Run (Browse, Clear) and kept as `backup` in the
+  working folder's `datascope.json`, so Execute, Artifacts and Run all read the
+  same one, however a pull was started. It may be on another drive.
+- **Before Artifacts writes new parquets**, by hand or after a clean pull
+  (D141), it copies the pull's run folder, without `pull_files/`, to
+  `<backup>/<project>/`, replacing what is there. The backup therefore holds the
+  packaging before the latest. It copies only what changed (a file of the same
+  size and time is skipped) and removes what is gone from the run folder, so it
+  stays an exact copy.
+- **When the backup folder cannot be reached, or none is set**, the copy goes to
+  `runs/backup/<project>/` instead, packaging goes on, and Artifacts ends with a
+  warning naming where the copy went. Nothing is replaced without a copy
+  somewhere.
+- **Back up all**, a button in Run, copies every pull under the runs folder the
+  same way; one executing is skipped and named.
+
+### D150. The data dictionary is the bundle's; nothing quietly chooses another
+
+**Amends D126.**
+
+**Context.** Run's data dictionary line let a dictionary be chosen, and the
+choice was saved and passed to every later split, even once the bundle's copy
+was newer. `contents.md` read `YAMLMANAGER_DATA_DICTIONARY`, which makeYaml did
+not, so the two could describe one pull by different dictionaries. Since D130
+the checked dictionary the bundle carries is the dictionary.
+
+**Decision.** Run's dictionary line goes, and a dictionary saved in Run's
+settings is ignored and dropped from them; the Backup folder row takes its
+place (D149). `YAMLMANAGER_DATA_DICTIONARY` is read nowhere. `--datadictionary`
+stays for a single command typed by hand, and `datascope.json`'s
+`datadictionary` for a moved core file (D111); both are deliberate, and
+Validate and Export split name the dictionary they used.
