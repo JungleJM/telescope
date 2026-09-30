@@ -2132,11 +2132,11 @@ resume line.
 38. **The viewer on the VM.** How long does your largest table take to open
     now that only its page is read into Python, and does your client use the
     copy in the pull's folder?
-39. **The backup drive.** Which drive holds the backups, how much room does it
-    have, and does IT already snapshot the `\\epic-nas` share (Explorer's
-    Previous Versions on `runs`)?
-40. **Your client.** Who receives the deliverable folder, and do they work on
-    the VM too?
+39. **The backup drive.** Answered (29 Sep): a separate 20 GB drive, which you
+    expect to hold for a good while. Still open: does IT already snapshot the
+    `\\epic-nas` share (Explorer's Previous Versions on `runs`)?
+40. **Your client.** Answered (29 Sep): someone on the VM too, so the data and
+    the deliverable folder stay there.
 
 **Attribution, and my recommendation.**
 
