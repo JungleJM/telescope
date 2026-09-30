@@ -263,6 +263,70 @@ def record_execute(method, *args) -> None:
 
 def artifacts(manifest: Manifest, args: argparse.Namespace, connect_fn=None, *,
               own_lock: bool = False) -> int:
+    """Back the pull up (D149), then package it (D72): nothing is replaced
+    without a copy. Where the backup went instead, said last, as a warning."""
+    from .backup import backup_pull, has_parquets
+    from .lock import held_message, live_lock
+    from .pulls import run_folder
+
+    held = None if own_lock else live_lock(manifest.path)
+    if held is not None:
+        print(f"ERROR {held_message(held, manifest.path)} Package it once it has finished.",
+              file=sys.stderr)
+        return 1
+    folder = run_folder(manifest.path)
+    saved = None
+    if has_parquets(folder):
+        try:
+            saved = backup_pull(folder, Path.cwd())
+        except OSError as exc:
+            print(f"ERROR the pull could not be backed up ({exc}), so its parquets were not "
+                  "replaced. Free space, or choose another backup folder in Run, then run "
+                  "Artifacts again.", file=sys.stderr)
+            return 1
+        print(saved.line())
+    code = _package(manifest, args, connect_fn, own_lock=own_lock)
+    if saved is not None and saved.fell_back:
+        print(f"WARNING Backed up to {saved.destination}, not the backup folder: "
+              f"{saved.fell_back}. Choose or reconnect the backup folder in Run, then "
+              "Back up all.", file=sys.stderr)
+    return code
+
+
+def backup_all(cwd: Path | None = None) -> int:
+    """Back up every pull under the runs folder (D149), skipping one that is
+    executing, and say where each went."""
+    from .backup import backup_pull
+    from .pulls import find_pulls, run_folder
+
+    home = Path(cwd or Path.cwd())
+    pulls = find_pulls(home)
+    if not pulls:
+        print("There are no pulls to back up.")
+        return 0
+    failed = 0
+    fell_back = []
+    for pull in pulls:
+        if pull.lock is not None:
+            print(f"{pull.name}: skipped, executing now; back it up once it has finished.")
+            continue
+        try:
+            saved = backup_pull(run_folder(pull.manifest), home)
+        except OSError as exc:
+            print(f"ERROR {pull.name} could not be backed up: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        print(saved.line())
+        if saved.fell_back:
+            fell_back.append(saved)
+    if fell_back:
+        print(f"WARNING {len(fell_back)} pull(s) went to {fell_back[0].destination.parent}, not the "
+              f"backup folder: {fell_back[0].fell_back}.", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def _package(manifest: Manifest, args: argparse.Namespace, connect_fn=None, *,
+             own_lock: bool = False) -> int:
     """Package the pull's finished tables (D72), then describe them (D73, D75).
 
     `own_lock`: called by the Execute that holds the pull's lock (D141),
@@ -583,6 +647,12 @@ def build_parser() -> argparse.ArgumentParser:
              "launcher's Execute uses it for the console window it opens.",
     )
     parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Back up every pull under runs/ to the backup folder Run names, or to runs/backup "
+             "when it cannot be reached (D149).",
+    )
+    parser.add_argument(
         "--running",
         action="store_true",
         help="List every pull under runs/, whether it is executing, and its command.",
@@ -662,6 +732,9 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             )
             return 1
         return gui_main()
+
+    if args.backup:
+        return backup_all()
 
     if args.running:
         for line in listing(heading=f"Pulls under {Path('runs')}{os.sep}:"):

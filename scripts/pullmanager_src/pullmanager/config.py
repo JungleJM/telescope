@@ -20,7 +20,8 @@ CORE_DEFAULTS = {
     "vm_plugins": "reference/DSVM Plugins.yaml",
 }
 RUNS_DEFAULT = "runs"
-CONFIG_KEYS = (*CORE_DEFAULTS, "runs")
+# `backup`: the folder Artifacts backs each pull up to (D149), set in Run.
+CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")
 
 
 class ConfigError(RuntimeError):
@@ -82,4 +83,30 @@ def bundle_id() -> str:
             except (OSError, ValueError, KeyError, TypeError):
                 return ""
     return ""
+
+
+def backup_dir(home: Path) -> Path | None:
+    """The backup folder datascope.json names (D149), from `home` if it is
+    written relative; None where none is set."""
+    value = read(home).get("backup", "").strip()
+    return (Path(home) / value) if value else None
+
+
+def set_backup(home: Path, folder: Path | None) -> Path:
+    """Name the backup folder in `home/datascope.json`, or clear it, keeping
+    whatever else the file says."""
+    data = read(home)
+    if folder:
+        data["backup"] = str(folder)
+    else:
+        data.pop("backup", None)
+    path = Path(home) / CONFIG_NAME
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def local_backup_dir(home: Path) -> Path:
+    """Where a backup goes when the backup folder can't be reached or none is
+    set: `backup/` in the runs folder (D149)."""
+    return runs_dir(home) / "backup"
 

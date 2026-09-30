@@ -39,12 +39,11 @@ STATUS_COLOURS = {
     "pending": "#24292f",
 }
 
-# What the window remembers: the loaded transfer YAML, and a data dictionary
-# chosen instead of the bundled one. A pull's split and SQL folders are always
-# runs/<project>/split and /sql (D57), so they are not asked for (D126).
+# What the window remembers: the loaded transfer YAML. A pull's split and SQL
+# folders are always its run folder's (D57, D142), and the data dictionary is
+# the bundle's (D150), so neither is asked for.
 FIELDS = (
     ("template", "Transfer YAML"),
-    ("datadictionary", "Data dictionary"),
 )
 NOT_RUN = "not run yet"
 
@@ -154,13 +153,15 @@ class LauncherApp:
             row=2, column=3, sticky="w")
         self.loaded_line = ttk.Label(frame, text="", foreground="#6e7781")
         self.loaded_line.grid(row=3, column=1, columnspan=3, sticky="w")
-        ttk.Label(frame, text="Data dictionary").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=2)
-        self.dictionary_line = ttk.Label(frame, text="")
-        self.dictionary_line.grid(row=4, column=1, sticky="w", pady=2)
-        ttk.Button(frame, text="Browse", command=lambda: self.browse("datadictionary", "file")).grid(
-            row=4, column=2, padx=(6, 6), pady=2)
-        ttk.Button(frame, text="Use the bundled one", command=lambda: self.set_dictionary("")).grid(
-            row=4, column=3, sticky="w")
+        # Where Artifacts backs each pull up before replacing it (D149).
+        ttk.Label(frame, text="Backup folder").grid(row=4, column=0, sticky="w", padx=(0, 8), pady=2)
+        self.backup_line = ttk.Label(frame, text="")
+        self.backup_line.grid(row=4, column=1, sticky="w", pady=2)
+        backup_buttons = ttk.Frame(frame)
+        backup_buttons.grid(row=4, column=2, columnspan=2, sticky="w")
+        ttk.Button(backup_buttons, text="Browse", command=self.browse_backup).pack(side="left", padx=(6, 6))
+        ttk.Button(backup_buttons, text="Clear", command=lambda: self.set_backup(None)).pack(side="left")
+        ttk.Button(backup_buttons, text="Back up all", command=self.on_backup_all).pack(side="left", padx=(6, 0))
 
         options = ttk.Frame(frame)
         options.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 4))
@@ -327,22 +328,37 @@ class LauncherApp:
         else:
             self.loaded_line.configure(text=f"Loaded {Path(self.vars['template'].get()).name}: its run folder is "
                                             f"{run_dir}, the split and SQL in {run_dir / pulls.PULL_FILES_DIR}")
-        self.dictionary_line.configure(text=self.dictionary_found())
+        self.backup_line.configure(text=self.backup_found())
 
-    def dictionary_found(self) -> str:
-        chosen = self.vars["datadictionary"].get().strip()
-        if chosen:
-            path = Path(chosen) if Path(chosen).is_absolute() else self.workdir / chosen
-            return f"{path}  (chosen{'' if path.is_file() else '; NOT FOUND'})"
-        # Where makeYaml finds it: beside its scripts/ folder, the repository on
-        # the Mac and the extracted folder on the VM (D111).
-        path = config.core_path("datadictionary", Path(self.tools.make_yaml).resolve().parent.parent)
-        return f"{path}  ({'the one makeYaml uses' if path.is_file() else 'NOT FOUND: extract the bundle again'})"
+    def backup_found(self) -> str:
+        """The backup folder, and whether it can be reached (D149)."""
+        local = config.local_backup_dir(self.workdir)
+        try:
+            folder = config.backup_dir(self.workdir)
+        except config.ConfigError as exc:
+            return f"datascope.json: {exc}"
+        if folder is None:
+            return f"none set: each pull is backed up to {local}"
+        if not folder.is_dir():
+            return f"{folder}  (NOT FOUND: until it is, backups go to {local})"
+        return str(folder)
 
-    def set_dictionary(self, path: str) -> None:
-        self.vars["datadictionary"].set(path)
-        self._save_settings()
+    def set_backup(self, folder: Path | None) -> None:
+        try:
+            config.set_backup(self.workdir, folder)
+        except (OSError, config.ConfigError) as exc:
+            messagebox.showerror("Backup folder", str(exc))
         self.show_loaded()
+
+    def browse_backup(self) -> None:
+        current = None
+        try:
+            current = config.backup_dir(self.workdir)
+        except config.ConfigError:
+            pass
+        chosen = filedialog.askdirectory(initialdir=str(current or self.workdir))
+        if chosen:
+            self.set_backup(Path(chosen))
 
     def options(self) -> Options:
         return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()))
@@ -368,13 +384,13 @@ class LauncherApp:
                 initialdir=str(Path(start).parent) if Path(start).suffix else start,
                 filetypes=[("YAML", "*.yaml *.yml"), ("All files", "*.*")],
             )
-        if chosen:
-            if attr == "template":
-                self.load(Path(chosen), "Validate, Export split, Preview SQL, then Execute.")
-            else:
-                self.set_dictionary(chosen)
+        if chosen and attr == "template":
+            self.load(Path(chosen), "Validate, Export split, Preview SQL, then Execute.")
 
     # ------------------------------------------------------------- actions
+
+    def on_backup_all(self) -> None:
+        self.run("Back up all", lambda: launcher.command_backup_all(self.tools))
 
     def on_validate(self) -> None:
         self.run("Validate", lambda: launcher.command_validate(self.tools, self.paths()))

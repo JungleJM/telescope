@@ -112,7 +112,8 @@ class GuiTestCase(unittest.TestCase):
 class ConstructionTests(GuiTestCase):
     def test_builds_a_field_for_every_input(self):
         # No split or SQL folder: always runs/<project>/split and /sql (D126).
-        self.assertEqual(set(self.app.vars), {"template", "datadictionary"})
+        # No data dictionary either: the bundle's, always (D150).
+        self.assertEqual(set(self.app.vars), {"template"})
 
     def test_starts_from_the_defaults(self):
         # Blank: the project's own runs/<project>/ folders (D57).
@@ -122,11 +123,10 @@ class ConstructionTests(GuiTestCase):
     def test_restores_remembered_choices(self):
         from ..launcher import Paths, save_settings
 
-        save_settings(Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml"), self.work)
+        save_settings(Paths(template="IBD_transfer.yaml"), self.work)
         from ..launcher import locate_tools
         app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
         self.assertEqual(app.vars["template"].get(), "IBD_transfer.yaml")
-        self.assertEqual(app.vars["datadictionary"].get(), "../data/d.yaml")
 
 
 class ActionTests(GuiTestCase):
@@ -275,12 +275,28 @@ class RunningPullTests(GuiTestCase):
         self.assertTrue(self.app.console.stopped)
         self.assertEqual(Manifest.load(self.manifest).last_execute["how"], "stopped by user")
 
-    def test_the_dictionary_line_names_the_file_it_found(self):
-        self.assertIn("datadictionary.yaml", self.app.dictionary_found())
-        self.app.set_dictionary(str(self.work / "mine.yaml"))
-        self.assertIn("NOT FOUND", self.app.dictionary_found())
-        self.app.set_dictionary("")
-        self.assertNotIn("mine.yaml", self.app.dictionary_found())
+    def test_the_backup_line_says_where_backups_go(self):
+        # D149: set in Run, kept in datascope.json, runs/backup when unreachable.
+        import json
+
+        from .. import config
+
+        self.assertIn("none set", self.app.backup_found())
+        self.assertIn(str(self.work / "runs" / "backup"), self.app.backup_found())
+        drive = self.work / "other_drive"
+        self.app.set_backup(drive)
+        self.assertEqual(json.loads((self.work / "datascope.json").read_text())["backup"], str(drive))
+        self.assertIn("NOT FOUND", self.app.backup_found())
+        drive.mkdir()
+        self.assertEqual(self.app.backup_found(), str(drive))
+        self.assertEqual(config.backup_dir(self.work), drive)
+        self.app.set_backup(None)
+        self.assertNotIn("backup", json.loads((self.work / "datascope.json").read_text()))
+
+    def test_back_up_all_runs_the_backup_command(self):
+        with mock.patch.object(self.app.runner, "start") as start:
+            self.app.on_backup_all()
+        self.assertIn("--backup", start.call_args.args[0])
 
     def test_a_live_pull_greys_export_split_and_execute_only(self):
         self.lock()

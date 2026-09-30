@@ -10,7 +10,6 @@ guessed.
 
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -63,10 +62,7 @@ def loaded_types(sql_type: str) -> tuple[str, str]:
 
 def dictionary_path() -> Path | None:
     """The data dictionary makeYaml validates against: the bundled copy, or
-    `YAMLMANAGER_DATA_DICTIONARY`."""
-    chosen = os.environ.get("YAMLMANAGER_DATA_DICTIONARY")
-    if chosen:
-        return Path(chosen)
+    the one datascope.json names. Nothing else chooses it (D150)."""
     try:
         from . import config
         from .launcher import locate_tools

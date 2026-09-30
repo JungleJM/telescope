@@ -70,14 +70,11 @@ class LocateToolsTests(TempDirTestCase):
 
 class CommandTests(unittest.TestCase):
     def test_validate_passes_every_input(self):
-        paths = Paths(template="T_transfer.yaml", datadictionary="../data/d.yaml")
+        paths = Paths(template="T_transfer.yaml")
         command = command_validate(TOOLS, paths)
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(command[1], str(TOOLS.make_yaml))
-        self.assertEqual(
-            command[2:],
-            ["--template", "T_transfer.yaml", "--datadictionary", "../data/d.yaml", "--validate"],
-        )
+        self.assertEqual(command[2:], ["--template", "T_transfer.yaml", "--validate"])
 
     def test_blank_optional_inputs_fall_back_to_the_bundled_copies(self):
         command = command_validate(TOOLS, Paths(template="T.yaml"))
@@ -492,9 +489,23 @@ class StatusRowTests(TempDirTestCase):
 
 class SettingsTests(TempDirTestCase):
     def test_round_trips(self):
-        paths = Paths(template="IBD_transfer.yaml", datadictionary="../data/d.yaml", split_dir="out")
+        paths = Paths(template="IBD_transfer.yaml", split_dir="out")
         save_settings(paths, self.tmp)
         self.assertEqual(load_settings(self.tmp), paths)
+
+    def test_a_dictionary_an_older_run_saved_is_neither_passed_nor_kept(self):
+        # D150: once saved, it went on being passed to every split after,
+        # even when the bundle's copy was newer.
+        (self.tmp / "runs").mkdir(exist_ok=True)
+        (self.tmp / "runs" / launcher.SETTINGS_FILENAME).write_text(
+            '{"template": "IBD_transfer.yaml", "datadictionary": "../data/old_dictionary.yaml"}',
+            encoding="utf-8")
+        loaded = load_settings(self.tmp)
+        for command in (command_validate(TOOLS, loaded), command_export_split(TOOLS, loaded)):
+            self.assertNotIn("--datadictionary", command)
+            self.assertNotIn("../data/old_dictionary.yaml", command)
+        saved = save_settings(loaded, self.tmp)
+        self.assertNotIn("datadictionary", saved.read_text(encoding="utf-8"))
 
     def test_live_in_the_working_directory_not_the_bundle(self):
         # The extracted bundle is replaced on update, so remembered choices

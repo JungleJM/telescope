@@ -92,7 +92,6 @@ class Paths:
     """
 
     template: str = ""
-    datadictionary: str = ""
     split_dir: str = ""
     sql_dir: str = ""
     # The runs folder, relative to the working folder: datascope.json's, filled
@@ -128,11 +127,9 @@ def _require(value: str, what: str) -> str:
 
 
 def _yaml_inputs(paths: Paths) -> list[str]:
-    args = ["--template", _require(paths.template, "transfer YAML")]
-    # Optional: blank means the tool's own default, which is the bundled copy.
-    if paths.datadictionary.strip():
-        args += ["--datadictionary", paths.datadictionary.strip()]
-    return args
+    # The bundle's dictionary, always: a chosen one, once saved, went on being
+    # passed after the bundle's was newer (D150).
+    return ["--template", _require(paths.template, "transfer YAML")]
 
 
 def _resume_flags(options: Options) -> list[str]:
@@ -183,6 +180,11 @@ def command_execute(
 def command_artifacts(tools: Tools, paths: Paths) -> list[str]:
     """Package the pull's finished tables (D72), by its name as Execute is."""
     return [sys.executable, str(tools.pullmanager), "--artifacts", execute_target(paths)]
+
+
+def command_backup_all(tools: Tools) -> list[str]:
+    """Back up every pull to the backup folder (D149)."""
+    return [sys.executable, str(tools.pullmanager), "--backup"]
 
 
 def child_environment() -> dict[str, str]:
