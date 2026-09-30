@@ -18,7 +18,7 @@ I've been advised against putting whole parquet files into the gitlab because of
 
 I'm thinking of basically doing a backup of 'runs' in data/ for each finished project. Then the scope.py runs can read from that, and only override for a specific project if there's a same-named one in the root 'runs' folder. But this seems messy, so i'm trying to figure out if there's a better way to do this if I can't use git for backup. Ideally it just saves the differences, incremental-backup-style, but I don't know how doable that is within the DSVM.
 
-I think that backup folder should have the
+I think that backup folder should have everythign the run folder has except the splits and sql queries - that will be generated from blueprint anyways. This turns it into a sort of minimally deliverable folder I can copy to a client with just the necessary files. Also, both run and this backup shoudl have a miniature version of utils - that is, same functionality as my utils, but should only have the parquet viewer and the transcription viewer. That way they can send me images of errors, and look at the parquets as needed.
 
 ::: {.callout-note title="🟦 Claude: what can be overwritten today"}
 Your note stops at "I think that backup folder should have the". What were you going to say it should have?
@@ -74,7 +74,62 @@ runs/Infant_RSV/
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
+1.  the section on client-side utils and a 'deliverable' -style version of the folder.
+2.  Let's think about this another way. Maybe I just have a feature to copy it to another network share, which will just purely be backup. It can have this 'deliverable' version, as everything in that folder (removing the /split, /sql) can recreate all things needed and also have the results.
+    1.  In fact, yes let's make a simple browse for 'backup folder', which allows me to just find a folder on another drive so it functions as my other backup.
+3.  answered above
+4.  The more I think about it, the less I think we need a 'previous'. It'll just have to be a 'backup' to a specified folder on another drive. During the part of the artifact pull, before the new artifacts are pulled in, that is when the backup function should run, and basically just copy that project's files (minus the /sql, /split) to override what's there. We can also have a 'manual backup' button so it does it for the entire runs folder, on the run menu.
+5.  to that end, i have a 'use bundle datadictionary' section and a directory for the current data dictionary. I must have missed when we put it in. Is this still encessary? If not we can take it out and replace it with 'backup folder' directory and these options.
 :::
+
+::: {.callout-note title="🟦 Claude: the backup folder, as you describe it"}
+- **One setting, read by everything.** The backup folder is kept in the working folder's `datascope.json` (D111), which already says where the runs folder is. Execute, Artifacts and Run then all use the same one, whether a pull was started from Run or from a terminal. It may be on another drive.
+- **When.** Just before Artifacts writes new parquets (by hand, or at the end of a clean pull, D141), it copies the pull's run folder, without `pull_files/` (the split and the SQL), to `<backup folder>\<project>\`, replacing what is there. So the backup always holds **the packaging before the latest**. That is what saves you from a wrong pull noticed late. To back up the latest too, use Back up all.
+- **Back up all**, a button in Run: every pull under `runs\` the same way, into the Validation Output tab. A pull that is executing is skipped, and named.
+- **Only what changed is copied.** A file already in the backup with the same size and time is skipped. A file gone from the run folder is removed from the backup, so it stays an exact copy. This is the incremental copy you wanted, with nothing to install.
+- **When the backup folder can't be reached** (a drive not connected), Artifacts stops before replacing anything, saying why. The fix is to reconnect the drive, or clear the backup folder in Run. At the end of a clean pull, the pull itself stays done; only its packaging waits.
+- **What a backup can recreate.** It keeps the transfer YAML's copy, the manifest, `contents.md`, the logs and the parquets, with the uploads as `uploads_parquets/`. The split and SQL are rebuilt from the transfer YAML. To pull it again, the upload files have to be where the transfer YAML says, as for any pull.
+:::
+
+::: {.callout-note title="🟦 Claude: the deliverable folder and its small utilities window"}
+Each pull's folder, and so its backup, gets a small version of your utilities window, holding only the parquet viewer and the transcription viewer:
+
+``` text
+runs\Infant_RSV\
+  utils.py                  opens the window: two buttons, with the credit and bundle at its foot
+  utils\viewparquets.py     opens on this pull
+  utils\transcription_viewer.py
+  cosmos_parquets\, sneakpeek_parquets\, uploads_parquets\
+  contents.md, HOW_TO.md, load_parquets.py, load_parquets.R
+  pullmanifest.yaml, Infant_RSV_transfer.yaml, execute-....log, older_logs\
+  pull_files\                not copied to the backup
+```
+
+It is the same window as yours (`utilities.py`), copied by Artifacts from the stock list (D124), so it can't drift from it. `viewparquets.py` at the folder's top goes, replaced by `utils.py`, and HOW_TO.md says `python utils.py`. The transcription viewer needs Pillow, which the VM has; the data never leaves the VM, so neither does a client using it.
+:::
+
+::: {.callout-note title="🟦 Claude: Run's data dictionary line (your 5)"}
+It came in with D126, to show in full which dictionary makeYaml would use, when the VM had more than one copy. Since D130 the dictionary is the checked one the bundle carries, so there is nothing to choose.
+
+It is also a quiet risk: a dictionary chosen there once is saved, and passed to every split after, even once the bundle's copy is newer. So I'd remove the line and stop passing a saved choice. Someone who really needs another dictionary can still name one with `--datadictionary` on the command line, or `YAMLMANAGER_DATA_DICTIONARY`. The **Backup folder** row takes its place: the folder, Browse, Clear and **Back up all**.
+
+**For you to decide:**
+
+1.  Timing: the backup is taken just before new parquets are written, so it holds the packaging before the latest, and Back up all covers the latest. Agreed?
+2.  Should the backup remove a file that is gone from the run folder, so it stays an exact copy? I suggest yes.
+3.  If the backup folder can't be reached, should Artifacts stop, or package anyway with a warning? I suggest stop.
+4.  Should the dictionary line come out, as above?
+5.  Should `viewparquets.py` leave the folder's top, replaced by `utils.py` and `utils\`?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+**Suggested order**
+
+1.  **The small utilities window in each pull's folder**: stock files only, and the rest is built on it.
+2.  **Run's row**: the dictionary line out, the Backup folder row in, the setting in `datascope.json`.
+3.  **The backup**: at Artifacts, and Back up all.
 
 # Settled
 
