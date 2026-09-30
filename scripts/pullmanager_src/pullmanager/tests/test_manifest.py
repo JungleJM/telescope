@@ -369,3 +369,64 @@ class RoundTripTests(TempDirTestCase):
         self.assertIn("started_at:", self.manifest_path.read_text(encoding="utf-8"))
         reloaded = Manifest.load(self.manifest_path)
         self.assertIsNone(reloaded.sessions[0].phases[0].data["started_at"])
+
+
+class BusyFileTests(TempDirTestCase):
+    """D153: a save the OS refuses, because a reader holds the file, waits."""
+
+    def refuse(self, times):
+        """os.replace refused `times` times, then done for real; sleeps recorded."""
+        import os
+        from unittest import mock
+
+        from .. import yaml_io
+
+        real = os.replace
+        calls = {"n": 0}
+
+        def replace(source, target):
+            calls["n"] += 1
+            if times is None or calls["n"] <= times:
+                raise PermissionError(13, "Access is denied")
+            return real(source, target)
+
+        self.slept: list[float] = []
+        self.said: list[str] = []
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(yaml_io.os, "replace", side_effect=replace).start()
+        mock.patch.object(yaml_io.time, "sleep", side_effect=self.slept.append).start()
+        mock.patch("builtins.print", side_effect=lambda *a, **k: self.said.append(" ".join(map(str, a)))).start()
+
+    def test_a_save_refused_a_few_times_lands(self):
+        manifest = sample_manifest()
+        manifest.path = self.manifest_path
+        manifest.save()
+        manifest.sessions[0].phases[0].start()
+        manifest.sessions[0].phases[0].finish(rows=42)
+        self.refuse(3)
+        manifest.save()
+        from unittest import mock
+
+        mock.patch.stopall()
+        self.assertEqual(Manifest.load(self.manifest_path).sessions[0].phases[0].rows, 42)
+        self.assertEqual(self.slept, [0.1, 0.25, 0.5])
+
+    def test_after_the_quick_tries_it_waits_a_minute_at_a_time(self):
+        manifest = sample_manifest()
+        manifest.path = self.manifest_path
+        self.refuse(7)
+        manifest.save()
+        self.assertEqual(self.slept, [0.1, 0.25, 0.5, 1.0, 2.0, 60.0, 60.0])
+        self.assertTrue(any("trying again in 60s, 2 of 5" in line for line in self.said))
+
+    def test_refused_for_five_minutes_it_stops_saying_why(self):
+        from ..yaml_io import FileBusy
+
+        manifest = sample_manifest()
+        manifest.path = self.manifest_path
+        self.refuse(None)
+        with self.assertRaises(FileBusy) as caught:
+            manifest.save()
+        self.assertEqual(self.slept.count(60.0), 5)
+        self.assertIn("Run window", str(caught.exception))
+        self.assertIn("pullmanifest.yaml", str(caught.exception))

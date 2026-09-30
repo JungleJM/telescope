@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
+from .yaml_io import replace_patiently
 from .pulls import PULL_FILES_DIR
 
 # Left out of a backup: what the transfer YAML rebuilds, what only an Execute
@@ -73,7 +74,7 @@ def mirror(source: Path, destination: Path) -> tuple[int, int, int]:
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(target.name + ".tmp")
         shutil.copy2(origin, partial)  # whole or not at all
-        os.replace(partial, target)
+        replace_patiently(partial, target)
         copied += 1
     if destination.is_dir():
         for folder, dirs, files in os.walk(destination, topdown=False):

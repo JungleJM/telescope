@@ -7,7 +7,6 @@ version does not understand survive a round trip untouched.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -25,7 +24,7 @@ from .models import (
     now_iso,
     validate_status,
 )
-from .yaml_io import dump_yaml, load_yaml
+from .yaml_io import dump_yaml, load_yaml, replace_patiently
 
 PHASE_ORDER = ("setup", "upload_cohorts", "pk")
 
@@ -385,6 +384,6 @@ class Manifest:
             session.recompute_status()
         tmp = target.with_name(target.name + ".tmp")
         dump_yaml(self._data, tmp)
-        os.replace(tmp, target)
+        replace_patiently(tmp, target)  # a reader may hold it for a moment (D153)
         self.path = target
         return target
