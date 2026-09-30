@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import columncheck, local_sql, refresh, server_sql, uploads
+from . import columncheck, local_sql, perkey, refresh, server_sql, uploads
 from .batches import (
     BatchError,
     chunk_clause,
@@ -106,6 +106,8 @@ class SessionReport:
     # (destination, column) -> [declared type, widest value], across every
     # batch and chunk of the session: notes, not warnings (D34, D70).
     widths: dict[tuple[str, str], list] = field(default_factory=dict)
+    # (step label, table) -> its rows per join key (D157).
+    per_key: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     # Each finished phase or run's label -> its tables' rows, table by table:
     # a run of four tables has four counts, never one total.
     tables: dict[str, dict[str, int]] = field(default_factory=dict)
@@ -430,7 +432,9 @@ class SessionRunner:
             return self._run_uploads(node, path)
         if kind == "pk":
             return self._run_pk(node, path)
-        return self._run_run(node, path)
+        rows = self._run_run(node, path)
+        self._measure_run(node, path)
+        return rows
 
     # --------------------------------------------------------------- setup
 
@@ -617,6 +621,9 @@ class SessionRunner:
         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
         sampled = self._sample_control(node, doc)
         total = self._verify_pk_uniqueness(doc)
+        keys = self._pk_key_columns(doc)
+        if keys:
+            self._measure(node, self._pk_copy(), self.session.pk_table or "", keys, None)
         self._write_pk_parquet(node, doc)
         rows = sampled if sampled is not None else rows if rows is not None else total
         if rows is not None:
@@ -774,6 +781,29 @@ class SessionRunner:
                 "threshold. Check the filter before running the fact pulls."
             )
         return total
+
+    def _measure_run(self, node: Any, path: Path) -> None:
+        """Rows per join key for each table the run landed, over its own rows (D157)."""
+        doc = load_yaml(path) or {}
+        label = local_sql.batch_label(doc)
+        cohorts = {str(c.get("dest_table")): c for c in doc.get("cohorts") or [] if isinstance(c, dict)}
+        for dest in node.outputs.get("table_rows") or {}:
+            key = perkey.join_column(cohorts.get(str(dest)) or {})
+            if key:
+                self._measure(node, str(dest), str(dest), [key], label)
+
+    def _measure(self, node: Any, table: str, dest: str, keys: list[str], label: str | None) -> None:
+        """One query in Projects; a failure is a warning, never the step's."""
+        sql, params = perkey.measure_sql(self.project_db, table, keys, label)
+        try:
+            cursor = self.projects.cursor()
+            cursor.execute(sql, params)
+            measured = perkey.stats(", ".join(keys), cursor.fetchone())
+        except Exception as exc:  # noqa: BLE001 - a measurement, not the pull
+            self.report.warnings.append(f"{node.label}: rows per key of {dest} not measured ({exc}).")
+            return
+        node.outputs.setdefault("per_key", {})[dest] = measured
+        self.report.per_key[(node.label, dest)] = measured
 
     def _pk_key_columns(self, doc: dict[str, Any]) -> list[str]:
         """The PK's key, by the one rule (D69); an uploaded PK's from its source."""

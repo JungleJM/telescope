@@ -631,6 +631,8 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
             print(f"  warning  {warning}")
         for line in width_notes(report.widths):
             print(line)
+        for line in per_key_notes(report.per_key):
+            print(line)
         print()
     failures = [r for r in reports if r is None or not r.ok]
     ran = len(reports)
@@ -656,6 +658,25 @@ def width_notes(widths: dict[tuple[str, str], list]) -> list[str]:
              "across the session's batches. Measured, not applied."]
     for row in (header, *rows):
         cells = [row[i].ljust(size[i]) for i in range(3)] + [row[3].rjust(size[3])]
+        lines.append("           " + "  ".join(cells))
+    return lines
+
+
+def per_key_notes(per_key: dict[tuple[str, str], dict]) -> list[str]:
+    """Each landed table's rows per join key, measured in Projects (D157)."""
+    from .perkey import shown
+
+    if not per_key:
+        return []
+    header = ("Step", "Table", "Key", "Keys", "Median", "P90", "Max")
+    rows = [(step.split("/")[-1], dest, str(m.get("key", "")), shown(m.get("keys")),
+             shown(m.get("median")), shown(m.get("p90")), shown(m.get("max")))
+            for (step, dest), m in per_key.items()]
+    size = [max(len(row[i]) for row in (header, *rows)) for i in range(7)]
+    lines = ["  note     Rows per join key: how many rows each key brought, in each table "
+             "each step landed. 1, 1, 1 is one row per key."]
+    for row in (header, *rows):
+        cells = [row[i].ljust(size[i]) for i in range(3)] + [row[i].rjust(size[i]) for i in range(3, 7)]
         lines.append("           " + "  ".join(cells))
     return lines
 

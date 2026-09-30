@@ -31,6 +31,7 @@ from .manifest import Manifest, ManifestError
 from . import config
 from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
 from .pulls import sql_folder as pulls_sql_folder
+from .perkey import shown as per_key_shown
 
 # Windows can give Execute a console window of its own; elsewhere it runs
 # unseen and its output is read from its log.
@@ -413,6 +414,10 @@ class StatusRow:
     # for a table, the step that landed it. Whether it holds an error.
     key: str = ""
     has_error: bool = False
+    # A table's rows per join key (D157): median, 90th percentile, maximum.
+    median: str = ""
+    p90: str = ""
+    max: str = ""
 
 
 def manifest_rows(manifest_path: Path, text: str | None = None) -> list[StatusRow]:
@@ -445,10 +450,15 @@ def manifest_rows(manifest_path: Path, text: str | None = None) -> list[StatusRo
                 )
             )
             # Each table the step landed, under it, with its own rows (D137).
+            per_key = child.outputs.get("per_key") or {}
             for dest, count in (child.outputs.get("table_rows") or {}).items():
+                measured = per_key.get(dest) or {}
                 rows.append(StatusRow(session.session_id, "table", str(dest), "",
                                       rows=f"{count:,}",
-                                      key=child.name if is_phase else child.run_id))
+                                      key=child.name if is_phase else child.run_id,
+                                      median=per_key_shown(measured.get("median")),
+                                      p90=per_key_shown(measured.get("p90")),
+                                      max=per_key_shown(measured.get("max"))))
     return rows
 
 

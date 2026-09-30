@@ -237,13 +237,16 @@ class LauncherApp:
         self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
         self.status_message.pack(side="left", padx=(8, 0), pady=4)
 
-        columns = ("kind", "name", "status", "rows", "duration", "detail")
+        # A table's rows per join key after its rows and time (D157).
+        columns = ("kind", "name", "status", "rows", "duration", "median", "p90", "max", "detail")
         self.tree = ttk.Treeview(status_tab, columns=columns, show="tree headings")
         self.tree.heading("#0", text="Session")
         self.tree.column("#0", width=220)
-        widths = {"kind": 70, "name": 150, "status": 80, "rows": 90, "duration": 80, "detail": 360}
+        widths = {"kind": 70, "name": 150, "status": 80, "rows": 90, "duration": 80,
+                  "median": 105, "p90": 60, "max": 60, "detail": 300}
+        headings = {"median": "Median per key", "p90": "P90", "max": "Max"}
         for column in columns:
-            self.tree.heading(column, text=column.capitalize())
+            self.tree.heading(column, text=headings.get(column, column.capitalize()))
             self.tree.column(column, width=widths[column], anchor="w")
         for status, colour in STATUS_COLOURS.items():
             self.tree.tag_configure(status, foreground=colour)
@@ -663,7 +666,8 @@ class LauncherApp:
         parents: dict[str, str] = {}
         step = ""
         for row in rows:
-            values = (row.kind, row.name, row.status, row.rows, row.duration, row.detail)
+            values = (row.kind, row.name, row.status, row.rows, row.duration,
+                      row.median, row.p90, row.max, row.detail)
             if row.kind == "session":
                 item = parents[row.session] = self.tree.insert(
                     "", "end", text=row.session, values=values, open=True, tags=(row.status,)

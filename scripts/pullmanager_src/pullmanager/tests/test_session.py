@@ -121,8 +121,10 @@ class FakeConnection:
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
                  widths=None, found_values=None, instance=INSTANCE, per_table=None,
                  fail_late=None, no_landing_count=False, server_messages=(),
-                 cosmos_columns=None):
+                 cosmos_columns=None, per_key_row=(3, 1.0, 1.0, 1)):
         self.side = side
+        # What a rows-per-key measurement answers (D157): keys, median, p90, max.
+        self.per_key_row = per_key_row
         # `dbo.Table` -> its columns, for the column check (D156); "*" answers
         # for any table not named. None: every table has every column asked.
         self.cosmos_columns = cosmos_columns
@@ -229,6 +231,8 @@ class FakeConnection:
             tables[match.group(1)].pop(match.group(2), None)
 
     def results_for(self, sql, params=None):
+        if "AS [per_key]" in sql:
+            return [(["Keys", "Median", "P90", "Max"], [self.per_key_row])] if self.per_key_row else []
         if "sys.columns" in sql:
             table = str((params or [""])[0])
             if self.cosmos_columns is None:
@@ -494,6 +498,55 @@ class ColumnCheckTests(SessionTestCase):
         sql, qualifier = columns_sql("COSMOS_SneakPeek")
         self.assertIn("COSMOS_SneakPeek.sys.columns", sql)
         self.assertEqual(qualifier, "COSMOS_SneakPeek.dbo.")
+
+
+class PerKeyTests(SessionTestCase):
+    """D157: each landed table's rows per join key, in the manifest."""
+
+    def test_a_run_records_rows_per_its_join_column_over_its_own_rows(self):
+        with self.runner(projects={"per_key_row": (9275, 93.0, 269.0, 1160)}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+        self.assertEqual(run.outputs["per_key"]["OtherHospitalizations"],
+                         {"key": "PatientDurableKey", "keys": 9275, "median": 93, "p90": 269, "max": 1160})
+        [(sql, params)] = [(q, p) for q, p in self.projects.executed_params
+                           if "AS [per_key]" in q and "OtherHospitalizations" in q]
+        self.assertIn("GROUP BY [PatientDurableKey]", sql)
+        self.assertIn("WHERE [_batch] = ?", sql)
+        self.assertEqual(len(params), 1)
+
+    def test_the_pk_is_measured_on_its_own_key(self):
+        with self.runner() as runner:
+            runner.execute()
+        pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+        self.assertEqual(pk.outputs["per_key"]["Patients"]["key"], "PatientDurableKey")
+        [sql] = [q for q in self.projects.executed if "AS [per_key]" in q and ".Patients " in q]
+        self.assertNotIn("_batch", sql)
+
+    def test_a_failed_measurement_is_a_warning_not_a_failure(self):
+        with self.runner(projects={"failures": {r"AS \[per_key\]": "timeout"}}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertTrue(any("rows per key" in w and "timeout" in w for w in report.warnings))
+
+    def test_the_join_column_is_this_tables_side_of_the_first_join(self):
+        from ..perkey import join_column
+
+        cohort = {"columns": [{"source": "mdf.PatientDurableKey", "name": "PatientKey"},
+                              {"source": "mdf.MedicationKey", "name": "MedicationKey"}],
+                  "filter": {"join": [
+                      "INNER JOIN ##crodxh_CrohnsPatientInfo AS pk ON mdf.PatientDurableKey = pk.PatientDurableKey",
+                      "INNER JOIN MedicationDim AS md ON md.MedicationKey = mdf.MedicationKey"]}}
+        self.assertEqual(join_column(cohort), "PatientKey")
+        self.assertIsNone(join_column({"columns": [], "filter": {"join": []}}))
+
+    def test_the_summary_lists_them_as_a_note(self):
+        lines = cli.per_key_notes({("S/S__b1of1", "OtherDiagnoses_sp"):
+                                   {"key": "PatientDurableKey", "keys": 9275, "median": 93, "p90": 269, "max": 1160}})
+        self.assertIn("Rows per join key", lines[0])
+        self.assertTrue(any("OtherDiagnoses_sp" in line and "9,275" in line and "1,160" in line
+                            for line in lines))
 
 
 class PkParquetTests(SessionTestCase):

@@ -448,6 +448,21 @@ class StatusRowTests(TempDirTestCase):
         self.assertEqual([(r.kind, r.name, r.rows) for r in rows[at + 1:at + 3]],
                          [("table", "A", "5,000"), ("table", "B", "5,000")])
 
+    def test_a_tables_rows_per_key_are_its_own_columns(self):
+        # D157: Rows, Duration, then Median per key, P90, Max.
+        import copy
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        outputs = data["sessions"][0]["runs"][0].setdefault("outputs", {})
+        outputs["table_rows"] = {"A": 1150870, "B": 9275}
+        outputs["per_key"] = {"A": {"key": "PatientDurableKey", "keys": 9275, "median": 93,
+                                    "p90": 269.5, "max": 1160}}
+        rows = manifest_rows(self.write_manifest(data))
+        a = next(r for r in rows if r.kind == "table" and r.name == "A")
+        b = next(r for r in rows if r.kind == "table" and r.name == "B")
+        self.assertEqual((a.median, a.p90, a.max), ("93", "269.5", "1,160"))
+        self.assertEqual((b.median, b.p90, b.max), ("", "", ""))
+
     def test_runs_are_named_for_their_batch(self):
         rows = manifest_rows(self.write_manifest())
         self.assertIn("LA-Female", [row.name for row in rows if row.kind == "run"])
