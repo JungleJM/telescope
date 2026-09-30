@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import local_sql, refresh, server_sql, uploads
+from . import columncheck, local_sql, refresh, server_sql, uploads
 from .batches import (
     BatchError,
     chunk_clause,
@@ -441,6 +441,7 @@ class SessionRunner:
         """
         doc = load_yaml(path) or {}
         cohorts = session_cohorts(self.manifest, self.session)
+        self._check_columns(cohorts)
         for block in local_sql.render_setup(
             doc,
             cohorts,
@@ -452,6 +453,24 @@ class SessionRunner:
         self.projects.commit()
         node_outputs = {"linked_server": self.report.linked_server, "tables": len(cohorts)}
         self.session.phases[0].outputs.update(node_outputs)
+
+    def _check_columns(self, cohorts: list[dict[str, Any]]) -> None:
+        """Every plain source column is in Cosmos, before anything is built (D156)."""
+        missing, unread = columncheck.check(self.cosmos, cohorts)
+        for table in unread:
+            self.report.warnings.append(
+                f"The columns of {table} could not be read (no such table, or this login "
+                "cannot see it), so they were not checked; its queries will say."
+            )
+        if missing:
+            raise SessionError(
+                f"{len(missing)} column(s) the cohorts read are not in Cosmos: "
+                + "; ".join(m.line() for m in missing)
+                + ". Nothing was pulled. Take each out of the template (and the dictionary: "
+                "Audit dictionary lists them all), export the split again; or remove it from "
+                "this pull's split YAMLs by hand and --retry-failed."
+            )
+        self.say("columns checked: every column the cohorts read is in Cosmos", 1)
 
     # ------------------------------------------------------------- uploads
 

@@ -34,6 +34,14 @@ DEST = "PROJECTD33A929.dbo.OtherHospitalizations"
 PK_DEST = "PROJECTD33A929.dbo.Patients"
 
 
+def fixture_columns() -> set[str]:
+    """Every column the fixture's cohorts read: what Cosmos has, by default (D156)."""
+    found: set[str] = set()
+    for path in FIXTURES.rglob("*.yaml"):
+        found.update(re.findall(r"source:\s*\w+\.\[?(\w+)", path.read_text(encoding="utf-8")))
+    return found
+
+
 class ScriptedCursor:
     """Answers by matching the SQL, so one fake serves the whole flow."""
 
@@ -48,7 +56,7 @@ class ScriptedCursor:
         # A failure the driver raises only at nextset(), as pyodbc does for a
         # statement after the first (D151): nothing after it runs or answers.
         self._late = self.owner.apply(sql)
-        self._sets = [] if self._late else list(self.owner.results_for(sql))
+        self._sets = [] if self._late else list(self.owner.results_for(sql, params))
         self._messages = list(self.owner.server_messages)
         self._advance()
 
@@ -112,8 +120,12 @@ class FakeConnection:
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
                  widths=None, found_values=None, instance=INSTANCE, per_table=None,
-                 fail_late=None, no_landing_count=False, server_messages=()):
+                 fail_late=None, no_landing_count=False, server_messages=(),
+                 cosmos_columns=None):
         self.side = side
+        # `dbo.Table` -> its columns, for the column check (D156); "*" answers
+        # for any table not named. None: every table has every column asked.
+        self.cosmos_columns = cosmos_columns
         # pattern -> message: fails at nextset(), after the batch's first result.
         self.fail_late = dict(fail_late or {})
         # A landing whose script answers without its Projects row count.
@@ -216,7 +228,13 @@ class FakeConnection:
         if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
             tables[match.group(1)].pop(match.group(2), None)
 
-    def results_for(self, sql):
+    def results_for(self, sql, params=None):
+        if "sys.columns" in sql:
+            table = str((params or [""])[0])
+            if self.cosmos_columns is None:
+                return [(["name"], [(name,) for name in sorted(fixture_columns())])]
+            names = self.cosmos_columns.get(table, self.cosmos_columns.get("*", []))
+            return [(["name"], [(name,) for name in names])]
         if "@@SERVERNAME" in sql:
             return [(["CosmosServerName"], [(self.instance,)])]
         if match := re.search(r"SELECT OBJECT_ID\(N'(PROJECTD[^']+)', N'U'\)", sql):
@@ -439,6 +457,43 @@ class HiddenErrorTests(SessionTestCase):
             runner.execute()
         self.assertTrue(any(line.startswith("  server: [") and notice in line for line in logged))
         self.assertFalse(any(notice in line for line in self.said))
+
+
+class ColumnCheckTests(SessionTestCase):
+    """D156: a column Cosmos lacks fails setup before anything is built."""
+
+    def test_a_missing_column_fails_setup_and_nothing_is_pulled(self):
+        have = sorted(fixture_columns() - {"AdmissionDateKey"}) + ["AdmissionDateKey_X"]
+        with self.runner(cosmos={"cosmos_columns": {"*": have}}) as runner:
+            report = runner.execute()
+        session = Manifest.load(self.root / "pullmanifest.yaml").sessions[0]
+        setup = session.phases[0]
+        self.assertEqual(setup.status, "failed")
+        message = setup.error["message"]
+        self.assertIn("OtherHospitalizations reads HospitalAdmissionFact.AdmissionDateKey", message)
+        self.assertIn("near: AdmissionDateKey_X", message)
+        self.assertTrue(all(node.status == "blocked" for node in [*session.phases[1:], *session.runs]))
+        self.assertFalse(any("CREATE TABLE" in sql for sql in self.projects.executed))
+        self.assertFalse(report.ok)
+
+    def test_a_table_it_cannot_read_is_a_warning_and_the_pull_goes_on(self):
+        have = {"*": sorted(fixture_columns()), "dbo.HospitalAdmissionFact": []}
+        with self.runner(cosmos={"cosmos_columns": have}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertTrue(any("HospitalAdmissionFact could not be read" in w for w in report.warnings))
+
+    def test_a_sneakpeek_cohort_asks_its_own_database(self):
+        from ..columncheck import columns_read, columns_sql
+
+        cohort = {"name": "X_sp", "cosmos_db": "COSMOS_SneakPeek",
+                  "filter": {"from": ["DiagnosisEventFact AS def"],
+                             "join": ["INNER JOIN ##tes_P_sp AS pk ON pk.K = def.K"]},
+                  "columns": [{"source": "def.K"}, {"source": "pk.K"}, {"source": "COUNT(*)"}]}
+        self.assertEqual(columns_read([cohort]), {("COSMOS_SneakPeek", "DiagnosisEventFact"): [("X_sp", "K")]})
+        sql, qualifier = columns_sql("COSMOS_SneakPeek")
+        self.assertIn("COSMOS_SneakPeek.sys.columns", sql)
+        self.assertEqual(qualifier, "COSMOS_SneakPeek.dbo.")
 
 
 class PkParquetTests(SessionTestCase):
