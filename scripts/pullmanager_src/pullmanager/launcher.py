@@ -397,6 +397,10 @@ class StatusRow:
     rows: str = ""
     duration: str = ""
     detail: str = ""
+    # Where it is in the manifest (D144): a phase's name or a run's run_id;
+    # for a table, the step that landed it. Whether it holds an error.
+    key: str = ""
+    has_error: bool = False
 
 
 def manifest_rows(manifest_path: Path) -> list[StatusRow]:
@@ -404,7 +408,8 @@ def manifest_rows(manifest_path: Path) -> list[StatusRow]:
     manifest = Manifest.load(manifest_path)
     rows: list[StatusRow] = []
     for session in manifest.sessions:
-        rows.append(StatusRow(session.session_id, "session", session.session_id, session.status))
+        rows.append(StatusRow(session.session_id, "session", session.session_id, session.status,
+                              key=session.session_id))
         for child in [*session.phases, *session.runs]:
             is_phase = child in session.phases
             name = child.name if is_phase else " ".join(filter(None, (
@@ -422,13 +427,148 @@ def manifest_rows(manifest_path: Path) -> list[StatusRow]:
                     rows="" if shown is None else f"{shown:,}",
                     duration=duration,
                     detail=str(detail),
+                    key=child.name if is_phase else child.run_id,
+                    has_error=bool((child.error or {}).get("message")),
                 )
             )
             # Each table the step landed, under it, with its own rows (D137).
             for dest, count in (child.outputs.get("table_rows") or {}).items():
                 rows.append(StatusRow(session.session_id, "table", str(dest), "",
-                                      rows=f"{count:,}"))
+                                      rows=f"{count:,}",
+                                      key=child.name if is_phase else child.run_id))
     return rows
+
+
+# ------------------------------------------------------- the manifest as text
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _block_end(lines: list[str], start: int) -> int:
+    """The line after the block that opens at `start`: the first later line,
+    not blank, indented no deeper than the line that opens it (for a list
+    item, its dash)."""
+    depth = _indent(lines[start])
+    for index in range(start + 1, len(lines)):
+        if lines[index].strip() and _indent(lines[index]) <= depth:
+            return index
+    return len(lines)
+
+
+def _find(lines: list[str], pattern: str, start: int = 0, end: int | None = None) -> int | None:
+    import re
+
+    compiled = re.compile(pattern)
+    for index in range(start, len(lines) if end is None else end):
+        if compiled.match(lines[index]):
+            return index
+    return None
+
+
+def _item_with(lines: list[str], key: str, value: str, start: int = 0,
+               end: int | None = None) -> int | None:
+    """The first line of the list item holding `key: value`, wherever in the
+    item that key is written: a run's item begins with its `yaml:` line."""
+    import re
+
+    found = _find(lines, rf"^\s*(-\s+)?{re.escape(key)}:\s*['\"]?{re.escape(value)}['\"]?\s*$",
+                  start, end)
+    if found is None:
+        return None
+    if lines[found].lstrip().startswith("-"):
+        return found
+    depth = _indent(lines[found])
+    for index in range(found - 1, start - 1, -1):
+        line = lines[index]
+        if line.lstrip().startswith("- ") and _indent(line) == depth - 2:
+            return index
+        if line.strip() and _indent(line) < depth - 2:
+            break
+    return found
+
+
+def _error_line(lines: list[str], start: int, end: int) -> int | None:
+    """The `error:` line of the entry from `start` to `end`, if it holds one:
+    a block under it, or a flow mapping on its own line; not an empty one."""
+    for index in range(start + 1, end):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped.startswith("error:"):
+            continue
+        rest = stripped[len("error:"):].strip()
+        if rest in ("", "null", "~"):
+            nxt = index + 1
+            if nxt < end and lines[nxt].strip() and _indent(lines[nxt]) > _indent(line):
+                return index
+            return None
+        return None if rest in ("{}",) else index
+    return None
+
+
+def manifest_line(text: str, row: StatusRow) -> int | None:
+    """The 0-based line in the manifest's text that a Status row stands for
+    (D144): the entry's error, when it has one; else the entry itself; for a
+    table, its line in its step's `table_rows`. Found by the entry's own id,
+    never by searching for what the error says."""
+    import re
+
+    lines = text.splitlines()
+    session = _item_with(lines, "session_id", row.session)
+    if session is None:
+        return None
+    end = _block_end(lines, session)
+    if row.kind == "session":
+        return session
+    entry = None
+    if row.key:
+        entry = _item_with(lines, "run_id", row.key, session, end)
+        if entry is None:
+            phases = _find(lines, r"^\s*phases:\s*$", session, end)
+            if phases is not None:
+                entry = _find(lines, rf"^\s+{re.escape(row.key)}:\s*$", phases + 1,
+                              _block_end(lines, phases))
+    if entry is None:
+        return None
+    entry_end = _block_end(lines, entry)
+    if row.kind == "table":
+        found = _find(lines, rf"^\s+{re.escape(row.name)}:\s*\d", entry, entry_end)
+        return entry if found is None else found
+    error = _error_line(lines, entry, entry_end)
+    return error if error is not None and row.has_error else entry
+
+
+def manifest_span(text: str, row: StatusRow) -> tuple[int, int] | None:
+    """The 0-based lines, first and after-last, to highlight for a Status
+    row: its whole error, when it has one; else its one line."""
+    line = manifest_line(text, row)
+    if line is None:
+        return None
+    lines = text.splitlines()
+    if lines[line].strip().startswith("error:"):
+        return line, _block_end(lines, line)
+    return line, line + 1
+
+
+def manifest_colours(text: str) -> list[tuple[int, str]]:
+    """Each 0-based line to colour and how (D144): a `status:` line by its
+    status, as the Status tab colours it; each line of an error that holds a
+    message, `error`."""
+    lines = text.splitlines()
+    marks: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if stripped.startswith("status:"):
+            marks.append((index, stripped[len("status:"):].strip()))
+        elif stripped.startswith("error:"):
+            end = _block_end(lines, index)
+            if _error_line(lines, index - 1, end) == index:
+                marks.extend((line, "error") for line in range(index, end))
+                index = end
+                continue
+        index += 1
+    return marks
 
 
 def try_manifest_rows(manifest_path: Path) -> tuple[list[StatusRow], str]:

@@ -200,6 +200,21 @@ class LauncherApp:
         self.pull_output.pack(fill="both", expand=True)
         notebook.add(self.pull_tab, text="Pull Log")
 
+        # The loaded pull's manifest as it is, read-only (D144): the running
+        # pull rewrites it, so an edit here would be lost or clobber its record.
+        self.manifest_tab = ttk.Frame(notebook)
+        self.manifest_text = scrolledtext.ScrolledText(
+            self.manifest_tab, wrap="none", font=("Consolas", 10), state="disabled"
+        )
+        self.manifest_text.pack(fill="both", expand=True)
+        for status, colour in STATUS_COLOURS.items():
+            self.manifest_text.tag_configure(status, foreground=colour)
+        self.manifest_text.tag_configure("error", foreground=STATUS_COLOURS["failed"])
+        self.manifest_text.tag_configure("found", background="#fff8c5")
+        self._manifest_shown = ""
+        self._manifest_found: launcher.StatusRow | None = None
+        notebook.add(self.manifest_tab, text="Pull Manifest")
+
         status_tab = ttk.Frame(notebook)
         # Refresh and the manifest it reads, above the tree they describe.
         bar = ttk.Frame(status_tab)
@@ -218,6 +233,9 @@ class LauncherApp:
             self.tree.column(column, width=widths[column], anchor="w")
         for status, colour in STATUS_COLOURS.items():
             self.tree.tag_configure(status, foreground=colour)
+        # Double-click a row to see its lines in the manifest (D144).
+        self._status_rows: dict[str, launcher.StatusRow] = {}
+        self.tree.bind("<Double-1>", self.on_status_double_click)
         scroll = ttk.Scrollbar(status_tab, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -592,26 +610,82 @@ class LauncherApp:
         else:
             rows, message = launcher.try_manifest_rows(manifest)
         self.tree.delete(*self.tree.get_children())
+        self._status_rows = {}
         parents: dict[str, str] = {}
         step = ""
         for row in rows:
             values = (row.kind, row.name, row.status, row.rows, row.duration, row.detail)
             if row.kind == "session":
-                parents[row.session] = self.tree.insert(
+                item = parents[row.session] = self.tree.insert(
                     "", "end", text=row.session, values=values, open=True, tags=(row.status,)
                 )
             elif row.kind == "table":
                 # Under the phase or run that landed it (D137).
-                self.tree.insert(step or parents.get(row.session, ""), "end", text="",
-                                 values=values)
+                item = self.tree.insert(step or parents.get(row.session, ""), "end", text="",
+                                        values=values)
             else:
-                step = self.tree.insert(
+                item = step = self.tree.insert(
                     parents.get(row.session, ""), "end", text="",
                     values=values, tags=(row.status,), open=True,
                 )
+            self._status_rows[str(item)] = row
         if not message and self.pull_lock is not None:
             message = f"{self.pull_lock.summary()}.  {manifest}"
         self.status_message.configure(text=message or f"{manifest}")
+        self.refresh_manifest_view(manifest)
+
+    def refresh_manifest_view(self, manifest: Path | None) -> None:
+        """Show the manifest's text, coloured, keeping where it was scrolled
+        to; redrawn only when the file has changed (D144)."""
+        try:
+            text = manifest.read_text(encoding="utf-8") if manifest is not None else ""
+        except OSError:
+            text = ""
+        if not text:
+            text = f"No manifest yet at {manifest}. Export a split first.\n" if manifest else ""
+        if text == self._manifest_shown:
+            return
+        self._manifest_shown = text
+        view = self.manifest_text
+        top = view.yview()[0]
+        width = len(str(max(1, text.count("\n") + 1)))
+        numbered = "".join(f"{n:>{width}}  {line}\n"
+                           for n, line in enumerate(text.splitlines(), start=1))
+        view.configure(state="normal")
+        view.delete("1.0", "end")
+        view.insert("1.0", numbered)
+        for line, tag in launcher.manifest_colours(text):
+            view.tag_add(tag, f"{line + 1}.0", f"{line + 1}.end")
+        view.configure(state="disabled")
+        view.yview_moveto(top)
+        if self._manifest_found is not None:
+            self._mark_manifest_line(self._manifest_found, scroll=False)
+
+    def on_status_double_click(self, event=None) -> None:
+        item = self.tree.focus()
+        row = self._status_rows.get(str(item))
+        if row is not None:
+            self.show_in_manifest(row)
+
+    def show_in_manifest(self, row: launcher.StatusRow) -> None:
+        """Switch to Pull Manifest with the row's lines in view, highlighted:
+        its error when it has one (D144)."""
+        self.refresh_manifest_view(self._manifest())
+        self._manifest_found = row
+        self._mark_manifest_line(row, scroll=True)
+        self.notebook.select(self.manifest_tab)
+
+    def _mark_manifest_line(self, row: launcher.StatusRow, *, scroll: bool) -> None:
+        view = self.manifest_text
+        view.tag_remove("found", "1.0", "end")
+        span = launcher.manifest_span(self._manifest_shown, row)
+        if span is None:
+            return
+        first, after = span
+        view.tag_add("found", f"{first + 1}.0", f"{after + 1}.0")
+        if scroll:
+            view.see(f"{after}.0")  # the whole of it, then its first line
+            view.see(f"{first + 1}.0")
 
     def use_transfer(self, path: Path) -> None:
         """Take a transfer YAML the Author half exported (D94)."""

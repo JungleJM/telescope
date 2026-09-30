@@ -339,6 +339,91 @@ class LogFollowerTests(TempDirTestCase):
         self.assertEqual(launcher.pull_log(manifest, None), refused)
 
 
+class ManifestTextTests(TempDirTestCase):
+    """D144: the Pull Manifest tab finds a Status row's lines, and colours them."""
+
+    def written(self, writer):
+        """The sample manifest after a failed pull, as `writer` writes it: the
+        VM's ruamel (through the manifest's own save), or PyYAML."""
+        import copy
+
+        from ..manifest import Manifest
+
+        path = self.tmp / "pullmanifest.yaml"
+        manifest = Manifest(copy.deepcopy(SAMPLE_MANIFEST), path=path)
+        first, second = manifest.sessions[0], manifest.sessions[1]
+        first.runs[0].fail("OPENQUERY failed: first session", detail="ProgrammingError")
+        first.runs[0].outputs["table_rows"] = {"OtherHospitalizations": 5000, "Admissions": 7}
+        first.phases[0].finish()
+        second.runs[0].fail("timeout: second session", detail="OperationalError")
+        if writer == "ruamel":
+            manifest.save()
+            return path.read_text(encoding="utf-8")
+        import yaml
+
+        return yaml.safe_dump(manifest.data, sort_keys=False, default_flow_style=False)
+
+    def rows(self):
+        path = self.tmp / "m.yaml"
+        path.write_text(self.text, encoding="utf-8")
+        return manifest_rows(path)
+
+    def writers(self):
+        """Each writer this Python has, with the text it writes."""
+        found = []
+        for writer in ("ruamel", "pyyaml"):
+            try:
+                found.append((writer, self.written(writer)))
+            except ImportError:
+                continue
+        return found
+
+    def test_a_failed_run_opens_at_its_own_error(self):
+        for writer, self.text in self.writers():
+            with self.subTest(writer=writer):
+                lines = self.text.splitlines()
+                run = next(r for r in self.rows() if r.kind == "run" and r.has_error)
+                first, after = launcher.manifest_span(self.text, run)
+                block = "\n".join(lines[first:after])
+                self.assertTrue(lines[first].strip().startswith("error"), lines[first])
+                # The first session's, found by its run_id; never the second's.
+                self.assertIn("first session", block)
+                self.assertIn("ProgrammingError", block)
+                self.assertNotIn("second session", block)
+
+    def test_a_session_a_phase_and_a_table_open_at_their_own_lines(self):
+        for writer, self.text in self.writers():
+            with self.subTest(writer=writer):
+                lines = self.text.splitlines()
+                rows = self.rows()
+                session = next(r for r in rows if r.kind == "session" and r.session == "UCblackPatients")
+                self.assertRegex(lines[launcher.manifest_line(self.text, session)],
+                                 r"^\s*-\s+session_id:\s*UCblackPatients$")
+                setup = next(r for r in rows if r.kind == "phase" and r.key == "setup")
+                self.assertEqual(lines[launcher.manifest_line(self.text, setup)].strip(), "setup:")
+                table = next(r for r in rows if r.kind == "table" and r.name == "Admissions")
+                self.assertEqual(lines[launcher.manifest_line(self.text, table)].strip(), "Admissions: 7")
+
+    def test_every_status_is_coloured_and_only_errors_with_a_message_are_red(self):
+        for writer, self.text in self.writers():
+            with self.subTest(writer=writer):
+                lines = self.text.splitlines()
+                marks = dict(launcher.manifest_colours(self.text))
+                for index, line in enumerate(lines):
+                    if line.strip().startswith("status:"):
+                        self.assertEqual(marks.get(index), line.split(":", 1)[1].strip())
+                red = [lines[i] for i, tag in marks.items() if tag == "error"]
+                self.assertTrue(any("first session" in line for line in red), red)
+                self.assertTrue(any("OperationalError" in line for line in red), red)
+                # A step that has not failed has an empty error: not red.
+                empty = [i for i, line in enumerate(lines)
+                         if line.strip() in ("error:", "error: null")
+                         and not (i + 1 < len(lines) and len(lines[i + 1]) - len(lines[i + 1].lstrip())
+                                  > len(line) - len(line.lstrip()))]
+                self.assertTrue(empty)
+                self.assertFalse([i for i in empty if marks.get(i) == "error"])
+
+
 class StatusRowTests(TempDirTestCase):
     def write_manifest(self, data=None):
         path = self.tmp / "split" / "pullmanifest.yaml"

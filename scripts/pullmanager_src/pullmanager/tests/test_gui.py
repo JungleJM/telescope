@@ -528,6 +528,39 @@ class StatusTests(GuiTestCase):
         self.assertEqual(calls[table - 1].kwargs["values"][0], "run")
         self.assertEqual(calls[table].args[0], f"item{table - 1}")
 
+    def test_double_clicking_a_failed_run_shows_its_error_in_the_manifest_tab(self):
+        # D144: the tab shows the manifest, the error red, and a Status row's
+        # double-click brings that run's own error into view.
+        import copy
+
+        from .. import launcher
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        run = data["sessions"][0]["runs"][1]
+        run["status"] = "failed"
+        run["error"] = {"message": "OPENQUERY failed", "detail": "ProgrammingError"}
+        dump_yaml(data, self.manifest)
+        import itertools
+
+        ids = itertools.count()  # a real Treeview gives each row its own id
+        self.app.tree.insert.side_effect = lambda *a, **k: f"item{next(ids)}"
+        self.app.refresh_status()
+        text = self.manifest.read_text(encoding="utf-8")
+        view = self.app.manifest_text
+        shown = "".join(call.args[1] for call in view.insert.call_args_list)
+        self.assertIn("OPENQUERY failed", shown)
+        self.assertTrue(shown.lstrip().startswith("1  "), "numbered lines")
+        red = [call.args for call in view.tag_add.call_args_list if call.args[0] == "error"]
+        self.assertTrue(red)
+        row = next(r for r in self.app._status_rows.values() if r.has_error)
+        view.tag_add.reset_mock()
+        self.app.show_in_manifest(row)
+        self.app.notebook.select.assert_called_with(self.app.manifest_tab)
+        [found] = [call.args for call in view.tag_add.call_args_list if call.args[0] == "found"]
+        first = int(found[1].split(".")[0]) - 1
+        self.assertEqual(text.splitlines()[first].strip(), "error:")
+        self.assertEqual((first, int(found[2].split(".")[0]) - 1), launcher.manifest_span(text, row))
+
     def test_a_missing_manifest_says_what_to_do(self):
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]
