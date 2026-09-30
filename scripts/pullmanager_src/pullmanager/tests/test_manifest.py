@@ -430,3 +430,27 @@ class BusyFileTests(TempDirTestCase):
         self.assertEqual(self.slept.count(60.0), 5)
         self.assertIn("Run window", str(caught.exception))
         self.assertIn("pullmanifest.yaml", str(caught.exception))
+
+
+class SharedReadTests(TempDirTestCase):
+    """D154: every YAML the runtime reads goes through read_shared."""
+
+    def test_load_yaml_reads_through_read_shared(self):
+        from unittest import mock
+
+        from .. import yaml_io
+
+        self.manifest_path.write_text("a: 1\n", encoding="utf-8")
+        with mock.patch.object(yaml_io, "read_shared", wraps=yaml_io.read_shared) as spy:
+            self.assertEqual(yaml_io.load_yaml(self.manifest_path), {"a": 1})
+        spy.assert_called_once()
+
+    def test_without_the_windows_open_it_reads_plainly(self):
+        from unittest import mock
+
+        from .. import yaml_io
+
+        self.manifest_path.write_text("a: 1\n", encoding="utf-8")
+        with mock.patch.object(yaml_io, "WINDOWS", True), \
+                mock.patch.object(yaml_io, "_open_shared_windows", return_value=None):
+            self.assertEqual(yaml_io.read_shared(self.manifest_path), "a: 1\n")

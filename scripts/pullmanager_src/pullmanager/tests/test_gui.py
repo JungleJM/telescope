@@ -577,6 +577,56 @@ class StatusTests(GuiTestCase):
         self.assertEqual(text.splitlines()[first].strip(), "error:")
         self.assertEqual((first, int(found[2].split(".")[0]) - 1), launcher.manifest_span(text, row))
 
+    def count_reads(self):
+        """How often Status opens the manifest (D154)."""
+        from unittest import mock
+
+        from .. import gui, yaml_io
+
+        reads = []
+
+        def counted(path):
+            reads.append(path)
+            return yaml_io.read_shared(path)
+
+        patcher = mock.patch.object(gui, "read_shared", side_effect=counted)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return reads
+
+    def test_a_refresh_reads_the_manifest_once_for_both_tabs(self):
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
+        reads = self.count_reads()
+        self.app.refresh_status()
+        self.assertEqual(len(reads), 1)
+        shown = "".join(call.args[1] for call in self.app.manifest_text.insert.call_args_list)
+        self.assertIn("sessions", shown)
+
+    def test_an_unchanged_manifest_is_not_read_again(self):
+        # Each read of an executing pull's manifest could block its save.
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
+        reads = self.count_reads()
+        self.app.refresh_status()
+        self.app.refresh_status()
+        self.app.refresh_status()
+        self.assertEqual(len(reads), 1)
+
+    def test_a_changed_manifest_or_refresh_reads_it_again(self):
+        import copy
+        import os
+
+        dump_yaml(SAMPLE_MANIFEST, self.manifest)
+        reads = self.count_reads()
+        self.app.refresh_status()
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        data["sessions"][0]["runs"][0]["status"] = "done"
+        dump_yaml(data, self.manifest)
+        info = os.stat(self.manifest)
+        os.utime(self.manifest, ns=(info.st_atime_ns, info.st_mtime_ns + 5_000_000))
+        self.app.refresh_status()
+        self.app.refresh_status(force=True)
+        self.assertEqual(len(reads), 3)
+
     def test_a_missing_manifest_says_what_to_do(self):
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]

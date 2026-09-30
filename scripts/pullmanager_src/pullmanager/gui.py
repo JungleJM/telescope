@@ -17,6 +17,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import config, launcher, pulls
 from .launcher import LauncherError, Options, Paths
 from .lock import LockInfo, clear_lock_of, live_lock
+from .yaml_io import file_signature, read_shared
 
 POLL_MS = 100
 STATUS_REFRESH_MS = 3000
@@ -220,13 +221,16 @@ class LauncherApp:
         self.manifest_text.tag_configure("found", background="#fff8c5")
         self._manifest_shown = ""
         self._manifest_found: launcher.StatusRow | None = None
+        # The manifest and its size and time when Status last read it (D154).
+        self._status_seen: tuple[Path, tuple[int, int]] | None = None
         notebook.add(self.manifest_tab, text="Pull Manifest")
 
         status_tab = ttk.Frame(notebook)
         # Refresh and the manifest it reads, above the tree they describe.
         bar = ttk.Frame(status_tab)
         bar.pack(side="top", fill="x")
-        ttk.Button(bar, text="Refresh", command=self.refresh_status).pack(side="left", pady=4)
+        ttk.Button(bar, text="Refresh", command=lambda: self.refresh_status(force=True)).pack(
+            side="left", pady=4)
         self.status_message = ttk.Label(bar, text="", foreground="#6e7781")
         self.status_message.pack(side="left", padx=(8, 0), pady=4)
 
@@ -624,13 +628,27 @@ class LauncherApp:
         self.pull_output.see("end")
         self.pull_output.configure(state="disabled")
 
-    def refresh_status(self) -> None:
+    def refresh_status(self, force: bool = False) -> None:
+        """Redraw Status and Pull Manifest from one read of the manifest, and
+        none when it has not changed since the last (D154)."""
+        text = None
         try:
             manifest = self.workdir / self.paths().manifest()
         except LauncherError as exc:
             manifest, rows, message = None, [], str(exc)
+            self._status_seen = None
         else:
-            rows, message = launcher.try_manifest_rows(manifest)
+            seen = (manifest, file_signature(manifest))
+            if not force and seen[1] is not None and seen == self._status_seen:
+                self.show_status_message(manifest, "")
+                return
+            self._status_seen = seen
+            if seen[1] is not None:
+                try:
+                    text = read_shared(manifest)
+                except OSError:
+                    self._status_seen = None  # caught mid-save: read it next time
+            rows, message = launcher.try_manifest_rows(manifest, text)
         self.tree.delete(*self.tree.get_children())
         self._status_rows = {}
         parents: dict[str, str] = {}
@@ -651,18 +669,23 @@ class LauncherApp:
                     values=values, tags=(row.status,), open=True,
                 )
             self._status_rows[str(item)] = row
+        self.show_status_message(manifest, message)
+        self.refresh_manifest_view(manifest, text)
+
+    def show_status_message(self, manifest: Path | None, message: str) -> None:
         if not message and self.pull_lock is not None:
             message = f"{self.pull_lock.summary()}.  {manifest}"
         self.status_message.configure(text=message or f"{manifest}")
-        self.refresh_manifest_view(manifest)
 
-    def refresh_manifest_view(self, manifest: Path | None) -> None:
+    def refresh_manifest_view(self, manifest: Path | None, text: str | None = None) -> None:
         """Show the manifest's text, coloured, keeping where it was scrolled
-        to; redrawn only when the file has changed (D144)."""
-        try:
-            text = manifest.read_text(encoding="utf-8") if manifest is not None else ""
-        except OSError:
-            text = ""
+        to; redrawn only when the file has changed (D144). `text` is the
+        manifest already read, so Status and this tab share one read (D154)."""
+        if text is None:
+            try:
+                text = read_shared(manifest) if manifest is not None else ""
+            except OSError:
+                text = ""
         if not text:
             text = f"No manifest yet at {manifest}. Export a split first.\n" if manifest else ""
         if text == self._manifest_shown:

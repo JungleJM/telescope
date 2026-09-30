@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+WINDOWS = os.name == "nt"
+
 NO_BACKEND = (
     "No YAML backend available in this Python ({python}). Install one: "
     "`{python} -m pip install ruamel.yaml pyyaml`."
@@ -46,15 +48,68 @@ def _plain(value: Any) -> Any:
 
 
 def load_yaml(path: str | Path) -> Any:
-    path = Path(path)
+    return parse_yaml(read_shared(path))
+
+
+def parse_yaml(text: str) -> Any:
     backend, mod = _backend()
     if backend == "ruamel":
-        with path.open("r", encoding="utf-8") as handle:
-            return _plain(mod.load(handle))
+        return _plain(mod.load(text))
     if backend == "pyyaml":
-        with path.open("r", encoding="utf-8") as handle:
-            return mod.safe_load(handle)
+        return mod.safe_load(text)
     raise RuntimeError(NO_BACKEND.format(python=sys.executable))
+
+
+def read_shared(path: str | Path) -> str:
+    """A text file's contents, read without stopping another process replacing it.
+
+    An ordinary open on Windows forbids replacing the file until it is closed,
+    which made an executing pull's manifest saves fail while the Run window
+    read it (D154). On Windows the file is opened with FILE_SHARE_DELETE;
+    elsewhere, and if that is unavailable, plainly.
+    """
+    path = Path(path)
+    if WINDOWS:
+        handle = _open_shared_windows(path)
+        if handle is not None:
+            import msvcrt
+
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+            with open(descriptor, "r", encoding="utf-8") as stream:
+                return stream.read()
+    return path.read_text(encoding="utf-8")
+
+
+def file_signature(path: str | Path) -> tuple[int, int] | None:
+    """A file's modified time and size, to tell whether it changed; None if absent.
+
+    A stat asks only for attributes, which no sharing mode blocks, so it never
+    stands in the way of a save.
+    """
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_mtime_ns, info.st_size
+
+
+def _open_shared_windows(path: Path) -> int | None:
+    """A Win32 handle opened for reading with every sharing mode, or None."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return None
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel32.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    generic_read, share_all, open_existing, normal = 0x80000000, 0x7, 3, 0x80
+    handle = create(str(path), generic_read, share_all, None, open_existing, normal, None)
+    if handle is None or handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())  # FileNotFoundError and the like
+    return handle
 
 
 def dump_yaml(data: Any, path: str | Path) -> None:

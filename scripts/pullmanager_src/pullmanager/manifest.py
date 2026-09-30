@@ -24,7 +24,7 @@ from .models import (
     now_iso,
     validate_status,
 )
-from .yaml_io import dump_yaml, load_yaml, replace_patiently
+from .yaml_io import dump_yaml, load_yaml, parse_yaml, replace_patiently
 
 PHASE_ORDER = ("setup", "upload_cohorts", "pk")
 
@@ -374,6 +374,11 @@ class Manifest:
         if not path.is_file():
             raise ManifestError(f"Manifest not found: {path}")
         return cls(load_yaml(path), path=path)
+
+    @classmethod
+    def from_text(cls, text: str, path: str | Path) -> "Manifest":
+        """A manifest already read, so a reader opens the file once (D154)."""
+        return cls(parse_yaml(text), path=Path(path))
 
     def save(self, path: str | Path | None = None) -> Path:
         """Write the manifest atomically so a crash cannot truncate it."""

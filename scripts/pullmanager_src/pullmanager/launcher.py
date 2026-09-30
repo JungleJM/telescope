@@ -405,9 +405,10 @@ class StatusRow:
     has_error: bool = False
 
 
-def manifest_rows(manifest_path: Path) -> list[StatusRow]:
-    """The manifest flattened into one row per phase and run."""
-    manifest = Manifest.load(manifest_path)
+def manifest_rows(manifest_path: Path, text: str | None = None) -> list[StatusRow]:
+    """The manifest flattened into one row per phase and run; from `text`
+    when the file has been read already (D154)."""
+    manifest = Manifest.load(manifest_path) if text is None else Manifest.from_text(text, manifest_path)
     rows: list[StatusRow] = []
     for session in manifest.sessions:
         rows.append(StatusRow(session.session_id, "session", session.session_id, session.status,
@@ -573,12 +574,12 @@ def manifest_colours(text: str) -> list[tuple[int, str]]:
     return marks
 
 
-def try_manifest_rows(manifest_path: Path) -> tuple[list[StatusRow], str]:
+def try_manifest_rows(manifest_path: Path, text: str | None = None) -> tuple[list[StatusRow], str]:
     """Rows, or a message saying why there are none. Never raises."""
-    if not manifest_path.is_file():
+    if text is None and not manifest_path.is_file():
         return [], f"No manifest yet at {manifest_path}. Export a split first."
     try:
-        return manifest_rows(manifest_path), ""
+        return manifest_rows(manifest_path, text), ""
     except (ManifestError, OSError, ValueError) as exc:
         return [], f"Could not read {manifest_path}: {exc}"
 
