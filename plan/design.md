@@ -82,7 +82,7 @@ Dev box gotchas: an IDE Python console (Positron's `%run`) keeps a started `yaml
 ### The Repository And `datascope.json`
 
 ``` text
-scope.py            the front door: the app, `test`, `images` (D132), or a Pullmanager command (D112, D123)
+scope.py            the front door: the app, `test`, `images` (D132), `dictionary-fix` (D155), or a Pullmanager command (D112, D123)
 utils.py            the utilities window: a button per script in utils/, client/ and manager/ under their headings (D124, D148)
 datascope.json      where the core files are, and where runs go (D111)
 makebundle.py       builds dist/bundle.py, or dist/yamls_to_transfer.py (D122)
@@ -92,7 +92,7 @@ reference/          the core files: datadictionary.yaml, recipes.yaml, template.
 YAMLs/              the pulls: temp/ (intakes, their csv/), manager_test_cases/
 plan/               design, decisions, roadmap, tasklist.qmd; commemorating/ (the history);
                     a pasted image in images/ beside its document (D132)
-scripts/            makeYaml, the app's model and view, the bundler, pullmanager_src/
+scripts/            makeYaml, the app's model and view, the bundler, dictionary_fix.py (D155), pullmanager_src/
 cleanup/            disposable: the Python cache, runs/ (D113)
 dist/               bundles and content_id.txt; not committed (D106)
 .claude/CLAUDE.md   how to work in this repository
@@ -310,7 +310,7 @@ upload_cohorts:
 - **`pending_transfer: true`** says a missing file is expected (D97): it is reported as pending (`upload_pending_transfer`), a third kind of message beside errors and warnings (D99), not as a warning. Only a `csv` or `parquet` with a `file_loc` can be pending, and only `true` or `false` (`bad_pending_transfer`). The split still needs the file.
 - **Typed-in columns.** For a table nothing here can read (a `dbtable`, or a file not here), the names under `columns:`, with or without types, stand in for its schema (D97), so batching and bindings are checked against them. Without them its columns are unknown: batching is left unchecked (`batch_columns_unchecked`) and a binding lists it as a table that may fit. A missing file's declared types are still checked.
 - **Renaming and dropping** (D98). An entry with `from:` names the file's column, and `name` is what it lands as; `drop: true` leaves a column out; unlisted columns land as they are. Pullmanager applies them as the file lands in Projects, so the copy and its Cosmos temp have the new names, and validation reads the table as it will land: bindings, suggestions, batching and the uploaded PK's key all use the new names. A rename or drop of a column the file lacks is `unknown_upload_column`; two columns ending with one name, `duplicate_upload_column`; a dropped or renamed key, `dropped_key_column` or `renamed_key_column`; any of them on a `dbtable`, `upload_rename_on_dbtable` (D100). A declared type names the file's column.
-- A column whose name has quote characters in it (a CSV header written `'DiagnosisCode'`) is `quoted_column_name`, a warning whose fix is to rename it (D98, D109); one already renamed or dropped is not warned about.
+- A column whose name has quote characters in it (a CSV header written `'DiagnosisCode'`) is `quoted_column_name`, a warning whose fix is to rename it (D98, D109); one already renamed or dropped is not warned about. In the app, choosing a supporting table's file writes that rename by itself, to the name without quotes, shown in Lands as (D159); it happens only when the file is chosen, so a rename back to the quoted name stays.
 - Declarable types: `BIGINT`, `INT`, `SMALLINT`, `TINYINT`, `BIT`, `FLOAT`, `REAL`, `DECIMAL(p,s)`, `DATE`, `DATETIME`, `DATETIME2`, `VARCHAR(n)`, `NVARCHAR(n)`, `CHAR(n)`. Anything else is `bad_upload_type`; a declared column the file lacks is `unknown_upload_column`.
 
 With `pyarrow`, validation reads a parquet's own columns, so recipes bound to it are checked like any other table. An upload marked `type: pk` is the template's PK (only one PK per template); batching is checked against its file's columns. `split_after_build` multipliers on an uploaded PK are refused (`split_after_build_on_uploaded_pk`): batch by that column instead, which puts each group in a batch of one table rather than a table of its own, or split the list before uploading it and run one pull per group.
@@ -660,6 +660,14 @@ runtime:
 # on the pk phase of a generated PK (D87)
 outputs: {pk_parquet: {file: cosmos_parquets/Patients.parquet, rows: 4242}}
 
+# on the pk phase: the rows Cosmos built, before a control is sampled (D152)
+outputs: {cosmos_rows: 1232900}
+
+# on a run, and the pk phase (D157): each table's rows per join key, over
+# what that step landed; the PK by its own key
+outputs: {per_key: {OtherDiagnoses_sp: {key: PatientDurableKey, keys: 9275,
+          median: 93, p90: 269, max: 1160}}}
+
 # on the pk phase of a sampled control (D59)
 outputs: {control_sample: {matched_to: CrohnsblackPatients, row_mult: 4.0,
           per_batch: {b1of3-Male: {cases: 812, controls: 3248}}}}
@@ -681,7 +689,8 @@ last_execute: {started_at: "...", ended_at: "...", exit_code: 0,
 - **Phase names are closed**: `setup`, `upload_cohorts`, `pk`, in that order, which is execution order. Any other key raises.
 - **Order comes from the manifest**, never from folder names. `yaml` paths resolve against the manifest's directory.
 - **Unknown keys survive.** The loaded mapping is mutated in place and written back whole, so a newer YAML Manager can add fields without breaking an older bundle.
-- **Writes are atomic**: temp file, then rename.
+- **Writes are atomic**: temp file, then rename. Windows refuses the rename while another program has the manifest open, so it is tried again, quickly (0.1, 0.25, 0.5, 1 and 2 seconds), then once a minute for five minutes, each wait printed (`pullmanifest.yaml is busy (Access is denied); trying again in 60s, 2 of 5`), then the save fails, naming the file and the likely holders (D153). The backup's copy waits the same way.
+- **Readers let it be replaced** (D154): on Windows every YAML the runtime reads is opened with `FILE_SHARE_DELETE` (through `ctypes`), so reading a manifest never blocks its save; elsewhere, a plain read.
 
 ### Status
 
@@ -733,11 +742,11 @@ So `done` means "completed once", not "still exists". `is_stale()` is true for a
 
 When the session opens, before anything runs: capture `@@SERVERNAME`, check the Cosmos refresh date (D51, Running Again), and choose the temp prefix (Naming).
 
-1.  **Setup.** Drop and create every Projects destination, once; runs append. Resuming, keep them and create only missing ones (D52). Every destination a run fills has a `_batch NVARCHAR(200) NOT NULL` column holding the run's batch label (`all` for an unbatched run). The PK's own copy has none, since batches are selected from it.
+1.  **Setup.** First the column check (D156): every plain `alias.Column` source in the session's cohorts is matched to the Cosmos table its alias names in `filter.from` and `filter.join` (in the database the cohort reads, `COSMOS_SneakPeek` for a SneakPeek cohort), and each table's columns are read once (`sys.columns`). A source not there fails `setup`, naming each column, its cohort and table, and near matches (`AdmissionDateKey_X`), so the session is blocked before anything is built and the other sessions go on. A table whose columns cannot be read (not found, or not visible to the login) is a warning. Expressions and temps are not checked. Then drop and create every Projects destination, once; runs append. Resuming, keep them and create only missing ones (D52). Every destination a run fills has a `_batch NVARCHAR(200) NOT NULL` column holding the run's batch label (`all` for an unbatched run). The PK's own copy has none, since batches are selected from it.
 
 2.  **Uploads** (D54, D61). A non-PK upload lands in Projects once per pull, as `upload_<dest>` with its types (Uploads, below), committed, by the first session to reach it; the manifest records it (`uploads_landed`) and later sessions use that copy. Its Cosmos temp is created with the copy's types, read back from `INFORMATION_SCHEMA`, and filled from the copy through the client (there is no linked server from Cosmos back to Projects), but only in a session whose cohorts read it. An uploaded PK lands and goes up in every session. Resuming, the copies are kept and the files are not read; a copy that is missing stops the phase, pointing at `--repull`.
 
-3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). A sampled control is cut to its sample first (Multipliers). Then a generated PK is written whole to parquet, where Artifacts puts it (`runs/<project>/<cosmos|sneakpeek>_parquets/<pk>.parquet`), before any run starts (D87); a failure to write it warns and the pull goes on. An uploaded PK is a file already and is not written. Not rerun on a resume.
+3.  **PK.** Build `##<prefix>_<pk>` and copy it to Projects (an uploaded PK already has its `upload_` copy), then verify uniqueness against the copy (`COUNT(*)` against a count of `SELECT DISTINCT keys`, the key by D69; a PK with no key warns instead, naming `dedup_keys` and `key_column`). The rows Cosmos built are kept as `cosmos_rows` (D152). A sampled control is cut to its sample first (Multipliers). Then a generated PK is written whole to parquet, where Artifacts puts it (`runs/<project>/<cosmos|sneakpeek>_parquets/<pk>.parquet`), before any run starts (D87); a failure to write it warns and the pull goes on. An uploaded PK is a file already and is not written. Not rerun on a resume.
 
 4.  **Runs.** For a batched run, the PK temp is emptied and refilled with that batch's whole PK rows, selected from the **Projects copy** with a parameterized predicate, then uploaded. The cohort SQL runs unchanged: it only ever joins the PK temp. On a resume an unbatched run refills it with the whole Projects copy the same way, as does an unbatched sampled control, whose temp still holds every row the PK query built. Each run then:
 
@@ -767,6 +776,10 @@ When the session opens, before anything runs: capture `@@SERVERNAME`, check the 
 A phase says started, then done (its time and rows); a run says done with its time and how many tables it landed, never one row total, since each table has said its own (D137). Either can say FAILED (its time and error), blocked or skipped (why). An upload times its two legs apart; a table gives its rows, the time Cosmos took to build it and the time it took to land. A chunk or a value (`v2of5 (LA)`) names itself at the start of its lines. A table's start line with nothing after it is the table in flight.
 
 The summary at the session's end lists, under each finished phase and run, every table it landed with its rows, and under a failed run the tables it landed before failing (a retry pulls them again). The summary command (`pullmanager.py <manifest>`) and the Status tab list them the same way, from the manifest's `table_rows` (D137).
+
+**Rows per join key** (D157). When a run finishes, each table it landed is grouped by its join column, over the run's own `_batch` rows, and the number of keys, the median, the 90th percentile and the maximum rows per key are recorded as the run's `per_key`; the PK the same, by its own key, once it lands. The join column is the landed column whose source is this table's side of the first equality in the cohort's first `JOIN` (`pk.PatientDurableKey = def.PatientDurableKey` gives the column sourced from `def.PatientDurableKey`). A table deduplicated to one row per key shows 1, 1, 1. A failed measurement is a warning. The session's summary lists them as a note after the widths; Status shows them as columns.
+
+**A failed statement fails its step** (D151). A block is several statements in one batch, and the driver raises an error in any statement after the first only when the next result is asked for; every result is asked for, and nothing there is caught, so a failed `INSERT` fails its step with the server's message. Every landing ends by reporting its Projects row count, and one that reports none is an error, not a comparison skipped. Before this, IBD_Ancestry's white controls (1,232,900 built) landed nothing and finished `done` with 0 rows and no warning. Every server message, from every statement, goes to the execute log only, as `server: [<block>] <message>`.
 
 After each run the Cosmos and Projects row counts are compared, counting only this run's `_batch` rows on the Projects side (a chunked run compares totals), and a mismatch warns. Counts past 80,000,000 warn. The widest value of each staged column is measured and reported, not applied (D34): at the end of each session, after its warnings, one table of each text column's declared type and widest value across all the session's batches, as a note (D70). A unit that fails rolls both connections back. Nothing runs in parallel: sessions, runs, chunks and cohorts go one after another.
 
@@ -817,6 +830,7 @@ Then, per session (D52):
 
 - `--retry-failed` reopens `failed` work. Without it, failed work is excluded and the output says so; a session with only failures left is skipped.
 - A run left `running` by a crash or Stop is interrupted: it is pulled again, its rows cleared first.
+- `--repull-session <name>`, repeatable, starts only those sessions over, as a new pull would: their steps pending and outputs cleared, their tables dropped and made again by `setup`; the other sessions, and uploads already landed (D61), are kept (D158). A case brings its controls, which were sampled against its counts, and says so. `all` means `--repull`; a name the pull does not have is an error listing its sessions, before anything changes.
 - `--repull` starts every session over, finished work included, and lands every upload from its file again. A retry never re-reads an upload file (Uploads: the copy is the source), so after a changed file, `--repull`.
 - The summary (`pullmanager.py <manifest>`) and the dry run say, per session, what the next `--execute` will do.
 
@@ -830,9 +844,9 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 ```
 
 - Driver 17 defaults to `Encrypt=no`, so no certificate handling. Login timeout 10s; no query timeout by default.
-- Scripts are split on lines equal to `GO`, and every result set is drained with `nextset()`.
+- Scripts are split on lines equal to `GO`, and every result set is drained with `nextset()`. An error `nextset()` or a fetch raises fails the batch (D151): the driver reports a later statement's error only there.
 - A connection that is refused is reported in one line, naming the server and database, with a hint (for "cannot open database" or "login failed": check `project_db`), and the next session still gets its chance. It used to escape as a traceback.
-- `cursor.messages` is read on success and failure alike. That is what surfaces the inner error of a failed `OPENQUERY`.
+- `cursor.messages` is read after every statement, on success and failure alike. That is what surfaces the inner error of a failed `OPENQUERY`; on success they go to the execute log (D151).
 - `autocommit=False`, so the `BEGIN/COMMIT TRANSACTION` inside a transfer block nests inside the driver's own transaction rather than committing on its own. Pullmanager commits after every block (D55): each cohort's rows, each chunk's, and each upload's copy are saved before the next is pulled, and a transaction and its locks last one cohort. A unit that fails is rolled back.
 - Telemetry is read from result sets with declared columns, tied to manifest ids. No SQL is ever selected by searching its text.
 
@@ -841,6 +855,47 @@ Driver={ODBC Driver 17 for SQL Server};Server=tcp:PROJECTS;Database=<project_db>
 A project database has a size cap: PROJECTD93A5E7's data file and its log each stop at 20,000 MB, separately. Nothing drops a finished pull's tables, so they gather until the data file is full, and then a pull fails at `setup`, before anything lands, with error 1105 ("the 'PRIMARY' filegroup is full"); the next Execute, after space is freed, starts it cleanly. A dropped table's space is free for reuse, but the file does not shrink. The log is under `SIMPLE` recovery, so it reuses its space by itself, except behind a transaction left open (`log_reuse_wait_desc` `ACTIVE_TRANSACTION`), such as an SSMS tab's, until that transaction ends.
 
 `utils/manager/clear_projects_db.py` (D133, D148) is a window onto one project database: every table with its rows and size, largest first; each file's use against its cap; and what the log is waiting on, with what to do. It drops one table (double-click), the selected ones, or all of them (after the database's name is typed), each committed alone and the view refreshed after; a foreign key on or pointing at a chosen table is dropped first. It takes only a name starting `PROJECTD`. A table another session has locked is reported as blocked after 30 seconds, naming SSMS and a running pull as the usual holders, and the rest still drop. Open transactions runs `DBCC OPENTRAN` (db_owner only; otherwise it says to try `SELECT @@TRANCOUNT` in each SSMS tab), and Free log a `CHECKPOINT`. Server, database and driver start from the `PULLMANAGER_*` settings, as Pullmanager's connections do.
+
+### The Run Scan
+
+`--scan-runs`, and **Scan runs** in Run (D152), reads every pull under the runs folder, without a database, and compares what each manifest says it built with what it packaged. It writes `runs/run_scan.yaml` with only what did not check out, per pull, short enough to copy off the VM by screenshot:
+
+``` yaml
+# run scan, 2026-10-01 09:12, bundle 1b628fc3: 6 pulls, 4 problems
+IBD_Ancestry:
+  short_controls:
+    UCwhitePatients:
+      - b1of3-Female kept 0 for 88,776 cases (4x)
+  empty:
+    - UCwhitePatients
+  lost_rows:
+    OtherDiagnoses: built 1,150,870, parquets 1,000,000
+```
+
+- **lost_rows**: a table whose parquets hold fewer rows than the manifest's `table_rows` add up to; or a PK that landed fewer than its `cosmos_rows` (D152's own record, so only pulls since).
+- **empty**: a finished table with 0 rows.
+- **short_controls**: a sampled control that kept fewer than `row_mult` times its case in a batch.
+- **no_count**: a finished run that recorded no row count for a table its document makes.
+- **no_parquet**: a finished table's parquet missing from a packaged pull (Artifacts has written `contents.md`). Before Artifacts, `not_packaged` says so once and only the parquets already there (the PK's, D87) are compared.
+
+With nothing wrong the file is one line, `every pull checks out`. It exits 1 when something did not check out.
+
+### The Dictionary Audit
+
+`--audit-dictionary`, and **Audit dictionary** in Run (D155), asks Cosmos (the default database, `COSMOS`) for every dictionary table's columns, one read-only `sys.columns` query each, and writes `runs/dictionary_audit.yaml` with only what the dictionary lists and Cosmos lacks:
+
+``` yaml
+# dictionary audit, 2026-10-01 09:12, bundle 1b628fc3, database COSMOS: 30 tables, 2 wrong
+tables_not_found:  # the dictionary names them; Cosmos has no such table, or this login cannot see it
+  - SomeTable
+columns_not_in_cosmos:  # remove these from the dictionary
+  MedicationDispenseFact: [ReadyToDispenseDateKey]
+  EncounterFact: [FooKey]  # near: FooKey -> FooKey_X
+```
+
+Names compare without case. Columns Cosmos has that the dictionary lacks need no fix and are left out. With nothing wrong the file is one line, `the dictionary matches Cosmos`.
+
+On the Mac, `python3 scope.py dictionary-fix <file>` takes that file as transcribed, removes each listed column and table from `reference/datadictionary.yaml` by its lines, so every other line and comment stays as written (a table's own comment lines above it go with it), and lists every YAML under `YAMLs/` that still names a removed column (`alias.Column`) or table, to be fixed and exported again. A same-named column of another table is listed too. A name the dictionary lacks is said, not an error.
 
 ### Command Line
 
@@ -854,6 +909,9 @@ pullmanager.py --execute                                           # lists the p
 pullmanager.py --artifacts <project>                               # package a finished pull (D72)
 pullmanager.py --running                                           # every pull, and which are executing (D67)
 pullmanager.py --backup                                            # back up every pull, one executing skipped (D149)
+pullmanager.py --scan-runs                                         # what every pull built against what it packaged (D152)
+pullmanager.py --audit-dictionary [--env FILE]                     # the dictionary against Cosmos's columns (D155)
+pullmanager.py --execute <project> --repull-session <name> [...]   # start only these sessions over (D158)
 pullmanager.py                                                     # the app: Author and Run (D63, D93)
 pullmanager.py --gui                                               # the same
 pullmanager.py --tdd [module]
@@ -874,14 +932,14 @@ To pull it: press Execute, or in a terminal in <working folder> run:
 
 ### The Launcher: Run
 
-The launcher is the app's **Run** half (D93), in the same window as Author, which hands it the transfer YAML it exports. It is for **running** pulls, chosen from three dropdowns (D126, D140), each filled as it opens: **Running pulls**, every pull executing now with how far it has got (`IBD_Ancestry: executing since 14:03, heartbeat 20s ago (2 of 8 sessions done)`); **Finished and stopped pulls**, every pull that has run and is not executing, as `(finished)`, or `(finished with errors)`, `(stopped by user)` or `(stopped with errors)` with its sessions done (`Infant_RSV  (finished with errors (1 of 2 sessions done, 1 failed))`); and **Start run**, the working folder's `*_transfer.yaml` files by project that have not run (`Celiac  (not run yet)`, or `(not started)` once split), with Browse beside it. A pull is finished once every session is done, however its process ended; stopped by user once Execute ended on Ctrl+C, or on Stop, which the window that pressed it records, since the process it ends cannot; stopped with errors when Execute ended on an error it did not expect, left a step running, or never wrote its end (killed); finished with errors otherwise. Choosing any loads the pull: Pull Log, Status and Stop are then its. A line under them names the loaded file, its run folder and `pull_files/` (D57, D142), so there are no folder fields. The **Backup folder** row names the folder pulls are backed up to (D149), or where they go instead (`runs\backup`, when none is set or it can't be reached), with Browse, Clear and **Back up all**, which runs `--backup` in the window. There is no data dictionary line (D150): the dictionary is the bundle's, a dictionary saved by an older Run is neither passed nor kept, and nothing reads `YAMLMANAGER_DATA_DICTIONARY`. Then Validate, Export split, Preview SQL, Execute, Artifacts and Stop, with "Retry failed" and "Re-pull everything" options (`--retry-failed`, `--repull`). There is no recipes field and no `--recipes` is ever passed (D49); settings saved by an older launcher that named one still load.
+The launcher is the app's **Run** half (D93), in the same window as Author, which hands it the transfer YAML it exports. It is for **running** pulls, chosen from three dropdowns (D126, D140), each filled as it opens: **Running pulls**, every pull executing now with how far it has got (`IBD_Ancestry: executing since 14:03, heartbeat 20s ago (2 of 8 sessions done)`); **Finished and stopped pulls**, every pull that has run and is not executing, as `(finished)`, or `(finished with errors)`, `(stopped by user)` or `(stopped with errors)` with its sessions done (`Infant_RSV  (finished with errors (1 of 2 sessions done, 1 failed))`); and **Start run**, the working folder's `*_transfer.yaml` files by project that have not run (`Celiac  (not run yet)`, or `(not started)` once split), with Browse beside it. A pull is finished once every session is done, however its process ended; stopped by user once Execute ended on Ctrl+C, or on Stop, which the window that pressed it records, since the process it ends cannot; stopped with errors when Execute ended on an error it did not expect, left a step running, or never wrote its end (killed); finished with errors otherwise. Choosing any loads the pull: Pull Log, Status and Stop are then its. A line under them names the loaded file, its run folder and `pull_files/` (D57, D142), so there are no folder fields. The **Backup folder** row names the folder pulls are backed up to (D149), or where they go instead (`runs\backup`, when none is set or it can't be reached), with Browse, Clear and **Back up all**, which runs `--backup` in the window. There is no data dictionary line (D150): the dictionary is the bundle's, a dictionary saved by an older Run is neither passed nor kept, and nothing reads `YAMLMANAGER_DATA_DICTIONARY`. Then Validate, Export split, Preview SQL, Execute, Artifacts, **Scan runs** (D152) and **Audit dictionary** (D155), which run in the window, and Stop, with "Retry failed", "Re-pull everything" and "Re-pull sessions" options (`--retry-failed`, `--repull`, `--repull-session`). Ticking Re-pull sessions shows a dropdown of the loaded pull's finished sessions, `all` first, with Add and Remove and the list added so far; Execute passes each, or `--repull` for `all` (D158). There is no recipes field and no `--recipes` is ever passed (D49); settings saved by an older launcher that named one still load.
 
 Four tabs (D71, D144):
 
 - **Validation Output**: what Validate, Export split, Preview SQL and Artifacts print, which run inside the window.
 - **Pull Log**: the loaded pull's Execute log, followed every second: the live Execute's (named in its lock), else the newest. A pull started from a terminal shows there too. Windows' `\r\n` is shown as a newline, a `\r` that ends one read waiting for its `\n` in the next.
 - **Pull Manifest** (D144): the loaded pull's `pullmanifest.yaml` as it is, with line numbers, read-only, since the running pull rewrites it and an edit here would be lost or overwrite its record. Refreshed with Status, keeping where it was scrolled to, and redrawn only when the file changed. Every `status:` line is coloured as Status colours it; every `error:` that holds a message is red, with its message and detail. Double-clicking a row in Status shows that entry's lines, highlighted: its whole error when it has one, a table's line in its step's `table_rows`, else the entry's first line. The entry is found by its own id (`session_id`, the phase's name, `run_id`), wherever in its list item the id is written, never by searching for the error's text.
-- **Status**: the manifest as a tree, each phase and run with the tables it landed under it, each with its own rows (D137), with Refresh and the manifest's path at the top left. Refreshed when the window opens, on Refresh, every three seconds while the window's own command runs, and every three seconds while the loaded pull's lock is live, when it says "Executing since 14:03, last heartbeat 20s ago".
+- **Status**: the manifest as a tree, each phase and run with the tables it landed under it, each with its own rows (D137) and then, after Duration, its rows per join key: **Median per key**, **P90**, **Max** (D157). Refresh and the manifest's path are at the top left. Refreshed when the window opens, on Refresh, every three seconds while the window's own command runs, and every three seconds while the loaded pull's lock is live, when it says "Executing since 14:03, last heartbeat 20s ago". Each refresh reads the manifest once, for this tab and Pull Manifest, and not at all when its size and modified time have not changed; Refresh always reads it (D154).
 
 **Execute** opens a console window of its own (`CREATE_NEW_CONSOLE`) in the working folder, running the runtime's `pullmanager.py --execute <project> --keep-open` with the same Python and no shell between (D68): started from the window with its output piped back, it died on the VM before printing a line (`0xC0000142`). If the console cannot be opened, or its process ends before writing its log, the window says so, with the exit code (in hex for a Windows failure), and gives the terminal command (`python scope.py --execute <project>`, D123). If it ends with a non-zero code before its log has the pull's summary, Pull Log says it ended before finishing: what it was working on stays `running`, and the reason, if Python gave one, is just above. On Windows a killed process, Stop included, ends with 1. Stop ends a pull the window started and removes the lock it could not remove itself; a pull started from a terminal is stopped there. Closing the window leaves a pull in its own console running. On the Mac, with no console to open, Execute runs unseen and is read from its log.
 
@@ -937,13 +995,14 @@ The backup folder is `datascope.json`'s `backup`, set in Run, so Execute, Artifa
 Stdlib `unittest` everywhere, so every suite runs unchanged on the VM.
 
 ``` bash
-python3 scope.py test                                      # all six, and which passed
-python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (187)
-python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (486)
-python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (79)
-python3 scripts/yamlmanager_model.py --tdd                  # the app's model (75)
-python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (30), needs a display
+python3 scope.py test                                      # all seven, and which passed
+python3 scripts/makeYaml.py --tdd [group]                  # YAML Manager (204)
+python3 scripts/pullmanager_src/pullmanager.py --tdd [mod]  # runtime (584)
+python3 scripts/bundle_pullmanager.py --tdd [class]         # bundle (84)
+python3 scripts/yamlmanager_model.py --tdd                  # the app's model (86)
+python3 scripts/yamlmanager_tk.py --tdd                     # the app's Author view (32), needs a display
 python3 scripts/tidy_images.py --tdd                        # the pasted-image cleanup (6)
+python3 scripts/dictionary_fix.py --tdd                     # applying the dictionary audit (4)
 ```
 
 Tests that read or write parquet need `pyarrow` and skip without it: they cover CSV conversion, uploads, and every session test (the runtime fixture's upload is parquet).
@@ -956,6 +1015,7 @@ Tests that read or write parquet need `pyarrow` and skip without it: they cover 
 - **The Author view** is tested on a real Tk, withdrawn, and skips without a display (D101), on intakes of its own in `scripts/yamlmanager_fixtures/temp/`, not the pulls in `YAMLs/temp/`, which change: every section built for every intake there, typing into a field edits the draft, a column renamed in the view is renamed in the template, the check marks the section, a refused edit is said, the table builder adds a table, Transfer saves and hands the file on, splitters by whether there is a PK, the binding picker binds what is chosen, a message goes to its field, and the exports and queue. The runtime's GUI tests check the app's wiring against the fake tkinter: the launcher built inside Run without touching the window, a transfer from Author loaded into Run, and Run opening without Author.
 - **Bundle** tests also adjust a transfer YAML with the model inside an extracted tree, with no recipes: open, change, save an intake, export again beside `scope.py`.
 - **Config** tests read a `datascope.json` that moves a core file and the runs folder, refuse a name nothing reads, check the repository's own finds every moved file, and hold makeYaml's and Pullmanager's defaults together; pulls are found, and settings saved, under a configured runs folder.
+- **The fixes of D151 to D159**: the fake connection can fail a statement only at `nextset()`, as pyodbc does, and answer without a landing's count, so a late `INSERT` failure and a missing count each fail the PK phase (both confirmed to fail on the old `drain`); server messages reach the log and not the console; a save refused three times lands and one refused for five minutes fails saying why, with `sleep` recorded, not slept; Status reads the manifest once per refresh and not when unchanged; the run scan on a finished fixture pull, then with rows lost, a control kept short, a count missing; the audit against a fake Cosmos and its report read back as YAML; `dictionary-fix` removing a column and a table and nothing else; the column check failing `setup` with nothing built, and a table it cannot read only warning; rows per key recorded per run over its `_batch`, the PK by its key, a failed measurement a warning; re-pulling a control alone, a case with its control, `all`, an unknown name; a quoted CSV header renamed when added, and a rename back kept.
 - **Pasted images** (D132): an image a document names by its path stays and an orphan goes; a deleted document takes its pictures; the same `paste-1.png` beside another document does not keep it; a path from the root, URL-quoted or in HTML counts; nothing outside an `images/` folder under `plan/`, or not named `paste-`, is touched; a mention under `cleanup/` does not count.
 - **Transfer** tests check the outcome: a transfer YAML split alone, with no recipes file, gives byte-identical session YAMLs and uploads, and the same manifest (bar `source`), as the template split with recipes, for the tiny template and for test cases `01` and `02`.
 - **Window tests on a real Tk** (the credit line, the parquet viewer) run the window in a process of its own, hidden, and read what it prints in UTF-8, forced both ways, since on Windows a child's piped output is cp1252. Every suite passes run with `PYTHONIOENCODING=cp1252`.

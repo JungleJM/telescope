@@ -12,24 +12,59 @@ Work on the task list section "<heading>" in plan/tasklist.qmd.
 
 That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
 
-## Supporting table csv issues
+## For next copy over and re-doing broken pulls
 
-I still get the issue where File Column lands with quotes ('DiagnosisCode'), and this prevents the connection on the fact table. Removing the quotes fixes it so it's a minor issue for next build. I even think i saw a warning about it in validate so it must reecognise it.
+I'm wondering if this error is big enough that I have to re-pull everything? How are we going to be 100% confident that I actually got all patients in the system for Infant_RSV, or any other one?
 
-![](images/paste-1.png)
+::: {.callout-note title="🟦 Claude: re-pulling, and being sure of a pull"}
+**Re-pull everything? No: re-pull what the scan flags.** The hidden error (D151) did not corrupt what landed. It hid statements that failed, so a table either landed whole or lost rows, silently. The run scan (`--scan-runs`, in the bundle `1b628fc3…`) finds the losers from what is already on the VM, with no database. It compares every table's recorded Cosmos count with its parquets' rows, and lists empty tables, controls kept short, and runs whose count never came back (the Cosmos-side sign of the same bug). Re-pull only the sessions it names (Re-pull sessions, D158). One limit: a pull never packaged by Artifacts has no parquets to compare, so the scan says `not_packaged`. Run Artifacts on it first. From this bundle on, a failed statement fails its step loudly, so a new pull cannot lose rows silently.
 
-![](images/paste-2.png)
+**"Did I get every patient" is two questions.**
 
-::: {.callout-note title="🟦 Claude: Supporting table csv issues"}
-**What the code does today.** The file's header really is `'DiagnosisCode'`, quotes included: a CSV quotes with `"`, so single quotes are part of the name. Validate says so (`quoted_column_name`, D109), and its fix is the rename you did by hand. The app shows the file's name in "Lands as" as it is, so a recipe reading `DiagnosisCode` finds nothing until the quotes are taken out.
+1.  **Did the software land everything the query found?** The scan answers this for earlier pulls. For new ones, every landing now compares Cosmos's count with what arrived, and a missing count is an error (D151). The PK also keeps `cosmos_rows`, so a PK that landed short shows by name.
+2.  **Did the query find everyone you meant?** No software check can answer this: it is the cohort's definition. Infant_RSV is a likely case. Its PK is **ED visits** (`EdVisitFact`, deduplicated by `EdVisitKey`), of children under 2, since 2019-01-01, whose **ED diagnosis** (`EmergencyDepartmentDiagnosis = 1`) is `J12.1` (RSV pneumonia) or `B97.4` (RSV as the cause). It leaves out `J21.0` (acute bronchiolitis due to RSV) and `J20.5` (acute bronchitis due to RSV). In infants, bronchiolitis is the most common RSV diagnosis, so those two codes may well account for much of the gap between 186,963 and the ~400,000 you expected. Its rows are also visits, not patients, and a patient-count expectation compares differently. Each `nullable: false` column adds `IS NOT NULL` too (here the visit's keys and dates, which should always be filled).
 
-**Recommendation.** In Supporting Tables, a file column whose name carries quotes gets a **Remove quotes** button beside it. The button writes the rename (`'DiagnosisCode'` lands as `DiagnosisCode`), visibly, in the same place you'd type it. The rename is still yours to press, as D45 wants. The warning stays for templates edited by hand. Alternatively, the app could fill in the clean name by itself, but that is the kind of guess you've preferred to make yourself.
+**To check Infant_RSV on the VM before re-pulling:** in Author, add `J21.0, J20.5` to its `ICD_Value`, Validate, and Preview SQL. Then run its PK query's count alone, with and without them. Or tell me what the expected ~400,000 counts (patients or visits, which codes, which years), and I'll write the query that compares the two.
 
-**For you to decide:** the button, or the automatic fill?
+**For you to decide:** are `J21.0` and `J20.5` meant to be in Infant_RSV? And should its PK be visits or patients?
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
 :::
+
+# Post-Urgent Solve ideas
+
+## chunks not giving batches?
+
+(For after this urgent solve)
+
+Crohns_HxDx etc has some 26 batches when done with the current 50k chunking, but it doesn't show up in the status. Is this because i moved to the table groups? Or is it because we dont' usually show the chunk batches?
+
+![](images/paste-16.png)
+
+## Table Group recipes
+
+(FOr after this urgent solve)
+
+I like the table groups as a further recipe (meds, for instance, makes things much easier to add instead of all 3). I can also start thinking about making R/Python functions to make new tables based on knowing everything within a tabel group is being pulled. So, I"d like to start making the table group as part of recipes. I thought we'd already did that, but it's not in the recipes now, and there's no 'add recipe' button for the groups. Let's go ahead and do that. I think it would be pulling from the data dictionaries just the table names, wouldnt' need to tpull the whole bit about each column. After all this is a grouping of standard tables, not making a custom large one with joins. It will probably still need to have the join/where logic for ones that are interdependent (if you need birthFact to get PregnancyFact and MotherPatientDim, for instance). \
+\
+Go ahead and make one of each table group in Crohns_HxDxetc. as below
+
+![](images/paste-17.png)
+
+## Checking the Unordered screenshots into the dictionary
+
+Do this before the dictionary audit (D155, item 4 of the roadmap's bundle `1b628fc3…` list), so the audit reads the checked dictionary.
+
+**The job.** `reference/DDict image refs/Unordered/` holds 21 dictionary-page screenshots (29 September 2026, by time taken, not by table). They cover the nine tables the foot of `reference/datadictionary.yaml` lists as unchecked (LabComponentDim, LabComponentSetDim, MedicationDispenseFact, MedicationAdministrationFact, DurationDim, ProblemListFact, TerminologyConceptDim, VitalsFact, CoverageDim) and some tables it lacks (ProcedureDim, LabTestFact, MedicationDispenseQueryFactX, ...). For each:
+
+1.  Read the table's name off the page and move its screenshots into a folder named for it, beside the twelve already there. A table cut across several screenshots goes in one folder.
+2.  Check it into `datadictionary.yaml` column by column, as D130 did the others; design.md's "What The Dictionary Records" and "Reading a dictionary page" say how. Only the database icon's columns (D116). Types as the page writes them. A foreign key after the type (`bigint (foreign key to DateDim)`). The partition key noted, and `standard_where` (a live row, and the partition key's date window for a fact table). A comment above the table saying what was checked, and when. ProblemListFact's `DiagnosisKey` becomes `DiagnosisDim`.
+3.  A table not in the dictionary yet (ProcedureDim and so on) is added only if a pull reads it or a checked foreign key points at it; otherwise it stays on the foot's list, now marked "screenshot taken".
+4.  Update the foot: what is checked, what is still partly seen (a page with no ER diagram, descriptions cut off at the right), and what has no screenshot.
+5.  Run the suites, re-export any intake whose fill-in types changed (validation says), and list what a column removed from the dictionary breaks. Then a full bundle (`bundle.py`, not YAMLs only, which does not carry the dictionary) for the audit.
+
+**What the new chat needs from you:** nothing more than the start line. If a screenshot is cut off (a table's columns running past the bottom, or the Description column past the right), it will list which, for you to take again.
 
 # Settled
 
