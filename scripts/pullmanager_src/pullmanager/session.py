@@ -591,6 +591,9 @@ class SessionRunner:
             resuming=self.resuming,
         )
         rows = self._run_pair(unit)
+        if rows is not None:
+            # What Cosmos built, before a control is sampled down (D152).
+            node.outputs["cosmos_rows"] = rows
         node.outputs["global_temp"] = global_temp(self.session.pk_table or "", self.prefix)
         node.outputs["local_table"] = destination(self.project_db, self._pk_copy())
         sampled = self._sample_control(node, doc)

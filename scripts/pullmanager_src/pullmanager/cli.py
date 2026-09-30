@@ -325,6 +325,16 @@ def backup_all(cwd: Path | None = None) -> int:
     return 1 if failed else 0
 
 
+def scan_runs(cwd: Path | None = None) -> int:
+    """Write and show the run scan (D152); exit 1 when something did not check out."""
+    from .scan import scan_runs as scan
+
+    path, text, count = scan(Path(cwd or Path.cwd()))
+    print(text, end="")
+    print(f"Written to {path}")
+    return 1 if count else 0
+
+
 def _package(manifest: Manifest, args: argparse.Namespace, connect_fn=None, *,
              own_lock: bool = False) -> int:
     """Package the pull's finished tables (D72), then describe them (D73, D75).
@@ -653,6 +663,12 @@ def build_parser() -> argparse.ArgumentParser:
              "when it cannot be reached (D149).",
     )
     parser.add_argument(
+        "--scan-runs",
+        action="store_true",
+        help="Compare what every pull under runs/ built with what it packaged, and write "
+             "what does not check out to runs/run_scan.yaml (D152).",
+    )
+    parser.add_argument(
         "--running",
         action="store_true",
         help="List every pull under runs/, whether it is executing, and its command.",
@@ -735,6 +751,9 @@ def dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
     if args.backup:
         return backup_all()
+
+    if args.scan_runs:
+        return scan_runs()
 
     if args.running:
         for line in listing(heading=f"Pulls under {Path('runs')}{os.sep}:"):
