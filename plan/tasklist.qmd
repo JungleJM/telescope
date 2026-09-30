@@ -2,7 +2,7 @@
 title: "Task list"
 ---
 
-What is still under discussion (D128). Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `images/` beside this file; `python3 scope.py images` deletes one once nothing mentions it (D132).
+File for discussing ideas/improvements. Your notes, then Claude's reply in 🟦 and yours in 🟧. New notes go above **Settled**; what is agreed moves there, then into the plan documents. Pasted images land in `images/` beside this file; `python3 scope.py images` deletes one once nothing mentions it (D132).
 
 **Starting a new chat.** Paste this, with the section's heading filled in:
 
@@ -14,4 +14,4 @@ That is all a new chat needs, because the rest is already written down. It reads
 
 # Settled
 
-Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `0da7ee9d…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built. Extraction refusing while a pull executes, and every window showing its bundle (D147), are built. Backing up parquets, the deliverable pull folder with client utilities, and the dictionary line's removal (D148 to D150) are agreed, in the roadmap's "Next: Fixes, In Order".
+Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `e126f85b…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built. Extraction refusing while a pull executes, and every window showing its bundle (D147), are built. Backing up parquets, the deliverable pull folder with client utilities, and the dictionary line's removal (D148 to D150) are built.
