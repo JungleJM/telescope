@@ -3445,4 +3445,44 @@ DataDictionary:
           concept, used for cross-organization payer grouping.
     standard_where:
       - "_IsDeleted = 0"
--
+
+# ---------------------------------------------------------------------------
+# Still to check (as of 2026-09-29)
+#
+# In this dictionary, with no screenshot yet (types still abstract, or as the
+# VM's AI transcribed them; no standard_checks):
+#   - LabComponentDim
+#   - LabComponentSetDim
+#   - MedicationDispenseFact
+#   - MedicationAdministrationFact
+#   - DurationDim
+#   - ProblemListFact
+#   - TerminologyConceptDim
+#   - VitalsFact
+#   - CoverageDim
+#
+# Partly seen:
+#   - PatientDim, DiagnosisTerminologyDim: no ER diagram on their pages, so the
+#     column each foreign key lands on is not seen.
+#   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
+#     (description, granularity) not screenshotted.
+#   - Every checked table: descriptions cut off at the right of the screenshots,
+#     and no row expanded, so new columns' descriptions and all nullability are
+#     not from the page.
+#
+# Not in this dictionary, but a checked table's foreign key points at them.
+# Screenshot one before a pull joins it:
+#   - DateDim, TimeOfDayDim, DurationDim (above)
+#   - DiagnosisDim, ProcedureDim, ProviderDim, DepartmentDim, MedicationDim,
+#     LabDim, LabTestFact
+#   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim), CoverageDim (above)
+#   - Source bridges: DiagnosisEventSourceBridge, EncounterSourceBridge,
+#     LabComponentResultSourceBridge, MedicationEventSourceBridge,
+#     ProcedureEventSourceBridge, PatientSourceBridgeX, BirthSourceBridgeX; and
+#     SourceDim, which each bridge links to
+#   - Birth bridges (BirthAnesthesiaBridge, BirthAugmentationBridge,
+#     BirthAugmentationIndicationBridge, BirthCervicalRipeningBridge,
+#     BirthCesareanIndicationBridge, BirthComplicationBridge,
+#     BirthEpisiotomyBridge, BirthInductionBridge, BirthInductionIndicationBridge,
+#     BirthRuptureTypeBridge), PregnancyOutcomeBridge, and CategoryDim, which
+#     they link to

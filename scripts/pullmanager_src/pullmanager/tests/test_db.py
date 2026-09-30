@@ -87,6 +87,43 @@ class FakeCursor:
         return True
 
 
+class LateFailureCursor(FakeCursor):
+    """An exception among the statements is raised when nextset() reaches it."""
+
+    def nextset(self):
+        if not self._pending:
+            return False
+        if isinstance(self._pending[0], Exception):
+            raise self._pending.pop(0)
+        self._advance()
+        return True
+
+
+class PerStatementMessages:
+    """Each statement carries its own messages, as pyodbc's cursor does."""
+
+    def __init__(self, statements):
+        self._statements = statements
+        self._index = 0
+
+    def execute(self, sql, params=None):
+        self._index = 0
+
+    @property
+    def messages(self):
+        return [("01000", text) for text in self._statements[self._index][1]]
+
+    @property
+    def description(self):
+        return None
+
+    def nextset(self):
+        if self._index + 1 >= len(self._statements):
+            return False
+        self._index += 1
+        return True
+
+
 class FakeConnection:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -244,6 +281,25 @@ class DrainTests(unittest.TestCase):
         results = drain(cursor)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].columns, ["A"])
+
+    def test_a_later_statement_that_fails_fails_the_batch(self):
+        # pyodbc raises a later statement's error at nextset(); drain used to
+        # take it for the end of the results, and the batch passed (D151).
+        cursor = LateFailureCursor([(["a"], [(1,)]), RuntimeError("Divide by zero"), (["c"], [(2,)])])
+        cursor.execute("SELECT 1 AS a; SELECT 1/0 AS b; SELECT 2 AS c;")
+        with self.assertRaises(RuntimeError):
+            drain(cursor)
+
+    def test_through_execute_script_it_is_a_database_error(self):
+        cursor = LateFailureCursor([(["a"], [(1,)]), RuntimeError("Divide by zero")])
+        with self.assertRaises(DatabaseError) as caught:
+            execute_script(FakeConnection(cursor), "SELECT 1 AS a; SELECT 1/0 AS b;", label="probe")
+        self.assertIn("Divide by zero", str(caught.exception))
+
+    def test_every_statements_messages_are_kept(self):
+        cursor = PerStatementMessages([(None, ["first"]), (None, ["second"])])
+        outcome = execute_script(FakeConnection(cursor), "A; B;")
+        self.assertEqual(outcome.messages, ["01000 | first", "01000 | second"])
 
     def test_result_rows_convert_to_dicts(self):
         self.assertEqual(

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,15 @@ def say_now(line: str) -> None:
     print(line, flush=True)
 
 
+def log_only(line: str) -> None:
+    """A line for the execute log alone, kept out of the console (D151)."""
+    from .runlog import Tee
+
+    out = sys.stdout
+    if isinstance(out, Tee):
+        out.log.write(line + "\n")
+
+
 def step_name(kind: str, node: Any) -> str:
     """How the log names a unit: `setup`, `uploads`, `pk`, `run b2of4-LA-Male`."""
     if kind == "upload_cohorts":
@@ -123,9 +133,12 @@ class SessionRunner:
         retry_failed: bool = False,
         upload_root: Path | None = None,
         say: Callable[[str], None] = say_now,
+        log: Callable[[str], None] = log_only,
     ):
         self.manifest = manifest
         self._say_line = say
+        # The server's messages, for the log alone (D151).
+        self._log_line = log
         # Where a run is, for its lines: `c3of12`, `v2of5 (LA)`, or nothing.
         self._where = ""
         # The table group whose runs this Cosmos connection serves (D134), and
@@ -304,7 +317,10 @@ class SessionRunner:
         )
 
     def _execute(self, connection: Any, sql: str, *, label: str) -> Any:
-        return execute_script(connection, self._rename(sql), label=label)
+        outcome = execute_script(connection, self._rename(sql), label=label)
+        for message in outcome.messages:
+            self._log_line(f"  server: [{label}] {message}")
+        return outcome
 
     def close(self) -> None:
         for connection in (self.projects, self.cosmos):
@@ -978,6 +994,14 @@ class SessionRunner:
         for row in outcome.rows_of("DestTable", "Side", "RowCount"):
             if row["Side"] == "projects":
                 local_rows[str(row["DestTable"])] = int(row["RowCount"])
+        if str(block.dest_table) not in local_rows:
+            # Every landing ends by counting what arrived; no count means the
+            # script stopped before it, and the rows cannot be vouched for (D151).
+            raise SessionError(
+                f"{block.dest_table}: the landing in Projects reported no row count, so "
+                "whether its rows arrived is unknown. The server's messages are in the "
+                "log; --retry-failed pulls it again."
+            )
         for row in outcome.rows_of("DestTable", "Column", "MaxLength"):
             if row["MaxLength"] is None:
                 continue  # every value empty: nothing measured

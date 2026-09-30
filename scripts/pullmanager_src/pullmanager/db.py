@@ -210,30 +210,22 @@ def collect_messages(cursor: Any) -> list[str]:
     return [" | ".join(str(part) for part in message) for message in raw]
 
 
-def drain(cursor: Any) -> list[ResultSet]:
-    """Consume every result set a batch produced.
+def drain(cursor: Any, messages: list[str] | None = None) -> list[ResultSet]:
+    """Consume every result set a batch produced, and each statement's messages.
 
     A generated script interleaves DDL, inserts and telemetry SELECTs, so a
-    batch yields a mixture of row-producing and silent statements.
+    batch yields a mixture of row-producing and silent statements. The driver
+    raises a later statement's error only when the next result is asked for,
+    so nothing here is caught: a failed statement fails the batch (D151).
     """
     results: list[ResultSet] = []
     while True:
+        if messages is not None:
+            messages.extend(collect_messages(cursor))
         if cursor.description is not None:
             columns = [column[0] for column in cursor.description]
-            try:
-                rows = list(cursor.fetchall())
-            except Exception:
-                rows = []
-            results.append(ResultSet(columns=columns, rows=rows))
-        else:
-            try:
-                cursor.fetchall()
-            except Exception:
-                pass  # statement produced no rows
-        try:
-            if not cursor.nextset():
-                break
-        except Exception:
+            results.append(ResultSet(columns=columns, rows=list(cursor.fetchall())))
+        if not cursor.nextset():
             break
     return results
 
@@ -246,8 +238,7 @@ def execute_script(connection: Any, script: str, *, label: str = "script") -> Ex
     for index, batch in enumerate(batches, start=1):
         try:
             cursor.execute(batch)
-            outcome.messages.extend(collect_messages(cursor))
-            outcome.result_sets.extend(drain(cursor))
+            outcome.result_sets.extend(drain(cursor, outcome.messages))
         except Exception as exc:
             messages = collect_messages(cursor)
             raise DatabaseError(

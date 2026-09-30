@@ -45,8 +45,11 @@ class ScriptedCursor:
     def execute(self, sql, params=None):
         self.owner.executed.append(sql)
         self.owner.executed_params.append((sql, list(params or [])))
-        self.owner.apply(sql)
-        self._sets = list(self.owner.results_for(sql))
+        # A failure the driver raises only at nextset(), as pyodbc does for a
+        # statement after the first (D151): nothing after it runs or answers.
+        self._late = self.owner.apply(sql)
+        self._sets = [] if self._late else list(self.owner.results_for(sql))
+        self._messages = list(self.owner.server_messages)
         self._advance()
 
     def executemany(self, sql, seq):
@@ -57,7 +60,7 @@ class ScriptedCursor:
 
     @property
     def messages(self):
-        return []
+        return list(getattr(self, "_messages", []))
 
     @property
     def description(self):
@@ -81,6 +84,10 @@ class ScriptedCursor:
         return list(rows)
 
     def nextset(self):
+        self._messages = []
+        if getattr(self, "_late", None):
+            late, self._late = self._late, None
+            raise RuntimeError(late)
         if not self._sets:
             return False
         self._advance()
@@ -104,8 +111,15 @@ class FakeConnection:
     def __init__(self, side, *, rows=10, distinct=None, landed=None, failures=None,
                  fail_once=None, fail_nth=None, tables=None, created=LAST_REFRESH,
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
-                 widths=None, found_values=None, instance=INSTANCE, per_table=None):
+                 widths=None, found_values=None, instance=INSTANCE, per_table=None,
+                 fail_late=None, no_landing_count=False, server_messages=()):
         self.side = side
+        # pattern -> message: fails at nextset(), after the batch's first result.
+        self.fail_late = dict(fail_late or {})
+        # A landing whose script answers without its Projects row count.
+        self.no_landing_count = no_landing_count
+        # What every statement's `cursor.messages` carries.
+        self.server_messages = list(server_messages)
         # A destination's own row count, by its bare name; the rest get `rows`.
         self.per_table = per_table or {}
         # The instance `@@SERVERNAME` reports: a new one on every connection.
@@ -168,6 +182,9 @@ class FakeConnection:
 
     def apply(self, sql):
         for statement in sql.split(";"):
+            for pattern, message in self.fail_late.items():
+                if re.search(pattern, statement, re.I):
+                    return message
             for pattern, action in self.failures.items():
                 if re.search(pattern, statement, re.I):
                     raise RuntimeError(action)
@@ -182,6 +199,7 @@ class FakeConnection:
                         raise RuntimeError(state[1])
             if self.side == "projects":
                 self._model(statement)
+        return None
 
     def _model(self, statement):
         tables = self._working()
@@ -232,8 +250,9 @@ class FakeConnection:
             if "'cosmos' AS [Side]" in sql:
                 sets.append((["DestTable", "Side", "RowCount"],
                              [(dest, "cosmos", self.count(dest))]))
-                sets.append((["DestTable", "Side", "RowCount"],
-                             [(dest, "projects", self._landed(sql))]))
+                if not self.no_landing_count:
+                    sets.append((["DestTable", "Side", "RowCount"],
+                                 [(dest, "projects", self._landed(sql))]))
             else:
                 sets.append((["CohortName", "DestTable", "RowCount"],
                              [(dest, dest, self.count(dest))]))
@@ -389,6 +408,37 @@ class HappyPathTests(SessionTestCase):
             runner.execute()
         self.assertTrue(self.cosmos.closed)
         self.assertTrue(self.projects.closed)
+
+
+class HiddenErrorTests(SessionTestCase):
+    """D151: a statement that fails after the first one fails its step."""
+
+    def test_a_landing_whose_insert_fails_late_fails_the_pk(self):
+        # IBD_Ancestry's white controls: built in Cosmos, nothing landed, and
+        # the phase recorded done with no warning.
+        late = {r"INSERT INTO PROJECTD\S+\.dbo\.Patients \(": "tempdb is full"}
+        with self.runner(projects={"fail_late": late}) as runner:
+            report = runner.execute()
+        pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+        self.assertEqual(pk.status, "failed")
+        self.assertIn("tempdb is full", pk.error["message"])
+        self.assertFalse(report.ok)
+
+    def test_a_landing_that_reports_no_count_fails(self):
+        with self.runner(projects={"no_landing_count": True}) as runner:
+            runner.execute()
+        pk = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].phases[2]
+        self.assertEqual(pk.status, "failed")
+        self.assertIn("reported no row count", pk.error["message"])
+
+    def test_server_messages_go_to_the_log_not_the_console(self):
+        logged: list[str] = []
+        notice = "Warning: Null value is eliminated by an aggregate"
+        with self.runner(projects={"server_messages": [("01003", notice)]},
+                         log=logged.append) as runner:
+            runner.execute()
+        self.assertTrue(any(line.startswith("  server: [") and notice in line for line in logged))
+        self.assertFalse(any(notice in line for line in self.said))
 
 
 class PkParquetTests(SessionTestCase):
