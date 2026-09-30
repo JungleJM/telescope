@@ -40,7 +40,32 @@ It reads the **whole file into Python** first (`pq.read_table(...).to_pylist()`)
 1.  With A then B showing, picking C replaces A, the older one. Is that what you meant by "the 2nd-to-last selected"?
 2.  An **Uploads** button beside Cosmos and Cosmos_SneakPeek: yes or no?
 3.  Should the tabs go (my suggestion), or stay inside each column?
-4.  Is the run-folder copy acceptable as it would be: its own pull only, with no dropdown or status word?
+4.  There are two ways to open the viewer. One is from the utilities window, which can see every pull. The other is the copy Artifacts puts inside each pull's folder, next to its parquets, for someone who opens that folder alone. That copy can't list the other pulls or say `(finished)`, so it would open straight onto its own pull's Cosmos and Cosmos_SneakPeek buttons, plus Browse. Is that acceptable? The other way is to stop putting a copy in each pull's folder, so the viewer is only ever opened from the utilities window.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+# Pull Manifest Tab
+
+Your note (in chat): right now if an error shows up it is saved to `pullmanifest.yaml`. It should be another tab after Pull Log, "Pull Manifest", that shows that YAML. Ideally errors are in red, and wherever in Status you see the error, you can double-click and it puts that line in view.
+
+::: {.callout-note title="🟦 Claude: today"}
+Run has three tabs: Validation Output, Pull Log and Status. Status is the manifest flattened into a tree, with each step's status, rows, duration and, in Detail, the first line of its error (`error.message`). The error's second part, `error.detail` (the kind of error, such as `ProgrammingError`), and everything else in the manifest (the SQL Server instance, epochs, batch labels, uploads landed, `last_execute`) are seen only by opening `pullmanifest.yaml` in an editor. Double-clicking a Status row does nothing.
+:::
+
+::: {.callout-note title="🟦 Claude: recommendation"}
+A **Pull Manifest** tab between Pull Log and Status, showing the loaded pull's `pullmanifest.yaml` as it is, with line numbers.
+
+- **Refreshed with Status**: on Refresh, every three seconds while the pull executes, and when a pull is chosen. The scroll position is kept, so it doesn't jump while you read.
+- **Colour.** Every `status:` line is coloured as Status colours it: failed red, blocked and running their own colours, done green. Each `error:` block with a message is red: the `error:` line and its `message` and `detail`.
+- **Double-click in Status**, on a session, phase, run or table row, switches to Pull Manifest with that entry's lines in view and highlighted. On a row with an error, it goes to its `error:` lines. The line is found by the entry's own id (`session_id`, the phase's name within its session, `run_id`), never by searching for the error text.
+- **Read-only.** The running pull rewrites the file every few seconds, so an edit made in the tab would be overwritten, or would overwrite the pull's own record. To change a manifest, the pull is stopped and the file edited in an editor, as now.
+
+**For you to decide:**
+
+1.  Read-only: agreed?
+2.  Colour only failures (red), or every status as in the Status tab?
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
@@ -48,7 +73,8 @@ It reads the **whole file into Python** first (`pq.read_table(...).to_pylist()`)
 
 **Suggested order**
 
-1.  **The viewer**, as one change once 1 to 4 are answered: reading only the shown page first, since the chooser makes large tables one click away, then the chooser, the buttons and the two columns.
+1.  **The Pull Manifest tab**: small, touches only Run's window, and makes the next VM failure readable in place.
+2.  **The viewer**, as one change once its 1 to 4 are answered: reading only the shown page first, since the chooser makes large tables one click away, then the chooser, the buttons and the two columns.
 
 # Settled
 
