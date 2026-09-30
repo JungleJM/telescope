@@ -128,7 +128,8 @@ Guarantees:
 - **Readable.** Payload lines are comment-prefixed source (`#` + line; a blank line is `#`), not base64, so a file can be read straight out of the bundle. A payload line that looks like a marker encodes to `# # === ...` and cannot match the anchored marker pattern.
 - **Verified both ways.** Size and SHA-256 checked against the embedded manifest before writing, and re-hashed from disk after. The prelude is checked against `prelude_sha256` too.
 - **Refuses** absolute paths, `..`, drive letters, backslashes, duplicate or unlisted sections, unterminated sections, mismatched END markers. CRLF sources are rejected at build time.
-- **All-or-nothing.** Extraction stages to a sibling temp directory and swaps only after everything verifies. It replaces a previous extraction (one with `.bundle-manifest.json`) but refuses any other directory without `--force`.
+- **All-or-nothing.** Extraction stages to a sibling temp directory and swaps only after everything verifies. It replaces a previous extraction (one with `.bundle-manifest.json`) but refuses any other directory without `--force`. The previous extraction is removed whole, and extraction says so: "Removed the previous pullmanager_runtime (N files)".
+- **Not while a pull executes** (D147). A software bundle refuses, before asking `y`, while any pull under the runs folder holds a live lock (D67), in either run-folder layout, naming it: a pull started from the old software would keep running it. Before asking, it says to close the app and the utilities, since a window opened before the update keeps the code it loaded. A bundle of YAMLs alone is not refused. The lock rule is Pullmanager's, copied, since the bundle's prelude cannot import it; a test holds the two together.
 
 After extracting, `--extract` writes `scope.py` beside the extracted folder (D63, D123): a few lines that run that folder's `pullmanager.py` with the same arguments. It is rewritten by every extraction, whatever is there, so it always points at the folder just extracted; a missing folder makes it say to extract again. `utils.py` is written beside it the same way, opening the folder's `utilities.py` (D124). A `pullmanager.py` an earlier bundle wrote there is removed, known by its generated header; one of your own is left alone.
 
@@ -445,7 +446,7 @@ An `_sp` copy reads the `_sp` copies of the generated tables it joins: `##tesrun
 
 ### The App: Author
 
-Every window (the app, the utilities window, each utility, the parquet viewer copied into each pull's folder included) says "Designed and built by Jason Mathias" at its foot, small and grey, packed first so a small window squeezes its contents and never that line (D145).
+Every window (the app, the utilities window, each utility, the parquet viewer copied into each pull's folder included) says "Designed and built by Jason Mathias" at its foot, small and grey, packed first so a small window squeezes its contents and never that line (D145). Beside it is the bundle it runs from, `· bundle ca0fa906`, the first 8 characters of the `content_id` in the `.bundle-manifest.json` above it; run from source on the Mac, there is none and nothing is shown. The viewer copied into a pull's folder has no bundle above it, so Artifacts writes the bundle into the copy's `BUNDLE = ""` line as it copies it (D147). `python scope.py --version` prints the same.
 
 One window with two halves, **Author** and **Run**, the same on the Mac and the VM (D93): `python scope.py` on the VM, `python3 scope.py` on the Mac (D112, D123). Run is the launcher (below). If Author cannot open, Run still does, and says why in Author's tab. Standard library, tkinter, and makeYaml only.
 
