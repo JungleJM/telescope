@@ -2755,3 +2755,28 @@ say where every pull's parquets are and how the pull stands.
   go. **Browse...** opens any parquet anywhere by the same rule.
 - **Only what is shown is Python.** A table is kept in Arrow and only the page
   on screen is turned into Python values; sorting is done in Arrow, whole-table.
+
+### D147. Extraction refuses while a pull executes, and every window shows its bundle
+
+**Context.** The user wanted to be sure an update leaves no old version to be
+used by accident. Extraction already replaces the extracted folder whole and
+rewrites `scope.py` and `utils.py` (D6, D63). What it could not prevent: a
+window or pull started before the update keeps running the old code it has
+loaded, and nothing on screen said which version a window was.
+
+**Decision.**
+
+- **Extraction refuses while a pull is executing** (a live lock under the runs
+  folder, D67, in either run-folder layout), naming it. Before asking `y`, it
+  says to close the app and the utilities first, since a window left open keeps
+  running the old version. A bundle of YAMLs alone is not refused: it leaves the
+  software as it is.
+- **Every window shows its bundle** beside the credit line (D145): `Designed and
+  built by Jason Mathias · bundle ca0fa906`, the first 8 characters of the
+  `content_id`, read from `.bundle-manifest.json`. The viewer copied into a pull's
+  folder shows the bundle it was packaged with, written into the copy by
+  Artifacts. `python scope.py --version` prints it. Run from source on the Mac,
+  there is no bundle, and no bundle is shown.
+- **Extraction says what it removed**: the previous extracted folder and how
+  many files it held, and that `scope.py` and `utils.py` were rewritten.
+- **`.local` copies are kept**, as now (the user's choice).

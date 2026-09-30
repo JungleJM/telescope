@@ -18,40 +18,6 @@ I've been advised against putting whole parquet files into the gitlab because of
 
 I'm thinking of basically doing a backup of 'runs' in data/ for each finished project. Then the scope.py runs can read from that, and only override for a specific project if there's a same-named one in the root 'runs' folder. But this seems messy, so i'm trying to figure out if there's a better way to do this if I can't use git for backup. Ideally it just saves the differences, incremental-backup-style, but I don't know how doable that is within the DSVM.
 
-# Bundle: Removing The Old Versions
-
-Your note (in chat): the bundling software should delete the older versions of the files it replaces (`pullmanager_runtime/`, `scope.py`, `utils.py` and so on), so you are sure they have been removed or overwritten, rather than using an old one by accident. Is that a bad idea? Ask any questions.
-
-::: {.callout-note title="🟦 Claude: what extraction does today"}
-Most of this already happens (D6, "Updating Never Destroys Work" in design.md):
-
-- **`pullmanager_runtime/` is replaced whole, not merged.** The new version is built in a temporary folder beside it and checked file by file. Then the old folder is renamed aside, the new one takes its place, and the old one is deleted. A file the new bundle doesn't ship is gone with it. If anything fails, the old folder is put back and the error is shown, so you never get half of each.
-- **`scope.py` and `utils.py` are rewritten** on every extraction, whatever was there. The `pullmanager.py` an earlier bundle wrote beside the folder is deleted.
-- **What survives, on purpose:** a bundled file you *edited* on the VM is kept as `<name>.local` before being replaced, and `.local` copies are carried through every later update until you delete them. A transfer YAML the bundle carries keeps the different copy already beside `scope.py` as `<name>.local`. Nothing ever runs a `.local` file: they are there so an edit is never silently lost.
-
-So an old copy can't be *run* from the files. The ways an old version can still be used by accident are these:
-
-1.  **A window left open from before the update.** Python has already loaded its code, so the app, the utilities or a pull started before the update keeps running the old version, even though its files are gone. Windows doesn't stop the rename while it runs.
-2.  **The viewer copy in an old pull's folder.** Artifacts puts `viewparquets.py` in each pull's folder. Pulls packaged before an update keep their old copy until they are packaged again.
-3.  **Nothing on screen says which version is running.** `content_id` is shown only while extracting.
-:::
-
-::: {.callout-note title="🟦 Claude: recommendation"}
-- **Refuse to extract while a pull is executing** (its lock is live, D67), naming it, as Export split and Artifacts already refuse. Also say, before asking `y`, "Close the app and the utilities first: a window left open keeps running the old version."
-- **Show the version in every window**, beside the credit line: `Designed and built by Jason Mathias · bundle ca0fa906`, read from `.bundle-manifest.json`. `python scope.py --version` prints the same. Then you can check at a glance that a window is running the new version.
-- **Say what was deleted.** At the end of extraction: "Removed the previous pullmanager_runtime (N files), rewrote scope.py and utils.py", and list any `.local` copies still there, with the command to delete them.
-- **Keep the `.local` copies**, unless you'd rather not (question 1). Deleting them would lose an edit made on the VM to a bundled file, such as the dictionary.
-
-**For you to decide:**
-
-1.  The `.local` copies: keep them as now (my suggestion), or ask at each extraction "Delete these N .local copies? [y/N]", or always delete them?
-2.  Should extraction refuse while a pull is executing (my suggestion), or only warn?
-3.  Should the version show in every window beside the credit line, the parquet viewer copied into pull folders included? That copy would show the bundle it was packaged with.
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-:::
-
 # Settled
 
-Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `ca0fa906…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built.
+Nothing waiting. Table groups and recipe sets are built (D134, D135) and the choices made building them confirmed (D138); a multiplied table read by its written name warns (D139). After Infant_RSV, all built and in the bundle `ca0fa906…`: each table's rows (D137), finished and stopped pulls (D140), Artifacts after a clean pull (D141), the run folder (D142) and QuickEdit off (D143). A Pull Manifest tab (D144), a credit line in every window (D145) and the parquet viewer's buttons and two columns (D146) are built. Extraction refusing while a pull executes, and every window showing its bundle (D147), are agreed, in the roadmap's "Next: Fixes, In Order".

@@ -50,6 +50,14 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+Agreed on 29 September 2026.
+
+1.  **Extraction refuses while a pull executes; every window shows its bundle; extraction says what it removed** (D147). One change, then a new bundle.
+
+------------------------------------------------------------------------
+
 ## Next: The First Live Run
 
 Where it stands: the first IBD Ancestry pull, split on the D64 bundle, finished from VSCodium's terminal (September 2026). A second run of it, on the bundle with artifacts, is under way. Then: package it with Artifacts, and run two pulls side by side (Celiac and IBD, below). The checks, on the VM:
