@@ -641,6 +641,35 @@ class StatusTests(GuiTestCase):
         self.assertIn("transfer YAML", message)
 
 
+class RepullSessionTests(GuiTestCase):
+    """D158: tick Re-pull sessions, add finished sessions, and Execute passes them."""
+
+    def setUp(self):
+        super().setUp()
+        import copy
+
+        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        session = data["sessions"][0]
+        for node in [*session["phases"].values(), *session["runs"]]:
+            node["status"] = "done"
+        session["status"] = "done"
+        dump_yaml(data, self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml")
+
+    def test_the_choices_are_all_then_the_finished_sessions(self):
+        self.assertEqual(self.app.repull_choices(), ["all", "UCblackPatients"])
+
+    def test_added_sessions_reach_the_options_only_while_ticked(self):
+        self.app.repull_pick.set("UCblackPatients")
+        self.app.add_repull_session()
+        self.app.add_repull_session()  # once is enough
+        self.assertEqual(self.app.options().repull_sessions, ())
+        self.app.repull_some.set(True)
+        self.assertEqual(self.app.options().repull_sessions, ("UCblackPatients",))
+        self.app.remove_repull_session()
+        self.assertEqual(self.app.options().repull_sessions, ())
+
+
 class AppTests(GuiTestCase):
     """D93: Author and Run in one window; Author's transfer goes to Run (D94)."""
 

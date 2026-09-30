@@ -17,6 +17,8 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import config, launcher, pulls
 from .launcher import LauncherError, Options, Paths
 from .lock import LockInfo, clear_lock_of, live_lock
+from .manifest import Manifest, ManifestError
+from .models import DONE
 from .yaml_io import file_signature, read_shared
 
 POLL_MS = 100
@@ -85,6 +87,10 @@ class LauncherApp:
         self.vars: dict[str, tk.StringVar] = {}
         self.retry_failed = tk.BooleanVar(value=False)
         self.repull = tk.BooleanVar(value=False)
+        # Chosen sessions to re-pull (D158): ticked, then added one by one.
+        self.repull_some = tk.BooleanVar(value=False)
+        self.repull_pick = tk.StringVar(value="")
+        self.repull_list: list[str] = []
         self.action_buttons: list[ttk.Button] = []
         self.buttons: dict[str, ttk.Button] = {}
         self._next_status_refresh = 0
@@ -170,9 +176,28 @@ class LauncherApp:
         ttk.Checkbutton(
             options, text="Re-pull everything", variable=self.repull
         ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            options, text="Re-pull sessions", variable=self.repull_some,
+            command=self.show_repull_sessions,
+        ).pack(side="left", padx=(12, 0))
+
+        # The sessions to re-pull, chosen from the loaded pull's finished
+        # ones, `all` first; shown only while Re-pull sessions is ticked (D158).
+        self.repull_frame = ttk.Frame(frame)
+        self.repull_frame.grid(row=6, column=0, columnspan=4, sticky="w", pady=(0, 4))
+        picker = ttk.Combobox(self.repull_frame, textvariable=self.repull_pick, state="readonly",
+                              width=32, postcommand=lambda: picker.configure(values=self.repull_choices()))
+        picker.pack(side="left")
+        ttk.Button(self.repull_frame, text="Add", command=self.add_repull_session).pack(
+            side="left", padx=(6, 0))
+        ttk.Button(self.repull_frame, text="Remove", command=self.remove_repull_session).pack(
+            side="left", padx=(6, 0))
+        self.repull_line = ttk.Label(self.repull_frame, text="", foreground="#6e7781")
+        self.repull_line.pack(side="left", padx=(8, 0))
+        self.repull_frame.grid_remove()
 
         actions = ttk.Frame(frame)
-        actions.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+        actions.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(4, 0))
         for text, handler in (
             ("Validate", self.on_validate),
             ("Export split", self.on_export_split),
@@ -371,7 +396,42 @@ class LauncherApp:
             self.set_backup(Path(chosen))
 
     def options(self) -> Options:
-        return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()))
+        chosen = tuple(self.repull_list) if self.repull_some.get() else ()
+        return Options(retry_failed=bool(self.retry_failed.get()), repull=bool(self.repull.get()),
+                       repull_sessions=chosen)
+
+    # ------------------------------------------------- re-pulling sessions
+
+    def show_repull_sessions(self) -> None:
+        if self.repull_some.get():
+            self.repull_frame.grid()
+        else:
+            self.repull_frame.grid_remove()
+
+    def repull_choices(self) -> list[str]:
+        """`all`, then the loaded pull's finished sessions."""
+        manifest = self._manifest()
+        try:
+            sessions = Manifest.load(manifest).sessions if manifest is not None else []
+        except (ManifestError, OSError, ValueError):
+            sessions = []
+        return ["all", *[s.session_id for s in sessions if s.status == DONE]]
+
+    def add_repull_session(self) -> None:
+        pick = self.repull_pick.get().strip()
+        if pick and pick not in self.repull_list:
+            self.repull_list.append(pick)
+        self.show_repull_list()
+
+    def remove_repull_session(self) -> None:
+        pick = self.repull_pick.get().strip()
+        if pick in self.repull_list:
+            self.repull_list.remove(pick)
+        self.show_repull_list()
+
+    def show_repull_list(self) -> None:
+        text = ", ".join(self.repull_list)
+        self.repull_line.configure(text=f"To re-pull: {text}" if text else "Nothing added yet")
 
     def _load_settings(self) -> None:
         saved = launcher.load_settings(self.workdir)

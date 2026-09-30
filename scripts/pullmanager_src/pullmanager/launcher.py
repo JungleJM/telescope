@@ -119,6 +119,7 @@ class Paths:
 class Options:
     retry_failed: bool = False
     repull: bool = False  # start every session over, finished ones included
+    repull_sessions: tuple[str, ...] = ()  # only these start over (D158); `all` is repull
 
 
 def _require(value: str, what: str) -> str:
@@ -137,8 +138,11 @@ def _resume_flags(options: Options) -> list[str]:
     flags = []
     if options.retry_failed:
         flags.append("--retry-failed")
-    if options.repull:
+    if options.repull or any(name.lower() == "all" for name in options.repull_sessions):
         flags.append("--repull")
+    else:
+        for name in options.repull_sessions:
+            flags += ["--repull-session", name]
     return flags
 
 

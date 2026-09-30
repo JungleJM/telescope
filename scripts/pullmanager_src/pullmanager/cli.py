@@ -83,7 +83,33 @@ def next_step(manifest: Manifest, session, retry_failed: bool = False) -> str:
     return "starts over"
 
 
+def repull_chosen(manifest: Manifest, args: argparse.Namespace) -> bool:
+    """`--repull-session`: those sessions start over, and each case's controls
+    (D158). `all` is `--repull`. False when a name is not in the pull."""
+    from .executor import UnknownSession, reset_sessions, sessions_to_repull
+
+    names = [str(n).strip() for n in getattr(args, "repull_session", None) or [] if str(n).strip()]
+    if not names:
+        return True
+    if any(name.lower() == "all" for name in names):
+        args.repull = True
+        return True
+    try:
+        chosen, notes = sessions_to_repull(manifest, names)
+    except UnknownSession as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return False
+    reset_sessions(manifest, chosen, "re-pulled: --repull-session")
+    print("--repull-session: " + ", ".join(s.session_id for s in chosen)
+          + " start over; the other sessions are kept.")
+    for note in notes:
+        print(f"  {note}")
+    return True
+
+
 def dry_run(manifest: Manifest, args: argparse.Namespace) -> int:
+    if not repull_chosen(manifest, args):
+        return 1
     if args.repull:
         # In memory only: a dry run never writes the manifest.
         manifest.reset_all("re-pulled: --repull")
@@ -559,6 +585,8 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
 
     settings = Settings.from_env()
     connect_fn = connect_fn or connect
+    if not repull_chosen(manifest, args):
+        return 1
     if args.repull:
         manifest.reset_all("re-pulled: --repull")
         print("--repull: every session starts over, finished work included.")
@@ -768,6 +796,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Start every session over, finished work included. Without it, finished "
              "sessions are skipped and unfinished ones resume.",
+    )
+    parser.add_argument(
+        "--repull-session",
+        action="append",
+        metavar="SESSION",
+        help="Start this session over, finished work included; repeat for more. A case "
+             "brings its controls; `all` is --repull (D158).",
     )
     parser.add_argument("--all", action="store_true", help="Include already-settled work.")
     parser.add_argument("-v", "--verbose", action="store_true", help="List every SQL block.")

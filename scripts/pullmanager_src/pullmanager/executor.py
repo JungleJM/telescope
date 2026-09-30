@@ -213,6 +213,58 @@ def upload_note(
     return f"upload {dest}: {projects}; {cosmos} (D54, D61)"
 
 
+class UnknownSession(ValueError):
+    """A session named to re-pull that the pull does not have (D158)."""
+
+
+def sessions_to_repull(manifest: Manifest, names: list[str]) -> tuple[list[Session], list[str]]:
+    """The sessions to start over, and a line for each control a case brought.
+
+    A case brings its controls: they were sampled against its counts (D59).
+    """
+    by_name = {session.session_id.lower(): session for session in manifest.sessions}
+    unknown = [name for name in names if name.lower() not in by_name]
+    if unknown:
+        raise UnknownSession(
+            f"No session named {', '.join(unknown)} in this pull. Its sessions: "
+            f"{', '.join(s.session_id for s in manifest.sessions)}; or `all`."
+        )
+    chosen = [by_name[name.lower()] for name in dict.fromkeys(n.lower() for n in names)]
+    notes: list[str] = []
+    for case in list(chosen):
+        for session in manifest.sessions:
+            if session in chosen:
+                continue
+            if case.pk_table and case.pk_table in session_cases(manifest, session):
+                chosen.append(session)
+                notes.append(f"{session.session_id} too: it is a control sampled against "
+                             f"{case.session_id}")
+    return chosen, notes
+
+
+def session_cases(manifest: Manifest, session: Session) -> list[str]:
+    """The PK tables this session's PK is sampled against as a control."""
+    pk = next((phase for phase in session.phases if phase.name == "pk" and phase.yaml), None)
+    if pk is None:
+        return []
+    path = manifest.resolve(pk)
+    if not path.is_file():
+        return []
+    cases = []
+    for cohort in (load_yaml(path) or {}).get("cohorts") or []:
+        if isinstance(cohort, dict) and cohort.get("dest_table") == session.pk_table:
+            cases += [str(item.get("matched_to")) for item in control_samples(cohort)]
+    return cases
+
+
+def reset_sessions(manifest: Manifest, sessions: list[Session], reason: str) -> None:
+    """Each starts over as a new pull would; uploads already landed stay (D61)."""
+    for session in sessions:
+        session.runtime.clear()
+        for child in session.children:
+            child.reset(reason)
+
+
 def control_samples(cohort: Any) -> list[dict[str, Any]]:
     """The PK's `split_after_build` levels that sample it as a control (D59)."""
     if not isinstance(cohort, dict):
