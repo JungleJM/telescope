@@ -795,7 +795,9 @@ class Draft:
         upload["push_this_cycle"] = True
         self.doc["upload_cohorts"].append(upload)
         self._changed()
-        return len(self.doc["upload_cohorts"]) - 1
+        index = len(self.doc["upload_cohorts"]) - 1
+        self._unquote_columns(index)
+        return index
 
     def add_pasted_csv(self, name: str, text: str) -> int:
         """Pasted rows as a named CSV in YAMLs/temp/csv/, kept to use again, and
@@ -841,6 +843,24 @@ class Draft:
         if "push_this_cycle" in fields:
             entry["push_this_cycle"] = bool(fields["push_this_cycle"])
         self._changed()
+        if "location" in fields or "file_type" in fields:
+            self._unquote_columns(index)
+
+    def _unquote_columns(self, index: int) -> None:
+        """A file column whose name carries quotes (`'DiagnosisCode'`) lands
+        without them, written as a rename the user can see and change (D159).
+        Done when a file is chosen, so a rename back to the quoted name stays."""
+        if not self.columns_readable(index):
+            return
+        upload = self._upload(index)
+        changed = {my.column_source(c) for c in upload.get("columns") or [] if isinstance(c, dict)
+                   and (c.get("from") or c.get("drop"))}
+        quoted = [row.source for row in self.column_rows(index)
+                  if any(q in row.source for q in ("'", '"')) and row.source not in changed]
+        for source in quoted:
+            clean = source.strip("'\"").strip()
+            if clean and clean != source:
+                self.rename_column(index, source, clean)
 
     def remove_supporting(self, index: int) -> None:
         self._supporting_entry(index)
@@ -3007,6 +3027,26 @@ class VmFlowTests(ModelTest):
         written = my.load_yaml(again)["upload_cohorts"][0]["file_loc"]
         self.assertEqual(written, "csv/codes.csv")
         self.assertTrue((again.parent / written).is_file())
+
+    def test_a_quoted_csv_header_lands_without_its_quotes_by_itself(self):
+        # D159: the VM's HospitalICDCodes.csv header 'DiagnosisCode', quotes and
+        # all, stopped a recipe finding DiagnosisCode until renamed by hand.
+        self.codes_csv(header="'DiagnosisCode',Label")
+        draft = self.draft()
+        index = draft.add_supporting("csv", "Codes", "csv/codes.csv")
+        self.assertEqual(draft.doc["upload_cohorts"][index]["columns"],
+                         [{"name": "DiagnosisCode", "from": "'DiagnosisCode'"}])
+        self.assertEqual([(r.source, r.name) for r in draft.column_rows(index)],
+                         [("'DiagnosisCode'", "DiagnosisCode"), ("Label", "Label")])
+        self.assertNotIn("quoted_column_name", [m.code for m in draft.validate().messages])
+
+    def test_a_rename_back_to_the_quoted_name_is_kept(self):
+        self.codes_csv(header="'DiagnosisCode',Label")
+        draft = self.draft()
+        index = draft.add_supporting("csv", "Codes", "csv/codes.csv")
+        draft.rename_column(index, "'DiagnosisCode'", "'DiagnosisCode'")
+        draft.update_supporting(index, name="Codes2")
+        self.assertEqual(draft.column_rows(index)[0].name, "'DiagnosisCode'")
 
     def test_a_quoted_csv_header_keeps_its_quotes_through_a_save(self):
         # The VM's HospitalICDCodes.csv has the header 'DiagnosisCode', quotes

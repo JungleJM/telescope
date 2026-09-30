@@ -2997,3 +2997,20 @@ Retry failed skips them; Re-pull everything redoes the black ones too.
 - In Run, **Re-pull sessions** beside Re-pull everything opens a dropdown of
   the loaded pull's finished sessions, `all` first, with Add, and the list of
   those added, each removable. Execute passes them.
+
+### D159. A quoted column name lands without its quotes by itself
+
+**Amends D109.**
+
+**Context.** The VM's `HospitalICDCodes.csv` has the header `'DiagnosisCode'`,
+quotes included (a CSV quotes with `"`, so single quotes are part of the
+name). Validate warned (D109), and every new pull needed the rename typed by
+hand before a recipe reading `DiagnosisCode` could bind it. The user chose the
+automatic fill over a button (30 September 2026).
+
+**Decision.** When a supporting table's file is chosen (added, or its file or
+type changed), each file column whose name carries quote characters and is not
+already renamed or dropped is written as a rename to the name without them
+(`'DiagnosisCode'` lands as `DiagnosisCode`), shown in Lands as like any rename.
+It happens only then, so a rename back to the quoted name stays. The warning
+remains for templates written by hand.

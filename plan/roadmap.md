@@ -40,6 +40,7 @@ From the runs of 29 and 30 September 2026. One commit each, with outcome tests, 
 6.  **The session's column check** (D156).
 7.  **Rows per join key** (D157).
 8.  **Re-pull chosen sessions** (D158).
+9.  **A quoted column name lands without its quotes** (D159).
 
 Then on the VM: extract, `--tdd`; a reader check; `--scan-runs` and Audit dictionary, their files transcribed; IBD_Ancestry's white sessions re-pulled (D158). The scan is also the first answer on Infant_RSV, whose PK had 186,963 patients where the user expected about 400,000: rows lost in landing, or the cohort's filter. Crohns_DxHxSxRx's Meds group was retried on 30 September 2026 after `ReadyToDispenseDateKey` was taken out of its split's run file by hand (the column is not in Cosmos; the dictionary, intake and transfer are fixed); not yet reported.
 
