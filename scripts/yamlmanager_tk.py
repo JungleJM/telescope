@@ -310,14 +310,20 @@ class AuthorView:
         self.target.configure(text=f"Save writes {shown.as_posix()}")
 
     def refresh_files(self) -> None:
+        """The dropdown: each project once, saying which of its files it opens (D162)."""
         self._file_paths = {}
-        for path in self.ws.intakes() + self.ws.transfers():
-            try:
-                label = path.relative_to(self.ws.home).as_posix()
-            except ValueError:
-                label = str(path)
-            self._file_paths[label] = path
+        for project, path in self.ws.projects().items():
+            self._file_paths[f"{project}  ·  {self.file_kind(path)}"] = path
         self.name_box.configure(values=list(self._file_paths))
+
+    def file_kind(self, path: Path) -> str:
+        if path.name.endswith(model.BLUEPRINT_SUFFIX) and path.parent == self.ws.temp_dir:
+            return "working blueprint"
+        if path.name.endswith(model.INTAKE_SUFFIX) and path.parent == self.ws.temp_dir:
+            return "older intake" if self.ws.vm_side else "intake"
+        if path.parent == self.ws.home:
+            return f"older copy, {path.name}"
+        return "finished: its run folder's copy"
 
     def loaded(self) -> None:
         """A draft was opened or started: show it everywhere."""

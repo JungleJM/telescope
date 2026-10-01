@@ -681,16 +681,21 @@ class EndToEndTests(BundleTestCase):
             "d = m.Draft.open(ws, ws.home / 'Basic_transfer.yaml')\n"
             "d.project_db = 'PROJECTD777'\n"
             "saved = d.save(); print('saved', saved.ok, saved.path.relative_to(ws.home).as_posix())\n"
-            "ok, message, path = d.export_transfer(); print('exported', ok, path.name if path else message)\n"
+            "ok, message, path = d.export_transfer()\n"
+            "print('exported', ok, path.relative_to(ws.home).as_posix() if path else message)\n"
         )
         proc = subprocess.run([sys.executable, "-c", script, str(target / "scripts")],
                               capture_output=True, text=True, cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("home work recipes False", proc.stdout)
-        self.assertIn("saved True YAMLs/temp/", proc.stdout)
+        # D162: on the VM the saved file is the blueprint Run takes, and the
+        # older copy it was opened from is moved aside, so one copy is left.
+        self.assertIn("saved True YAMLs/temp/Manager_Valid_Basic_blueprint.yaml", proc.stdout)
         exported = proc.stdout.split("exported True ")[-1].strip()
-        self.assertTrue((work / exported).is_file(), proc.stdout)
+        self.assertEqual(exported, "YAMLs/temp/Manager_Valid_Basic_blueprint.yaml", proc.stdout)
         self.assertIn("PROJECTD777", (work / exported).read_text(encoding="utf-8"))
+        self.assertFalse((work / "Basic_transfer.yaml").exists())
+        self.assertTrue((work / "YAMLs" / "temp" / "replaced" / "Basic_transfer.yaml").is_file())
 
     def test_the_vm_pathway_from_a_transfer_yaml(self):
         # D49 end to end. On the Mac: export a transfer YAML. On the VM, with
@@ -859,7 +864,7 @@ class TransferYamlTests(unittest.TestCase):
 
         with self.assertRaises(BundleError) as caught:
             find_transfer("Crohns", self.repo)
-        self.assertIn("No Crohns_transfer.yaml", str(caught.exception))
+        self.assertIn("No Crohns_blueprint.yaml", str(caught.exception))
         self.assertIn("Celiac_transfer.yaml, IBD_Ancestry_transfer.yaml", str(caught.exception))
 
     def test_makebundle_takes_yaml_equals(self):
@@ -869,8 +874,67 @@ class TransferYamlTests(unittest.TestCase):
             capture_output=True, text=True, cwd=self.tmp,
         )
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("No Nope_transfer.yaml", proc.stderr)
+        self.assertIn("No Nope_blueprint.yaml", proc.stderr)
         self.assertFalse(out.exists())
+
+    def blueprint(self) -> Path:
+        path = self.repo / "IBD_Ancestry_blueprint.yaml"
+        path.write_text(self.TRANSFER.replace("from_template: IBD_Ancestry_temp.yaml",
+                                              "from_template: IBD_Ancestry_intake.yaml"), encoding="utf-8")
+        return path
+
+    def test_a_blueprint_is_found_before_a_transfer_yaml_of_the_same_project(self):
+        from bundle_pullmanager import find_transfer
+
+        self.blueprint()
+        for name in ("IBD_Ancestry", "IBD_Ancestry_blueprint.yaml", "IBD_Ancestry_transfer"):
+            with self.subTest(name=name):
+                self.assertEqual(find_transfer(name, self.repo).name, "IBD_Ancestry_blueprint.yaml")
+
+    def test_a_blueprint_lands_in_yamls_temp_and_its_upload_still_resolves(self):
+        # D162: the VM's one working copy is in YAMLs/temp; its file_loc, written
+        # from the repository root, must reach the same file from there (D103).
+        self.blueprint()
+        self.build_with("IBD_Ancestry_blueprint")
+        self.unpack_quietly()
+        placed = self.vm / "YAMLs" / "temp" / "IBD_Ancestry_blueprint.yaml"
+        self.assertTrue(placed.is_file())
+        self.assertFalse((self.vm / "IBD_Ancestry_blueprint.yaml").exists())
+        import makeYaml
+
+        loc = makeYaml.load_yaml(placed)["upload_cohorts"][0]["file_loc"]
+        self.assertEqual((placed.parent / loc).resolve(),
+                         (self.vm / "data/Meds/ibd/IBD_Meds.parquet").resolve())
+
+    def test_older_copies_of_the_project_are_moved_to_replaced(self):
+        # D162: a transfer YAML beside scope.py, an intake saved on the VM and a
+        # changed working blueprint all go to replaced/; another project's stay.
+        self.blueprint()
+        temp = self.vm / "YAMLs" / "temp"
+        temp.mkdir(parents=True)
+        (self.vm / "IBD_Ancestry_transfer.yaml").write_text("old transfer\n", encoding="utf-8")
+        (temp / "IBD_Ancestry_intake.yaml").write_text("saved on the VM\n", encoding="utf-8")
+        (temp / "IBD_Ancestry_blueprint.yaml").write_text("changed on the VM\n", encoding="utf-8")
+        (self.vm / "Celiac_transfer.yaml").write_text("another pull\n", encoding="utf-8")
+        self.build_with("IBD_Ancestry_blueprint")
+        out = self.unpack_quietly()
+        replaced = temp / "replaced"
+        self.assertEqual((replaced / "IBD_Ancestry_transfer.yaml").read_text(encoding="utf-8"), "old transfer\n")
+        self.assertEqual((replaced / "IBD_Ancestry_intake.yaml").read_text(encoding="utf-8"), "saved on the VM\n")
+        self.assertEqual((replaced / "IBD_Ancestry_blueprint.yaml").read_text(encoding="utf-8"),
+                         "changed on the VM\n")
+        self.assertFalse((self.vm / "IBD_Ancestry_transfer.yaml").exists())
+        self.assertFalse((temp / "IBD_Ancestry_intake.yaml").exists())
+        self.assertIn("from_template", (temp / "IBD_Ancestry_blueprint.yaml").read_text(encoding="utf-8"))
+        self.assertTrue((self.vm / "Celiac_transfer.yaml").is_file())
+        self.assertIn("YAMLs/temp/replaced/IBD_Ancestry_blueprint.yaml", out)
+
+    def test_the_same_blueprint_again_sets_nothing_aside(self):
+        self.blueprint()
+        self.build_with("IBD_Ancestry_blueprint")
+        self.unpack_quietly()
+        self.unpack_quietly()
+        self.assertFalse((self.vm / "YAMLs" / "temp" / "replaced").exists())
 
     def test_it_says_which_upload_files_to_carry(self):
         from bundle_pullmanager import upload_locations
@@ -909,14 +973,14 @@ class QueueTests(unittest.TestCase):
 
         exported = export_queue(self.temps, self.out)
         self.assertEqual([t.name for _, t in exported],
-                         ["Celiac_transfer.yaml", "IBD_Ancestry_transfer.yaml"])
-        self.assertIn("K90.0", (self.out / "Celiac_transfer.yaml").read_text(encoding="utf-8"))
+                         ["Celiac_blueprint.yaml", "IBD_Ancestry_blueprint.yaml"])
+        self.assertIn("K90.0", (self.out / "Celiac_blueprint.yaml").read_text(encoding="utf-8"))
         bundle = self.tmp / "bundle.py"
         build(bundle, SOURCE_ROOT, [t for _, t in exported])
         sections, _ = read_bundle(bundle)
         published = {section["path"] for section in sections}
-        self.assertIn("root/Celiac_transfer.yaml", published)
-        self.assertIn("root/IBD_Ancestry_transfer.yaml", published)
+        self.assertIn("root/Celiac_blueprint.yaml", published)
+        self.assertIn("root/IBD_Ancestry_blueprint.yaml", published)
 
     def build(self, **options):
         import bundle_pullmanager as bp
@@ -938,7 +1002,7 @@ class QueueTests(unittest.TestCase):
         bundle, manifest, said = self.build()
         self.assertEqual(bundle.name, "bundle.py")
         published = {s["path"] for s in read_bundle(bundle)[0]}
-        self.assertIn("root/Celiac_transfer.yaml", published)
+        self.assertIn("root/Celiac_blueprint.yaml", published)
         self.assertIn("pullmanager/__init__.py", published)
         self.assertEqual(read_queue(self.temps), [])
         self.assertFalse((dist / "bundle_with_yamls.py").exists())
@@ -958,7 +1022,7 @@ class QueueTests(unittest.TestCase):
         bundle, _, _ = self.build(yamls_only=True)
         self.assertEqual(bundle.name, "yamls_to_transfer.py")
         self.assertEqual(sorted(s["path"] for s in read_bundle(bundle)[0]),
-                         ["root/Celiac_transfer.yaml", "root/IBD_Ancestry_transfer.yaml"])
+                         ["root/Celiac_blueprint.yaml", "root/IBD_Ancestry_blueprint.yaml"])
 
     def test_yamls_only_with_nothing_to_carry_is_refused(self):
         from bundle_pullmanager import write_queue
@@ -987,8 +1051,8 @@ class QueueTests(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             unpack(yamls, vm / "pullmanager_runtime", quiet=True)
-        self.assertTrue((vm / "Celiac_transfer.yaml").is_file())
-        self.assertTrue((vm / "IBD_Ancestry_transfer.yaml").is_file())
+        self.assertTrue((vm / "YAMLs" / "temp" / "Celiac_blueprint.yaml").is_file())
+        self.assertTrue((vm / "YAMLs" / "temp" / "IBD_Ancestry_blueprint.yaml").is_file())
         self.assertEqual((vm / "pullmanager_runtime" / ".bundle-manifest.json").read_bytes(), runtime_manifest)
         self.assertTrue((vm / "pullmanager_runtime" / "mine.txt").is_file())
         self.assertEqual((vm / "scope.py").read_bytes(), scope)
@@ -1004,7 +1068,7 @@ class QueueTests(unittest.TestCase):
             export_queue(self.temps, self.out)
         self.assertIn("Celiac_temp.yaml", str(caught.exception))
         self.assertNotIn("IBD_Ancestry_temp.yaml", str(caught.exception))
-        self.assertFalse((self.out / "Celiac_transfer.yaml").exists())
+        self.assertFalse((self.out / "Celiac_blueprint.yaml").exists())
 
     def test_a_queued_temp_that_is_gone_is_named(self):
         from bundle_pullmanager import export_queue, write_queue

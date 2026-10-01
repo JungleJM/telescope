@@ -33,6 +33,9 @@ OUTPUT_SUFFIX = "_Full"
 PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
 TRANSFER_SUFFIX = "_transfer"
+# The file a split is made from (D162): `<project>_blueprint.yaml`. A
+# `_transfer.yaml`, its name before, is still read.
+BLUEPRINT_SUFFIX = "_blueprint"
 WILDCARD_CHARS = ("%", "_", "[", "]")
 RUNS_DIR = Path("runs")
 # Where the core files and runs are (D111): datascope.json in the working
@@ -48,7 +51,7 @@ CORE_DEFAULTS = {
 }
 CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")  # backup: Pullmanager's (D149)
 # Dropped from a template's file name to name its run folder (D57).
-RUN_NAME_SUFFIXES = (TRANSFER_SUFFIX, "_intake", "_temp")
+RUN_NAME_SUFFIXES = (BLUEPRINT_SUFFIX, TRANSFER_SUFFIX, "_intake", "_temp")
 
 
 # =============================================================================
@@ -439,7 +442,7 @@ def runs_root() -> Path:
 
 def run_folder_name(template_path: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the template's file name without
-    `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
+    `.yaml` and without `_blueprint`, `_transfer`, `_intake` or `_temp` (D95, D162).
 
     The file name rather than `project_folder`, so two transfer files never
     share a run folder. The launcher keeps a copy of this rule
@@ -3800,11 +3803,15 @@ def write_split_artifacts(
                 run["yaml"] = f"{SPLIT_FILES_DIR}/{run['yaml']}"
     manifest_path = out_dir / "pullmanifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    source = Path(template_path) if template_path else default_template_path()
+    if source.is_file():
+        # What the working blueprint was when split: once the pull is packaged
+        # it is removed only if it is still this (D162).
+        manifest.setdefault("source", {})["template_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
     dump_yaml(manifest, manifest_path)
     # The template the split was made from, beside its manifest (D142).
-    source = Path(template_path) if template_path else default_template_path()
     if source.is_file() and source.resolve() != (out_dir / source.name).resolve():
-        shutil.copyfile(source, out_dir / source.name)
+        copy_template_beside(source, out_dir)
 
     for session in manifest.get("sessions", []) or []:
         phases = session.get("phases", {}) or {}
@@ -3824,6 +3831,24 @@ def write_split_artifacts(
     result.output_path = str(manifest_path)
     result.analysis["split_output_dir"] = str(out_dir)
     return result
+
+
+def copy_template_beside(source: Path, out_dir: Path) -> Path:
+    """The template, copied into the run folder as its record (D142). A
+    relative `file_loc` is repointed to reach the same file from there, so the
+    copy opens in Author as the template did (D162)."""
+    target = out_dir / source.name
+    doc = load_yaml(source)
+    uploads = doc.get("upload_cohorts") if isinstance(doc, dict) else None
+    relative = [u for u in uploads or [] if isinstance(u, dict) and u.get("file_loc")
+                and not Path(str(u["file_loc"])).is_absolute()]
+    if not relative or source.parent.resolve() == out_dir.resolve():
+        shutil.copyfile(source, target)
+        return target
+    for upload in relative:
+        upload["file_loc"] = repoint_file_loc(str(upload["file_loc"]), source.parent, out_dir)
+    dump_yaml(doc, target)
+    return target
 
 
 def public_cohort(cohort: dict[str, Any]) -> dict[str, Any]:
@@ -3891,10 +3916,10 @@ def build_preyaml(
 
 
 def transfer_output_path(template: dict[str, Any], template_path: Path) -> Path:
-    """`<project>_transfer.yaml`, beside the template it came from."""
+    """`<project>_blueprint.yaml`, beside the template it came from (D162)."""
     name = str(template.get("project_folder") or template_path.stem).strip() or "project"
     clean = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "project"
-    return template_path.parent / f"{clean}{TRANSFER_SUFFIX}.yaml"
+    return template_path.parent / f"{clean}{BLUEPRINT_SUFFIX}.yaml"
 
 
 def repoint_file_loc(file_loc: str, from_dir: Path, to_dir: Path) -> str:
@@ -5615,7 +5640,7 @@ batching:
         self.assertNotIn("batching", transfer["cohorts"][0])
 
     def test_named_for_the_project_beside_the_template(self):
-        self.assertEqual(Path(self.export().output_path), self.tmp / "Test_Run_transfer.yaml")
+        self.assertEqual(Path(self.export().output_path), self.tmp / "Test_Run_blueprint.yaml")
 
     def test_records_where_it_came_from(self):
         provenance = load_yaml(self.export().output_path)["transfer"]
@@ -5680,7 +5705,7 @@ batching:
             code = main(["--template", str(self.template), "--recipes", str(self.recipes),
                          "--export-transfer"])
         self.assertEqual(code, 0, out.getvalue())
-        self.assertTrue((root / "Test_Run_transfer.yaml").is_file())
+        self.assertTrue((root / "Test_Run_blueprint.yaml").is_file())
         # Its upload travels with it, at the same path relative to it.
         self.assertTrue((root / "data" / "codes.csv").is_file())
 
@@ -5726,7 +5751,7 @@ batching:
         )
         res = build_transfer(broken, self.recipes, write=True)
         self.assertHasError(res, "bad_cosmos_db")
-        self.assertFalse((self.tmp / "Test_Run_transfer.yaml").exists())
+        self.assertFalse((self.tmp / "Test_Run_blueprint.yaml").exists())
 
     def test_a_template_without_its_recipes_points_at_the_export(self):
         res = compile_yaml(self.template, self.no_recipes)
@@ -5851,6 +5876,7 @@ class RunFolderTests(MakeYamlTest):
 
     def test_the_name_is_the_file_name_without_our_suffixes(self):
         for name, expected in (
+            ("IBD_Ancestry_blueprint.yaml", "IBD_Ancestry"),
             ("IBD_Ancestry_transfer.yaml", "IBD_Ancestry"),
             ("IBD_Ancestry_intake.yaml", "IBD_Ancestry"),
             ("IBD_Ancestry_temp.yaml", "IBD_Ancestry"),
@@ -5912,6 +5938,22 @@ class RunFolderTests(MakeYamlTest):
             self.assertTrue(setup_yaml.startswith("pull_files/split/sessions/"), setup_yaml)
         self.assertTrue((runs / "IBD_Ancestry" / first.name).is_file())
         self.assertTrue((runs / "Celiac" / second.name).is_file())
+        # D162: what the working blueprint was, so packaging removes it only unchanged.
+        manifest = load_yaml(runs / "IBD_Ancestry" / "pullmanifest.yaml")
+        self.assertEqual(manifest["source"]["template_sha256"], hashlib.sha256(first.read_bytes()).hexdigest())
+
+    def test_the_run_folders_copy_still_reaches_its_uploads(self):
+        # D162: Author opens a finished pull's copy, so its file_loc must resolve from there.
+        (self.tmp / "YAMLs" / "temp").mkdir(parents=True)
+        (self.tmp / "data").mkdir()
+        (self.tmp / "data" / "meds.parquet").write_bytes(b"x")
+        source = self.tmp / "YAMLs" / "temp" / "IBD_blueprint.yaml"
+        source.write_text("upload_cohorts:\n- name: Meds\n  file_loc: ../../data/meds.parquet\n", encoding="utf-8")
+        run = self.tmp / "runs" / "IBD"
+        run.mkdir(parents=True)
+        copied = copy_template_beside(source, run)
+        loc = load_yaml(copied)["upload_cohorts"][0]["file_loc"]
+        self.assertEqual((run / loc).resolve(), (self.tmp / "data" / "meds.parquet").resolve())
 
 
 class DedupTests(MakeYamlTest):
@@ -6736,7 +6778,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--export-transfer",
         action="store_true",
-        help="Write <project>_transfer.yaml for the VM: recipes written out in full, "
+        help="Write <project>_blueprint.yaml for the VM: recipes written out in full, "
         "multipliers and batching left for the split (D49). --out chooses the file.",
     )
     parser.add_argument("--export-split", action="store_true", help="Write split YAML artifacts and pullmanifest.yaml.")

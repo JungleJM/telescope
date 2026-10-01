@@ -275,3 +275,50 @@ class PreviewStatementTests(PullsTestCase):
         lines = self.preview()
         name = lines[-1].split("--execute ")[1]
         self.assertEqual(resolve(name, self.work).resolve(), (self.split / "pullmanifest.yaml").resolve())
+
+
+class WorkingBlueprintTests(PullsTestCase):
+    """D162: once packaged, the working blueprint goes; its record stays."""
+
+    def split(self, text: str = "cohorts: []\n"):
+        import hashlib
+
+        from ..manifest import Manifest
+
+        temp = self.work / "YAMLs" / "temp"
+        temp.mkdir(parents=True, exist_ok=True)
+        working = temp / "IBD_Ancestry_blueprint.yaml"
+        working.write_text(text, encoding="utf-8")
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        data["source"] = {"template": str(working),
+                          "template_sha256": hashlib.sha256(working.read_bytes()).hexdigest()}
+        path = self.make_pull("IBD_Ancestry", data)
+        shutil.copyfile(working, path.parent / working.name)
+        return working, Manifest.load(path)
+
+    def test_an_unchanged_working_blueprint_is_removed_once_packaged(self):
+        working, manifest = self.split()
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cli.retire_working_blueprint(manifest), working)
+        self.assertFalse(working.exists())
+        self.assertTrue((manifest.path.parent / working.name).is_file())
+        self.assertIn("Removed IBD_Ancestry_blueprint.yaml", out.getvalue())
+
+    def test_one_changed_after_the_split_is_kept_and_said(self):
+        working, manifest = self.split()
+        working.write_text("cohorts: [changed]\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertIsNone(cli.retire_working_blueprint(manifest))
+        self.assertTrue(working.exists())
+        self.assertIn("changed after this pull was split", out.getvalue())
+
+    def test_a_transfer_yaml_beside_scope_py_is_left_alone(self):
+        from ..manifest import Manifest
+
+        legacy = self.work / "IBD_Ancestry_transfer.yaml"
+        legacy.write_text("cohorts: []\n", encoding="utf-8")
+        data = dict(copy.deepcopy(SAMPLE_MANIFEST), source={"template": str(legacy)})
+        manifest = Manifest.load(self.make_pull("IBD_Ancestry", data))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(cli.retire_working_blueprint(manifest))
+        self.assertTrue(legacy.exists())

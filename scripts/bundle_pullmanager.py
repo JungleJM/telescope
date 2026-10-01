@@ -88,6 +88,9 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
 # where `makeYaml --export-transfer` writes them. Each is extracted beside
 # pullmanager.py on the VM, ready to run.
 TRANSFER_SUFFIX = "_transfer.yaml"
+# What makeYaml exports now (D162); placed in YAMLs/temp/ on the VM.
+BLUEPRINT_SUFFIX = "_blueprint.yaml"
+PULL_SUFFIXES = (BLUEPRINT_SUFFIX, TRANSFER_SUFFIX)
 
 # The bundle queue (D91): temps YAML Manager's Save & Refresh queued, one file
 # name per line. `makebundle.py queue` exports each one's transfer YAML to the
@@ -178,27 +181,52 @@ def transfer_names(tokens: list[str]) -> list[str]:
 
 def find_transfer(name: str, folder: Path = REPO_ROOT) -> Path:
     """`IBD_Ancestry`, `IBD_Ancestry.yaml` or the full file name, as
-    `<folder>/IBD_Ancestry_transfer.yaml`. Only transfer YAMLs are looked for."""
+    `<folder>/IBD_Ancestry_blueprint.yaml`, else its older name
+    `IBD_Ancestry_transfer.yaml` (D162). Nothing else is looked for."""
     stem = name.strip()
     for ending in (".yaml", ".yml"):
         if stem.lower().endswith(ending):
             stem = stem[: -len(ending)]
-    if stem.lower().endswith("_transfer"):
-        stem = stem[: -len("_transfer")]
-    wanted = f"{stem}{TRANSFER_SUFFIX}"
+    for suffix in ("_blueprint", "_transfer"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
     # Listed rather than looked up, so the file's own spelling comes back.
-    available = sorted(folder.glob(f"*{TRANSFER_SUFFIX}"))
-    for path in available:
-        if path.name == wanted:
-            return path
-    for path in available:
-        if path.name.lower() == wanted.lower():
-            return path
+    available = sorted(path for suffix in PULL_SUFFIXES for path in folder.glob(f"*{suffix}"))
+    for suffix in PULL_SUFFIXES:
+        wanted = f"{stem}{suffix}"
+        for path in available:
+            if path.name == wanted:
+                return path
+        for path in available:
+            if path.name.lower() == wanted.lower():
+                return path
     there = ", ".join(path.name for path in available) or "none"
     raise BundleError(
-        f"No {wanted} in {folder}. Transfer YAMLs there: {there}. Export it first: "
+        f"No {stem}{BLUEPRINT_SUFFIX} in {folder}. Blueprints there: {there}. Export it first: "
         f"python3 scripts/makeYaml.py --template <template> --export-transfer"
     )
+
+
+def shipped_text(path: Path, policy: str) -> str:
+    """A file as the bundle carries it. A blueprint is placed in YAMLs/temp/
+    on the VM (D162), two folders below the one it was exported to, so each
+    relative `file_loc` gains `../../` to reach the same file (D103)."""
+    text = read_source(path)
+    if policy != ROOT_POLICY or not path.name.endswith(BLUEPRINT_SUFFIX):
+        return text
+    import makeYaml
+
+    doc = makeYaml.load_yaml(path)
+    uploads = doc.get("upload_cohorts") if isinstance(doc, dict) else None
+    relative = [u for u in uploads or [] if isinstance(u, dict) and u.get("file_loc")
+                and not Path(str(u["file_loc"])).is_absolute()]
+    if not relative:
+        return text
+    for upload in relative:
+        upload["file_loc"] = makeYaml.repoint_file_loc(str(upload["file_loc"]), path.parent,
+                                                       path.parent / "YAMLs" / "temp")
+    return makeYaml.dump_yaml_text(doc)
 
 
 def read_queue(folder: Path = TEMP_DIR) -> list[str]:
@@ -303,7 +331,7 @@ def build_sections(
     lines: list[str] = []
     for path, published, policy in bundled_files(root, transfers, yamls_only):
         rel = safe_relpath(published)
-        text = read_source(path)
+        text = shipped_text(path, policy)
         raw = text.encode("utf-8")
         sha = hashlib.sha256(raw).hexdigest()
         entries.append({"path": rel, "sha256": sha, "size": len(raw), "policy": policy})
@@ -458,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         metavar="yaml=NAME,NAME",
         help="Transfer YAMLs to carry, by project name: yaml=IBD_Ancestry,Celiac finds "
-             "IBD_Ancestry_transfer.yaml and Celiac_transfer.yaml at the repository "
+             "IBD_Ancestry_blueprint.yaml and Celiac_blueprint.yaml at the repository "
              "root. Each is extracted beside scope.py on the VM. Every intake queued in "
              "YAMLs/temp/bundle_queue.txt is carried too, unless --no-queue (D122).",
     )

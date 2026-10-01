@@ -275,6 +275,45 @@ def package_after_pull(manifest: Manifest, args: argparse.Namespace, connect_fn,
         print("WARNING Artifacts did not write every table (above). The pull itself is safe "
               "in Projects and its exit code is unchanged: run Artifacts again once the "
               "cause is fixed.", file=sys.stderr)
+        return
+    retire_working_blueprint(manifest)
+
+
+def retire_working_blueprint(manifest: Manifest) -> Path | None:
+    """Once packaged, the working blueprint in `YAMLs/temp` goes: its record is
+    the copy in the run folder (D162). Kept, and said, if it was changed after
+    the split. Returns the file removed."""
+    import hashlib
+
+    from .pulls import BLUEPRINT_SUFFIX, record_blueprint, run_folder
+
+    source = manifest.source or {}
+    written = str(source.get("template") or "")
+    if not written:
+        return None
+    path = Path(written)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not (path.is_file() and path.name.endswith(BLUEPRINT_SUFFIX) and path.parent.name == "temp"):
+        return None
+    record = record_blueprint(run_folder(manifest.path)) if manifest.path else None
+    expected = source.get("template_sha256")
+    current = hashlib.sha256(path.read_bytes()).hexdigest()
+    if expected is None and record is not None:
+        expected = hashlib.sha256(record.read_bytes()).hexdigest()
+    if current != expected:
+        print(f"Kept {path.name} in YAMLs/temp: it was changed after this pull was split. "
+              "Run it again, or delete it if the change is not wanted.")
+        return None
+    try:
+        path.unlink()
+    except OSError as exc:
+        print(f"warning  could not remove {path} ({exc}); delete it by hand.", file=sys.stderr)
+        return None
+    where = f" {record}" if record is not None else " the run folder"
+    print(f"Removed {path.name} from YAMLs/temp: the pull is packaged, and its blueprint is "
+          f"kept in{where}. Author opens it there.")
+    return path
 
 
 def record_execute(method, *args) -> None:

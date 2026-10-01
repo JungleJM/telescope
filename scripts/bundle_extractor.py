@@ -89,11 +89,17 @@ runpy.run_path(str(ENTRY), run_name="__main__")
 # bundled is managed and gets updated; a locally modified copy is set aside
 # rather than overwritten.
 POLICY_REPLACE = "replace"
-# A transfer YAML carried with `makebundle.py yaml=...`: verified with the rest,
-# but written beside scope.py, not into the extracted folder, ready to
-# run. A different copy already there is kept as <name>.local.
+# A pull's YAML carried with `makebundle.py yaml=...`: verified with the rest,
+# but written into the working folder, not into the extracted folder. A
+# blueprint goes to YAMLs/temp/, the one working copy of its project (D162):
+# the copy it replaces, and any older copy of the same project, are moved to
+# YAMLs/temp/replaced/. Any other file goes beside scope.py, a different copy
+# already there kept as <name>.local.
 ROOT_POLICY = "root"
 ROOT_PREFIX = "root/"
+BLUEPRINT_SUFFIX = "_blueprint.yaml"
+REPLACED_DIR = "replaced"
+_PROJECT_SUFFIXES = ("_blueprint", "_transfer", "_intake", "_temp")
 
 
 class BundleError(Exception):
@@ -458,30 +464,84 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     return [section["path"] for section in sections]
 
 
-def place_root_files(bundle_path: Path, target: Path) -> list[tuple[Path, bool]]:
-    """Write the bundle's transfer YAMLs beside the extracted folder.
+def project_of(name: str) -> str:
+    """`IBD_Ancestry_transfer.yaml` is `ibd_ancestry`: the project a pull's YAML
+    is for, as its run folder is named (D57)."""
+    stem = Path(name).stem
+    for suffix in _PROJECT_SUFFIXES:
+        if stem.endswith(suffix) and stem != suffix:
+            stem = stem[: -len(suffix)]
+            break
+    return re.sub(r"[^A-Za-z0-9]+", "_", stem).strip("_").lower()
 
-    Returns (path, whether an earlier different copy was kept as .local).
+
+def set_aside(path: Path, replaced: Path) -> Path:
+    """Move a pull's YAML into `replaced/`, never over a different copy there."""
+    replaced.mkdir(parents=True, exist_ok=True)
+    aside = replaced / path.name
+    if aside.exists() and aside.read_bytes() != path.read_bytes():
+        aside = replaced / f"{path.stem}-{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}"
+    if aside.exists():
+        path.unlink()  # the same copy is already there
+    else:
+        path.replace(aside)
+    return aside
+
+
+def place_root_files(bundle_path: Path, target: Path) -> list[tuple[Path, list[Path]]]:
+    """Write the bundle's pulls into the working folder beside the extracted one.
+
+    Returns each file written, with the copies it set aside: for a blueprint,
+    the ones moved to YAMLs/temp/replaced/ (D162); for anything else, a
+    different earlier copy kept as .local.
     """
     sections, manifest = read_bundle(bundle_path)
     at_root = root_paths(manifest)
     folder = Path(target).resolve().parent
-    placed: list[tuple[Path, bool]] = []
+    placed: list[tuple[Path, list[Path]]] = []
     for section in sections:
         if section["path"] not in at_root:
             continue
-        destination = folder / Path(section["path"]).name
+        name = Path(section["path"]).name
         shipped = section["content"].encode("utf-8")
-        kept = False
-        if destination.is_file() and destination.read_bytes() != shipped:
-            aside = destination.with_name(destination.name + ".local")
-            aside.write_bytes(destination.read_bytes())
-            kept = True
+        aside: list[Path] = []
+        if name.endswith(BLUEPRINT_SUFFIX):
+            temp = folder / "YAMLs" / "temp"
+            destination = temp / name
+            replaced = temp / REPLACED_DIR
+            project = project_of(name)
+            older = [*sorted(folder.glob("*_transfer.yaml")), *sorted(folder.glob(f"*{BLUEPRINT_SUFFIX}")),
+                     *(sorted(temp.glob("*_intake.yaml")) if temp.is_dir() else [])]
+            for path in older:
+                if path.is_file() and project_of(path.name) == project:
+                    aside.append(set_aside(path, replaced))
+            if destination.is_file() and destination.read_bytes() != shipped:
+                aside.append(set_aside(destination, replaced))
+            temp.mkdir(parents=True, exist_ok=True)
+        else:
+            destination = folder / name
+            if destination.is_file() and destination.read_bytes() != shipped:
+                local = destination.with_name(destination.name + ".local")
+                local.write_bytes(destination.read_bytes())
+                aside.append(local)
         destination.write_bytes(shipped)
         if hashlib.sha256(destination.read_bytes()).hexdigest() != section["sha256"]:
             raise BundleError(f"Post-write verification failed for {destination}")
-        placed.append((destination, kept))
+        placed.append((destination, aside))
     return placed
+
+
+def placed_note(aside: list[Path], folder: Path) -> str:
+    """`  (set aside: YAMLs/temp/replaced/X.yaml)`, or nothing."""
+    if not aside:
+        return ""
+    shown = []
+    for path in aside:
+        try:
+            shown.append(path.relative_to(folder).as_posix())
+        except ValueError:
+            shown.append(str(path))
+    return f"  (the copy that was there is kept as {', '.join(shown)})"
 
 
 def write_launcher(target: Path) -> Path:
@@ -512,9 +572,8 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     A YAMLs-only bundle places its YAMLs and leaves the runtime alone (D122)."""
     _, manifest = read_bundle(bundle_path)
     if is_yamls_only(manifest):
-        for path, kept in place_root_files(bundle_path, target):
-            note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
-            print(f"Wrote {path}{note}")
+        for path, aside in place_root_files(bundle_path, target):
+            print(f"Wrote {path}{placed_note(aside, Path(target).resolve().parent)}")
         print(f"The software in {Path(target).resolve().name} is left as it is. "
               f"Next: `python {LAUNCHER_NAME}`, and Run the pull.")
         return
@@ -533,9 +592,8 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
               "version is there.")
     launcher = write_launcher(target)
     print(f"Wrote {launcher}  (rewritten, pointing at the new version)")
-    for path, kept in place_root_files(bundle_path, target):
-        note = f"  (the copy that was there is kept as {path.name}.local)" if kept else ""
-        print(f"Wrote {path}{note}")
+    for path, aside in place_root_files(bundle_path, target):
+        print(f"Wrote {path}{placed_note(aside, Path(target).resolve().parent)}")
     print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}  (rewritten, pointing at the new version)")
     print(f"Every window now says `bundle {manifest['content_id'][:8]}` at its foot.")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the app "

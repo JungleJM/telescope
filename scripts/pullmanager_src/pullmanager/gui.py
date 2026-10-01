@@ -312,24 +312,30 @@ class LauncherApp:
         return self._ended
 
     def start_choices(self) -> dict[str, Path]:
-        """The transfer YAMLs in the working folder by project that have not
-        run yet: never split, or split and not executed (D126, D140)."""
+        """The working blueprints by project that have not run yet: never
+        split, or split and not executed (D126, D140, D162)."""
         states = {pull.name.lower(): pull for pull in pulls.find_pulls(self.workdir)}
         self._startable = {}
-        for path in sorted(self.workdir.glob("*_transfer.yaml"), key=lambda p: p.name.lower()):
-            project = pulls.run_folder_name(path.name)
+        found = pulls.working_blueprints(self.workdir)
+        for project in sorted(found, key=str.lower):
             pull = states.get(project.lower())
             if pull is not None and (pull.lock is not None or pull.outcome):
                 continue
-            self._startable[f"{project}  ({pull.state if pull else NOT_RUN})"] = path
+            self._startable[f"{project}  ({pull.state if pull else NOT_RUN})"] = found[project]
         return self._startable
 
     def transfer_for(self, project: str) -> Path:
-        """The working folder's transfer YAML for a project, or where it would be."""
-        for path in self.workdir.glob("*.yaml"):
-            if pulls.run_folder_name(path.name).lower() == project.lower():
+        """A project's working blueprint; else, once packaged, the copy in its
+        run folder; else where its working blueprint would be (D162)."""
+        for name, path in pulls.working_blueprints(self.workdir).items():
+            if name.lower() == project.lower():
                 return path
-        return self.workdir / f"{project}_transfer.yaml"
+        for pull in pulls.find_pulls(self.workdir):
+            if pull.name.lower() == project.lower():
+                record = pulls.record_blueprint(pull.manifest.parent)
+                if record is not None:
+                    return record
+        return self.workdir / "YAMLs" / "temp" / f"{project}{pulls.BLUEPRINT_SUFFIX}"
 
     def choose_running(self, label: str) -> None:
         path = self._running.get(label) or self.running_choices().get(label)

@@ -34,9 +34,10 @@ SPLIT_DIR = "split"
 SQL_DIR = "sql"
 OLDER_LOGS_DIR = "older_logs"
 MANIFEST_FILENAME = "pullmanifest.yaml"
-# Dropped from a transfer YAML's file name to name its run folder (D57);
-# `_temp` is what intakes were called before D95.
-RUN_NAME_SUFFIXES = ("_transfer", "_intake", "_temp")
+# Dropped from a blueprint's file name to name its run folder (D57, D162);
+# `_transfer` is what blueprints were called before, `_temp` intakes before D95.
+RUN_NAME_SUFFIXES = ("_blueprint", "_transfer", "_intake", "_temp")
+BLUEPRINT_SUFFIX = "_blueprint.yaml"
 YAML_SUFFIXES = (".yaml", ".yml")
 
 
@@ -46,7 +47,8 @@ class PullNotFound(RuntimeError):
 
 def run_folder_name(template: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
-    without `.yaml` and without `_transfer`, `_intake` or `_temp` (D95).
+    without `.yaml` and without `_blueprint`, `_transfer`, `_intake` or `_temp`
+    (D95, D162).
 
     Only the file name: the folders above it (the project share) play no part.
     The same rule as `makeYaml.run_folder_name`; a test holds the two together.
@@ -71,6 +73,36 @@ def project_name(text: str) -> str:
         return run_folder_name(text)
     name = Path(text.replace("\\", "/")).name
     return run_folder_name(name + ".yaml")
+
+
+def working_blueprints(home: Path) -> dict[str, Path]:
+    """Each project's working blueprint, by its run folder's name (D162):
+    `YAMLs/temp/<project>_blueprint.yaml`, else a blueprint or transfer YAML
+    beside scope.py, where bundles placed them before."""
+    home = Path(home)
+    temp = home / "YAMLs" / "temp"
+    candidates = sorted(temp.glob(f"*{BLUEPRINT_SUFFIX}")) if temp.is_dir() else []
+    candidates += sorted(home.glob(f"*{BLUEPRINT_SUFFIX}")) + sorted(home.glob("*_transfer.yaml"))
+    found: dict[str, Path] = {}
+    seen: set[str] = set()
+    for path in candidates:
+        project = run_folder_name(path.name)
+        if project.lower() not in seen:
+            seen.add(project.lower())
+            found[project] = path
+    return found
+
+
+def record_blueprint(run_dir: Path) -> Path | None:
+    """The blueprint the split was made from, kept beside its manifest (D142)."""
+    run_dir = Path(run_dir)
+    try:
+        for path in sorted(run_dir.glob("*.yaml")):
+            if path.name.lower() != MANIFEST_FILENAME and run_folder_name(path.name).lower() == run_dir.name.lower():
+                return path
+    except OSError:
+        return None
+    return None
 
 
 def home_folders(cwd: Path | None = None) -> list[Path]:

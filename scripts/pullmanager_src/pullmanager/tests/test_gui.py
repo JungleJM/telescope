@@ -264,6 +264,32 @@ class RunningPullTests(GuiTestCase):
         self.lock()
         self.assertEqual(self.app.ended_choices(), {})
 
+    def test_start_run_takes_the_working_blueprint_before_an_older_copy(self):
+        # D162: Infant_RSV's change was saved to one file while Run read another.
+        temp = self.work / "YAMLs" / "temp"
+        temp.mkdir(parents=True)
+        (self.work / "Celiac_transfer.yaml").write_text("old\n", encoding="utf-8")
+        (temp / "Celiac_blueprint.yaml").write_text("new\n", encoding="utf-8")
+        (self.work / "Crohns_transfer.yaml").write_text("only\n", encoding="utf-8")
+        start = self.app.start_choices()
+        self.assertEqual(start["Celiac  (not run yet)"], temp / "Celiac_blueprint.yaml")
+        self.assertEqual(start["Crohns  (not run yet)"], self.work / "Crohns_transfer.yaml")
+
+    def test_a_packaged_pull_without_a_working_copy_loads_its_run_folder_copy(self):
+        import copy
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        for session in data["sessions"]:
+            for node in [*session["phases"].values(), *session["runs"]]:
+                node["status"] = "done"
+        data["last_execute"] = {"started_at": "x", "ended_at": "y", "exit_code": 0, "how": "finished"}
+        dump_yaml(data, self.manifest)
+        record = self.manifest.parent / "IBD_Ancestry_blueprint.yaml"
+        record.write_text("cohorts: []\n", encoding="utf-8")
+        self.app.vars["template"].set("")
+        self.app.choose_ended("IBD_Ancestry  (finished)")
+        self.assertEqual(Path(self.app.vars["template"].get()), record)
+
     def test_stop_records_that_the_user_stopped_it(self):
         from ..manifest import Manifest
 
