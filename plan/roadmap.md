@@ -46,12 +46,12 @@ Decided 30 September 2026 (D162–D169), from the runs on the bundle `048c3f29�
 
 ## Next: The Bundle `1b628fc3…` On The VM
 
-Built 30 September 2026 from the runs of 29 and 30 September: D151 to D159, and the corrected `Crohns_DxHxSxRx_transfer.yaml` (a different copy already at the root is kept as `.local`). Built and tested on the Mac; nothing of it has run on the VM.
-The dictionary is now checked against every screenshotted page (D160, 30 September 2026), which changes the types of five pulls: Celiac, Crohns_DxHxSxRx, IBD_Ancestry, Infant_RSV and UC_Visits (among them `MedicationDispenseFact.FillNumber`, `nvarchar(50)` not INT, and Vitals' measures, `numeric` and `int` not FLOAT). Their transfer YAMLs are exported again. Before step 1, queue those five intakes and build a full bundle (`python3 makebundle.py`), and take it instead of `1b628fc3…`: it carries all of that bundle, the checked dictionary the audit (step 4) reads, the audit's type and nullability checks (D161, built and tested on the Mac), and the corrected transfer YAMLs.
+Built 30 September 2026 from the runs of 29 and 30 September: D151 to D159, and the corrected `Crohns_DxHxSxRx_transfer.yaml` (a different copy already at the root is kept as `.local`). Built and tested on the Mac; nothing of it has run on the VM. The dictionary is now checked against every screenshotted page (D160, 30 September 2026), which changes the types of five pulls: Celiac, Crohns_DxHxSxRx, IBD_Ancestry, Infant_RSV and UC_Visits (among them `MedicationDispenseFact.FillNumber`, `nvarchar(50)` not INT, and Vitals' measures, `numeric` and `int` not FLOAT). Their transfer YAMLs are exported again. Before step 1, queue those five intakes and build a full bundle (`python3 makebundle.py`), and take it instead of `1b628fc3…`: it carries all of that bundle, the checked dictionary the audit (step 4) reads, the audit's type and nullability checks (D161, built and tested on the Mac), and the corrected transfer YAMLs.
 
 On the VM:
 
 1.  **Extract**: `python bundle.py`, then `python scope.py --tdd`.
+
 2.  **The reader check** (D154), in PowerShell in the working folder on the share; it can only be tested there:
 
     ``` powershell
@@ -59,11 +59,17 @@ On the VM:
     ```
 
     `replaced while open: y` means a reader no longer blocks a save. `Access is denied` means the share does not honour the sharing flag, and only the waits (D153) carry a save past a reader. Delete `a.txt` (and `b.txt`) after.
+
 3.  **Scan runs** (D152), then transcribe `runs\run_scan.yaml`. IBD_Ancestry's white sessions should show as `empty` and `short_controls`. Infant_RSV is the question: its PK had 186,963 patients where the user expected about 400,000. A lost-rows line there means rows lost in landing; nothing there, and the pull predates `cosmos_rows`, leaves the cohort's filter to look at.
+
 4.  **Audit dictionary** (D155; types and nullability too, D161), then transcribe `runs\dictionary_audit.yaml`, and on the Mac `python3 scope.py dictionary-fix <file>`, fix the YAMLs it names, and a YAMLs-only bundle.
+
 5.  **Re-pull IBD_Ancestry's white sessions** (D158): load it, tick Re-pull sessions, add `UCwhitePatients` and `CrohnswhitePatients`, Execute. If the landing fails again, it now fails loudly with the server's message (D151); that message is the cause, and is to be reported.
+
 6.  **Seen as it runs**: `setup` prints "columns checked" (D156); Status has Median per key, P90 and Max for every table (D157); the log holds `server:` lines (D151); a busy manifest prints "trying again in 60s" instead of stopping (D153).
+
 7.  **Crohns_DxHxSxRx's Meds group**, retried on 30 September 2026 after `ReadyToDispenseDateKey` was taken out of its split's run file by hand (the column is not in Cosmos): not yet reported.
+
 8.  **A supporting CSV with a quoted header** (D159): added in Author, it lands without its quotes.
 
 ------------------------------------------------------------------------

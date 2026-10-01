@@ -37,7 +37,7 @@ I added j21 and j20.5.
 
 ## Proving the show-stopper is fixed
 
-(From chat, 2026-09-30.) Steps to test on the VM, with bundle `048c3f29`, that the manifest saves and the hidden errors no longer stop or empty a pull.
+(From chat, 2026-09-30.) Steps to test on the VM, with bundle `048c3f29` or later (now `67111a4c`, which carries these fixes too), that the manifest saves and the hidden errors no longer stop or empty a pull.
 
 ::: {.callout-note title="🟦 Claude: how to prove it"}
 **What the show-stopper was: two bugs.**
@@ -64,6 +64,44 @@ I added j21 and j20.5.
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
+:::
+
+## Testing the bundle `67111a4c` (D162–D170)
+
+(From chat, 2026-10-01.) Built 30 September and 1 October: one blueprint per project, per-pull table names, a database per pull, drops after packaging, and the app's views. Bundle `c98c60b3` carried them with the Infant_RSV and UC_VisitsMedsDiagnoses blueprints; `67111a4c` is the same software with the database list cut to six (D170) and no YAMLs. The database choice is already seen working (screenshot of 1 October: PROJECTD125423 chosen, three databases refused the login).
+
+::: {.callout-note title="🟦 Claude: what to test next, in order"}
+**0. Extract** `67111a4c` (`python bundle.py`), then `python scope.py --tdd`: all pass.
+
+**1. One blueprint per project (D162): the bug that pulled old codes.**
+
+1.  In the working folder: `YAMLs\temp\Infant_RSV_blueprint.yaml` and `YAMLs\temp\UC_VisitsMedsDiagnoses_blueprint.yaml` exist; `Infant_RSV_transfer.yaml` is gone from beside `scope.py` and is in `YAMLs\temp\replaced\`, with any `Infant_RSV_intake.yaml` saved on the VM.
+2.  Author's dropdown lists each project once, saying which file it opens: `· working blueprint`, `· older copy, Celiac_transfer.yaml`, or `· finished: its run folder's copy`.
+3.  **The real test.** Open a pull that has not run in Author, change something you can see (a code in `ICD_Value`), Save, then Transfer to Run. Run's bold line names it, and Preview SQL shows the new code. Before, Save wrote a file Run never read.
+4.  Open an older copy (say Celiac), change nothing, Save: `Celiac_transfer.yaml` moves to `YAMLs\temp\replaced\` and `YAMLs\temp\Celiac_blueprint.yaml` appears. Run's Start run now lists that one.
+5.  UC_VisitsMedsDiagnoses: Validate finds `UCPatients.parquet`, `data\Codes\ICD-hosp.csv` and `data\Meds\IBD_meds.parquet` beside `scope.py` (no `missing_upload_file`). Its blueprint reads them as `../../data/...`, which is right.
+6.  When a pull finishes and packages, its log says `Removed <project>_blueprint.yaml from YAMLs/temp`, and Author then offers it as `finished: its run folder's copy`.
+
+**2. Table names per pull (D163).** Export split a pull that has not run: its manifest has `table_prefix:` under `project:` (Infant_RSV: `infrsv`), and Preview SQL names `PROJECTD....dbo.infrsv_EDVisits`, with uploads as `infrsv_upload_...`. In clear_projects_db, its tables appear under that prefix. **A pull split before this bundle has no prefix**, keeps its plain names, and is never dropped by itself: for any not yet executed, Export split again first.
+
+**3. A database per pull (D164, D170).** Already seen choosing. Next: the list is six (no 52274F, 723D95, 427046 or 03DEC); a second new pull takes a database the first does not use; each manifest has `database_choice:` saying which and why. Infant_RSV's blueprint names PROJECTD427046, which refused the login, so it will land elsewhere: expected.
+
+**4. Drop after packaging (D165).** The first prefixed pull to finish cleanly: its log ends with `Dropped its N table(s) from PROJECTD...`, and clear_projects_db no longer lists them. If it says `Its tables are kept in Projects:` instead, send the reason. Then pick it from Finished and stopped pulls: the bar says only Re-pull everything pulls it again.
+
+**5. The app's views (D166–D169).**
+
+1.  The title reads `Telescope · Author: <project> · Run: <pull>`, and follows both halves.
+2.  Choosing from one of Run's dropdowns empties the other two; the bold line above says `Loaded: <pull>  (<state>)`.
+3.  While a pull runs, its running row in Status says `c2of13 · OtherHospitalizations, since 11:01` (the chunk and value only for a chunked or per-value run).
+4.  Double-click a table of a packaged pull in Status: the parquet viewer opens on it. A table not yet packaged opens Pull Manifest, as before.
+5.  A fact table's Filters box: JOIN above WHERE, each line with Remove beside it, forms opened by Add JOIN / Add WHERE, with Add and Cancel. The table builder looks the same.
+6.  Type `NOTAPROJECT` into Project DB: the message shows at the top of the Project section within a second, in red, with its fix, and the cursor stays in the field. Put it back: the message goes.
+
+**Not testable on the Mac, so watch for:** the free-space query on each database, the DROP permission (D165), and the viewer opening on Windows (D167). A screenshot of anything that fails is enough.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+(From chat, 2026-10-01.) Databases the login gains access to are added to the default list in the code (`pullmanager/config.py`, D170), not to `datascope.json`.
 :::
 
 # Post-Urgent Solve ideas
@@ -129,6 +167,50 @@ The `true` direction (`_IsDeleted` and the rest) is safe: it only drops a predic
 (From chat, 2026-09-30.) I'll apply this after the run today.
 :::
 
-# Settled
+run
+
+## PROJECTD features
+
+- Right now the project yaml Author mode asks for a project DB, and then when it runs it chooses a project anyways. So I think we should have this as a hidden function somehow - like if it's a new project there's a toggle (default off) of "Specify ProjectDB". If true then a dropdown of the available comes up. once it's run and it's permanently set to one, then it should just be a datapoint on the page (i.e project db: PROJECTD...), not an interactive interface.
+
+::: {.callout-note title="🟦 Claude: PROJECTD features"}
+**Today.** Author's Project section has a free-text Project DB ("Must start with PROJECTD"), and Export split refuses a blueprint without one (`project_db_missing`). At the first Execute, D164 treats it only as a **preference**: it is kept if it has more than 6 GB free and no other unfinished pull uses it; otherwise another is chosen. So the field reads like a setting but usually is not one. The choice then lives in the run folder's manifest (`database_choice`), which Author never shows.
+
+**Recommendation, as you describe it.**
+
+1.  **Specify Project DB**, a tick box, off by default. Off: the blueprint carries no database (`project_db: auto`), Export split accepts that, and Execute chooses (D164). On: a dropdown of the listed databases (D170), and Execute uses that one.
+2.  **Once the pull has run**, Author shows `Project DB: PROJECTD125423 (chosen 1 October, the most free space…)` as text, read from the run folder's manifest, with no field to change. Changing it would strand finished batches (D52); Re-pull everything with a new split is the way to move.
+3.  Old blueprints that name a database read as Specify ticked, so nothing changes for them unless you untick it.
+
+**For you to decide:** when Specify is ticked, is that database a **must** (Execute uses it even if another pull is there, and stops if it has under 6 GB) or still a **preference** (as today, passed over when full or taken)? I would make it a must: ticked means you chose.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+**Suggested order**
+
+1.  **Testing the bundle `67111a4c`**: everything below waits on knowing D162–D170 work on the VM, and the drops (D165) and database choice touch real data.
+2.  **Proving the show-stopper is fixed**: runs alongside step 1 on the same pulls; the forced busy manifest and the `1/0` column are quick.
+3.  **Dictionary audit**: apply the true-only file once today's runs are done; it changes what new tables get.
+4.  **PROJECTD features**: small, and best built once D164's choosing has been seen across a few pulls.
+5.  **The exit-code-1 stop**: needs the next occurrence's log to act on.
+6.  **Table Group recipes** and **utility buttons**: new features, after the pulls are steady.
+
+## Random Sample error: 
+
+![](images/paste-24.png)
+
+![](images/paste-20.png)
+
+![](images/paste-21.png)
+
+So this is because we dont' ahve a pktable key_column. I can see how this is an issue. Maybe if we choose the randomize, there's a dropdown menu of "PKTable Key to set hash by" with a dropdown.
+
+## Add Dedup option to Fact Tavles
+
+Come to think of it, fact tables should all have a 'deduplicate by column:' and it should let you do a dropdown of the colunms to deduplicate by. You can add multiple. And do a "order by:" with a column. I don't know how we'd say 'earliest' or 'latest' depending on the value so unless there's a way, we just say 'order by' and explain how it does it.
+
+## Settled
 
 Nothing waiting.
