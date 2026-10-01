@@ -295,6 +295,16 @@ class RunningPullTests(GuiTestCase):
         self.app.choose_ended("IBD_Ancestry  (finished)")
         self.assertIn("only Re-pull everything", self.app.bar.configure.call_args.kwargs["text"])
 
+    def test_choosing_from_one_dropdown_clears_the_others_and_heads_the_pull(self):
+        # D166: a stale `IBD_Ancestry (not run yet)` showed beside a loaded Infant_RSV.
+        (self.work / "Celiac_transfer.yaml").write_text("cohorts: []\n", encoding="utf-8")
+        self.app.start_pick.set("IBD_Ancestry  (not run yet)")
+        self.app.ended_pick.set("Old  (finished)")
+        self.app.choose_start("Celiac  (not run yet)")
+        self.assertEqual((self.app.running_pick.get(), self.app.ended_pick.get()), ("", ""))
+        self.assertEqual(self.app.pull_heading.configure.call_args.kwargs["text"],
+                         "Loaded: Celiac  (not run yet)")
+
     def test_stop_records_that_the_user_stopped_it(self):
         from ..manifest import Manifest
 
@@ -728,6 +738,16 @@ class AppTests(GuiTestCase):
         app.take_transfer(transfer)
         self.assertEqual(app.run.vars["template"].get(), str(transfer))
         app.halves.select.assert_called_with(app.run_frame)
+
+    def test_the_title_names_both_halves(self):
+        # D166: the title showed Author's file while Run followed another pull.
+        root = mock.MagicMock()
+        with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no author here")):
+            app = self.app_module.App(root, self.tools, self.work)
+        app.set_title("Crohns_VisitsMedsDiagnoses *")
+        app.take_transfer(self.work / "YAMLs" / "temp" / "Infant_RSV_blueprint.yaml")
+        self.assertEqual(root.title.call_args.args[0],
+                         "Telescope · Author: Crohns_VisitsMedsDiagnoses * · Run: Infant_RSV")
 
     def test_run_still_opens_when_author_cannot(self):
         with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no yamlmanager_tk")):

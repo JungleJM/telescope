@@ -298,7 +298,8 @@ class AuthorView:
     # ---------------------------------------------------- files and title
 
     def update_title(self) -> None:
-        name = self.draft.path.name if self.draft.path else NEW_FILE_LABEL
+        # The project, as Run's half names its pull (D166).
+        name = self.draft.project_name.strip() or NEW_FILE_LABEL
         title = f"{name}{' *' if self.draft.dirty else ''}"
         if self.on_title:
             self.on_title(title)

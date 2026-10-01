@@ -412,6 +412,24 @@ class HappyPathTests(SessionTestCase):
         self.assertTrue(all(p.status == "done" for p in session.phases))
         self.assertTrue(all(p.epoch for p in session.phases))
 
+    def test_the_table_in_flight_is_recorded_as_it_runs_and_cleared_after(self):
+        # D166: a 44-minute first table looked like a pull with one table.
+        seen = []
+        with self.runner() as runner:
+            save = runner.manifest.save
+
+            def saving():
+                run = runner.session.runs[0]
+                if run.status == "running" and run.outputs.get("in_flight"):
+                    seen.append(run.outputs["in_flight"]["table"])
+                save()
+
+            runner.manifest.save = saving
+            runner.execute()
+        self.assertIn("OtherHospitalizations", seen)
+        run = Manifest.load(self.root / "pullmanifest.yaml").sessions[0].runs[0]
+        self.assertNotIn("in_flight", run.outputs)
+
     def test_rows_are_recorded(self):
         with self.runner(cosmos={"rows": 4242}) as runner:
             runner.execute()

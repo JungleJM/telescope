@@ -162,6 +162,7 @@ class SessionRunner:
         self.planned_prefix = ""
         self.prefix = ""
         self._table_prefix: str | None = None
+        self._node: Any = None  # the step running now, whose table in flight it records (D166)
 
     @property
     def table_prefix(self) -> str:
@@ -396,6 +397,7 @@ class SessionRunner:
             self.say(f"{name} started")
             started = time.monotonic()
             self._where = ""
+            self._node = node
             try:
                 if kind == "run":
                     group = getattr(node, "group", None)
@@ -407,6 +409,7 @@ class SessionRunner:
                 # Nothing a failed unit wrote should be committed along with the
                 # next unit's work. The retry clears its batch anyway (D52).
                 self._rollback()
+                node.outputs.pop("in_flight", None)
                 node.fail(str(exc), detail=type(exc).__name__)
                 self.report.failed.append((label, str(exc)))
                 if node.outputs.get("table_rows"):
@@ -416,6 +419,7 @@ class SessionRunner:
                 if isinstance(node, Phase):
                     blocked = True
                 continue
+            node.outputs.pop("in_flight", None)
             node.finish(rows=rows)
             self.report.completed.append(label)
             tables = node.outputs.get("table_rows") or {}
@@ -1031,6 +1035,11 @@ class SessionRunner:
                 self.projects.commit()
         for block in unit.server_blocks:
             self.say(f"{self._at()}{block.dest_table} started", 1)
+            if self._node is not None:
+                # What Status shows on the step's row while it runs (D166).
+                self._node.outputs["in_flight"] = {"table": str(block.dest_table),
+                                                   "since": time.strftime("%H:%M")}
+                self.manifest.save()
             started = time.monotonic()
             outcome = self._execute(self.cosmos, block.sql, label=block.block_id)
             for row in outcome.rows_of("DestTable", "RowCount"):

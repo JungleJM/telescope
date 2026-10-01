@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 import tkinter as tk
 from pathlib import Path
+from typing import Any
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import config, launcher, pulls
@@ -103,6 +104,8 @@ class LauncherApp:
         self._console_handled = True
         self._pull_summarized = False
         self._status_countdown = 0
+        # Told the loaded pull's name, for the window's title (D166).
+        self.on_loaded: Any = None
 
         if self.standalone:
             root.title(f"Pullmanager - {workdir}")
@@ -120,6 +123,9 @@ class LauncherApp:
     # ------------------------------------------------------------- layout
 
     def _build_inputs(self) -> None:
+        # The loaded pull and its state, in the dropdowns' words (D166).
+        self.pull_heading = ttk.Label(self.frame, text="", font=("TkDefaultFont", 12, "bold"))
+        self.pull_heading.pack(fill="x", padx=12, pady=(10, 0))
         frame = ttk.LabelFrame(self.frame, text="Pull inputs", padding=8)
         frame.pack(fill="x", padx=10, pady=(10, 4))
         frame.columnconfigure(1, weight=1)
@@ -156,7 +162,7 @@ class LauncherApp:
         start.bind("<<ComboboxSelected>>", lambda e: self.choose_start(self.start_pick.get()))
         ttk.Button(frame, text="Browse", command=lambda: self.browse("template", "file")).grid(
             row=2, column=2, padx=(6, 6), pady=2)
-        ttk.Label(frame, text="transfer YAMLs here, by project", foreground="#6e7781").grid(
+        ttk.Label(frame, text="blueprints here, by project", foreground="#6e7781").grid(
             row=2, column=3, sticky="w")
         self.loaded_line = ttk.Label(frame, text="", foreground="#6e7781")
         self.loaded_line.grid(row=3, column=1, columnspan=3, sticky="w")
@@ -337,12 +343,21 @@ class LauncherApp:
                     return record
         return self.workdir / "YAMLs" / "temp" / f"{project}{pulls.BLUEPRINT_SUFFIX}"
 
+    def clear_picks(self, keep: Any = None) -> None:
+        """Choosing from one dropdown clears the other two (D166), so none
+        shows a pull that is not the one loaded."""
+        for pick in (self.running_pick, self.ended_pick, self.start_pick):
+            if pick is not keep:
+                pick.set("")
+
     def choose_running(self, label: str) -> None:
+        self.clear_picks(self.running_pick)
         path = self._running.get(label) or self.running_choices().get(label)
         if path is not None:
             self.load(path, "Following it: Pull Log, Status and Stop are this pull's.")
 
     def choose_ended(self, label: str) -> None:
+        self.clear_picks(self.ended_pick)
         path = self._ended.get(label) or self.ended_choices().get(label)
         if path is not None:
             then = ("Execute resumes it; Retry failed and Re-pull everything are above; "
@@ -363,6 +378,7 @@ class LauncherApp:
         return False
 
     def choose_start(self, label: str) -> None:
+        self.clear_picks(self.start_pick)
         path = self._startable.get(label) or self.start_choices().get(label)
         if path is not None:
             self.load(path, "Validate, Export split, Preview SQL, then Execute.")
@@ -380,7 +396,15 @@ class LauncherApp:
             run_dir = self.paths().run_dir()
         except LauncherError:
             self.loaded_line.configure(text="Nothing loaded: choose a pull above.")
+            self.pull_heading.configure(text="No pull loaded")
+            if self.on_loaded:
+                self.on_loaded("")
         else:
+            state = next((pull.state for pull in pulls.find_pulls(self.workdir)
+                          if pull.name.lower() == run_dir.name.lower()), NOT_RUN)
+            self.pull_heading.configure(text=f"Loaded: {run_dir.name}  ({state})")
+            if self.on_loaded:
+                self.on_loaded(run_dir.name)
             self.loaded_line.configure(text=f"Loaded {Path(self.vars['template'].get()).name}: its run folder is "
                                             f"{run_dir}, the split and SQL in {run_dir / pulls.PULL_FILES_DIR}")
         self.backup_line.configure(text=self.backup_found())
@@ -475,6 +499,7 @@ class LauncherApp:
                 filetypes=[("YAML", "*.yaml *.yml"), ("All files", "*.*")],
             )
         if chosen and attr == "template":
+            self.clear_picks()
             self.load(Path(chosen), "Validate, Export split, Preview SQL, then Execute.")
 
     # ------------------------------------------------------------- actions
@@ -826,7 +851,8 @@ class LauncherApp:
             view.see(f"{first + 1}.0")
 
     def use_transfer(self, path: Path) -> None:
-        """Take a transfer YAML the Author half exported (D94)."""
+        """Take a blueprint the Author half handed over (D94, D162)."""
+        self.clear_picks()
         self.load(Path(path), "Validate, Export split, then Execute.")
 
     def close(self) -> bool:

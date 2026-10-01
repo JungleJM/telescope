@@ -621,3 +621,16 @@ class ConfigTests(unittest.TestCase):
         from .. import config
 
         self.assertEqual(config.runs_dir(self.home), self.home / "runs")
+
+
+class InFlightTests(unittest.TestCase):
+    """D166: a running step's row says the chunk and table in flight."""
+
+    def test_a_running_run_shows_its_chunk_and_table(self):
+        from ..launcher import in_flight_text
+
+        outputs = {"chunk": "c2of13", "in_flight": {"table": "OtherHospitalizations", "since": "11:01"}}
+        self.assertEqual(in_flight_text(outputs), "c2of13 · OtherHospitalizations, since 11:01")
+        outputs["value"] = "v1of3 (LA)"
+        self.assertEqual(in_flight_text(outputs), "v1of3 (LA) c2of13 · OtherHospitalizations, since 11:01")
+        self.assertEqual(in_flight_text({}), "")

@@ -48,7 +48,11 @@ class App:
         self.halves.add(self.author_frame, text="Author")
         self.halves.add(self.run_frame, text="Run")
 
+        self.author_title = ""
+        self.run_title = ""
         self.run = LauncherApp(root, tools, workdir, parent=self.run_frame)
+        self.run.on_loaded = self.run_loaded
+        self.run.show_loaded()
         self.author = None
         try:
             author_module = load_author(tools)
@@ -67,7 +71,22 @@ class App:
         add_credit(root)
 
     def set_title(self, text: str) -> None:
-        self.root.title(f"{TITLE} - {text}")
+        """Author's project, as the title names it (D166)."""
+        self.author_title = text
+        self.show_title()
+
+    def run_loaded(self, project: str) -> None:
+        self.run_title = project
+        self.show_title()
+
+    def show_title(self) -> None:
+        """`Telescope · Author: <project> · Run: <pull>` (D166)."""
+        parts = [TITLE]
+        if self.author_title:
+            parts.append(f"Author: {self.author_title}")
+        if self.run_title:
+            parts.append(f"Run: {self.run_title}")
+        self.root.title(" · ".join(parts))
 
     def take_transfer(self, path: Path) -> None:
         """Author exported a transfer YAML: Run takes it, and is shown."""

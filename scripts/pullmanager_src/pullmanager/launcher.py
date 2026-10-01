@@ -28,6 +28,7 @@ from pathlib import Path
 
 from .lock import LockInfo
 from .manifest import Manifest, ManifestError
+from .models import RUNNING
 from . import config
 from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
 from .pulls import sql_folder as pulls_sql_folder
@@ -424,6 +425,17 @@ class StatusRow:
     max: str = ""
 
 
+def in_flight_text(outputs: dict) -> str:
+    """A running step's position and table (D166): `c2of13 · OtherHospitalizations,
+    since 11:01`; '' when it records none."""
+    flight = outputs.get("in_flight") or {}
+    if not flight.get("table"):
+        return ""
+    where = " ".join(str(outputs[k]) for k in ("value", "chunk") if outputs.get(k))
+    table = f"{flight['table']}, since {flight['since']}" if flight.get("since") else str(flight["table"])
+    return f"{where} · {table}" if where else table
+
+
 def manifest_rows(manifest_path: Path, text: str | None = None) -> list[StatusRow]:
     """The manifest flattened into one row per phase and run; from `text`
     when the file has been read already (D154)."""
@@ -438,6 +450,8 @@ def manifest_rows(manifest_path: Path, text: str | None = None) -> list[StatusRo
                 child.group, (child.batch or {}).get("name")))) or child.label
             duration = (child.data.get("duration") or {}).get("display", "")
             detail = (child.error or {}).get("message") or child.note or ""
+            if child.status == RUNNING:
+                detail = in_flight_text(child.outputs) or detail
             # A run's rows are its tables', listed under it; never one total.
             shown = None if not is_phase else child.rows
             rows.append(
