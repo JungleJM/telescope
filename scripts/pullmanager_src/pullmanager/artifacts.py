@@ -26,7 +26,7 @@ from . import uploads
 from .batches import dimension_predicate
 from .manifest import Manifest, Session
 from .models import DONE, SKIPPED
-from .naming import destination
+from .naming import destination, projects_table, table_prefix
 from .normalize import NormalizationError, cosmos_database
 from .pulls import run_folder
 from .yaml_io import load_yaml
@@ -207,7 +207,7 @@ def plan(manifest: Manifest) -> Plan:
                 if str(item.get("file_type", "")).lower() != "parquet" or not item.get("file_loc"):
                     result.left_out.append(
                         (dest, "an upload with no parquet in the split; it is in Projects as "
-                               f"{uploads.copy_table(dest)}")
+                               f"{projects_table(uploads.copy_table(dest), table_prefix(doc))}")
                     )
                     continue
                 spec = TableSpec(dest, "upload", session.session_id, UPLOADS_DIR, item, doc, [Part("")])
@@ -374,7 +374,9 @@ def package_table(spec: TableSpec, cursor: Any, pa: Any, pq: Any, project_db: st
         log(f"  copied   {shown(part.path, out_dir)}  ({part.rows:,} rows, "
             f"{size_text(part.path)}, {seconds_text(part.seconds)})")
         return
-    described = describe(cursor, project_db, spec.dest)
+    # In Projects under the pull's table prefix (D163); its parquet keeps the plain name.
+    table = projects_table(spec.dest, table_prefix(spec.doc))
+    described = describe(cursor, project_db, table)
     if not described:
         result.left_out.append((spec.dest, f"it is not in {project_db}"))
         return
@@ -384,7 +386,7 @@ def package_table(spec: TableSpec, cursor: Any, pa: Any, pq: Any, project_db: st
         part.path = folder / file_name(spec.dest, part.label)
         log(f"  writing  {shown(part.path, out_dir)} ...")
         started = time.monotonic()
-        sql = f"SELECT {select} FROM {destination(project_db, spec.dest)}{part.where};"
+        sql = f"SELECT {select} FROM {destination(project_db, table)}{part.where};"
         part.rows = write_part(cursor, pa, pq, sql, part.params, spec.columns, part.path)
         part.seconds = time.monotonic() - started
         log(f"  wrote    {shown(part.path, out_dir)}  ({part.rows:,} rows, "

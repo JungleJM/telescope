@@ -54,6 +54,21 @@ def temp_prefix(doc: dict | None) -> str:
     return str((doc or {}).get("temp_prefix") or DEFAULT_TEMP_PREFIX)
 
 
+def table_prefix(doc: dict | None) -> str:
+    """The prefix of every Projects table the pull makes (D163); none in a
+    document split before it, whose tables keep their plain names."""
+    return str((doc or {}).get("table_prefix") or "").strip()
+
+
+def projects_table(dest_table: str | None, prefix: str = "") -> str:
+    """A pull's table in Projects: OtherDiagnoses -> ucvis_OtherDiagnoses.
+    Already prefixed, it is kept as it is."""
+    name = base_name(dest_table)
+    if not prefix or name.lower().startswith(f"{prefix.lower()}_"):
+        return name
+    return f"{prefix}_{name}"
+
+
 def global_temp(dest_table: str | None, prefix: str = DEFAULT_TEMP_PREFIX) -> str:
     """Cosmos session-scoped output: PKTable -> ##ibdanc_PKTable.
 
@@ -68,15 +83,16 @@ def local_staging(dest_table: str | None) -> str:
     return LOCAL_STAGING_PREFIX + base_name(dest_table)
 
 
-def destination(project_db: str | None, dest_table: str | None) -> str:
-    """Durable Projects table, always fully qualified.
+def destination(project_db: str | None, dest_table: str | None, prefix: str = "") -> str:
+    """Durable Projects table, always fully qualified, with the pull's table
+    prefix (D163).
 
     Generated SQL gets run from tools with ambiguous database context, so the
     destination never relies on USE.
     """
     if not project_db or not str(project_db).strip():
         raise NamingError("project_db is required to qualify a destination table.")
-    return f"{str(project_db).strip()}.{DEFAULT_SCHEMA}.{base_name(dest_table)}"
+    return f"{str(project_db).strip()}.{DEFAULT_SCHEMA}.{projects_table(dest_table, prefix)}"
 
 
 def is_temp_table(token: str) -> bool:

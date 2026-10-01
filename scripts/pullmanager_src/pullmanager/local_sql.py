@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .naming import DEFAULT_TEMP_PREFIX, destination, global_temp, local_staging, temp_prefix
+from .naming import DEFAULT_TEMP_PREFIX, destination, global_temp, local_staging, table_prefix, temp_prefix
 from .normalize import normalize_bool
 from .sql import (
     SqlBlock,
@@ -63,6 +63,7 @@ def render_table_shell(
     *,
     keep: bool = False,
     batch_column: bool = False,
+    table_prefix: str = "",
 ) -> str:
     """Create one destination table. Runs once per session.
 
@@ -75,7 +76,7 @@ def render_table_shell(
     columns = _columns(cohort)
     if not columns:
         raise LocalRenderError(f"Cohort {dest!r} declares no columns.")
-    table = destination(project_db, dest)
+    table = destination(project_db, dest, table_prefix)
     body = ddl_body(columns)
     if batch_column:
         body += f",\n    {quote_name(BATCH_COLUMN)} {BATCH_COLUMN_TYPE}"
@@ -92,9 +93,10 @@ def render_table_shell(
     )
 
 
-def render_delete_batch(cohort: dict[str, Any], project_db: str, label: str) -> str:
+def render_delete_batch(cohort: dict[str, Any], project_db: str, label: str,
+                        table_prefix: str = "") -> str:
     """Remove a run's rows before it lands them, so a retry cannot double them."""
-    table = destination(project_db, str(cohort["dest_table"]))
+    table = destination(project_db, str(cohort["dest_table"]), table_prefix)
     return (
         f"-- clear {label} from {table} before it is pulled\n"
         f"DELETE FROM {table} WHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)};"
@@ -107,6 +109,7 @@ def render_transfer(
     linked_server: str,
     label: str | None = None,
     prefix: str = DEFAULT_TEMP_PREFIX,
+    table_prefix: str = "",
 ) -> str:
     """Pull one cohort from its global temp into the destination table.
 
@@ -121,7 +124,7 @@ def render_transfer(
         )
     dest = str(cohort["dest_table"])
     columns = _columns(cohort)
-    table = destination(project_db, dest)
+    table = destination(project_db, dest, table_prefix)
     staging = local_staging(dest)
     cols = column_list(columns)
     insert_cols, select_cols = cols, cols
@@ -151,6 +154,7 @@ def render_row_counts(
     linked_server: str,
     label: str | None = None,
     prefix: str = DEFAULT_TEMP_PREFIX,
+    table_prefix: str = "",
 ) -> str:
     """Both sides of the transfer, so a mismatch is visible.
 
@@ -158,7 +162,7 @@ def render_row_counts(
     also holds every earlier batch, which the Cosmos temp does not.
     """
     dest = str(cohort["dest_table"])
-    table = destination(project_db, dest)
+    table = destination(project_db, dest, table_prefix)
     where = (
         f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
     )
@@ -220,6 +224,7 @@ def render_setup(
     project_db = doc.get("project_db")
     if not project_db:
         raise LocalRenderError("Phase document has no `project_db`.")
+    tables = table_prefix(doc)
     blocks = []
     for cohort in cohorts:
         if not normalize_bool(cohort.get("pull_this_cycle"), default=True):
@@ -233,9 +238,10 @@ def render_setup(
                     str(project_db),
                     keep=keep,
                     batch_column=str(cohort["dest_table"]) in batched,
+                    table_prefix=tables,
                 ),
                 dest_table=str(cohort["dest_table"]),
-                meta={"destination": destination(str(project_db), cohort["dest_table"])},
+                meta={"destination": destination(str(project_db), cohort["dest_table"], tables)},
             )
         )
     return blocks
@@ -248,6 +254,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
         raise LocalRenderError("Phase document has no `project_db`.")
     label = batch_label(doc)
     prefix = temp_prefix(doc)
+    tables = table_prefix(doc)
     blocks: list[SqlBlock] = []
     for cohort in doc.get("cohorts") or []:
         if not isinstance(cohort, dict) or not cohort.get("dest_table"):
@@ -261,14 +268,14 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
                 SqlBlock(
                     block_id=f"{block_prefix}/{dest}/clear",
                     side="local",
-                    sql=render_delete_batch(cohort, str(project_db), label),
+                    sql=render_delete_batch(cohort, str(project_db), label, tables),
                     dest_table=dest,
-                    meta={"clears": label, "destination": destination(str(project_db), dest)},
+                    meta={"clears": label, "destination": destination(str(project_db), dest, tables)},
                 )
             )
         parts = [
-            render_transfer(cohort, str(project_db), linked_server, label, prefix),
-            render_row_counts(cohort, str(project_db), linked_server, label, prefix),
+            render_transfer(cohort, str(project_db), linked_server, label, prefix, tables),
+            render_row_counts(cohort, str(project_db), linked_server, label, prefix, tables),
         ]
         probe = render_length_probe(cohort)
         if probe:
@@ -280,7 +287,7 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
                 sql="\n\n".join(parts),
                 dest_table=dest,
                 meta={
-                    "destination": destination(str(project_db), dest),
+                    "destination": destination(str(project_db), dest, tables),
                     "staging": local_staging(dest),
                     "global_temp": global_temp(dest, prefix),
                     "linked_server": linked_server,

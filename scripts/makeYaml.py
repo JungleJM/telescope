@@ -3783,6 +3783,8 @@ def write_split_artifacts(
         )
         return result
     finished_yaml = copy.deepcopy(result.finished_yaml)
+    # Every table the pull makes in Projects carries it (D163).
+    finished_yaml["table_prefix"] = pull_table_prefix(finished_yaml, out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stage_upload_files(
         finished_yaml,
@@ -3793,6 +3795,7 @@ def write_split_artifacts(
     if result.errors:
         return result
     manifest = copy.deepcopy(result.analysis.get("split_plan", {}))
+    manifest.setdefault("project", {})["table_prefix"] = finished_yaml["table_prefix"]
     # The manifest at the run folder's top, what it runs under pull_files/split.
     for session in manifest.get("sessions", []) or []:
         for phase in (session.get("phases", {}) or {}).values():
@@ -3831,6 +3834,38 @@ def write_split_artifacts(
     result.output_path = str(manifest_path)
     result.analysis["split_output_dir"] = str(out_dir)
     return result
+
+
+_TABLE_PREFIX_LINE = re.compile(r"^\s*table_prefix:\s*['\"]?([A-Za-z0-9_]+)", re.M)
+
+
+def manifest_table_prefix(manifest_path: Path) -> str:
+    """The table prefix a manifest records (D163), read without parsing it all."""
+    try:
+        match = _TABLE_PREFIX_LINE.search(manifest_path.read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+    return match.group(1) if match else ""
+
+
+def pull_table_prefix(finished_yaml: dict[str, Any], out_dir: Path) -> str:
+    """The prefix of every Projects table this pull makes (D163): the one it
+    had, if split before; else its temp prefix (D50), numbered 2, 3 and on if
+    another pull beside it (under the runs folder, `runs/<project>`) has it."""
+    own = manifest_table_prefix(out_dir / "pullmanifest.yaml")
+    if own:
+        return own
+    base = str(finished_yaml.get("temp_prefix") or "pull")
+    # `jvm_` and `local_` are stripped from a name as the generator's (naming.base_name).
+    taken: set[str] = {"jvm", "local"}
+    if out_dir.parent.is_dir():
+        for manifest in out_dir.parent.glob("*/pullmanifest.yaml"):
+            if manifest.parent.resolve() != out_dir.resolve():
+                taken.add(manifest_table_prefix(manifest).lower())
+    prefix, number = base, 2
+    while prefix.lower() in taken:
+        prefix, number = f"{base}{number}", number + 1
+    return prefix
 
 
 def copy_template_beside(source: Path, out_dir: Path) -> Path:
@@ -5602,8 +5637,9 @@ batching:
         # The outcome that matters: with no recipes file at all, the VM gets
         # the same sessions, runs and SQL inputs the Mac would have produced.
         transfer = Path(self.export().output_path)
-        expected = self.split_tree(self.template, self.recipes, self.tmp / "from_template")
-        actual = self.split_tree(transfer, self.no_recipes, self.tmp / "from_transfer")
+        # Apart: side by side, the second pull's tables would be numbered (D163).
+        expected = self.split_tree(self.template, self.recipes, self.tmp / "a" / "from_template")
+        actual = self.split_tree(transfer, self.no_recipes, self.tmp / "b" / "from_transfer")
         self.assertEqual(sorted(expected), sorted(actual))
         for rel in expected:
             with self.subTest(file=rel):
@@ -5622,8 +5658,8 @@ batching:
                 template = work / name
                 res = build_transfer(template, recipes, write=True)
                 self.assertCompiles(res)
-                expected = self.split_tree(template, recipes, work / "a")
-                actual = self.split_tree(Path(res.output_path), self.no_recipes, work / "b")
+                expected = self.split_tree(template, recipes, work / "a" / "split")
+                actual = self.split_tree(Path(res.output_path), self.no_recipes, work / "b" / "split")
                 self.assertEqual(expected, actual)
 
     def test_refers_to_no_recipes(self):
@@ -5886,6 +5922,20 @@ class RunFolderTests(MakeYamlTest):
         ):
             with self.subTest(name=name):
                 self.assertEqual(run_folder_name(Path("/Z/Project D139081") / name), expected)
+
+    def test_each_pull_gets_its_own_table_prefix_and_keeps_it(self):
+        # D163: two pulls of one project in one database clashed on table names.
+        recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
+        first = write_temp_yaml(self.tmp, "UC_Visits_blueprint.yaml", tiny_template())
+        second = write_temp_yaml(self.tmp, "UC_Visits_v2_blueprint.yaml", tiny_template())
+        runs = self.tmp / "runs"
+        for template in (first, second, first):
+            self.assertCompiles(write_split_artifacts(template, recipes, runs / run_folder_name(template)))
+        for project, prefix in (("UC_Visits", "tesrun"), ("UC_Visits_v2", "tesrun2")):
+            manifest = load_yaml(runs / project / "pullmanifest.yaml")
+            self.assertEqual(manifest["project"]["table_prefix"], prefix)
+            setup = load_yaml(runs / project / manifest["sessions"][0]["phases"]["setup"]["yaml"])
+            self.assertEqual(setup["table_prefix"], prefix)
 
     def test_a_split_being_executed_is_not_replaced(self):
         # D67: exporting again replaced the manifest a running Execute writes to.

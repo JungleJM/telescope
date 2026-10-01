@@ -183,6 +183,22 @@ class PackageTests(ArtifactTestCase):
         self.assertEqual([c for c, _ in spec.columns][-1], "LengthOfStayInDays")
         self.assertEqual(dict(spec.columns)["InpatientEncounterKey"], "BIGINT")
 
+    def test_a_prefixed_pull_is_read_from_its_prefixed_tables_into_plain_parquets(self):
+        # D163: in Projects as manval_Patients; the parquet stays Patients.parquet.
+        self.set_status()
+        for path in (self.split / "sessions").rglob("*.yaml"):
+            doc = load_yaml(path)
+            doc["table_prefix"] = "manval"
+            dump_yaml(doc, path)
+        db = FakeProjects(
+            {"manval_Patients": PATIENTS, "manval_OtherHospitalizations": HOSPITALIZATIONS},
+            {"manval_Patients": patients(), "manval_OtherHospitalizations": hospitalizations()},
+        )
+        result = self.package(db)
+        self.assertEqual(result.left_out, [])
+        self.assertEqual(self.read("cosmos_parquets/Patients.parquet").num_rows, 3)
+        self.assertEqual(self.read("cosmos_parquets/OtherHospitalizations.parquet").num_rows, 2)
+
     def test_uploads_are_copied_from_the_split(self):
         self.set_status()
         self.package()

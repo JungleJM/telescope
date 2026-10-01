@@ -49,7 +49,7 @@ from .executor import (
 )
 from .manifest import Manifest, Phase, Session
 from .models import format_duration, now_iso
-from .naming import destination, global_temp, temp_prefix
+from .naming import destination, global_temp, projects_table, table_prefix, temp_prefix
 from .normalize import cosmos_database
 from .uploads import UploadError
 from .yaml_io import load_yaml
@@ -161,6 +161,18 @@ class SessionRunner:
         # same unless another pull holds those names (D50).
         self.planned_prefix = ""
         self.prefix = ""
+        self._table_prefix: str | None = None
+
+    @property
+    def table_prefix(self) -> str:
+        """What every Projects table this pull makes begins with (D163)."""
+        if self._table_prefix is None:
+            self._table_prefix = table_prefix(self._phase_doc("setup"))
+        return self._table_prefix
+
+    def _upload_copy(self, dest: str) -> str:
+        """An upload's Projects copy: `ibdanc_upload_IBD_Meds` (D54, D163)."""
+        return projects_table(uploads.copy_table(dest), self.table_prefix)
 
     # ----------------------------------------------------------- lifecycle
 
@@ -240,7 +252,7 @@ class SessionRunner:
                 continue
             self.say(f"{dest}: into Cosmos started", 1)
             started = time.monotonic()
-            loaded = self._load_temp_from_copy(dest, destination(self.project_db, uploads.copy_table(dest)))
+            loaded = self._load_temp_from_copy(dest, destination(self.project_db, self._upload_copy(dest)))
             self.say(f"{dest}: {loaded:,} rows into Cosmos in {since(started)}", 1)
         self.manifest.save()
 
@@ -498,7 +510,7 @@ class SessionRunner:
         report: dict[str, dict[str, Any]] = {}
         for cohort in enabled:
             dest = uploads.upload_dest(cohort)
-            copy = destination(self.project_db, uploads.copy_table(dest))
+            copy = destination(self.project_db, self._upload_copy(dest))
             is_pk = str(cohort.get("type", "")).lower() == "pk"
             landed = None if is_pk else self.manifest.uploads_landed.get(dest)
             if self.resuming or landed:
@@ -590,7 +602,7 @@ class SessionRunner:
 
     def _load_temp_from_copy(self, dest: str, copy: str) -> int:
         """Create the Cosmos temp with the copy's types, and fill it from the copy."""
-        columns = self._describe(uploads.copy_table(dest))
+        columns = self._describe(self._upload_copy(dest))
         temp = global_temp(dest, self.prefix)
         self._execute(self.cosmos, uploads.render_create(temp, columns), label=f"upload {dest}")
         cursor = self.projects.cursor()
@@ -692,7 +704,8 @@ class SessionRunner:
             raise SessionError(
                 f"{node.label}: {pk_table} is a control but names no case. Export the split again."
             )
-        if not self._projects_table_exists(destination(self.project_db, case)):
+        case_table = projects_table(case, self.table_prefix)
+        if not self._projects_table_exists(destination(self.project_db, case_table)):
             raise SessionError(
                 f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
                 f"{self.project_db}. Its session comes earlier in the manifest: run it first."
@@ -709,7 +722,7 @@ class SessionRunner:
                 continue
             seen.add(stratum)
             label = str((batch or {}).get("name") or local_sql.UNBATCHED_LABEL)
-            cases = self._count(count_batch_rows(self.project_db, case, batch))
+            cases = self._count(count_batch_rows(self.project_db, case_table, batch))
             controls = self._count(count_batch_rows(self.project_db, self._pk_copy(), batch))
             keep = int(cases * row_mult)
             if controls < keep:
@@ -744,7 +757,9 @@ class SessionRunner:
         `upload_` copy (D54).
         """
         pk_table = self.session.pk_table or ""
-        return pk_table if self._pk_is_generated() else uploads.copy_table(pk_table)
+        if self._pk_is_generated():
+            return projects_table(pk_table, self.table_prefix)
+        return self._upload_copy(pk_table)
 
     def _verify_pk_uniqueness(self, doc: dict[str, Any]) -> int | None:
         """A non-unique key makes ORDER BY arbitrary, so chunks stop being stable."""
@@ -790,7 +805,7 @@ class SessionRunner:
         for dest in node.outputs.get("table_rows") or {}:
             key = perkey.join_column(cohorts.get(str(dest)) or {})
             if key:
-                self._measure(node, str(dest), str(dest), [key], label)
+                self._measure(node, projects_table(str(dest), self.table_prefix), str(dest), [key], label)
 
     def _measure(self, node: Any, table: str, dest: str, keys: list[str], label: str | None) -> None:
         """One query in Projects; a failure is a warning, never the step's."""

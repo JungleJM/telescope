@@ -1118,6 +1118,33 @@ class UploadCopyTests(SessionTestCase):
         self.assertTrue(any("--repull" in message for _, message in report.failed), report.failed)
 
 
+class TablePrefixTests(SessionTestCase):
+    """D163: every table a pull makes in Projects carries its prefix, so two
+    pulls in one database no longer drop each other's tables."""
+
+    def setUp(self):
+        super().setUp()
+        for path in (self.root / "sessions").rglob("*.yaml"):
+            doc = load_yaml(path)
+            doc["table_prefix"] = "manval"
+            dump_yaml(doc, path)
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.tables: dict[str, Counter] = {}
+
+    def test_its_tables_land_under_the_prefix_and_nothing_else_is_touched(self):
+        with self.runner(projects={"tables": self.tables}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        made = {name for name in self.tables if name.startswith("PROJECTD33A929.dbo.")}
+        self.assertIn("PROJECTD33A929.dbo.manval_upload_HospitalICDCodes", made)
+        self.assertIn("PROJECTD33A929.dbo.manval_Patients", made)
+        self.assertIn("PROJECTD33A929.dbo.manval_OtherHospitalizations", made)
+        self.assertEqual([n for n in made if not n.startswith("PROJECTD33A929.dbo.manval_")], [])
+        projects = "\n".join(self.projects.executed)
+        self.assertNotIn("DROP TABLE IF EXISTS PROJECTD33A929.dbo.OtherHospitalizations", projects)
+        self.assertNotIn("dbo.upload_HospitalICDCodes", projects.replace("manval_upload_", ""))
+
+
 class ControlSampleTests(SessionTestCase):
     """D59: a control's PK keeps row_mult times its case, batch by batch."""
 

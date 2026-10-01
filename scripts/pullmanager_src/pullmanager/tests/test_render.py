@@ -253,6 +253,18 @@ class LocalRenderTests(unittest.TestCase):
         self.assertIn("DROP TABLE IF EXISTS PROJECTD93A5E7.dbo.PKTable2;", sql)
         self.assertIn("CREATE TABLE PROJECTD93A5E7.dbo.PKTable2", sql)
 
+    def test_two_pulls_with_one_table_name_drop_only_their_own(self):
+        # D163: UC_Visits and the Crohns pulls both wrote OtherDiagnoses in
+        # PROJECTD93A5E7, and each one's setup dropped the other's.
+        first = local_sql.render_setup(doc_with(pk_cohort(), table_prefix="ucvis"), [pk_cohort()], "S/setup")
+        second = local_sql.render_setup(doc_with(pk_cohort(), table_prefix="cro"), [pk_cohort()], "S/setup")
+        self.assertIn("DROP TABLE IF EXISTS PROJECTD93A5E7.dbo.ucvis_PKTable2;", first[0].sql)
+        self.assertIn("DROP TABLE IF EXISTS PROJECTD93A5E7.dbo.cro_PKTable2;", second[0].sql)
+        self.assertEqual(first[0].dest_table, "PKTable2")  # its parquet keeps the plain name
+        sql = local_sql.render_phase(doc_with(pk_cohort(), table_prefix="ucvis"), "S/pk", self.LINKED)[0].sql
+        self.assertIn("INSERT INTO PROJECTD93A5E7.dbo.ucvis_PKTable2", sql)
+        self.assertIn("FROM PROJECTD93A5E7.dbo.ucvis_PKTable2;", sql)  # the Projects count
+
     def test_transfer_stages_then_inserts_in_a_transaction(self):
         sql = local_sql.render_phase(doc_with(pk_cohort()), "S/pk", self.LINKED)[0].sql
         self.assertIn("DROP TABLE IF EXISTS #Local_PKTable2;", sql)

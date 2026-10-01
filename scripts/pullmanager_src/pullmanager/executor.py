@@ -15,7 +15,7 @@ from typing import Any, Iterator
 from . import local_sql, server_sql
 from .manifest import Manifest, Node, Phase, Run, Session
 from .models import BLOCKED, DONE, FAILED, RUNNING, SKIPPED
-from .naming import global_temp, temp_prefix
+from .naming import global_temp, projects_table, table_prefix, temp_prefix
 from .normalize import normalize_bool
 from .sql import SqlBlock
 from .yaml_io import load_yaml
@@ -190,20 +190,22 @@ def reads_temp(
 
 
 def upload_note(
-    manifest: Manifest, session: Session, upload: dict[str, Any], prefix: str, resuming: bool
+    manifest: Manifest, session: Session, upload: dict[str, Any], prefix: str, resuming: bool,
+    tables: str = "",
 ) -> str:
     """What the upload phase will do with one upload: D54 as narrowed by D61."""
     dest = str(upload.get("dest_table") or upload.get("name"))
+    copy = projects_table(f"upload_{dest}", tables)
     is_pk = str(upload.get("type", "")).lower() == "pk"
     if resuming:
-        projects = f"upload_{dest} is kept in Projects, not re-read from the file"
+        projects = f"{copy} is kept in Projects, not re-read from the file"
     elif not is_pk and dest in manifest.uploads_landed:
-        projects = f"upload_{dest} was landed earlier in this pull; this session uses it"
+        projects = f"{copy} was landed earlier in this pull; this session uses it"
     elif is_pk:
-        projects = f"lands in Projects as upload_{dest}, typed"
+        projects = f"lands in Projects as {copy}, typed"
     else:
         projects = (
-            f"lands in Projects as upload_{dest}, typed, once for the pull; later "
+            f"lands in Projects as {copy}, typed, once for the pull; later "
             "sessions use that copy"
         )
     if is_pk or session_reads(manifest, session, dest, prefix):
@@ -317,7 +319,8 @@ def plan_unit(
         if not enabled:
             unit.notes.append("no upload cohorts")
         for upload in enabled:
-            unit.notes.append(upload_note(manifest, session, upload, temp_prefix(doc), resuming))
+            unit.notes.append(upload_note(manifest, session, upload, temp_prefix(doc), resuming,
+                                          table_prefix(doc)))
         return unit
 
     server_blocks, notes = server_sql.render_phase(doc, unit.unit_id)
