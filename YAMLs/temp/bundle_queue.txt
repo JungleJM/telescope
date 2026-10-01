@@ -1,4 +1,2 @@
 # Temps queued for the bundle, one per line (D91). YAML Manager's Save & Refresh
 # adds to it and its Builder > Exports edits it; python3 makebundle.py carries it (D122).
-Infant_RSV_intake.yaml
-UC_VisitsMedsDiagnoses_intake.yaml

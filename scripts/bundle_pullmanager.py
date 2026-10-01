@@ -449,9 +449,11 @@ def build_bundle(names: list[str], queue: bool, output: Path | None = None,
     elif not transfers:
         said.append("Nothing was queued, so it carries the runtime alone.")
     for transfer in transfers:
-        said.append(f"Carries {transfer.name}: extracted beside scope.py on the VM.")
+        where = ("YAMLs/temp/ beside scope.py on the VM, its project's one working copy (D162)"
+                 if transfer.name.endswith(BLUEPRINT_SUFFIX) else "beside scope.py on the VM")
+        said.append(f"Carries {transfer.name}: extracted into {where}.")
         for upload in upload_locations(transfer):
-            said.append(f"  It reads {upload}: copy that to the VM at the same path beside it, "
+            said.append(f"  It reads {upload}: copy that to the VM at that path beside scope.py, "
                         "unless it is there already.")
     if carried_queue:
         write_queue([], folder)
@@ -487,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
         metavar="yaml=NAME,NAME",
         help="Transfer YAMLs to carry, by project name: yaml=IBD_Ancestry,Celiac finds "
              "IBD_Ancestry_blueprint.yaml and Celiac_blueprint.yaml at the repository "
-             "root. Each is extracted beside scope.py on the VM. Every intake queued in "
+             "root. Each is extracted into YAMLs/temp/ beside scope.py on the VM. Every intake queued in "
              "YAMLs/temp/bundle_queue.txt is carried too, unless --no-queue (D122).",
     )
     parser.add_argument(
