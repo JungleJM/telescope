@@ -125,6 +125,8 @@ class AuthorView:
         self.highlight: model.FieldRef | None = None
         # Tables whose column list is open in the builder, while this draft is (D125).
         self.open_columns: set[tuple[Any, str]] = set()
+        # The Add JOIN / Add WHERE forms open now, by table and kind (D168).
+        self.open_forms: set[tuple[Any, str]] = set()
         self.inline_builder: model.TableBuilder | None = None  # the table being built in place (D110)
 
         self._build_top()
@@ -333,6 +335,7 @@ class AuthorView:
         self.highlight = None
         self.inline_builder = None
         self.open_columns = set()
+        self.open_forms = set()
         self._setting_name = True
         self.name_var.set(self.draft.project_name)
         self._setting_name = False
@@ -576,7 +579,8 @@ MODE_LABELS = {**{op: op for op in model.WHERE_OPERATORS}, "In supporting table"
 
 
 def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
-               add: Callable[[str, str, str, str, str, str], Any]) -> None:
+               add: Callable[[str, str, str, str, str, str], Any],
+               cancel: Callable[[], Any] | None = None) -> None:
     """A where line by column: this table's column, an operator and its value
     (two for BETWEEN), or a supporting table's column the value must be in
     (D105, D119)."""
@@ -595,13 +599,15 @@ def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
     supporting = view.draft.supporting_columns()
     table_box = ttk.Combobox(form, textvariable=table, values=list(supporting), state="readonly", width=22)
     column_box = ttk.Combobox(form, textvariable=table_column, state="readonly", width=22)
-    button = ttk.Button(form, text="Add where", command=lambda: add(
+    button = ttk.Button(form, text="Add", command=lambda: add(
         dict(sources).get(column.get(), ""), MODE_LABELS[mode.get()], value.get(), table.get(), table_column.get(),
         higher.get()))
+    cancel_button = ttk.Button(form, text="Cancel", command=cancel) if cancel else None
 
     def show(*_: Any) -> None:
-        for widget in (value_box, and_label, higher_box, table_box, column_box, button):
-            widget.pack_forget()
+        for widget in (value_box, and_label, higher_box, table_box, column_box, button, cancel_button):
+            if widget is not None:
+                widget.pack_forget()
         if mode.get() in model.WHERE_OPERATORS:
             value_box.pack(side="left", padx=4)
             if mode.get() == "BETWEEN":
@@ -611,6 +617,8 @@ def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
             table_box.pack(side="left", padx=4)
             column_box.pack(side="left", padx=4)
         button.pack(side="left", padx=6)
+        if cancel_button is not None:
+            cancel_button.pack(side="left")
 
     table_box.bind("<<ComboboxSelected>>", lambda e: column_box.configure(values=supporting.get(table.get(), [])))
     mode.trace_add("write", show)
@@ -622,7 +630,8 @@ def where_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]],
 
 def join_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]], exclude: int | None,
               check: Callable[[str, str, str], tuple[bool, str]],
-              add: Callable[[str, str, str, str, str], Any]) -> None:
+              add: Callable[[str, str, str, str, str], Any],
+              cancel: Callable[[], Any] | None = None) -> None:
     """A join by column to another table of the template: its type (with what
     each keeps), the operator, and a check that the types match (D105)."""
     form = ttk.Frame(parent)
@@ -660,38 +669,100 @@ def join_form(view: AuthorView, parent: Any, sources: list[tuple[str, str]], exc
     column_box.bind("<<ComboboxSelected>>", update)
     # This table's column counts as much as the other's: a stale "match" misleads.
     column.trace_add("write", update)
-    ttk.Button(form, text="Add join", command=lambda: add(
+    ttk.Button(form, text="Add", command=lambda: add(
         kind.get(), column.get(), operator.get(), other.get(), other_column.get())).pack(side="left", padx=6)
+    if cancel:
+        ttk.Button(form, text="Cancel", command=cancel).pack(side="left")
     result.pack(side="left")
     columns_of_table()
     note(parent, JOIN_EXPLAINED).pack(anchor="w")
 
 
+# A line in a filter box: its text, or a function that draws it into its row
+# (returning one that draws what follows its Remove); and what removes it.
+FilterLine = tuple[Any, Callable[[], Any]]
+
+
+def filter_box(view: AuthorView, parent: Any, title: str, key: Any, joins: list[FilterLine],
+               wheres: list[FilterLine], forms: dict[str, Callable[[Any, Callable[[], Any]], Any]],
+               refresh: Callable[[], Any]) -> ttk.LabelFrame:
+    """JOIN, then WHERE, each with its lines and a Remove beside each; under
+    each, Add JOIN or Add WHERE opens its form in place, with Add and Cancel
+    (D168). `forms[kind](holder, close)` draws an open form."""
+    box = ttk.LabelFrame(parent, text=title, padding=8)
+    box.pack(fill="x", pady=8)
+    for kind, lines in (("join", joins), ("where", wheres)):
+        part = ttk.LabelFrame(box, text=kind.upper(), padding=(8, 4))
+        part.pack(fill="x", pady=(2, 4))
+        for content, remove in lines:
+            row = ttk.Frame(part)
+            row.pack(fill="x", pady=1)
+            after = content(row) if callable(content) else ttk.Label(row, text=content).pack(side="left")
+            ttk.Button(row, text="Remove", command=remove).pack(side="left", padx=6)
+            if callable(after):
+                after()
+        if not lines:
+            note(part, f"No {kind} lines added.").pack(anchor="w")
+        if kind not in forms:
+            continue
+        if (key, kind) in view.open_forms:
+            holder = ttk.Frame(part)
+            holder.pack(fill="x")
+
+            def close(k: str = kind) -> None:
+                view.open_forms.discard((key, k))
+                refresh()
+
+            forms[kind](holder, close)
+        else:
+            def open_form(k: str = kind) -> None:
+                view.open_forms.add((key, k))
+                refresh()
+
+            ttk.Button(part, text=f"Add {kind.upper()}", command=open_form).pack(anchor="w", pady=(4, 0))
+    return box
+
+
 def filter_editor(view: AuthorView, parent: Any, index: int) -> None:
-    """A table's own lines, added to its recipe's (D105): where by column,
-    joins to the template's tables, each removable."""
+    """A table's own lines, added to its recipe's (D105): joins to the
+    template's tables and where by column, each removable (D168)."""
     draft = view.draft
-    box = ttk.LabelFrame(parent, text="Filters added to this table", padding=8)
-    box.pack(fill="x", pady=(8, 0))
-    for kind in ("where", "join"):
-        for position, line in enumerate(draft.added_lines(index, kind)):
-            row = ttk.Frame(box)
-            row.pack(fill="x")
-            ttk.Label(row, text=f"{kind}: {line}").pack(side="left")
-            ttk.Button(row, text="Remove", command=lambda k=kind, i=position: view.edit(
-                lambda: draft.remove_line(index, k, i), rerender=True)).pack(side="right")
+    key = ("filters", index)
+
+    def lines(kind: str) -> list[FilterLine]:
+        return [(line, lambda k=kind, i=position: view.edit(lambda: draft.remove_line(index, k, i), rerender=True))
+                for position, line in enumerate(draft.added_lines(index, kind))]
+
+    def adding(kind: str, change: Callable[[], Any]) -> None:
+        """Added, the form closes; refused, it stays open, with why."""
+        try:
+            change()
+        except model.DraftError as exc:
+            view.say(str(exc), "error")
+            return
+        view.open_forms.discard((key, kind))
+        view.changed(rerender=True)
+
     sources = [(name, source) for name, source, _ in draft.filter_sources(index)]
     types = {source: kind for _, source, kind in draft.filter_sources(index)}
+    lookup = dict(sources)
+    forms: dict[str, Callable[[Any, Callable[[], Any]], Any]] = {}
+    if sources:
+        forms["join"] = lambda holder, close: join_form(
+            view, holder, sources, index,
+            lambda name, table, column: draft.join_check(types.get(lookup.get(name, ""), ""), table, column, index),
+            lambda kind, name, operator, table, column: adding("join", lambda: draft.add_join_to(
+                index, lookup.get(name, ""), table, column, kind, operator)),
+            cancel=close)
+        forms["where"] = lambda holder, close: where_form(
+            view, holder, sources,
+            lambda source, mode, value, table, column, higher: adding("where", lambda: draft.add_where_by_column(
+                index, source, mode, value, table, column, higher)),
+            cancel=close)
+    box = filter_box(view, parent, "Filters added to this table", key, lines("join"), lines("where"), forms,
+                     view.render_soon)
     if not sources:
         note(box, "This table's columns are not known, so filters are written in the YAML.").pack(anchor="w")
-        return
-    where_form(view, box, sources, lambda source, mode, value, table, column, higher: view.edit(
-        lambda: draft.add_where_by_column(index, source, mode, value, table, column, higher), rerender=True))
-    lookup = dict(sources)
-    join_form(view, box, sources, index,
-              lambda name, table, column: draft.join_check(types.get(lookup.get(name, ""), ""), table, column, index),
-              lambda kind, name, operator, table, column: view.edit(
-                  lambda: draft.add_join_to(index, lookup.get(name, ""), table, column, kind, operator), rerender=True))
 
 
 # =============================================================================
@@ -1055,8 +1126,7 @@ class TableBuilderPanel:
         alias_entry.bind("<FocusOut>", lambda e: alias.get() != b.alias and self.act(lambda: b.set_alias(alias.get())))
         grid_row(form, len(fields) + 2, "Alias", alias_entry)
         self.columns(parent)
-        self.joins(parent)
-        self.wheres(parent)
+        self.filters(parent)
 
     def columns_key(self) -> tuple[Any, str]:
         return (self.b.index, self.b.from_table)
@@ -1110,59 +1180,79 @@ class TableBuilderPanel:
             ttk.Button(box, text="Add back", command=lambda: self.act(lambda: b.restore_column(back.get()))
                        ).grid(row=len(b.columns) + 2, column=2, sticky="w")
 
-    def joins(self, parent: Any) -> None:
+    def filters(self, parent: Any) -> None:
+        """Joins, then where lines, as the Filters box draws them (D168); the
+        open forms also take a written line."""
         b = self.b
-        box = ttk.LabelFrame(parent, text="Joins", padding=8)
-        box.pack(fill="x", pady=8)
-        for i, join in enumerate(b.joins):
-            line = ttk.Frame(box)
-            line.pack(fill="x")
-            ttk.Label(line, text=b.join_line(join)).pack(side="left")
-            ttk.Button(line, text="Remove", command=lambda i=i: self.act(lambda: b.remove_join(i))).pack(side="right")
+        key = ("builder", b.index, b.from_table)
         names = [b.source_column(c) for c in b.columns]
         sources = [(name, name) for name in names]
-        join_form(self.view, box, sources, b.index,
-                  lambda name, table, column: b.join_check(names.index(name), table, column)
-                  if name in names else (False, "Choose a column of this table."),
-                  lambda kind, name, operator, table, column: self.act(lambda: b.add_join(
-                      names.index(name) if name in names else -1, table, column, kind, operator)))
-        text = tk.StringVar()
-        written = ttk.Frame(box)
-        written.pack(fill="x", pady=(6, 0))
-        keep(written, text)
-        ttk.Entry(written, textvariable=text, width=90).pack(side="left")
-        ttk.Button(written, text="Add written join", command=lambda: self.act(lambda: b.add_join_text(text.get()))
-                   ).pack(side="left", padx=6)
-        note(box, "A written join reaches a Cosmos table: INNER JOIN PatientDim AS p ON p.DurableKey = "
-                  f"{b.alias}.PatientDurableKey").pack(anchor="w")
 
-    def wheres(self, parent: Any) -> None:
-        b = self.b
-        box = ttk.LabelFrame(parent, text="Where", padding=8)
-        box.pack(fill="x", pady=8)
-        for i, line in enumerate(b.wheres):
-            row = ttk.Frame(box)
-            row.pack(fill="x", pady=1)
-            var = tk.StringVar(value=line)
-            entry = ttk.Entry(row, textvariable=var, width=100)
-            keep(entry, var)
-            problem = ttk.Label(box, text=b.line_problem(line) or "", foreground="#b3261e")
+        def adding(kind: str, change: Callable[[], Any]) -> None:
+            self.view.open_forms.discard((key, kind))
+            if not self.act_ok(change):
+                self.view.open_forms.add((key, kind))
 
-            def typed(*_: Any, i: int = i, v: tk.StringVar = var, shown: ttk.Label = problem) -> None:
-                b.set_where(i, v.get())
-                # Checked as it is typed, and again at Done (D118).
-                shown.configure(text=b.line_problem(v.get()) or "")
+        def where_line(i: int, line: str) -> Callable[[Any], Any]:
+            def draw(row: Any) -> Callable[[], Any]:
+                var = tk.StringVar(value=line)
+                entry = ttk.Entry(row, textvariable=var, width=100)
+                keep(entry, var)
+                problem = ttk.Label(row, text=b.line_problem(line) or "", foreground="#b3261e")
 
-            var.trace_add("write", typed)
-            entry.pack(side="left")
-            ttk.Button(row, text="Remove", command=lambda i=i: self.act(lambda: b.remove_where(i))).pack(side="left", padx=4)
-            problem.pack(anchor="w")
-        names = [b.source_column(c) for c in b.columns]
-        where_form(self.view, box, [(name, name) for name in names],
-                   lambda source, mode, value, table, column, higher: self.act(lambda: b.add_where_by_column(
-                       names.index(source) if source in names else -1, mode, value, table, column, higher)))
-        ttk.Button(box, text="Add a written condition", command=lambda: self.act(b.add_where)).pack(anchor="w", pady=(4, 0))
-        note(box, "Dates as {{min_date_key}} and {{max_date_key}}; a variable as {{Name}}.").pack(anchor="w")
+                def typed(*_: Any) -> None:
+                    b.set_where(i, var.get())
+                    # Checked as it is typed, and again at Done (D118).
+                    problem.configure(text=b.line_problem(var.get()) or "")
+
+                var.trace_add("write", typed)
+                entry.pack(side="left")
+                return lambda: problem.pack(side="left", padx=4)
+            return draw
+
+        def join_open(holder: Any, close: Callable[[], Any]) -> None:
+            join_form(self.view, holder, sources, b.index,
+                      lambda name, table, column: b.join_check(names.index(name), table, column)
+                      if name in names else (False, "Choose a column of this table."),
+                      lambda kind, name, operator, table, column: adding("join", lambda: b.add_join(
+                          names.index(name) if name in names else -1, table, column, kind, operator)),
+                      cancel=close)
+            text = tk.StringVar()
+            written = ttk.Frame(holder)
+            written.pack(fill="x", pady=(6, 0))
+            keep(written, text)
+            ttk.Label(written, text="Or written:").pack(side="left")
+            ttk.Entry(written, textvariable=text, width=80).pack(side="left", padx=4)
+            ttk.Button(written, text="Add written join",
+                       command=lambda: adding("join", lambda: b.add_join_text(text.get()))).pack(side="left", padx=6)
+            note(holder, "A written join reaches a Cosmos table: INNER JOIN PatientDim AS p ON p.DurableKey = "
+                         f"{b.alias}.PatientDurableKey").pack(anchor="w")
+
+        def where_open(holder: Any, close: Callable[[], Any]) -> None:
+            where_form(self.view, holder, sources,
+                       lambda source, mode, value, table, column, higher: adding("where", lambda: b.add_where_by_column(
+                           names.index(source) if source in names else -1, mode, value, table, column, higher)),
+                       cancel=close)
+            ttk.Button(holder, text="Add a written condition",
+                       command=lambda: adding("where", b.add_where)).pack(anchor="w", pady=(4, 0))
+            note(holder, "Dates as {{min_date_key}} and {{max_date_key}}; a variable as {{Name}}.").pack(anchor="w")
+
+        joins = [(b.join_line(join), lambda i=i: self.act(lambda: b.remove_join(i))) for i, join in enumerate(b.joins)]
+        wheres = [(where_line(i, line), lambda i=i: self.act(lambda: b.remove_where(i)))
+                  for i, line in enumerate(b.wheres)]
+        filter_box(self.view, parent, "Joins and where", key, joins, wheres,
+                   {"join": join_open, "where": where_open}, self.render)
+
+    def act_ok(self, change: Callable[[], Any]) -> bool:
+        """As act, saying whether the change was made."""
+        try:
+            change()
+        except (model.DraftError, IndexError, ValueError) as exc:
+            self.say(str(exc))
+            return False
+        self.say("")
+        self.render()
+        return True
 
     def commit(self) -> None:
         try:
@@ -2189,11 +2279,40 @@ class FilterViewTests(ViewTest):
         return next(w for w in widgets(self.view.body.inner)
                     if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Filters added to this table")
 
-    def test_a_where_by_value_is_added_to_a_prefabricated_table(self):
+    def button(self, parent: Any, text: str) -> Any:
+        return next(w for w in widgets(parent) if isinstance(w, ttk.Button) and w.cget("text") == text)
+
+    def open_filter_form(self, kind: str) -> Any:
+        """Add JOIN or Add WHERE pressed (D168): the box, drawn again with it open."""
+        self.button(self.filters_box(), f"Add {kind}").invoke()
+        self.root.update()
+        return self.filters_box()
+
+    def test_joins_come_first_and_each_form_opens_by_its_button(self):
+        # D168: lines mixed, both forms always open, where first.
         self.open("Celiac_intake.yaml")
         self.view.show_section("fact")
         self.root.update()
         box = self.filters_box()
+        parts = [w.cget("text") for w in box.winfo_children() if isinstance(w, ttk.LabelFrame)]
+        self.assertEqual(parts, ["JOIN", "WHERE"])
+        self.assertFalse([w for w in widgets(box) if isinstance(w, ttk.Combobox)])
+        shown = [str(w.cget("text")) for w in widgets(box) if isinstance(w, ttk.Label)]
+        self.assertNotIn(JOIN_EXPLAINED, shown)  # an explanation only with its form
+        box = self.open_filter_form("JOIN")
+        self.assertIn(JOIN_EXPLAINED, [str(w.cget("text")) for w in widgets(box) if isinstance(w, ttk.Label)])
+        self.button(box, "Cancel").invoke()
+        self.root.update()
+        box = self.filters_box()
+        self.assertFalse([w for w in widgets(box) if isinstance(w, ttk.Combobox)])
+        index = self.view.draft.fact_tables()[0][0]
+        self.assertEqual(self.view.draft.added_lines(index, "join"), [])
+
+    def test_a_where_by_value_is_added_to_a_prefabricated_table(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("fact")
+        self.root.update()
+        box = self.open_filter_form("WHERE")
         combos = [w for w in widgets(box) if isinstance(w, ttk.Combobox)]
         column, mode = combos[0], combos[1]
         column.set(column.cget("values")[0])
@@ -2202,21 +2321,24 @@ class FilterViewTests(ViewTest):
         self.root.update()
         entry = next(w for w in widgets(box) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox))
         entry.insert(0, "K50%")
-        next(w for w in widgets(box) if isinstance(w, ttk.Button) and w.cget("text") == "Add where").invoke()
+        self.button(box, "Add").invoke()
         self.root.update()
         index = self.view.draft.fact_tables()[0][0]
         added = self.view.draft.added_lines(index, "where")
         self.assertEqual(len(added), 1)
         self.assertTrue(added[0].endswith("LIKE 'K50%'"), added)
-        labels = [str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Label)]
-        self.assertIn(f"where: {added[0]}", labels)
+        where = next(w for w in widgets(self.filters_box()) if isinstance(w, ttk.LabelFrame) and w.cget("text") == "WHERE")
+        self.assertIn(added[0], [str(w.cget("text")) for w in widgets(where) if isinstance(w, ttk.Label)])
+        # Added, the form closes again, and its line has a Remove beside it.
+        self.assertTrue(self.button(where, "Add WHERE"))
+        self.assertTrue(self.button(where, "Remove"))
 
     def test_between_takes_a_lower_and_a_higher_value(self):
         # Infant_RSV: a date range typed as one value came out as `= 'BETWEEN ...'`.
         self.open("Celiac_intake.yaml")
         self.view.show_section("fact")
         self.root.update()
-        box = self.filters_box()
+        box = self.open_filter_form("WHERE")
         combos = [w for w in widgets(box) if isinstance(w, ttk.Combobox)]
         combos[0].set(combos[0].cget("values")[0])
         combos[1].set("BETWEEN")
@@ -2226,7 +2348,7 @@ class FilterViewTests(ViewTest):
         self.assertEqual(len(entries), 2)
         entries[0].insert(0, "{{min_date_key}}")
         entries[1].insert(0, "{{max_date_key}}")
-        next(w for w in widgets(box) if isinstance(w, ttk.Button) and w.cget("text") == "Add where").invoke()
+        self.button(box, "Add").invoke()
         self.root.update()
         index = self.view.draft.fact_tables()[0][0]
         self.assertTrue(self.view.draft.added_lines(index, "where")[-1].endswith(
@@ -2236,7 +2358,7 @@ class FilterViewTests(ViewTest):
         self.open("Celiac_intake.yaml")
         self.view.show_section("fact")
         self.root.update()
-        box = self.filters_box()
+        box = self.open_filter_form("WHERE")
         mode = [w for w in widgets(box) if isinstance(w, ttk.Combobox)][1]
         mode.set("In supporting table")
         self.root.update()
@@ -2249,11 +2371,12 @@ class FilterViewTests(ViewTest):
         open_table_builder(self.view, None, table="EncounterFact")
         self.root.update()
         window = self.view._last_builder
-        next(w for w in widgets(window.win) if isinstance(w, ttk.Button)
-             and w.cget("text") == "Add a written condition").invoke()
+        self.button(window.win, "Add WHERE").invoke()
+        self.root.update()
+        self.button(window.win, "Add a written condition").invoke()
         self.root.update()
         window = self.view._last_builder
-        where = next(w for w in widgets(window.win) if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Where")
+        where = next(w for w in widgets(window.win) if isinstance(w, ttk.LabelFrame) and w.cget("text") == "WHERE")
         entry = next(w for w in widgets(where) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox))
 
         def shown() -> list[str]:
@@ -2272,8 +2395,10 @@ class FilterViewTests(ViewTest):
         self.open("Celiac_intake.yaml")
         open_table_builder(self.view, None, table="EncounterFact")
         self.root.update()
+        self.button(self.view._last_builder.win, "Add JOIN").invoke()
+        self.root.update()
         joins = next(w for w in widgets(self.view._last_builder.win)
-                     if isinstance(w, ttk.LabelFrame) and w.cget("text") == "Joins")
+                     if isinstance(w, ttk.LabelFrame) and w.cget("text") == "JOIN")
         combos = [w for w in widgets(joins) if isinstance(w, ttk.Combobox)]
         _, other, other_column, _, column = combos[:5]
         other.set(next(v for v in other.cget("values")))
@@ -2361,9 +2486,26 @@ class FilterViewTests(ViewTest):
         self.open("Celiac_intake.yaml")
         open_table_builder(self.view, None, table="EncounterFact")
         self.root.update()
+        self.button(self.view._last_builder.win, "Add JOIN").invoke()
+        self.root.update()
         window = self.view._last_builder
         combos = [w for w in widgets(window.win) if isinstance(w, ttk.Combobox)]
         self.assertTrue(any(tuple(w.cget("values")) == model.JOIN_OPERATORS for w in combos))
+
+    def test_a_refused_join_keeps_its_form_open_with_why(self):
+        self.open("Celiac_intake.yaml")
+        open_table_builder(self.view, None, table="EncounterFact")
+        self.root.update()
+        self.button(self.view._last_builder.win, "Add JOIN").invoke()
+        self.root.update()
+        window = self.view._last_builder
+        join = next(w for w in widgets(window.win) if isinstance(w, ttk.LabelFrame) and w.cget("text") == "JOIN")
+        written = next(w for w in widgets(join) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox))
+        written.insert(0, "INNER JOIN PatientDim AS p ON p.DurableKey = zz.PatientDurableKey")
+        self.button(window.win, "Add written join").invoke()  # zz is no alias of this table
+        self.root.update()
+        self.assertTrue(str(window.message.cget("text")))
+        self.assertTrue(self.button(self.view._last_builder.win, "Cancel"))
 
 
 def run_tdd(verbosity: int = 2) -> int:
