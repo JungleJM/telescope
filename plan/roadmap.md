@@ -18,7 +18,8 @@ When an item here is built, delete it from this file and describe the result in 
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Used on the VM for every run since 25 September 2026, several pulls side by side, each in its own console |
 | Launcher, now the app's Run half; its three dropdowns (D126, D140) | Opened on the VM; Validate, Export split, Preview and Execute used there, and the two dropdowns of D126. The third, and the pulls' finished and stopped words, not yet |
 | On the VM in the bundle `e126f85b…` (29 September 2026), not yet checked there: progress lines and each table's rows (D136, D137); how Execute ended (D140); Artifacts after a clean pull (D141); the run folder (D142); QuickEdit off (D143, tested against a fake console only); the Pull Manifest tab (D144); the credit line (D145); the parquet viewer's buttons (D146); extraction refusing while a pull executes, and the bundle in every window (D147); the deliverable pull folder (D148); the backup (D149); the dictionary line out (D150) | Built and tested on the Mac. The bundle's `--tdd` failed two window tests on Windows only, fixed in the tests in `0f81dc63…`, which is extracted and passes `--tdd` |
-| Errors hidden in a batch (D151), the run scan (D152), manifest saves that wait and readers that let them (D153, D154), the dictionary audit and `dictionary-fix` (D155), the column check (D156), rows per join key (D157), re-pulling chosen sessions (D158), unquoted CSV headers (D159) | Built and tested on the Mac; in the bundle `1b628fc3…` (30 September 2026), not yet on the VM (Next, below) |
+| Errors hidden in a batch (D151), the run scan (D152), manifest saves that wait and readers that let them (D153, D154), the dictionary audit and `dictionary-fix` (D155), the column check (D156), rows per join key (D157), re-pulling chosen sessions (D158), unquoted CSV headers (D159) | On the VM since the bundle `048c3f29…` (30 September 2026). The scan and the audit have run there; the show-stopper tests are under way (task list: Proving the show-stopper is fixed) |
+| One blueprint per project (D162), Projects tables named per pull (D163), a database per pull (D164, D170, D171), drops after packaging (D165), Run and the title (D166), parquets from Status (D167), the Filters layout (D168), messages at their fields (D169) | Built and tested on the Mac; on the VM since `c98c60b3…` (1 October 2026). Seen working there: blueprints in `YAMLs\temp`, the table prefix in the manifest and SQL, the database choice, the title, the dropdowns and bold line, the step in flight, the Filters layout, messages at their fields. The current bundle is `5754255e…` (the six databases, listed in the code only) |
 | Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; on the VM in the bundle `e126f85b…`. No pull uses a group yet: the first is the question of what a group costs (below) |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself is on the VM in the bundle `e126f85b…` |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; the PK parquet seen there (Infant_RSV); `stock.yaml` not yet |
@@ -29,48 +30,19 @@ When an item here is built, delete it from this file and describe the result in 
 
 ------------------------------------------------------------------------
 
-## Next: Fixes, In Order
+## Next: On The VM, The Bundle `5754255e…`
 
-Decided 30 September 2026 (D162–D169), from the runs on the bundle `048c3f29…`. One commit each, with outcome tests, then one bundle.
+The software of D151 to D171. Extract it once no pull is executing. If the VM's `datascope.json` names `projects_databases`, delete that line first: it is refused now (D171).
 
-1.  **One blueprint per project** (D162): `_blueprint` for `_transfer`; on the VM one working copy in `YAMLs/temp`, saved in place, delivered there by the bundle, removed once its pull is packaged; replaced copies kept in `YAMLs/temp/replaced/`; Author's dropdown by project. First, because two copies of a project are what pulled the wrong Infant_RSV.
-2.  **Projects tables named per pull** (D163): before D164 and D165, which rely on a pull's tables being its own.
-3.  **A database per pull** (D164): the space that stopped two pulls.
-4.  **Drop a pull's tables once packaged** (D165).
-5.  **Run and the title say what is loaded; the step in flight on its row** (D166).
-6.  **A packaged table opens in the parquet viewer from Status** (D167).
-7.  **Filters: joins first, forms behind a button** (D168).
-8.  **Messages at their fields in the Builder** (D169).
-
-------------------------------------------------------------------------
-
-## Next: The Bundle `1b628fc3…` On The VM
-
-Built 30 September 2026 from the runs of 29 and 30 September: D151 to D159, and the corrected `Crohns_DxHxSxRx_transfer.yaml` (a different copy already at the root is kept as `.local`). Built and tested on the Mac; nothing of it has run on the VM. The dictionary is now checked against every screenshotted page (D160, 30 September 2026), which changes the types of five pulls: Celiac, Crohns_DxHxSxRx, IBD_Ancestry, Infant_RSV and UC_Visits (among them `MedicationDispenseFact.FillNumber`, `nvarchar(50)` not INT, and Vitals' measures, `numeric` and `int` not FLOAT). Their transfer YAMLs are exported again. Before step 1, queue those five intakes and build a full bundle (`python3 makebundle.py`), and take it instead of `1b628fc3…`: it carries all of that bundle, the checked dictionary the audit (step 4) reads, the audit's type and nullability checks (D161, built and tested on the Mac), and the corrected transfer YAMLs.
-
-On the VM:
-
-1.  **Extract**: `python bundle.py`, then `python scope.py --tdd`.
-
-2.  **The reader check** (D154), in PowerShell in the working folder on the share; it can only be tested there:
-
-    ``` powershell
-    python -c "import os,sys,msvcrt; sys.path.insert(0,'pullmanager_runtime'); from pathlib import Path; from pullmanager.yaml_io import _open_shared_windows; Path('a.txt').write_text('x'); Path('b.txt').write_text('y'); f=open(msvcrt.open_osfhandle(_open_shared_windows(Path('a.txt')), os.O_RDONLY)); os.replace('b.txt','a.txt'); print('replaced while open:', Path('a.txt').read_text())"
-    ```
-
-    `replaced while open: y` means a reader no longer blocks a save. `Access is denied` means the share does not honour the sharing flag, and only the waits (D153) carry a save past a reader. Delete `a.txt` (and `b.txt`) after.
-
-3.  **Scan runs** (D152), then transcribe `runs\run_scan.yaml`. IBD_Ancestry's white sessions should show as `empty` and `short_controls`. Infant_RSV is the question: its PK had 186,963 patients where the user expected about 400,000. A lost-rows line there means rows lost in landing; nothing there, and the pull predates `cosmos_rows`, leaves the cohort's filter to look at.
-
-4.  **Audit dictionary** (D155; types and nullability too, D161), then transcribe `runs\dictionary_audit.yaml`, and on the Mac `python3 scope.py dictionary-fix <file>`, fix the YAMLs it names, and a YAMLs-only bundle.
-
-5.  **Re-pull IBD_Ancestry's white sessions** (D158): load it, tick Re-pull sessions, add `UCwhitePatients` and `CrohnswhitePatients`, Execute. If the landing fails again, it now fails loudly with the server's message (D151); that message is the cause, and is to be reported.
-
-6.  **Seen as it runs**: `setup` prints "columns checked" (D156); Status has Median per key, P90 and Max for every table (D157); the log holds `server:` lines (D151); a busy manifest prints "trying again in 60s" instead of stopping (D153).
-
-7.  **Crohns_DxHxSxRx's Meds group**, retried on 30 September 2026 after `ReadyToDispenseDateKey` was taken out of its split's run file by hand (the column is not in Cosmos): not yet reported.
-
-8.  **A supporting CSV with a quoted header** (D159): added in Author, it lands without its quotes.
+1.  **The show-stopper tests** (D151, D153, D154): the steps and what to paste are in the task list (Proving the show-stopper is fixed; Urgent solve commands), under way on 1 October 2026.
+2.  **A pull's first clean finish under D162–D165**: its log ends with `Dropped its N table(s) from PROJECTD...` (or says why they were kept), clear_projects_db no longer lists them, and `Removed <project>_blueprint.yaml from YAMLs/temp`; Author then offers it as its run folder's copy, and Run, choosing it, says only Re-pull everything pulls it again. The DROP permission is untested.
+3.  **A second new pull** takes a database the first does not use, and its manifest's `database_choice` says why. A pull split before D163, not yet executed, is split again first, so its tables are prefixed and dropped.
+4.  **The dictionary's true-only fix**: once the runs of 1 October are done, `python3.13 scope.py dictionary-fix reference/Audit/dictionary_audit_true_only.yaml` on the Mac, the YAMLs it names checked, and a bundle. The `false` findings wait for the builder to leave new columns nullable (Smaller Open Items).
+5.  **Re-pull IBD_Ancestry's white sessions** (D158): Re-pull sessions, `UCwhitePatients` and `CrohnswhitePatients`. They land, or fail loudly with the server's message (D151), which is the cause to report.
+6.  **Seen as it runs**: `setup` prints "columns checked" (D156); Status has Median per key, P90 and Max (D157); the log holds `server:` lines (D151).
+7.  **Crohns_DxHxSxRx's Meds group**, retried after `ReadyToDispenseDateKey` was taken out by hand (not in Cosmos): not yet reported.
+8.  **A supporting CSV with a quoted header** (D159) lands without its quotes.
+9.  **Small checks for later**: double-clicking a packaged table in Status opens the parquet viewer on Windows (D167).
 
 ------------------------------------------------------------------------
 
@@ -142,6 +114,7 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 
 ### Smaller Open Items
 
+- **The builder leaves new columns nullable** (D172), so a table's nullability in Cosmos stops becoming a row filter (`IS NOT NULL`, which turns a LEFT JOIN into an INNER one), and the audit's 327 `false` findings can then be written into the dictionary as facts. Agreed, not yet built: `_column_from` in the model.
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names. Under multipliers a fact table read this way names the base table, not its level's copy (`UCOrders`), and fails at Execute; validation warns meanwhile (D139).
 - **What a batch costs (D87).** Batching builds the PK once; what repeats per batch is every fact-table query, joined to that batch's PK rows. Whether fifty passes cost about one pull or about fifty depends on whether SQL Server seeks each fact table by `PatientDurableKey` or scans its date range on every pass, which nobody has measured. IBD_Ancestry's 24 runs, now timed per table (D136), are the first evidence; a clean comparison is one template three ways on `COSMOS_SneakPeek`, unbatched, `chunk:` and `state`, comparing each run's `duration`. If the fact tables are scanned per pass, prefer fewer, larger batches (`chunk: 100000`).

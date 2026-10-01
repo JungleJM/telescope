@@ -12,32 +12,9 @@ Work on the task list section "<heading>" in plan/tasklist.qmd.
 
 That is all a new chat needs, because the rest is already written down. It reads `.claude/CLAUDE.md` by itself, which sends it to `plan/design.md` (what exists), `plan/roadmap.md` (status and what is next) and `plan/decisions.md` (why), and tells it to answer here, topic by topic, in 🟦 and 🟧. Its memory notes load by themselves too. The one rule that keeps it true: **anything that matters and was only said in a chat goes into this file before that chat ends**, under the section it belongs to, or it is lost to the next one.
 
-## For next copy over and re-doing broken pulls
-
-I'm wondering if this error is big enough that I have to re-pull everything? How are we going to be 100% confident that I actually got all patients in the system for Infant_RSV, or any other one?
-
-::: {.callout-note title="🟦 Claude: re-pulling, and being sure of a pull"}
-**Re-pull everything? No: re-pull what the scan flags.** The hidden error (D151) did not corrupt what landed. It hid statements that failed, so a table either landed whole or lost rows, silently. The run scan (`--scan-runs`, in the bundle `1b628fc3…`) finds the losers from what is already on the VM, with no database. It compares every table's recorded Cosmos count with its parquets' rows, and lists empty tables, controls kept short, and runs whose count never came back (the Cosmos-side sign of the same bug). Re-pull only the sessions it names (Re-pull sessions, D158). One limit: a pull never packaged by Artifacts has no parquets to compare, so the scan says `not_packaged`. Run Artifacts on it first. From this bundle on, a failed statement fails its step loudly, so a new pull cannot lose rows silently.
-
-**"Did I get every patient" is two questions.**
-
-1.  **Did the software land everything the query found?** The scan answers this for earlier pulls. For new ones, every landing now compares Cosmos's count with what arrived, and a missing count is an error (D151). The PK also keeps `cosmos_rows`, so a PK that landed short shows by name.
-2.  **Did the query find everyone you meant?** No software check can answer this: it is the cohort's definition. Infant_RSV is a likely case. Its PK is **ED visits** (`EdVisitFact`, deduplicated by `EdVisitKey`), of children under 2, since 2019-01-01, whose **ED diagnosis** (`EmergencyDepartmentDiagnosis = 1`) is `J12.1` (RSV pneumonia) or `B97.4` (RSV as the cause). It leaves out `J21.0` (acute bronchiolitis due to RSV) and `J20.5` (acute bronchitis due to RSV). In infants, bronchiolitis is the most common RSV diagnosis, so those two codes may well account for much of the gap between 186,963 and the \~400,000 you expected. Its rows are also visits, not patients, and a patient-count expectation compares differently. Each `nullable: false` column adds `IS NOT NULL` too (here the visit's keys and dates, which should always be filled).
-
-**To check Infant_RSV on the VM before re-pulling:** in Author, add `J21.0, J20.5` to its `ICD_Value`, Validate, and Preview SQL. Then run its PK query's count alone, with and without them. Or tell me what the expected \~400,000 counts (patients or visits, which codes, which years), and I'll write the query that compares the two.
-
-**For you to decide:** are `J21.0` and `J20.5` meant to be in Infant_RSV? And should its PK be visits or patients?
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-I added j21 and j20.5.
-
-(From chat, 2026-09-30.) Added in Author on the VM. Save wrote them to `YAMLs/temp/Infant_RSV_intake.yaml`, and `Infant_RSV_transfer.yaml` kept the old codes. See "2 sets of project yamls".
-:::
-
 ## Proving the show-stopper is fixed
 
-(From chat, 2026-09-30.) Steps to test on the VM, with bundle `048c3f29` or later (now `67111a4c`, which carries these fixes too), that the manifest saves and the hidden errors no longer stop or empty a pull.
+(From chat, 2026-09-30.) Steps to test on the VM, with bundle `048c3f29` or later (now `5754255e`, which carries these fixes too), that the manifest saves and the hidden errors no longer stop or empty a pull.
 
 ::: {.callout-note title="🟦 Claude: how to prove it"}
 **What the show-stopper was: two bugs.**
@@ -66,52 +43,86 @@ I added j21 and j20.5.
 ::: {.callout-warning title="🟧 Your response"}
 :::
 
-## Testing the bundle `67111a4c` (D162–D170)
+## Urgent solve commands
 
-(From chat, 2026-10-01.) Built 30 September and 1 October: one blueprint per project, per-pull table names, a database per pull, drops after packaging, and the app's views. Bundle `c98c60b3` carried them with the Infant_RSV and UC_VisitsMedsDiagnoses blueprints; `67111a4c` is the same software with the database list cut to six (D170) and no YAMLs. The database choice is already seen working (screenshot of 1 October: PROJECTD125423 chosen, three databases refused the login).
+## Show-stopper tests: what to paste
 
-::: {.callout-note title="🟦 Claude: what to test next, in order"}
-**0. Extract** `67111a4c` (`python bundle.py`), then `python scope.py --tdd`: all pass.
+Paste these into **PowerShell in the working folder on the VM**, the folder with `scope.py`.
 
-**1. One blueprint per project (D162): the bug that pulled old codes.**
+**Setup:** make a small test pull from a copy of Infant_RSV.
 
-1.  In the working folder: `YAMLs\temp\Infant_RSV_blueprint.yaml` and `YAMLs\temp\UC_VisitsMedsDiagnoses_blueprint.yaml` exist; `Infant_RSV_transfer.yaml` is gone from beside `scope.py` and is in `YAMLs\temp\replaced\`, with any `Infant_RSV_intake.yaml` saved on the VM.
-2.  Author's dropdown lists each project once, saying which file it opens: `· working blueprint`, `· older copy, Celiac_transfer.yaml`, or `· finished: its run folder's copy`.
-3.  **The real test.** Open a pull that has not run in Author, change something you can see (a code in `ICD_Value`), Save, then Transfer to Run. Run's bold line names it, and Preview SQL shows the new code. Before, Save wrote a file Run never read.
-4.  Open an older copy (say Celiac), change nothing, Save: `Celiac_transfer.yaml` moves to `YAMLs\temp\replaced\` and `YAMLs\temp\Celiac_blueprint.yaml` appears. Run's Start run now lists that one.
-5.  UC_VisitsMedsDiagnoses: Validate finds `UCPatients.parquet`, `data\Codes\ICD-hosp.csv` and `data\Meds\IBD_meds.parquet` beside `scope.py` (no `missing_upload_file`). Its blueprint reads them as `../../data/...`, which is right.
-6.  When a pull finishes and packages, its log says `Removed <project>_blueprint.yaml from YAMLs/temp`, and Author then offers it as `finished: its run folder's copy`.
+```         
+Copy-Item YAMLs\temp\Infant_RSV_blueprint.yaml YAMLs\temp\ShowTest_blueprint.yaml
+```
 
-**2. Table names per pull (D163).** Export split a pull that has not run: its manifest has `table_prefix:` under `project:` (Infant_RSV: `infrsv`), and Preview SQL names `PROJECTD....dbo.infrsv_EDVisits`, with uploads as `infrsv_upload_...`. In clear_projects_db, its tables appear under that prefix. **A pull split before this bundle has no prefix**, keeps its plain names, and is never dropped by itself: for any not yet executed, Export split again first.
+In Author, open **ShowTest**. Turn Collect all off, set the sample to 10, and Save. Then in Run, choose it from Start run and press Export split. Don't press Execute yet.
 
-**3. A database per pull (D164, D170).** Already seen choosing. Next: the list is six (no 52274F, 723D95, 427046 or 03DEC); a second new pull takes a database the first does not use; each manifest has `database_choice:` saying which and why. Infant_RSV's blueprint names PROJECTD427046, which refused the login, so it will land elsewhere: expected.
+**1. The test suite:**
 
-**4. Drop after packaging (D165).** The first prefixed pull to finish cleanly: its log ends with `Dropped its N table(s) from PROJECTD...`, and clear_projects_db no longer lists them. If it says `Its tables are kept in Projects:` instead, send the reason. Then pick it from Finished and stopped pulls: the bar says only Re-pull everything pulls it again.
+```         
+python scope.py --tdd 2>&1 | Select-String "FAIL|ERROR|^Ran|^OK"
+```
 
-**5. The app's views (D166–D169).**
+You should see `OK`, with no FAIL or ERROR lines.
 
-1.  The title reads `Telescope · Author: <project> · Run: <pull>`, and follows both halves.
-2.  Choosing from one of Run's dropdowns empties the other two; the bold line above says `Loaded: <pull>  (<state>)`.
-3.  While a pull runs, its running row in Status says `c2of13 · OtherHospitalizations, since 11:01` (the chunk and value only for a chunked or per-value run).
-4.  Double-click a table of a packaged pull in Status: the parquet viewer opens on it. A table not yet packaged opens Pull Manifest, as before.
-5.  A fact table's Filters box: JOIN above WHERE, each line with Remove beside it, forms opened by Add JOIN / Add WHERE, with Add and Cancel. The table builder looks the same.
-6.  Type `NOTAPROJECT` into Project DB: the message shows at the top of the Project section within a second, in red, with its fix, and the cursor stays in the field. Put it back: the message goes.
+**2. Check that a reader no longer blocks a save:**
 
-**Not testable on the Mac, so watch for:** the free-space query on each database, the DROP permission (D165), and the viewer opening on Windows (D167). A screenshot of anything that fails is enough.
-:::
+```         
+python -c "import os,sys,msvcrt; sys.path.insert(0,'pullmanager_runtime'); from pathlib import Path; from pullmanager.yaml_io import _open_shared_windows; Path('a.txt').write_text('x'); Path('b.txt').write_text('y'); f=open(msvcrt.open_osfhandle(_open_shared_windows(Path('a.txt')), os.O_RDONLY)); os.replace('b.txt','a.txt'); print('replaced while open:', Path('a.txt').read_text())"
+Remove-Item a.txt, b.txt -ErrorAction SilentlyContinue
+```
 
-::: {.callout-warning title="🟧 Your response"}
-(From chat, 2026-10-01.) Databases the login gains access to are added to the default list in the code (`pullmanager/config.py`, D170), not to `datascope.json`.\
-\
-App views: \
-- title works
+You should see `replaced while open: y`.
 
-- run's dropdowns clearing others works
+MY RESPONSE: No, i still see access denied. This is while I'm running three prompts though if that changes anythign.
 
-- 3- it does say that ![](images/paste-26.png)
+![](images/paste-27.png)
 
-- 
-:::
+**3. Force a busy manifest.** Press Execute on ShowTest. While it runs, paste this into a second PowerShell window in the same folder. It holds the manifest open for 90 seconds, the way the old reader did:
+
+```         
+python -c "import time; f=open(r'runs\ShowTest\pullmanifest.yaml','rb'); print('holding'); time.sleep(90); f.close(); print('released')"
+```
+
+Once the pull finishes, check its log:
+
+```         
+Select-String -Path runs\ShowTest\execute-*.log -Pattern "busy|FileBusy|trying again"
+```
+
+Pass: a "busy … trying again" line, and the pull still finishes. Fail: it stops with `FileBusy`.
+
+**4. The real-life case.** Leave Run open on a real pull overnight, with Status showing. In the morning:
+
+```         
+Select-String -Path runs\*\execute-*.log -Pattern "FileBusy|Traceback|exit code 1"
+```
+
+Pass: nothing printed.
+
+**5. Force a late error.** Open `YAMLs\temp\ShowTest_blueprint.yaml` in Notepad. Find any fact table's `columns:` list, for example under EDVitals. Add this as a new line, indented exactly like the `- {source: ...}` lines around it:
+
+```         
+      - {source: 1/0, name: Boom, type: INT}
+```
+
+Save, then press Export split and Execute again in Run. Afterwards:
+
+```         
+Select-String -Path runs\ShowTest\execute-*.log -Pattern "Divide by zero|FAILED"
+```
+
+Pass: that run is FAILED, with "Divide by zero" in its message. Before the fix, it read done with no rows. Remove the line afterwards.
+
+**6. The scan, after every pull:**
+
+```         
+python scope.py --scan-runs
+```
+
+Pass: ShowTest isn't listed after step 3.
+
+**Clean up afterwards.** The step-5 run failed, so its tables stay in Projects. Drop the ones starting with ShowTest's prefix in clear_projects_db. ShowTest is a copy of Infant_RSV, so its prefix is `infrsv2`, given that Infant_RSV already has `infrsv`. Then delete `runs\ShowTest` and `YAMLs\temp\ShowTest_blueprint.yaml`.
 
 # Post-Urgent Solve ideas
 
@@ -141,41 +152,6 @@ For all of these ideally dont' hardcode the names, but link to the function some
 
 At some point we might even have a thirt section after 'author' and 'run', and that can be 'parquets', and that can just be the viewparquets utility as its own tab. That woudl be truly author-to-product all in one. (But this is conjecture, future option, not at all important now). The only thing you coulnd't do in VM would be make from references, as that is staying on the mac side for now.\
 
-## Dictionary audit: 378 wrong, all nullability
-
-The audit on bundle 048c3f29 (screenshot: `reference/Audit/`): 26 tables, 378 wrong, every one under `nullable_wrong`.
-
-::: {.callout-note title="🟦 Claude: Dictionary audit: 378 wrong, all nullability"}
-**What it found.** No table missing, no column missing, and no type wrong. The dictionary's columns and types match Cosmos, and those were what failed pulls (`ReadyToDispenseDateKey`, the float error). Every finding is nullability, in two directions:
-
-- **Nearly every ordinary column** is `nullable: true` in the dictionary but NOT NULL in Cosmos (`Sex`, `FirstRace`, every `...DateKey`). Caboodle fills gaps with sentinels (`*Unspecified`, `-1`) rather than NULL, so this is plausible.
-- **`_IsDeleted` and `_IsInferred`** are `nullable: false` in the dictionary but nullable in Cosmos, in every table. A few others go the same way (`PatientDim.IsValid`, `UseInCosmosAnalytics_X`; `EdVisitFact.ArrivalInstant`).
-
-The second is odd enough to confirm before anything is rewritten. In SSMS on the VM: `SELECT name, is_nullable FROM sys.columns WHERE object_id = OBJECT_ID('dbo.PatientDim') AND name IN ('_IsDeleted','Sex','IsValid');` It should say `_IsDeleted` 1, `Sex` 0, `IsValid` 1. If it does, the audit read it right.
-
-**Why applying it all is not harmless.** The dictionary's `nullable` reaches a pull in one way: the Author view copies it into a column when a table is built from the dictionary (existing transfers keep what they have). A pull then makes a `nullable: false` column `NOT NULL` in Projects, and adds `<source> IS NOT NULL` to the cohort's WHERE (`sql.non_null_predicates`). Writing `false` onto almost every column means:
-
-- **Silent row loss through a LEFT JOIN.** OtherDiagnoses LEFT JOINs `DiagnosisTerminologyDim AS dt`. `dt.Value` is NOT NULL in its table, but NULL in the result when no row matches. `dt.Value IS NOT NULL` turns that LEFT JOIN into an INNER one, and the unmatched diagnoses vanish without a word. This is the loss we just spent a day chasing.
-- **A predicate on every column**, which costs query time on the big facts for no benefit, since Cosmos already refuses NULL there.
-
-The `true` direction (`_IsDeleted` and the rest) is safe: it only drops a predicate and a NOT NULL.
-
-**Recommendation.**
-
-1.  Confirm with the query above.
-2.  Apply only the `true` findings now (the dictionary says nullable where Cosmos does). No pull loses a row from that.
-3.  Hold the `false` findings until the builder stops turning table nullability into a row filter. A column's nullability in its source table is not its nullability in the pull (a LEFT JOIN changes it), so the builder should leave new columns nullable. The dictionary can then record Cosmos's `false` as the fact it is, and nothing filters on it. That is a small change (the builder's `_column_from`, and a decision), not for the middle of the re-runs.
-4.  dictionary-fix reads a transcribed YAML. 378 entries from a screenshot is error-prone, so I would rather build a small `true`-only file here from the screenshot (about 60 entries: two per table, plus the few others), and have dictionary-fix apply it. Its report then lists the YAMLs whose own `nullable:` should be checked.
-
-**For you to decide:** apply only the `true` findings now and the rest after the builder change (recommended); apply all 378 now; or leave the dictionary's nullability as it is for now, since no pull failed on it.
-
-**Confirmed (2026-09-30).** The SSMS query gave `Sex` 0, `IsValid` 1, `_IsDeleted` 1: the audit reads Cosmos right. The `true` findings, read from the screenshot, are 51: `_IsDeleted` and `_IsInferred` in 24 tables (all but DurationDim and EncounterSourceBridge, which lack them), plus `PatientDim.IsValid`, `PatientDim.UseInCosmosAnalytics_X` and `EdVisitFact.ArrivalInstant`. They are written out in `reference/Audit/dictionary_audit_true_only.yaml`, ready for `python3.13 scope.py dictionary-fix reference/Audit/dictionary_audit_true_only.yaml`.
-:::
-
-::: {.callout-warning title="🟧 Your response"}
-(From chat, 2026-09-30.) I'll apply this after the run today.
-:::
-
 run
 
 ## PROJECTD features
@@ -197,16 +173,22 @@ run
 ::: {.callout-warning title="🟧 Your response"}
 :::
 
-**Suggested order**
+## clear_projects_db: every database at once
 
-1.  **Testing the bundle `67111a4c`**: everything below waits on knowing D162–D170 work on the VM, and the drops (D165) and database choice touch real data.
-2.  **Proving the show-stopper is fixed**: runs alongside step 1 on the same pulls; the forced busy manifest and the `1/0` column are quick.
-3.  **Dictionary audit**: apply the true-only file once today's runs are done; it changes what new tables get.
-4.  **PROJECTD features**: small, and best built once D164's choosing has been seen across a few pulls.
-5.  **The exit-code-1 stop**: needs the next occurrence's log to act on.
-6.  **Table Group recipes** and **utility buttons**: new features, after the pulls are steady.
+(From chat, 2026-10-01.) clear_projects_db works and can delete things. I'd like it to have a dropdown of the available PROJECTD databases, or just a list of them, collapsed, similar to the Status view. It should have the name and GB available, as the pull log shows them. Clicking one opens the selection of what's found, so we can delete specific tables or all of them.
 
-## Random Sample error: 
+::: {.callout-note title="🟦 Claude: clear_projects_db over every database"}
+**Today.** `utils/manager/clear_projects_db.py` opens one database, typed into a Database field (server and driver from `.env`). Refresh lists its tables with rows and MB, and a line of each file's use and cap; Drop selected, Drop all, Open transactions and Free log act on that one database.
+
+**Recommendation, as you describe it.** A tree like Status: one row per database in `DEFAULT_PROJECTS_DATABASES` (D171), closed, with its GB free (measured as Execute measures it, D164) and, if one refuses the login, why. Opening a row lists its tables under it (name, rows, MB), and the prefix (D163) groups them by pull, so a finished pull's tables are one selection. The buttons act on what is selected: tables, or a database row for all of its tables. The Database field goes; free typing stays possible for one not listed. This also suits the "view dbo tables" button in Run (Have a button to certain utilities), which would open this window.
+
+**For you to decide:** group a database's tables by pull prefix (recommended, since D165 drops by pull), or list them flat as today?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+## Random Sample error:
 
 ![](images/paste-24.png)
 
@@ -219,6 +201,16 @@ So this is because we dont' ahve a pktable key_column. I can see how this is an 
 ## Add Dedup option to Fact Tavles
 
 Come to think of it, fact tables should all have a 'deduplicate by column:' and it should let you do a dropdown of the colunms to deduplicate by. You can add multiple. And do a "order by:" with a column. I don't know how we'd say 'earliest' or 'latest' depending on the value so unless there's a way, we just say 'order by' and explain how it does it.
+
+**Suggested order**
+
+1.  **Proving the show-stopper is fixed**: under way; the rest of the VM's checks (roadmap, Next: On The VM) follow on the same pulls.
+2.  **Random Sample error**: it stops a pull that asks for a random sample; not yet answered here.
+3.  **PROJECTD features**: small, and best built once D164's choosing has been seen across a few pulls; waits on must or preference.
+4.  **clear_projects_db: every database at once**: makes freeing space a pull at a time easy, now that tables carry their pull's prefix.
+5.  **Add Dedup option to Fact Tables**: not yet answered here.
+6.  **The exit-code-1 stop**: needs the next occurrence's log to act on.
+7.  **Table Group recipes** and **utility buttons**: new features, after the pulls are steady.
 
 ## Settled
 

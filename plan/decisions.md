@@ -3254,3 +3254,21 @@ the next bundle (1 October 2026).
 `pullmanager/config.py`, and only there. `datascope.json` no longer reads
 `projects_databases`: a file that still names it is refused, as any unknown
 key is, saying which key to remove.
+
+### D172. Only the audit's `true` nullability findings are applied, until the builder stops filtering on it
+
+**Context.** The dictionary audit (D155, D161) on the bundle `048c3f29` found
+378 differences, all nullability; SSMS confirmed it reads Cosmos right
+(`Sex` 0, `IsValid` 1, `_IsDeleted` 1; 30 September 2026). A column the
+dictionary marks `nullable: false` becomes, when the builder copies it, a
+`NOT NULL` destination column and an `IS NOT NULL` on the cohort's WHERE. Through
+a LEFT JOIN that silently drops the unmatched rows, the very loss chased that
+week.
+
+**Decision.** Apply the 51 `true` findings now (`_IsDeleted` and `_IsInferred`
+in 24 tables, `PatientDim.IsValid`, `PatientDim.UseInCosmosAnalytics_X`,
+`EdVisitFact.ArrivalInstant`), from `reference/Audit/dictionary_audit_true_only.yaml`
+through `dictionary-fix`: they only remove a predicate. Hold the `false`
+findings until the builder leaves new columns nullable, since a column's
+nullability in its table is not its nullability in the pull; the dictionary
+can then record Cosmos's `false` as the fact it is.
