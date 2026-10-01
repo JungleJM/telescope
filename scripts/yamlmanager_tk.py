@@ -154,7 +154,9 @@ class AuthorView:
         top.pack(fill="x")
         ttk.Label(top, text="Project name").pack(side="left")
         self.name_var = tk.StringVar()
-        self.name_box = ttk.Combobox(top, textvariable=self.name_var, width=36)
+        # Listed again each time it opens, so a file put there meanwhile shows.
+        self.name_box = ttk.Combobox(top, textvariable=self.name_var, width=36,
+                                     postcommand=lambda: self.refresh_files())
         self.name_box.pack(side="left", padx=(6, 4))
         self.name_box.bind("<<ComboboxSelected>>", self.on_pick)
         self.name_var.trace_add("write", lambda *a: self.on_name_typed())
@@ -2070,6 +2072,13 @@ class SectionViewTests(ViewTest):
                    and str(w.cget("text")).startswith("1. "))
         shown = [str(w.cget("text")) for w in widgets(box) if isinstance(w, ttk.Label) and w.winfo_ismapped()]
         self.assertTrue(any(messages[0].text in text for text in shown), shown)
+
+    def test_a_blueprint_put_there_after_opening_is_listed_when_the_list_opens(self):
+        # ShowTest, copied into YAMLs/temp with the app open, was not offered.
+        self.ws.vm_side = True
+        (self.ws.temp_dir / "ShowTest_blueprint.yaml").write_text("project_folder: ShowTest\n", encoding="utf-8")
+        self.root.tk.eval(self.view.name_box.cget("postcommand"))
+        self.assertTrue(any(str(v).startswith("ShowTest") for v in self.view.name_box.cget("values")))
 
     def test_typing_a_project_setting_edits_the_draft_and_marks_it_unsaved(self):
         self.open("Celiac_intake.yaml")

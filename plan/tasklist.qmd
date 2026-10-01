@@ -49,13 +49,9 @@ That is all a new chat needs, because the rest is already written down. It reads
 
 Paste these into **PowerShell in the working folder on the VM**, the folder with `scope.py`.
 
-**Setup:** make a small test pull from a copy of Infant_RSV.
+**Setup** (corrected 2026-10-01: no copying by hand). In Author, choose **Infant_RSV**, change its **Project name** to `ShowTest`, turn Collect all off, set the sample to 10, and Save. That writes `YAMLs\temp\ShowTest_blueprint.yaml` and leaves Infant_RSV's as it was. Then Transfer to Run, and press Export split. Don't press Execute yet.
 
-```         
-Copy-Item YAMLs\temp\Infant_RSV_blueprint.yaml YAMLs\temp\ShowTest_blueprint.yaml
-```
-
-In Author, open **ShowTest**. Turn Collect all off, set the sample to 10, and Save. Then in Run, choose it from Start run and press Export split. Don't press Execute yet.
+(The copy-by-hand way failed twice over: Author listed files only when it opened, fixed in the next bundle, and saving the copy would have tried to write `Infant_RSV_blueprint.yaml`, since its Project name was still Infant RSV.)
 
 **1. The test suite:**
 
@@ -77,6 +73,17 @@ You should see `replaced while open: y`.
 MY RESPONSE: No, i still see access denied. This is while I'm running three prompts though if that changes anythign.
 
 ![](images/paste-27.png)
+
+::: {.callout-note title="🟦 Claude: the reader check fails on the share"}
+**What it means.** The running pulls make no difference: the check uses its own two new files. `Access is denied` means the share (`Z:`) refuses to replace a file that anything has open, however shareably it was opened. So D154's sharing flag does nothing there, and **only the waits (D153) carry a save past a reader**: tried at 0.1, 0.25, 0.5, 1 and 2 seconds, then once a minute for five minutes. Run's reads are short, and now happen only when the manifest has changed (D154), so the waits should always win. Nothing proves that yet, which makes **step 3 the test that decides it**: something holds the manifest for 90 seconds, longer than any read.
+
+**If step 3 or a night's run still stops with `FileBusy`**, the fix is a fallback: once the waits are spent, write the new manifest *into* the existing file rather than renaming over it. A shared reader allows that, and the `.tmp` stays as the whole copy until the write is done. It gives up the rename's all-or-nothing only in that one case.
+
+**For you to decide:** wait for step 3's result (recommended: if the waits carry it, nothing more is needed), or build the fallback now anyway?
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
 
 **3. Force a busy manifest.** Press Execute on ShowTest. While it runs, paste this into a second PowerShell window in the same folder. It holds the manifest open for 90 seconds, the way the old reader did:
 
@@ -122,7 +129,7 @@ python scope.py --scan-runs
 
 Pass: ShowTest isn't listed after step 3.
 
-**Clean up afterwards.** The step-5 run failed, so its tables stay in Projects. Drop the ones starting with ShowTest's prefix in clear_projects_db. ShowTest is a copy of Infant_RSV, so its prefix is `infrsv2`, given that Infant_RSV already has `infrsv`. Then delete `runs\ShowTest` and `YAMLs\temp\ShowTest_blueprint.yaml`.
+**Clean up afterwards.** The step-5 run failed, so its tables stay in Projects. Drop the ones starting with ShowTest's prefix in clear_projects_db. Its prefix comes from its Project name: `sho` (the manifest's `table_prefix` says for sure). Then delete `runs\ShowTest` and `YAMLs\temp\ShowTest_blueprint.yaml`.
 
 # Post-Urgent Solve ideas
 
