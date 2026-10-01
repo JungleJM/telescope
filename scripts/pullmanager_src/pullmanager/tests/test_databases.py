@@ -77,11 +77,9 @@ class ChoiceTestCase(unittest.TestCase):
         return Manifest.load(self.run / "pullmanifest.yaml")
 
     def choose(self, names=None) -> bool:
-        home = Path(self._tmp.name)
-        (home / config.CONFIG_NAME).write_text(
-            json.dumps({"projects_databases": names or list(self.files)}), encoding="utf-8")
         return databases.choose_database(self.manifest(), Settings(projects_server="PROJ"),
-                                         self.connect, say=self.said.append, home=home)
+                                         self.connect, say=self.said.append,
+                                         names=names or list(self.files))
 
     def other_pull(self, name: str, database: str, how: str = "stopped with errors",
                    packaged: bool = False) -> None:
@@ -196,8 +194,7 @@ class ExecuteTests(ChoiceTestCase):
         self.files = {name: [data_file(19, 20)] for name in config.DEFAULT_PROJECTS_DATABASES}
         args = argparse.Namespace(env=None, repull=False, retry_failed=False, repull_session=None)
         out = io.StringIO()
-        with mock.patch.object(databases, "config_home", return_value=None), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = cli.execute(self.manifest(), args, connect_fn=connect)
         self.assertEqual(code, 1, out.getvalue())
         self.assertIn("No Projects database has more than 6 GB free", out.getvalue())
@@ -211,19 +208,21 @@ class ConfigTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
 
-    def test_without_a_list_the_ones_the_login_opens_with_the_default_first(self):
-        names = config.projects_databases(self.home)
+    def test_the_list_is_the_ones_the_login_opens_with_the_default_first(self):
+        names = list(config.DEFAULT_PROJECTS_DATABASES)
         self.assertEqual(names[0], "PROJECTD93A5E7")
         self.assertEqual(len(names), 6)
         # D170: a training database, and three the login cannot open.
         for name in ("PROJECTD52274F", "PROJECTD723D95", "PROJECTD427046", "PROJECTD03DEC"):
             self.assertNotIn(name, names)
 
-    def test_setting_the_backup_keeps_the_list_a_list(self):
+    def test_datascope_json_does_not_list_them(self):
+        # D171: one place for the list, the code; the key is refused, saying so.
         (self.home / config.CONFIG_NAME).write_text(
-            json.dumps({"projects_databases": ["PROJECTD1", "PROJECTD2"]}), encoding="utf-8")
-        config.set_backup(self.home, self.home / "backup")
-        self.assertEqual(config.projects_databases(self.home), ["PROJECTD1", "PROJECTD2"])
+            json.dumps({"projects_databases": ["PROJECTD1"]}), encoding="utf-8")
+        with self.assertRaises(config.ConfigError) as caught:
+            config.read(self.home)
+        self.assertIn("projects_databases", str(caught.exception))
 
     def test_makeyaml_reads_the_same_keys(self):
         import importlib.util

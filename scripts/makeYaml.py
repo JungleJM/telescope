@@ -49,8 +49,7 @@ CORE_DEFAULTS = {
     "template": "reference/template.yaml",
     "vm_plugins": "reference/DSVM Plugins.yaml",
 }
-# backup and projects_databases are Pullmanager's (D149, D164).
-CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup", "projects_databases")
+CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")  # backup: Pullmanager's (D149)
 # Dropped from a template's file name to name its run folder (D57).
 RUN_NAME_SUFFIXES = (BLUEPRINT_SUFFIX, TRANSFER_SUFFIX, "_intake", "_temp")
 

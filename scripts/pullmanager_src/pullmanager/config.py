@@ -21,11 +21,12 @@ CORE_DEFAULTS = {
 }
 RUNS_DEFAULT = "runs"
 # `backup`: the folder Artifacts backs each pull up to (D149), set in Run.
-# `projects_databases`: the Projects databases a pull may be given (D164).
-CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup", "projects_databases")
-# Without `projects_databases`, the user's own that their login opens (D170,
-# 1 October 2026); the first is the default. PROJECTD52274F is a training
-# database, never to be used. A folder `Project D<code>` is `PROJECTD<code>`.
+CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")
+# The Projects databases a pull may be given (D164): the user's own that their
+# login opens (D170, 1 October 2026), the first the default. Listed here only
+# (D171): add one the login gains, and a bundle carries it. PROJECTD52274F is a
+# training database, never to be listed. A folder `Project D<code>` is
+# `PROJECTD<code>`.
 DEFAULT_PROJECTS_DATABASES = (
     "PROJECTD93A5E7", "PROJECTD33A929", "PROJECTD52219B", "PROJECTD125423", "PROJECTD139081",
     "PROJECTD338331",
@@ -52,27 +53,6 @@ def read(home: Path) -> dict[str, str]:
         raise ConfigError(f"{path} names {', '.join(unknown)}, which nothing reads. "
                           f"It may set: {', '.join(CONFIG_KEYS)}.")
     return {str(k): str(v) for k, v in data.items()}
-
-
-def projects_databases(home: Path) -> list[str]:
-    """The Projects databases datascope.json lists (D164), a list or one
-    comma-separated string; else the defaults."""
-    path = Path(home) / CONFIG_NAME
-    read(home)  # refuses a broken or unknown file, as every reader does
-    if not path.is_file():
-        return list(DEFAULT_PROJECTS_DATABASES)
-    value = json.loads(path.read_text(encoding="utf-8")).get("projects_databases")
-    if value is None:
-        return list(DEFAULT_PROJECTS_DATABASES)
-    items = value.split(",") if isinstance(value, str) else value
-    if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
-        raise ConfigError(f"{path}: projects_databases must be a list of database names, "
-                          'e.g. ["PROJECTD93A5E7", "PROJECTD33A929"].')
-    names = [i.strip() for i in items if i.strip()]
-    if not names:
-        raise ConfigError(f"{path}: projects_databases lists no database. Name at least one, "
-                          "or remove it to use the defaults.")
-    return names
 
 
 def runs_setting(home: Path) -> Path:
@@ -126,7 +106,7 @@ def set_backup(home: Path, folder: Path | None) -> Path:
     whatever else the file says."""
     read(home)  # refuses a broken or unknown file
     path = Path(home) / CONFIG_NAME
-    # As written, so a list (projects_databases) stays a list.
+    # As written, keeping whatever else it says.
     data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     if folder:
         data["backup"] = str(folder)

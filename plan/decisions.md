@@ -3241,3 +3241,16 @@ the six the login opens: PROJECTD93A5E7 (the default), PROJECTD33A929,
 PROJECTD52219B, PROJECTD125423, PROJECTD139081 and PROJECTD338331. One the
 user gains access to is added in `datascope.json` or here; PROJECTD52274F is
 never listed.
+
+### D171. The Projects databases are listed in the code alone
+
+**Amends D164 and D170.**
+
+**Context.** The user does not want the list in `datascope.json`, which the VM
+keeps by hand; it belongs with the software, changed on the Mac and carried by
+the next bundle (1 October 2026).
+
+**Decision.** The list is `DEFAULT_PROJECTS_DATABASES` in
+`pullmanager/config.py`, and only there. `datascope.json` no longer reads
+`projects_databases`: a file that still names it is refused, as any unknown
+key is, saying which key to remove.

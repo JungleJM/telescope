@@ -137,7 +137,8 @@ def choose(rooms: list[Room], own: str, used: dict[str, list[str]]) -> tuple[Roo
         raise DatabaseChoiceError(
             f"No Projects database has more than {MIN_FREE_MB // 1024} GB free, so nothing was "
             f"built:\n{lines}\nFree space in one (drop a finished pull's tables in "
-            "clear_projects_db), or add a database to projects_databases in datascope.json, "
+            "clear_projects_db), or add a database to DEFAULT_PROJECTS_DATABASES in "
+            "pullmanager/config.py and bundle again, "
             "then Execute again.")
     free = [room for room in usable if room.database.lower() not in used]
     mine = next((room for room in free if room.database.lower() == own.lower()), None)
@@ -171,29 +172,13 @@ def record(manifest: Manifest, room: Room, why: str, rooms: list[Room]) -> None:
     manifest.save()
 
 
-def config_home() -> Path | None:
-    """The folder whose datascope.json lists the databases: the working
-    directory, else the one holding scope.py."""
-    from .pulls import home_folders
-
-    for home in home_folders():
-        if (Path(home) / config.CONFIG_NAME).is_file():
-            return Path(home)
-    return None
-
-
 def choose_database(manifest: Manifest, settings: Any, connect_fn: Callable[..., Any],
-                    say: Callable[[str], None] = print, home: Path | None = None) -> bool:
+                    say: Callable[[str], None] = print, names: list[str] | None = None) -> bool:
     """Give a pull executing for the first time its database (D164). False,
     having said why, when none can take it."""
     if not needs_choice(manifest):
         return True
-    home = home or config_home()
-    try:
-        names = config.projects_databases(home) if home else list(config.DEFAULT_PROJECTS_DATABASES)
-    except config.ConfigError as exc:
-        say(f"ERROR {exc}")
-        return False
+    names = list(names or config.DEFAULT_PROJECTS_DATABASES)
     own = str(manifest.project.get("project_db") or "").strip()
     say(f"Choosing a Projects database: measuring {len(names)} ...")
     rooms = measure(names, settings, connect_fn)

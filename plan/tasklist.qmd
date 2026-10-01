@@ -101,7 +101,16 @@ I added j21 and j20.5.
 :::
 
 ::: {.callout-warning title="🟧 Your response"}
-(From chat, 2026-10-01.) Databases the login gains access to are added to the default list in the code (`pullmanager/config.py`, D170), not to `datascope.json`.
+(From chat, 2026-10-01.) Databases the login gains access to are added to the default list in the code (`pullmanager/config.py`, D170), not to `datascope.json`.\
+\
+App views: \
+- title works
+
+- run's dropdowns clearing others works
+
+- 3- it does say that ![](images/paste-26.png)
+
+- 
 :::
 
 # Post-Urgent Solve ideas
