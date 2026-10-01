@@ -3227,3 +3227,17 @@ Builder at the entry it points to, in its colour with its fix, and updated in
 place when the check runs again, without redrawing the page (so typing is not
 interrupted). A message pointing at a section but no entry shows at the top of
 that section. Validate keeps the full list.
+
+### D170. The Projects databases are the ones the login opens, never the training one
+
+**Amends D164.**
+
+**Context.** The first Execute under D164 (1 October 2026) measured the ten:
+PROJECTD723D95, PROJECTD427046 and PROJECTD03DEC refused the login, and
+PROJECTD52274F is a training database the user will not touch.
+
+**Decision.** Without `projects_databases` in `datascope.json`, the list is
+the six the login opens: PROJECTD93A5E7 (the default), PROJECTD33A929,
+PROJECTD52219B, PROJECTD125423, PROJECTD139081 and PROJECTD338331. One the
+user gains access to is added in `datascope.json` or here; PROJECTD52274F is
+never listed.

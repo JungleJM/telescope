@@ -23,11 +23,12 @@ RUNS_DEFAULT = "runs"
 # `backup`: the folder Artifacts backs each pull up to (D149), set in Run.
 # `projects_databases`: the Projects databases a pull may be given (D164).
 CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup", "projects_databases")
-# Without `projects_databases`, the user's own (30 September 2026); the first
-# is the default. A folder `Project D<code>` is the database `PROJECTD<code>`.
+# Without `projects_databases`, the user's own that their login opens (D170,
+# 1 October 2026); the first is the default. PROJECTD52274F is a training
+# database, never to be used. A folder `Project D<code>` is `PROJECTD<code>`.
 DEFAULT_PROJECTS_DATABASES = (
-    "PROJECTD93A5E7", "PROJECTD33A929", "PROJECTD723D95", "PROJECTD52219B", "PROJECTD52274F",
-    "PROJECTD125423", "PROJECTD139081", "PROJECTD338331", "PROJECTD427046", "PROJECTD03DEC",
+    "PROJECTD93A5E7", "PROJECTD33A929", "PROJECTD52219B", "PROJECTD125423", "PROJECTD139081",
+    "PROJECTD338331",
 )
 
 

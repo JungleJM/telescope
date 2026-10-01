@@ -202,7 +202,7 @@ class ExecuteTests(ChoiceTestCase):
         self.assertEqual(code, 1, out.getvalue())
         self.assertIn("No Projects database has more than 6 GB free", out.getvalue())
         self.assertNotIn("=== Patients ===", out.getvalue())
-        self.assertEqual(len(self.measured), 10)
+        self.assertEqual(len(self.measured), len(config.DEFAULT_PROJECTS_DATABASES))
 
 
 class ConfigTests(unittest.TestCase):
@@ -211,11 +211,13 @@ class ConfigTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
 
-    def test_without_a_list_the_users_ten_with_the_default_first(self):
+    def test_without_a_list_the_ones_the_login_opens_with_the_default_first(self):
         names = config.projects_databases(self.home)
-        self.assertEqual(len(names), 10)
         self.assertEqual(names[0], "PROJECTD93A5E7")
-        self.assertIn("PROJECTD03DEC", names)
+        self.assertEqual(len(names), 6)
+        # D170: a training database, and three the login cannot open.
+        for name in ("PROJECTD52274F", "PROJECTD723D95", "PROJECTD427046", "PROJECTD03DEC"):
+            self.assertNotIn(name, names)
 
     def test_setting_the_backup_keeps_the_list_a_list(self):
         (self.home / config.CONFIG_NAME).write_text(
