@@ -21,7 +21,14 @@ CORE_DEFAULTS = {
 }
 RUNS_DEFAULT = "runs"
 # `backup`: the folder Artifacts backs each pull up to (D149), set in Run.
-CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")
+# `projects_databases`: the Projects databases a pull may be given (D164).
+CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup", "projects_databases")
+# Without `projects_databases`, the user's own (30 September 2026); the first
+# is the default. A folder `Project D<code>` is the database `PROJECTD<code>`.
+DEFAULT_PROJECTS_DATABASES = (
+    "PROJECTD93A5E7", "PROJECTD33A929", "PROJECTD723D95", "PROJECTD52219B", "PROJECTD52274F",
+    "PROJECTD125423", "PROJECTD139081", "PROJECTD338331", "PROJECTD427046", "PROJECTD03DEC",
+)
 
 
 class ConfigError(RuntimeError):
@@ -44,6 +51,27 @@ def read(home: Path) -> dict[str, str]:
         raise ConfigError(f"{path} names {', '.join(unknown)}, which nothing reads. "
                           f"It may set: {', '.join(CONFIG_KEYS)}.")
     return {str(k): str(v) for k, v in data.items()}
+
+
+def projects_databases(home: Path) -> list[str]:
+    """The Projects databases datascope.json lists (D164), a list or one
+    comma-separated string; else the defaults."""
+    path = Path(home) / CONFIG_NAME
+    read(home)  # refuses a broken or unknown file, as every reader does
+    if not path.is_file():
+        return list(DEFAULT_PROJECTS_DATABASES)
+    value = json.loads(path.read_text(encoding="utf-8")).get("projects_databases")
+    if value is None:
+        return list(DEFAULT_PROJECTS_DATABASES)
+    items = value.split(",") if isinstance(value, str) else value
+    if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+        raise ConfigError(f"{path}: projects_databases must be a list of database names, "
+                          'e.g. ["PROJECTD93A5E7", "PROJECTD33A929"].')
+    names = [i.strip() for i in items if i.strip()]
+    if not names:
+        raise ConfigError(f"{path}: projects_databases lists no database. Name at least one, "
+                          "or remove it to use the defaults.")
+    return names
 
 
 def runs_setting(home: Path) -> Path:
@@ -95,7 +123,10 @@ def backup_dir(home: Path) -> Path | None:
 def set_backup(home: Path, folder: Path | None) -> Path:
     """Name the backup folder in `home/datascope.json`, or clear it, keeping
     whatever else the file says."""
-    data = read(home)
+    read(home)  # refuses a broken or unknown file
+    path = Path(home) / CONFIG_NAME
+    # As written, so a list (projects_databases) stays a list.
+    data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     if folder:
         data["backup"] = str(folder)
     else:

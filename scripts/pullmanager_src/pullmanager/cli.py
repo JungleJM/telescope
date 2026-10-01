@@ -654,6 +654,12 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
     for line in refresh.reconcile(manifest, stamps, refresh.databases_used(manifest)):
         print(line)
     manifest.save()
+    # D164: its first Execute gives the pull a Projects database of its own.
+    from .databases import choose_database
+
+    if not choose_database(manifest, settings, connect_fn,
+                           say=lambda line: print(line, file=sys.stderr if line.startswith("ERROR") else sys.stdout)):
+        return 1
 
     reports = []
     idle_failures = 0

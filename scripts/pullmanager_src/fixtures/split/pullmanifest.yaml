@@ -8,6 +8,10 @@ project:
 source:
   template: YAMLs/manager_test_cases/01_valid_basic.yaml
   recipes: YAMLs/recipes.yaml
+# Given its Projects database already (D164), so Execute measures none.
+database_choice:
+  database: PROJECTD33A929
+  why: the fixture's
 sessions:
 - session_id: Patients
   cohort: Patients
