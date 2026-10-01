@@ -127,6 +127,8 @@ class AuthorView:
         self.open_columns: set[tuple[Any, str]] = set()
         # The Add JOIN / Add WHERE forms open now, by table and kind (D168).
         self.open_forms: set[tuple[Any, str]] = set()
+        # Where the background check shows each message, by (section, entry) (D169).
+        self.issue_slots: dict[tuple[str, int | None], Any] = {}
         self.inline_builder: model.TableBuilder | None = None  # the table being built in place (D110)
 
         self._build_top()
@@ -221,6 +223,9 @@ class AuthorView:
     def render(self) -> None:
         """Build the open section again from the model."""
         self.body.clear()
+        self.issue_slots = {}
+        # A message for the section but no entry shows at its top (D169).
+        issue_slot(self, self.body.inner, self.section_key, None)
         build = self.section_builders.get(self.section_key)
         if build is None:
             label = dict(SECTIONS)[self.section_key]
@@ -231,6 +236,38 @@ class AuthorView:
             build(self.body.inner)
         except model.DraftError as exc:
             note(self.body.inner, str(exc), "error").pack(anchor="w")
+        if self.draft._validation is not None:
+            self.show_issues(self.draft._validation)
+
+    def show_issues(self, validation: model.Validation) -> None:
+        """Each message at the entry it points to, in its colour with its fix;
+        one for the section and no entry shown here, at the section's top.
+        Labels changed in place, so typing is never interrupted (D169)."""
+        found: dict[tuple[str, int | None], list[model.Message]] = {}
+        for message in validation.messages:
+            if message.field is None:
+                continue
+            key = (message.field.section, message.field.index)
+            if key not in self.issue_slots:
+                key = (message.field.section, None)
+            if key in self.issue_slots:
+                found.setdefault(key, []).append(message)
+        rank = {"pending": 1, "warning": 2, "error": 3}
+        for key, label in self.issue_slots.items():
+            try:
+                if not label.winfo_exists():
+                    continue
+            except tk.TclError:
+                continue
+            messages = found.get(key) or []
+            if not messages:
+                label.configure(text="")
+                label.pack_forget()
+                continue
+            worst = max((m.kind for m in messages), key=lambda kind: rank.get(kind, 0))
+            text = "\n".join(f"● {m.text}" + (f"  Fix: {m.fix}" if m.fix else "") for m in messages)
+            label.configure(text=text, foreground=COLOURS.get(worst, worst))
+            label.pack(anchor="w", pady=(0, 4))
 
     # -------------------------------------------------------------- edits
 
@@ -282,7 +319,7 @@ class AuthorView:
         else:
             parts = [f"{n} {kind}{'s' if n != 1 and kind != 'pending' else ''}" for kind, n in counts.items() if n]
             worst = "error" if counts["error"] else ("warning" if counts["warning"] else "pending")
-            self.say(", ".join(parts) + ". See Validate.", worst)
+            self.say(", ".join(parts) + ". Each is shown at its field; Validate lists them all.", worst)
         worst_by_section: dict[str, str] = {}
         rank = {"pending": 1, "warning": 2, "error": 3}
         for message in validation.messages:
@@ -293,6 +330,7 @@ class AuthorView:
         for key, label in SECTIONS:
             kind = worst_by_section.get(key)
             self.nav.item(key, text=f"{label}  ●" if kind else label, tags=(kind,) if kind else ())
+        self.show_issues(validation)
         refresh = getattr(self, "refresh_validate", None)
         if refresh:
             refresh(validation)
@@ -472,10 +510,20 @@ def grid_row(parent: Any, row: int, label: str, widget: Any, hint: str = "") -> 
         note(parent, hint).grid(row=row, column=2, sticky="w", padx=(10, 0))
 
 
+def issue_slot(view: AuthorView, parent: Any, section: str, index: int | None) -> None:
+    """Where the check's messages for this entry show, at its top, filled in
+    place each time it runs (D169). Empty, it takes no room."""
+    holder = ttk.Frame(parent)
+    holder.pack(fill="x")
+    view.issue_slots[(section, index)] = ttk.Label(holder, text="", justify="left", wraplength=880)
+
+
 def entry_box(view: AuthorView, parent: Any, title: str, section: str, index: int | None) -> ttk.LabelFrame:
-    """A framed entry; the one a Validate message pointed at says so."""
+    """A framed entry; the one a Validate message pointed at says so, and the
+    check's messages for it show at its top (D169)."""
     box = ttk.LabelFrame(parent, text=title, padding=10)
     box.pack(fill="x", pady=6)
+    issue_slot(view, box, section, index)
     mark = view.highlight
     if mark is not None and mark.section == section and (mark.index is None or mark.index == index):
         note(box, "Validate points here: " + (mark.detail or "this entry"), "error").pack(anchor="w")
@@ -1977,6 +2025,51 @@ class SectionViewTests(ViewTest):
                     self.view.show_section(key)
                     self.root.update()
                     self.assertTrue(widgets(self.view.body.inner))
+
+    def shown_issues(self) -> list[str]:
+        return [str(w.cget("text")) for w in widgets(self.view.body.inner)
+                if isinstance(w, ttk.Label) and str(w.cget("text")).startswith("● ") and w.winfo_ismapped()]
+
+    def test_a_message_shows_at_its_field_without_redrawing_the_page(self):
+        # D169: the Builder said only "1 error. See Validate."
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("project")
+        self.root.update()
+        self.view.check()
+        self.root.update()
+        self.assertEqual(self.shown_issues(), [])
+        entry = next(e for e in self.entries() if e.get() == self.view.draft.project_db)
+        entry.delete(0, "end")
+        entry.insert(0, "NOTAPROJECT")
+        self.root.update()
+        self.view.check()
+        self.root.update()
+        issues = self.shown_issues()
+        self.assertTrue(issues and "PROJECTD" in issues[0], issues)
+        self.assertTrue(entry.winfo_exists())  # the same field: typing goes on
+        entry.delete(0, "end")
+        entry.insert(0, "PROJECTD93A5E7")
+        self.root.update()
+        self.view.check()
+        self.root.update()
+        self.assertEqual(self.shown_issues(), [])
+
+    def test_a_message_for_one_table_shows_in_that_tables_box(self):
+        self.open("Celiac_intake.yaml")
+        index = self.view.draft.fact_tables()[0][0]
+        self.view.draft.doc["cohorts"][index]["recipe"] = "NoSuchRecipe"
+        self.view.draft.dirty = True
+        self.view.draft._validation = None
+        self.view.show_section("fact")
+        self.view.check()
+        self.root.update()
+        messages = [m for m in self.view.draft.validation().messages
+                    if m.field is not None and m.field.section == "fact" and m.field.index == index]
+        self.assertTrue(messages, [m.text for m in self.view.draft.validation().messages])
+        box = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.LabelFrame)
+                   and str(w.cget("text")).startswith("1. "))
+        shown = [str(w.cget("text")) for w in widgets(box) if isinstance(w, ttk.Label) and w.winfo_ismapped()]
+        self.assertTrue(any(messages[0].text in text for text in shown), shown)
 
     def test_typing_a_project_setting_edits_the_draft_and_marks_it_unsaved(self):
         self.open("Celiac_intake.yaml")
