@@ -289,6 +289,11 @@ class RunningPullTests(GuiTestCase):
         self.app.vars["template"].set("")
         self.app.choose_ended("IBD_Ancestry  (finished)")
         self.assertEqual(Path(self.app.vars["template"].get()), record)
+        # D165: once its tables are dropped, Run says it can only be re-pulled.
+        data["tables_dropped"] = {"at": "x", "database": "PROJECTD1", "tables": ["a_X"]}
+        dump_yaml(data, self.manifest)
+        self.app.choose_ended("IBD_Ancestry  (finished)")
+        self.assertIn("only Re-pull everything", self.app.bar.configure.call_args.kwargs["text"])
 
     def test_stop_records_that_the_user_stopped_it(self):
         from ..manifest import Manifest

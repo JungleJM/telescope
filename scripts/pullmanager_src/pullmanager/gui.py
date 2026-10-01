@@ -345,8 +345,22 @@ class LauncherApp:
     def choose_ended(self, label: str) -> None:
         path = self._ended.get(label) or self.ended_choices().get(label)
         if path is not None:
-            self.load(path, "Execute resumes it; Retry failed and Re-pull everything are above; "
-                            "Artifacts packages it; Status shows its tables.")
+            then = ("Execute resumes it; Retry failed and Re-pull everything are above; "
+                    "Artifacts packages it; Status shows its tables.")
+            if self.tables_dropped(label.split("  (")[0]):
+                then = ("Packaged, and its tables dropped from Projects (D165): its parquets hold "
+                        "them, and only Re-pull everything pulls it again. Status shows its tables.")
+            self.load(path, then)
+
+    def tables_dropped(self, project: str) -> bool:
+        """Whether a packaged pull's tables were dropped from Projects (D165)."""
+        for pull in pulls.find_pulls(self.workdir):
+            if pull.name.lower() == project.lower():
+                try:
+                    return "tables_dropped:" in pull.manifest.read_text(encoding="utf-8")
+                except OSError:
+                    return False
+        return False
 
     def choose_start(self, label: str) -> None:
         path = self._startable.get(label) or self.start_choices().get(label)

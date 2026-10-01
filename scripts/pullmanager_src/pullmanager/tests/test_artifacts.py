@@ -54,6 +54,9 @@ class FakeCursor:
     def execute(self, sql, params=None):
         params = list(params or [])
         self.db.executed.append((sql, params))
+        if sql.startswith("DROP TABLE IF EXISTS "):
+            self.db.dropped.append(sql.removeprefix("DROP TABLE IF EXISTS ").rstrip(";"))
+            return
         if "INFORMATION_SCHEMA.COLUMNS" in sql:
             self._rows = list(self.db.columns.get(params[0], []))
             return
@@ -86,10 +89,15 @@ class FakeProjects:
         self.columns, self.rows = columns, rows
         self.fail: set[str] = set()  # tables whose SELECT fails, as a driver error would
         self.executed: list = []
+        self.dropped: list[str] = []
+        self.commits = 0
         self.closed = False
 
     def cursor(self):
         return FakeCursor(self)
+
+    def commit(self):
+        self.commits += 1
 
     def close(self):
         self.closed = True
@@ -362,7 +370,7 @@ class CommandTests(ArtifactTestCase):
 class AfterPullTests(ArtifactTestCase):
     """D141: a clean pull packages itself; any other is left for Artifacts."""
 
-    def execute(self, db, *, code=0, runs="done"):
+    def execute(self, db, *, code=0, runs="done", counts=None):
         from unittest import mock
 
         def pulled(manifest, args, connect_fn, done):
@@ -371,6 +379,10 @@ class AfterPullTests(ArtifactTestCase):
                 for node in [*session.phases, *session.runs]:
                     node.status = "done" if node in session.phases else runs
                     done.append(node.label)
+                if counts:
+                    session.phases[-1].outputs["table_rows"] = {"Patients": counts["Patients"]}
+                    for run in session.runs:
+                        run.outputs["table_rows"] = {"OtherHospitalizations": counts["OtherHospitalizations"]}
             manifest.save()
             return code
 
@@ -381,6 +393,58 @@ class AfterPullTests(ArtifactTestCase):
             result = cli.execute(Manifest.load(self.split / "pullmanifest.yaml"), args,
                                  connect_fn=lambda *a, **k: db)
         return result, out.getvalue()
+
+    def prefixed(self) -> FakeProjects:
+        """The pull split with a table prefix (D163), and its tables so named."""
+        data = load_yaml(self.split / "pullmanifest.yaml")
+        data["project"]["table_prefix"] = "manval"
+        dump_yaml(data, self.split / "pullmanifest.yaml")
+        for path in (self.split / "sessions").rglob("*.yaml"):
+            doc = load_yaml(path)
+            doc["table_prefix"] = "manval"
+            dump_yaml(doc, path)
+        return FakeProjects(
+            {"manval_Patients": PATIENTS, "manval_OtherHospitalizations": HOSPITALIZATIONS},
+            {"manval_Patients": patients(), "manval_OtherHospitalizations": hospitalizations()},
+        )
+
+    def test_a_cleanly_packaged_pull_drops_its_own_tables(self):
+        # D165: a finished pull's tables filled its database; its parquets hold them.
+        db = self.prefixed()
+        code, out = self.execute(db, counts={"Patients": 3, "OtherHospitalizations": 2})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(db.dropped), [
+            "PROJECTD33A929.dbo.manval_OtherHospitalizations",
+            "PROJECTD33A929.dbo.manval_Patients",
+            "PROJECTD33A929.dbo.manval_upload_HospitalICDCodes",
+        ])
+        self.assertGreater(db.commits, 0)
+        dropped = load_yaml(self.split / "pullmanifest.yaml")["tables_dropped"]
+        self.assertEqual(len(dropped["tables"]), 3)
+        self.assertIn("only be re-pulled from the start", out)
+
+    def test_tables_stay_when_the_scan_finds_rows_missing(self):
+        db = self.prefixed()
+        # Cosmos built 5 hospitalizations; the parquet has 2.
+        code, out = self.execute(db, counts={"Patients": 3, "OtherHospitalizations": 5})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(db.dropped, [])
+        self.assertIn("Its tables are kept in Projects: the run scan found", out)
+        self.assertNotIn("tables_dropped", load_yaml(self.split / "pullmanifest.yaml"))
+
+    def test_tables_of_a_pull_split_before_per_pull_names_stay(self):
+        db = self.projects()
+        code, out = self.execute(db, counts={"Patients": 3, "OtherHospitalizations": 2})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(db.dropped, [])
+        self.assertIn("split before tables were named per pull", out)
+
+    def test_artifacts_by_hand_drops_nothing(self):
+        db = self.prefixed()
+        self.set_status()
+        code, out = CommandTests.run_artifacts(self, db)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(db.dropped, [])
 
     def test_a_clean_pull_is_packaged_by_execute(self):
         # Before, only the PK's parquet existed until Artifacts was run by hand.

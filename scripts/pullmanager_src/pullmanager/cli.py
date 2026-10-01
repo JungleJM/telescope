@@ -276,7 +276,44 @@ def package_after_pull(manifest: Manifest, args: argparse.Namespace, connect_fn,
               "in Projects and its exit code is unchanged: run Artifacts again once the "
               "cause is fixed.", file=sys.stderr)
         return
+    drop_after_package(manifest, args, connect_fn)
     retire_working_blueprint(manifest)
+
+
+def drop_after_package(manifest: Manifest, args: argparse.Namespace, connect_fn=None) -> bool:
+    """A cleanly packaged pull's tables leave Projects (D165), unless the run
+    scan finds something wrong or they may be another pull's. Never raises:
+    the pull is done either way."""
+    from .db import Settings, connect
+    from .drops import drop_tables, why_kept
+
+    why = why_kept(manifest)
+    if why:
+        print(f"Its tables are kept in Projects: {why}.")
+        return False
+    settings = Settings.from_env()
+    project_db = str(manifest.project.get("project_db") or "")
+    try:
+        connection = (connect_fn or connect)(
+            settings.projects_connection_string(project_db),
+            login_timeout=settings.login_timeout, query_timeout=settings.query_timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"warning  its tables are kept in Projects: could not connect to {project_db} ({exc}).",
+              file=sys.stderr)
+        return False
+    try:
+        drop_tables(manifest, connection)
+    except Exception as exc:  # noqa: BLE001
+        print(f"warning  its tables were not all dropped ({exc}); drop the rest in "
+              "clear_projects_db.", file=sys.stderr)
+        return False
+    finally:
+        try:
+            connection.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return True
 
 
 def retire_working_blueprint(manifest: Manifest) -> Path | None:
