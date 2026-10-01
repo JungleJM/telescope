@@ -29,6 +29,21 @@ When an item here is built, delete it from this file and describe the result in 
 
 ------------------------------------------------------------------------
 
+## Next: Fixes, In Order
+
+Decided 30 September 2026 (D162–D169), from the runs on the bundle `048c3f29…`. One commit each, with outcome tests, then one bundle.
+
+1.  **One blueprint per project** (D162): `_blueprint` for `_transfer`; on the VM one working copy in `YAMLs/temp`, saved in place, delivered there by the bundle, removed once its pull is packaged; replaced copies kept in `YAMLs/temp/replaced/`; Author's dropdown by project. First, because two copies of a project are what pulled the wrong Infant_RSV.
+2.  **Projects tables named per pull** (D163): before D164 and D165, which rely on a pull's tables being its own.
+3.  **A database per pull** (D164): the space that stopped two pulls.
+4.  **Drop a pull's tables once packaged** (D165).
+5.  **Run and the title say what is loaded; the step in flight on its row** (D166).
+6.  **A packaged table opens in the parquet viewer from Status** (D167).
+7.  **Filters: joins first, forms behind a button** (D168).
+8.  **Messages at their fields in the Builder** (D169).
+
+------------------------------------------------------------------------
+
 ## Next: The Bundle `1b628fc3…` On The VM
 
 Built 30 September 2026 from the runs of 29 and 30 September: D151 to D159, and the corrected `Crohns_DxHxSxRx_transfer.yaml` (a different copy already at the root is kept as `.local`). Built and tested on the Mac; nothing of it has run on the VM.

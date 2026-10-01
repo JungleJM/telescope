@@ -3066,3 +3066,164 @@ come back by screenshot anyway.
   name a retyped column (to export again) and those that name a column whose
   nullability changed (to check their own `nullable:`, which the Author view
   copied).
+
+### D162. One blueprint per project; the transfer YAML is renamed the blueprint
+
+**Amends D94, D95 and D79.**
+
+**Context.** On the VM, Author's Save wrote `YAMLs/temp/<project>_intake.yaml`,
+while Run read `<project>_transfer.yaml` beside `scope.py`, rewritten only by
+Transfer to Run. Author's dropdown listed both. Edits to Infant_RSV's codes and
+IBD_Ancestry's upload path were saved into the file Run does not read, so the
+old one was pulled (30 September 2026). The user wants one source of truth per
+project: a YAML changed on the VM stays one YAML; a new version from the Mac
+replaces it, with no merging, since VM changes are copied to the Mac by hand.
+
+**Decision.**
+
+- **The name.** The file a split is made from is the **blueprint**,
+  `<project>_blueprint.yaml`, everywhere: the Mac's export, the bundle, Run and
+  the run-folder rule. A `_transfer.yaml` is still read, as before.
+- **On the VM, one working copy:** `YAMLs/temp/<project>_blueprint.yaml`.
+  The bundle delivers a blueprint there, not beside `scope.py`. Author opens and
+  saves it in place; no intake is written on the VM. Run's Start run lists it.
+  Transfer to Run, on the VM, saves and loads it in Run.
+- **Its record is the run folder:** Export split copies the blueprint beside the
+  manifest (D142). When the pull finishes and is packaged (D141), the working
+  copy in `YAMLs/temp` is removed, and the log says so, unless it was changed
+  after the split. To change a finished pull, Author opens its run-folder copy;
+  Save puts a working copy back in `YAMLs/temp`.
+- **A new version from the Mac replaces the VM's.** The file it replaces, and
+  any older copy of the same project (a `_transfer.yaml` beside `scope.py`, an
+  `_intake.yaml` in `YAMLs/temp`), goes to `YAMLs/temp/replaced/`, once, so a
+  change not yet copied to the Mac is not lost. This replaces `.local` for
+  blueprints. Saving a draft opened from such an older copy moves that copy
+  there too.
+- **Author's dropdown lists projects, not files**: `Infant RSV`. It opens the
+  project's one file on this side: the working blueprint on the VM (else the
+  run folder's), the intake on the Mac.
+- **The Mac is unchanged in kind:** its intake in `YAMLs/temp` is the source,
+  since it names recipes, and Transfer to Run exports its blueprint to the
+  root, where the bundle takes it.
+
+### D163. Every Projects table carries its pull's prefix
+
+**Context.** Pulls in one Projects database with the same table names dropped
+each other's tables at setup: UC_Visits and the Crohns pulls both write
+`OtherDiagnoses`, and share `upload_HospitalICDCodes` (30 September 2026). The
+Cosmos temps already carry a prefix (D50); the Projects tables did not. The
+user chose the temp prefix's form, first three letters of each word, numbered
+on a clash; upload copies get it too. The name matters only for
+troubleshooting: parquets keep the plain name.
+
+**Decision.**
+
+- At Export split, the pull's **table prefix** is fixed: the template's temp
+  prefix (D50), and if another pull under the runs folder has it, the same with
+  2, 3 and on. A pull split again keeps the prefix it had. It is written into
+  the manifest's `project.table_prefix` and into every phase document, and never
+  changes, unlike the temp prefix, which is renumbered per run.
+- Every table a pull makes in Projects is `<table prefix>_<name>`: each
+  destination, the PK's copy, and each upload's copy
+  (`ibdanc_upload_IBD_Meds`). Parquets, `contents.md` and the manifest's table
+  names stay the plain name.
+- A manifest without a table prefix (split before this) keeps unprefixed names,
+  so a pull in progress still resumes and retries.
+
+### D164. Each pull is given its own Projects database
+
+**Context.** Two of three pulls stopped when PROJECTD93A5E7 filled (20 GB),
+while the user's other project databases stood empty (30 September 2026). The
+user chose: each pull on a database of its own where possible, a database
+chosen when it has more than 6 GB free, PROJECTD93A5E7 the default; once set
+for a pull it is permanent; with more pulls than databases they stack, which
+matters less as finished pulls drop their tables (D165).
+
+**Decision.**
+
+- The databases are listed in `datascope.json` under `projects_databases`;
+  without it, the user's ten: PROJECTD93A5E7 first, then PROJECTD33A929,
+  PROJECTD723D95, PROJECTD52219B, PROJECTD52274F, PROJECTD125423,
+  PROJECTD139081, PROJECTD338331, PROJECTD427046 and PROJECTD03DEC. A folder
+  `Project D<code>` is the database `PROJECTD<code>`.
+- When a pull executes for the first time (no step has run, no database chosen
+  yet), Execute asks each listed database for its free space before anything
+  is built: the data files' room to their cap. One it cannot open is skipped,
+  and said.
+- It takes, among databases with more than 6 GB free: the blueprint's own
+  `project_db`, if no other unfinished pull uses it; else the one with the most
+  free space among those no other unfinished pull uses; else, stacking, the one
+  with the most free space. An unfinished pull is one under the runs folder not
+  finished and packaged. If none has 6 GB, Execute stops, building nothing, and
+  lists each database's free space.
+- The choice is written into the manifest (`project.project_db`, and
+  `database_choice` with each database's free space) and into every phase
+  document, and never changes: resume, retry, re-pull and Artifacts all read it
+  there (D52).
+
+### D165. A pull's Projects tables are dropped once it is packaged
+
+**Context.** A finished pull's tables fill its database, and its parquets hold
+them. The user chose dropping them automatically once tables are named per pull
+(D163), since before that an upload copy could be another pull's (30 September
+2026).
+
+**Decision.** After a clean pull is packaged (D141), Execute drops every
+Projects table the pull made (each destination, the PK's copy and each upload's
+copy, by their prefixed names), provided the pull has a table prefix and the
+run scan (D152) finds nothing wrong with it. Otherwise nothing is dropped, and
+the log says why. The manifest records `tables_dropped` and when, so Run says
+the pull can only be re-pulled from the start. Artifacts run by hand drops
+nothing.
+
+### D166. Run and the title say which project each half has loaded
+
+**Context.** The window title showed Author's file while Run followed another
+pull; Run's three dropdowns each kept their last text, so a stale
+`IBD_Ancestry (not run yet)` showed beside a loaded Infant_RSV; and Status gave
+no sign of the chunk and table in flight, so a 44-minute first table looked
+like a pull with one table (30 September 2026).
+
+**Decision.**
+
+- The title names both halves: `Telescope · Author: <project> · Run: <pull>`.
+- Choosing a pull from one of Run's dropdowns clears the other two, and a bold
+  line above them names the loaded pull and its state, in the dropdowns' words.
+- A run's row in Status shows what is in flight while it runs:
+  `c2of13 · OtherHospitalizations, since 11:01`. The session records the table
+  it is building (`outputs.in_flight`) as it starts it, and clears it when the
+  run ends.
+
+### D167. Double-clicking a packaged table in Status opens its parquet
+
+**Amends D144.**
+
+**Decision.** Double-clicking a table row in Status whose parquet exists in the
+pull's run folder opens it in the parquet viewer, in a window of its own (a
+table packaged as one file per value opens its first two files). Any other row,
+or a table with no parquet yet, opens Pull Manifest at its lines, as before.
+
+### D168. Filters: joins first, each form opened by a button
+
+**Context.** The Filters box listed `join:` and `where:` lines mixed, with both
+forms always open, where first, and Remove off the right edge (30 September
+2026). The user chose the same layout for the table builder's Joins and Where.
+
+**Decision.** In the Filters box of a prefabricated table and in the table
+builder alike: **JOIN** then **WHERE**, each a heading with its lines under it,
+each line with Remove beside it. Under each, **Add JOIN** or **Add WHERE**
+opens that form in place, with **Add** and **Cancel**; either closes it. A
+form's explanation shows only while it is open. In the table builder the form
+also offers a written line, beside by column.
+
+### D169. The Builder shows each message at its field
+
+**Context.** The Builder said only `1 error, 3 pending. See Validate.`; the
+message itself was on the Validate tab, and reached its field by
+double-clicking (30 September 2026).
+
+**Decision.** Each message the background check finds (D96) is shown in the
+Builder at the entry it points to, in its colour with its fix, and updated in
+place when the check runs again, without redrawing the page (so typing is not
+interrupted). A message pointing at a section but no entry shows at the top of
+that section. Validate keeps the full list.
