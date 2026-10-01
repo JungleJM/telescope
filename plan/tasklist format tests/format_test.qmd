@@ -1,0 +1,98 @@
+---
+title: "Format test (.qmd)"
+---
+
+The Quarto options. These need a Quarto renderer: the Quarto extension's Preview (Cmd+Shift+K), Positron, or `quarto preview reference/plan/format_test.qmd`. VS Code's plain Markdown preview won't render them. Options 1–15 are in `format_test.md`; the same ones work here too.
+
+## 16. Quarto callouts, all five kinds
+
+::: {.callout-note title="Claude"}
+A note callout (blue).
+:::
+
+::: {.callout-tip title="Your response"}
+A tip callout (green).
+:::
+
+::: {.callout-important title="Your response"}
+An important callout (red).
+:::
+
+::: {.callout-warning title="Your response"}
+A warning callout (orange).
+:::
+
+::: {.callout-caution title="Your response"}
+A caution callout (orange).
+:::
+
+## 17. Callouts with emoji titles, the Telescope style
+
+::: {.callout-note title="🟦 Claude: topic"}
+As in Telescope's task list.
+:::
+
+::: {.callout-warning title="🟧 Your response"}
+:::
+
+## 18. Minimal callout (no icon, coloured edge only)
+
+::: {.callout-note appearance="minimal"}
+**Claude:** a minimal callout.
+:::
+
+::: {.callout-warning appearance="minimal"}
+**Your response:** a minimal callout.
+:::
+
+## 19. Simple callout (icon, no title bar)
+
+::: {.callout-note appearance="simple"}
+**Claude:** a simple callout.
+:::
+
+::: {.callout-warning appearance="simple"}
+**Your response:** a simple callout.
+:::
+
+## 20. Collapsible callout
+
+::: {.callout-note title="Claude" collapse="false"}
+A collapsible callout, open.
+:::
+
+::: {.callout-warning title="Your response" collapse="false"}
+Your text here.
+:::
+
+## 21. Fenced div with your own colours
+
+::: {style="background-color:#1e3a5f; border-left:6px solid #4a90e2; padding:8px 12px;"}
+**Claude:** a div styled directly.
+:::
+
+::: {style="background-color:#5f3a1e; border-left:6px solid #e2904a; padding:8px 12px;"}
+**Your response:** the same, orange.
+:::
+
+## 22. Bordered div (Bootstrap classes, in HTML output)
+
+::: {.border .border-primary .rounded .p-2}
+**Claude:** a Bootstrap border.
+:::
+
+::: {.border .border-warning .rounded .p-2}
+**Your response:** a Bootstrap border, warning colour.
+:::
+
+## 23. Coloured text span
+
+[**Claude:** blue text]{style="color:#4a90e2"}
+
+[**Your response:** orange text]{style="color:#e2904a"}
+
+## 24. GitHub alert, inside a .qmd
+
+> \[!NOTE\] **Claude:** recent Quarto versions read GitHub alerts as callouts.
+
+> \[!IMPORTANT\] **Your response:** the same.
