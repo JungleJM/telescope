@@ -620,6 +620,41 @@ class StatusTests(GuiTestCase):
         self.assertEqual(text.splitlines()[first].strip(), "error:")
         self.assertEqual((first, int(found[2].split(".")[0]) - 1), launcher.manifest_span(text, row))
 
+    def table_row(self, parquet: bool):
+        import copy
+        import itertools
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        data["sessions"][0]["runs"][0].setdefault("outputs", {})["table_rows"] = {"OtherHospitalizations": 7}
+        dump_yaml(data, self.manifest)
+        if parquet:
+            folder = self.manifest.parent / "cosmos_parquets"
+            folder.mkdir()
+            (folder / "OtherHospitalizations.parquet").write_bytes(b"PAR1")
+        ids = itertools.count()
+        self.app.tree.insert.side_effect = lambda *a, **k: f"item{next(ids)}"
+        self.app.refresh_status()
+        item = next(i for i, r in self.app._status_rows.items() if r.kind == "table")
+        self.app.tree.focus.return_value = item
+        self.spawned: list = []
+        self.app.spawn = self.spawned.append
+
+    def test_double_clicking_a_packaged_table_opens_its_parquet(self):
+        # D167: what the pull made, a double-click from finding out what is in it.
+        self.table_row(parquet=True)
+        self.app.notebook.select.reset_mock()
+        self.app.on_status_double_click()
+        [command] = self.spawned
+        self.assertTrue(command[1].replace("\\", "/").endswith("utils/client/viewparquets.py"), command)
+        self.assertEqual(Path(command[2]), self.manifest.parent / "cosmos_parquets" / "OtherHospitalizations.parquet")
+        self.assertNotIn(mock.call(self.app.manifest_tab), self.app.notebook.select.call_args_list)
+
+    def test_a_table_with_no_parquet_yet_opens_the_manifest_as_before(self):
+        self.table_row(parquet=False)
+        self.app.on_status_double_click()
+        self.assertEqual(self.spawned, [])
+        self.app.notebook.select.assert_called_with(self.app.manifest_tab)
+
     def count_reads(self):
         """How often Status opens the manifest (D154)."""
         from unittest import mock

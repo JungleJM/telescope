@@ -193,6 +193,29 @@ def command_backup_all(tools: Tools) -> list[str]:
     return [sys.executable, str(tools.pullmanager), "--backup"]
 
 
+def table_parquets(manifest_path: Path, name: str) -> list[Path]:
+    """A packaged table's parquet in its run folder (D167): `<name>.parquet`,
+    or, packaged one file per value, its first two; none before Artifacts."""
+    run_dir = Path(manifest_path).parent
+    sneakpeek = name.endswith("_sp")
+    folders = ["sneakpeek_parquets"] if sneakpeek else ["cosmos_parquets", "uploads_parquets"]
+    for folder in (run_dir / f for f in folders):
+        whole = folder / f"{name}.parquet"
+        if whole.is_file():
+            return [whole]
+        pattern = f"{name[:-3]}_*_sp.parquet" if sneakpeek else f"{name}_*.parquet"
+        parts = sorted(folder.glob(pattern)) if folder.is_dir() else []
+        if parts:
+            return parts[:2]
+    return []
+
+
+def command_view_parquets(tools: Tools, files: list[Path]) -> list[str]:
+    """The parquet viewer the bundle carries, on these files (D167)."""
+    viewer = Path(tools.pullmanager).parent / "utils" / "client" / "viewparquets.py"
+    return [sys.executable, str(viewer), *[str(path) for path in files]]
+
+
 def command_scan_runs(tools: Tools) -> list[str]:
     """What every pull built against what it packaged (D152)."""
     return [sys.executable, str(tools.pullmanager), "--scan-runs"]

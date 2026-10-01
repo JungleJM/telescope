@@ -825,10 +825,35 @@ class LauncherApp:
             self._mark_manifest_line(self._manifest_found, scroll=False)
 
     def on_status_double_click(self, event=None) -> None:
+        """A packaged table opens in the parquet viewer (D167); any other row,
+        or a table with no parquet yet, in Pull Manifest (D144)."""
         item = self.tree.focus()
         row = self._status_rows.get(str(item))
-        if row is not None:
-            self.show_in_manifest(row)
+        if row is None:
+            return
+        if row.kind == "table" and self.open_parquets(row.name):
+            return
+        self.show_in_manifest(row)
+
+    def open_parquets(self, table: str) -> bool:
+        """Open a table's parquet in a viewer window of its own; False if it has none."""
+        manifest = self._manifest()
+        files = launcher.table_parquets(manifest, table) if manifest is not None else []
+        if not files:
+            return False
+        command = launcher.command_view_parquets(self.tools, files)
+        try:
+            self.spawn(command)
+        except OSError as exc:
+            self.bar.configure(text=f"The parquet viewer did not open: {exc}")
+            return False
+        self.bar.configure(text=f"Opened {', '.join(path.name for path in files)} in the parquet viewer.")
+        return True
+
+    def spawn(self, command: list[str]) -> None:
+        import subprocess
+
+        subprocess.Popen(command, cwd=str(self.workdir))
 
     def show_in_manifest(self, row: launcher.StatusRow) -> None:
         """Switch to Pull Manifest with the row's lines in view, highlighted:

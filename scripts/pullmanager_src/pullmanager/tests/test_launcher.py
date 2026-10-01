@@ -634,3 +634,32 @@ class InFlightTests(unittest.TestCase):
         outputs["value"] = "v1of3 (LA)"
         self.assertEqual(in_flight_text(outputs), "v1of3 (LA) c2of13 · OtherHospitalizations, since 11:01")
         self.assertEqual(in_flight_text({}), "")
+
+
+class TableParquetTests(unittest.TestCase):
+    """D167: where a packaged table's parquet is."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.run = Path(self._tmp.name) / "runs" / "IBD"
+        self.manifest = self.run / "pullmanifest.yaml"
+
+    def put(self, folder: str, *names: str) -> None:
+        (self.run / folder).mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (self.run / folder / name).write_bytes(b"PAR1")
+
+    def test_whole_split_sneakpeek_upload_and_none(self):
+        from ..launcher import table_parquets
+
+        self.put("cosmos_parquets", "Visits.parquet", "Meds_LA.parquet", "Meds_MS.parquet", "Meds_TX.parquet")
+        self.put("sneakpeek_parquets", "Visits_sp.parquet", "Meds_LA_sp.parquet")
+        self.put("uploads_parquets", "Codes.parquet")
+        self.assertEqual([p.name for p in table_parquets(self.manifest, "Visits")], ["Visits.parquet"])
+        self.assertEqual([p.name for p in table_parquets(self.manifest, "Meds")],
+                         ["Meds_LA.parquet", "Meds_MS.parquet"])
+        self.assertEqual([p.parent.name for p in table_parquets(self.manifest, "Visits_sp")], ["sneakpeek_parquets"])
+        self.assertEqual([p.name for p in table_parquets(self.manifest, "Meds_sp")], ["Meds_LA_sp.parquet"])
+        self.assertEqual([p.name for p in table_parquets(self.manifest, "Codes")], ["Codes.parquet"])
+        self.assertEqual(table_parquets(self.manifest, "Patients"), [])
