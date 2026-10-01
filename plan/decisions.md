@@ -3014,3 +3014,55 @@ already renamed or dropped is written as a rename to the name without them
 (`'DiagnosisCode'` lands as `DiagnosisCode`), shown in Lands as like any rename.
 It happens only then, so a rename back to the quoted name stays. The warning
 remains for templates written by hand.
+
+### D160. Every table with a screenshot goes into the dictionary
+
+**Amends D130.**
+
+**Context.** D130 checked the dictionary's tables against their pages and
+listed at its foot the tables a checked foreign key points at, to be
+screenshotted "before a pull joins it". The second batch of screenshots (29
+September 2026) covered several of those (DiagnosisDim, ProcedureDim,
+LabTestFact, SourceDim, EncounterSourceBridge). The plan was to add one only
+if a pull read it or a checked key pointed at it. The user chose otherwise (30
+September 2026): the dictionary audit (D155) now says what the dictionary has
+that Cosmos lacks, so a table added from its page is checked without a pull.
+
+**Decision.** A table whose page is screenshotted goes into the dictionary,
+checked like the others, whether or not a pull reads it. The exception is a
+page whose every column is SD only (ProcedureSetDim): it has nothing to pull
+(D116), so it stays out, named at the dictionary's foot. How a batch of
+screenshots is checked in is in design.md (Checking Screenshots Into The
+Dictionary).
+
+### D161. The audit also reports each wrong type and nullability
+
+**Amends D155.**
+
+**Context.** The screenshots leave gaps: descriptions cut off, and no row
+expanded, so almost no nullability comes from a page. Most `nullable` values
+came from the VM's AI. They matter: the Author view copies a column's
+`nullable` from the dictionary, and `nullable: false` becomes `IS NOT NULL` in
+the pull, so a wrong `false` drops rows silently. Wrong types are what broke
+pulls (D114; `MedicationDispenseFact.FillNumber` was INT, and is
+`nvarchar(50)`). The same `sys.columns` row the audit already reads holds both.
+The user chose to check the whole dictionary for both, reporting only what is
+wrong, so the file stays short enough to screenshot (30 September 2026).
+Descriptions stay with the pages: they are not in `sys.columns`, and could not
+come back by screenshot anyway.
+
+**Decision.**
+
+- The audit's query also asks for each column's type (`TYPE_NAME`, size,
+  precision, scale) and `is_nullable`. Cosmos's type is written as a page
+  writes it (`nvarchar(300)` from 600 bytes, `numeric(19,4)`, `datetime2`
+  without its default scale). A dictionary type matches when its own words,
+  annotation aside, are Cosmos's; an abstract type (`string`) never matches.
+  A column with no `nullable` counts as nullable, as a pull reads it.
+- Two more sections, one line per table, only the columns that differ:
+  `types_wrong` and `nullable_wrong`, each holding Cosmos's value.
+- `dictionary-fix` writes each in, in its line, keeping a type's annotation
+  (`integer (DateKey)` becomes `bigint (DateKey)`), and lists the YAMLs that
+  name a retyped column (to export again) and those that name a column whose
+  nullability changed (to check their own `nullable:`, which the Author view
+  copied).

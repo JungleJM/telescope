@@ -1,0 +1,26 @@
+# dictionary audit, 2026-09-30 09:45, bundle 048c3f29, database COSMOS: the 'nullable: true' findings only
+nullable_wrong:
+  PatientDim: {_IsDeleted: true, _IsInferred: true, IsValid: true, UseInCosmosAnalytics_X: true}
+  EdVisitFact: {_IsDeleted: true, _IsInferred: true, ArrivalInstant: true}
+  DiagnosisEventFact: {_IsDeleted: true, _IsInferred: true}
+  HospitalAdmissionFact: {_IsDeleted: true, _IsInferred: true}
+  LabComponentResultFact: {_IsDeleted: true, _IsInferred: true}
+  EncounterFact: {_IsDeleted: true, _IsInferred: true}
+  LabComponentDim: {_IsDeleted: true, _IsInferred: true}
+  LabComponentSetDim: {_IsDeleted: true, _IsInferred: true}
+  BirthFact: {_IsDeleted: true, _IsInferred: true}
+  MedicationOrderFact: {_IsDeleted: true, _IsInferred: true}
+  MedicationOrderComponentFact: {_IsDeleted: true, _IsInferred: true}
+  MedicationDispenseFact: {_IsDeleted: true, _IsInferred: true}
+  MedicationAdministrationFact: {_IsDeleted: true, _IsInferred: true}
+  PregnancyFact: {_IsDeleted: true, _IsInferred: true}
+  DiagnosisTerminologyDim: {_IsDeleted: true, _IsInferred: true}
+  ProblemListFact: {_IsDeleted: true, _IsInferred: true}
+  TerminologyConceptDim: {_IsDeleted: true, _IsInferred: true}
+  ProcedureEventFact: {_IsDeleted: true, _IsInferred: true}
+  VitalsFact: {_IsDeleted: true, _IsInferred: true}
+  CoverageDim: {_IsDeleted: true, _IsInferred: true}
+  DiagnosisDim: {_IsDeleted: true, _IsInferred: true}
+  ProcedureDim: {_IsDeleted: true, _IsInferred: true}
+  LabTestFact: {_IsDeleted: true, _IsInferred: true}
+  SourceDim: {_IsDeleted: true, _IsInferred: true}

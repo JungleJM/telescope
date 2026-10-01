@@ -775,31 +775,31 @@ cohorts:
   - source: vf._IsDeleted
     name: _IsDeleted
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: vf._IsInferred
     name: _IsInferred
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: vf.BodyMassIndex
     name: BodyMassIndex
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,4)
   - source: vf.CalculatedBodyMassIndex_X
     name: CalculatedBodyMassIndex_X
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,4)
   - source: vf.Count
     name: Count
     nullable: false
-    type: INT
+    type: TINYINT
   - source: vf.DateKey
     name: DateKey
     nullable: false
-    type: INT
+    type: BIGINT
   - source: vf.DiastolicBloodPressure
     name: DiastolicBloodPressure
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.EncounterKey
     name: EncounterKey
     nullable: true
@@ -807,15 +807,15 @@ cohorts:
   - source: vf.HeadCircumference
     name: HeadCircumference
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.Height
     name: Height
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.LastKnownHeight_X
     name: LastKnownHeight_X
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.PatientDurableKey
     name: PatientDurableKey
     nullable: false
@@ -823,11 +823,11 @@ cohorts:
   - source: vf.PulseRate
     name: PulseRate
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.RespirationRate
     name: RespirationRate
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.SourceComboKey
     name: SourceComboKey
     nullable: true
@@ -835,11 +835,11 @@ cohorts:
   - source: vf.SpO2
     name: SpO2
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.SystolicBloodPressure
     name: SystolicBloodPressure
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.TakenInstant
     name: TakenInstant
     nullable: true
@@ -847,7 +847,7 @@ cohorts:
   - source: vf.Temperature
     name: Temperature
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.VitalsKey
     name: VitalsKey
     nullable: false
@@ -855,7 +855,7 @@ cohorts:
   - source: vf.Weight
     name: Weight
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   filter:
     from:
     - VitalsFact as vf
@@ -1599,31 +1599,31 @@ cohorts:
   - source: vf._IsDeleted
     name: _IsDeleted
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: vf._IsInferred
     name: _IsInferred
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: vf.BodyMassIndex
     name: BodyMassIndex
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,4)
   - source: vf.CalculatedBodyMassIndex_X
     name: CalculatedBodyMassIndex_X
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,4)
   - source: vf.Count
     name: Count
     nullable: false
-    type: INT
+    type: TINYINT
   - source: vf.DateKey
     name: DateKey
     nullable: false
-    type: INT
+    type: BIGINT
   - source: vf.DiastolicBloodPressure
     name: DiastolicBloodPressure
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.EncounterKey
     name: InpatientEncounterKey
     nullable: true
@@ -1631,15 +1631,15 @@ cohorts:
   - source: vf.HeadCircumference
     name: HeadCircumference
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.Height
     name: Height
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.LastKnownHeight_X
     name: LastKnownHeight_X
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.PatientDurableKey
     name: PatientDurableKey
     nullable: false
@@ -1647,11 +1647,11 @@ cohorts:
   - source: vf.PulseRate
     name: PulseRate
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.RespirationRate
     name: RespirationRate
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.SourceComboKey
     name: SourceComboKey
     nullable: true
@@ -1659,11 +1659,11 @@ cohorts:
   - source: vf.SpO2
     name: SpO2
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.SystolicBloodPressure
     name: SystolicBloodPressure
     nullable: true
-    type: FLOAT
+    type: INT
   - source: vf.TakenInstant
     name: TakenInstant
     nullable: true
@@ -1671,7 +1671,7 @@ cohorts:
   - source: vf.Temperature
     name: Temperature
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   - source: vf.VitalsKey
     name: VitalsKey
     nullable: false
@@ -1679,7 +1679,7 @@ cohorts:
   - source: vf.Weight
     name: Weight
     nullable: true
-    type: FLOAT
+    type: NUMERIC(18,2)
   filter:
     from:
     - VitalsFact as vf
@@ -1698,7 +1698,7 @@ cohorts:
   - source: lcd.LoincCode
     name: ComponentLoincCode
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: lcrf._IsDeleted
     name: _IsDeleted
     nullable: false
@@ -1831,7 +1831,7 @@ cohorts:
   - source: lcd.LoincCode
     name: ComponentLoincCode
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: lcrf._IsDeleted
     name: _IsDeleted
     nullable: false

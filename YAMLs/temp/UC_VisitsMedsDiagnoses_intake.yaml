@@ -1,0 +1,730 @@
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: UC VisitsMedsDiagnoses
+vars: {}
+upload_cohorts:
+  - name: UCPatientInfo
+    dest_table: UCPatientInfo
+    type: pk
+    file_type: parquet
+    key_columns:
+      - PatientDurableKey
+    pending_transfer: true
+    push_this_cycle: true
+    file_loc: UCPatients.parquet
+    columns:
+      - name: PatientDurableKey
+      - name: DiagnosisEventKey
+  - name: HospitalICDCodes
+    dest_table: HospitalICDCodes
+    file_type: csv
+    pending_transfer: true
+    push_this_cycle: true
+    file_loc: data/Codes/ICD-hosp.csv
+  - name: IBD_Meds
+    dest_table: IBD_Meds
+    file_type: parquet
+    file_loc: data/Meds/IBD_meds.parquet
+    pending_transfer: true
+    push_this_cycle: true
+multipliers: []
+batching:
+  - chunk: 50000
+cohorts:
+  - recipe: OtherDiagnoses
+    name: OtherDiagnoses
+    filter: {}
+  - recipe: OtherHospitalizations
+    name: OtherHospitalizations
+    vars:
+      HospitalICDTable: HospitalICDCodes
+    filter: {}
+  - name: EDVisitHistory
+    dest_table: EDVisitHistory
+    type: fact
+    pull_this_cycle: true
+    description: All ED Visit Events for the patient's history
+    columns:
+      - source: evf.AcuityLevel
+        name: AcuityLevel
+        nullable: true
+      - source: evf.AdmissionProviderDurableKey
+        name: AdmissionProviderDurableKey
+        nullable: true
+      - source: evf.AgeKey
+        name: AgeKey
+        nullable: true
+      - source: evf.ArrivalDateKey
+        name: ArrivalDateKey
+        nullable: false
+      - source: evf.ArrivalInstant
+        name: ArrivalInstant
+        nullable: false
+      - source: evf.ArrivalMethod
+        name: ArrivalMethod
+        nullable: true
+      - source: evf.ArrivalTimeOfDayKey
+        name: ArrivalTimeOfDayKey
+        nullable: true
+      - source: evf.AvsPrintDateKey
+        name: AvsPrintDateKey
+        nullable: true
+      - source: evf.AvsPrintInstant
+        name: AvsPrintInstant
+        nullable: true
+      - source: evf.AvsPrintTimeOfDayKey
+        name: AvsPrintTimeOfDayKey
+        nullable: true
+      - source: evf.BedAssignedDateKey
+        name: BedAssignedDateKey
+        nullable: true
+      - source: evf.BedAssignedInstant
+        name: BedAssignedInstant
+        nullable: true
+      - source: evf.BedAssignedTimeOfDayKey
+        name: BedAssignedTimeOfDayKey
+        nullable: true
+      - source: evf.BedRequestDateKey
+        name: BedRequestDateKey
+        nullable: true
+      - source: evf.BedRequestInstant
+        name: BedRequestInstant
+        nullable: true
+      - source: evf.BedRequestTimeOfDayKey
+        name: BedRequestTimeOfDayKey
+        nullable: true
+      - source: evf.BoardingHoursEndDateKey
+        name: BoardingHoursEndDateKey
+        nullable: true
+      - source: evf.BoardingHoursEndInstant
+        name: BoardingHoursEndInstant
+        nullable: true
+      - source: evf.BoardingHoursEndTimeOfDayKey
+        name: BoardingHoursEndTimeOfDayKey
+        nullable: true
+      - source: evf.BoardingHoursStartDateKey
+        name: BoardingHoursStartDateKey
+        nullable: true
+      - source: evf.BoardingHoursStartInstant
+        name: BoardingHoursStartInstant
+        nullable: true
+      - source: evf.BoardingHoursStartTimeOfDayKey
+        name: BoardingHoursStartTimeOfDayKey
+        nullable: true
+      - source: evf.CodingComplete_X
+        name: CodingComplete_X
+        nullable: true
+      - source: evf.CodingStatus_X
+        name: CodingStatus_X
+        nullable: true
+      - source: evf.Count
+        name: Count
+        nullable: false
+      - source: evf.CoverageComboKey_X
+        name: CoverageComboKey_X
+        nullable: true
+      - source: evf.DepartureDateKey
+        name: DepartureDateKey
+        nullable: true
+      - source: evf.DepartureInstant
+        name: DepartureInstant
+        nullable: true
+      - source: evf.DepartureTimeOfDayKey
+        name: DepartureTimeOfDayKey
+        nullable: true
+      - source: evf.DerivedEncounterStatus_X
+        name: DerivedEncounterStatus_X
+        nullable: true
+      - source: evf.DischargeDisposition
+        name: DischargeDisposition
+        nullable: true
+      - source: evf.DispositionDateKey
+        name: DispositionDateKey
+        nullable: true
+      - source: evf.DispositionInstant
+        name: DispositionInstant
+        nullable: true
+      - source: evf.DispositionTimeOfDayKey
+        name: DispositionTimeOfDayKey
+        nullable: true
+      - source: evf.EdVisitKey
+        name: EdVisitKey
+        nullable: false
+      - source: evf.EdGenericDispo
+        name: EdGenericDispo
+        nullable: true
+      - source: evf.EncounterKey
+        name: EncounterKey
+        nullable: false
+      - source: evf.EncounterSourceComboKey_X
+        name: EncounterSourceComboKey_X
+        nullable: true
+      - source: evf.FinancialClass
+        name: FinancialClass
+        nullable: true
+      - source: evf.FirstAttendingAssignedDateKey
+        name: FirstAttendingAssignedDateKey
+        nullable: true
+      - source: evf.FirstAttendingAssignedInstant
+        name: FirstAttendingAssignedInstant
+        nullable: true
+      - source: evf.FirstAttendingAssignedTimeOfDayKey
+        name: FirstAttendingAssignedTimeOfDayKey
+        nullable: true
+      - source: evf.FirstCodeEndDateKey
+        name: FirstCodeEndDateKey
+        nullable: true
+      - source: evf.FirstCodeEndInstant
+        name: FirstCodeEndInstant
+        nullable: true
+      - source: evf.FirstCodeEndTimeOfDayKey
+        name: FirstCodeEndTimeOfDayKey
+        nullable: true
+      - source: evf.FirstCodeStartDateKey
+        name: FirstCodeStartDateKey
+        nullable: true
+      - source: evf.FirstCodeStartInstant
+        name: FirstCodeStartInstant
+        nullable: true
+      - source: evf.FirstCodeStartTimeOfDayKey
+        name: FirstCodeStartTimeOfDayKey
+        nullable: true
+      - source: evf.FirstEdRegisteredNurseAssignedDateKey
+        name: FirstEdRegisteredNurseAssignedDateKey
+        nullable: true
+      - source: evf.FirstEdRegisteredNurseAssignedInstant
+        name: FirstEdRegisteredNurseAssignedInstant
+        nullable: true
+      - source: evf.FirstEdRegisteredNurseAssignedTimeOfDayKey
+        name: FirstEdRegisteredNurseAssignedTimeOfDayKey
+        nullable: true
+      - source: evf.FirstEkgCompletedDateKey
+        name: FirstEkgCompletedDateKey
+        nullable: true
+      - source: evf.FirstEkgCompletedInstant
+        name: FirstEkgCompletedInstant
+        nullable: true
+      - source: evf.FirstEkgCompletedTimeOfDayKey
+        name: FirstEkgCompletedTimeOfDayKey
+        nullable: true
+      - source: evf.FirstProviderContactDateKey
+        name: FirstProviderContactDateKey
+        nullable: true
+      - source: evf.FirstProviderContactInstant
+        name: FirstProviderContactInstant
+        nullable: true
+      - source: evf.FirstProviderContactTimeOfDayKey
+        name: FirstProviderContactTimeOfDayKey
+        nullable: true
+      - source: evf.FirstSedationEndDateKey
+        name: FirstSedationEndDateKey
+        nullable: true
+      - source: evf.FirstSedationEndInstant
+        name: FirstSedationEndInstant
+        nullable: true
+      - source: evf.FirstSedationEndTimeOfDayKey
+        name: FirstSedationEndTimeOfDayKey
+        nullable: true
+      - source: evf.FirstSedationStartDateKey
+        name: FirstSedationStartDateKey
+        nullable: true
+      - source: evf.FirstSedationStartInstant
+        name: FirstSedationStartInstant
+        nullable: true
+      - source: evf.FirstSedationStartTimeOfDayKey
+        name: FirstSedationStartTimeOfDayKey
+        nullable: true
+      - source: evf.FirstTraumaEndDateKey
+        name: FirstTraumaEndDateKey
+        nullable: true
+      - source: evf.FirstTraumaEndInstant
+        name: FirstTraumaEndInstant
+        nullable: true
+      - source: evf.FirstTraumaEndTimeOfDayKey
+        name: FirstTraumaEndTimeOfDayKey
+        nullable: true
+      - source: evf.FirstTraumaStartDateKey
+        name: FirstTraumaStartDateKey
+        nullable: true
+      - source: evf.FirstTraumaStartInstant
+        name: FirstTraumaStartInstant
+        nullable: true
+      - source: evf.FirstTraumaStartTimeOfDayKey
+        name: FirstTraumaStartTimeOfDayKey
+        nullable: true
+      - source: evf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        nullable: true
+      - source: evf.LeftAgainstMedicalAdvice
+        name: LeftAgainstMedicalAdvice
+        nullable: true
+      - source: evf.LeftWithoutBeingSeen
+        name: LeftWithoutBeingSeen
+        nullable: true
+      - source: evf.ObservationStartedDateKey
+        name: ObservationStartedDateKey
+        nullable: true
+      - source: evf.ObservationStartedInstant
+        name: ObservationStartedInstant
+        nullable: true
+      - source: evf.ObservationStartedTimeOfDayKey
+        name: ObservationStartedTimeOfDayKey
+        nullable: true
+      - source: evf.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: evf.PayorComboKey_X
+        name: PayorComboKey_X
+        nullable: true
+      - source: evf.PrimaryPayorKey_X
+        name: PrimaryPayorKey_X
+        nullable: true
+      - source: evf.RegistrationCompleteDateKey
+        name: RegistrationCompleteDateKey
+        nullable: true
+      - source: evf.RegistrationCompleteInstant
+        name: RegistrationCompleteInstant
+        nullable: true
+      - source: evf.RegistrationCompleteTimeOfDayKey
+        name: RegistrationCompleteTimeOfDayKey
+        nullable: true
+      - source: evf.RoomedDateKey
+        name: RoomedDateKey
+        nullable: true
+      - source: evf.RoomedInstant
+        name: RoomedInstant
+        nullable: true
+      - source: evf.RoomedTimeOfDayKey
+        name: RoomedTimeOfDayKey
+        nullable: true
+      - source: evf.TriageCompleteDateKey
+        name: TriageCompleteDateKey
+        nullable: true
+      - source: evf.TriageCompleteInstant
+        name: TriageCompleteInstant
+        nullable: true
+      - source: evf.TriageCompleteTimeOfDayKey
+        name: TriageCompleteTimeOfDayKey
+        nullable: true
+      - source: evf.TriageStartDateKey
+        name: TriageStartDateKey
+        nullable: true
+      - source: evf.TriageStartInstant
+        name: TriageStartInstant
+        nullable: true
+      - source: evf.TriageStartTimeOfDayKey
+        name: TriageStartTimeOfDayKey
+        nullable: true
+      - source: evf.UnderObservation
+        name: UnderObservation
+        nullable: true
+    filter:
+      from:
+        - EdVisitFact as evf
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+      where:
+        - "evf._IsDeleted = 0"
+  - name: HospitalAdmissions
+    dest_table: HospitalAdmissions
+    type: fact
+    pull_this_cycle: true
+    columns:
+      - source: haf.AdmissionDateKey
+        name: AdmissionDateKey
+        nullable: false
+      - source: haf.AdmittingProviderDurableKey
+        name: AdmittingProviderDurableKey
+        nullable: true
+      - source: haf.AgeKey
+        name: AgeKey
+        nullable: true
+      - source: haf.CodingComplete_X
+        name: CodingComplete_X
+        nullable: true
+      - source: haf.CodingStatus_X
+        name: CodingStatus_X
+        nullable: true
+      - source: haf.Count
+        name: Count
+        nullable: false
+      - source: haf.CoverageComboKey_X
+        name: CoverageComboKey_X
+        nullable: true
+      - source: haf.DaysSincePriorAdmission_X
+        name: DaysSincePriorAdmission_X
+        nullable: true
+      - source: haf.DepartmentKey
+        name: DepartmentKey
+        nullable: true
+      - source: haf.DerivedEncounterStatus_X
+        name: DerivedEncounterStatus_X
+        nullable: true
+      - source: haf.DischargeDepartmentKey_X
+        name: DischargeDepartmentKey_X
+        nullable: true
+      - source: haf.DischargeDisposition
+        name: DischargeDisposition
+        nullable: true
+      - source: haf.DischargeDateKey
+        name: DischargeDateKey
+        nullable: true
+      - source: haf.DischargeInstant
+        name: DischargeInstant
+        nullable: true
+      - source: haf.DischargeTimeOfDayKey
+        name: DischargeTimeOfDayKey
+        nullable: true
+      - source: haf.DischargingProviderDurableKey
+        name: DischargingProviderDurableKey
+        nullable: true
+      - source: haf.EncounterKey
+        name: EncounterKey
+        nullable: false
+      - source: haf.EncounterSourceComboKey_X
+        name: EncounterSourceComboKey_X
+        nullable: true
+      - source: haf.EncounterType
+        name: EncounterType
+        nullable: true
+      - source: haf.FinancialClass
+        name: FinancialClass
+        nullable: true
+      - source: haf.HospitalAdmissionKey
+        name: HospitalAdmissionKey
+        nullable: false
+      - source: haf.InpatientAdmissionDateKey
+        name: InpatientAdmissionDateKey
+        nullable: true
+      - source: haf.InpatientAdmissionInstant
+        name: InpatientAdmissionInstant
+        nullable: true
+      - source: haf.InpatientAdmissionTimeOfDayKey
+        name: InpatientAdmissionTimeOfDayKey
+        nullable: true
+      - source: haf.InpatientLengthOfStayInDays
+        name: InpatientLengthOfStayInDays
+        nullable: true
+      - source: haf.LengthOfStayInDays
+        name: LengthOfStayInDays
+        nullable: true
+      - source: haf.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: haf.PayorComboKey_X
+        name: PayorComboKey_X
+        nullable: true
+      - source: haf.PrimaryPayorKey_X
+        name: PrimaryPayorKey_X
+        nullable: true
+      - source: haf.StartedAsHOV_X
+        name: StartedAsHOV_X
+        nullable: true
+      - source: haf.StartedInED_X
+        name: StartedInED_X
+        nullable: true
+      - source: haf.IsIndexAdmission_X
+        name: IsIndexAdmission_X
+        nullable: true
+      - source: haf.IsUnplannedReadmission_X
+        name: IsUnplannedReadmission_X
+        nullable: true
+      - source: haf.IsPlannedReadmission_X
+        name: IsPlannedReadmission_X
+        nullable: true
+      - source: haf.ReadmissionCausedByKey_X
+        name: ReadmissionCausedByKey_X
+        nullable: true
+    filter:
+      from:
+        - HospitalAdmissionFact as haf
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+      where:
+        - "haf._IsDeleted = 0"
+  - name: MedOrderHistory
+    dest_table: MedOrderHistory
+    type: fact
+    pull_this_cycle: true
+    columns:
+      - source: mof._IsDeleted
+        name: _IsDeleted
+        nullable: false
+      - source: mof._IsInferred
+        name: _IsInferred
+        nullable: false
+      - source: mof.Count
+        name: Count
+        nullable: false
+      - source: mof.DepartmentKey
+        name: DepartmentKey
+        nullable: true
+      - source: mof.DiscontinueReason
+        name: DiscontinueReason
+        nullable: true
+      - source: mof.DoseUnit
+        name: DoseUnit
+        nullable: true
+      - source: mof.DurationKey
+        name: DurationKey
+        nullable: true
+      - source: mof.EncounterKey
+        name: EncounterKey
+        nullable: true
+      - source: mof.EndDateKey
+        name: EndDateKey
+        nullable: true
+      - source: mof.FifthIndicationForUse
+        name: FifthIndicationForUse
+        nullable: true
+      - source: mof.FirstIndicationForUse
+        name: FirstIndicationForUse
+        nullable: true
+      - source: mof.FourthIndicationForUse
+        name: FourthIndicationForUse
+        nullable: true
+      - source: mof.Frequency
+        name: Frequency
+        nullable: true
+      - source: mof.IsOutpatientMode
+        name: IsOutpatientMode
+        nullable: true
+      - source: mof.MedicationKey
+        name: MedicationKey
+        nullable: false
+      - source: mof.MedicationOrderKey
+        name: MedicationOrderKey
+        nullable: false
+      - source: mof.MinimumDose
+        name: MinimumDose
+        nullable: true
+      - source: mof.Mode
+        name: Mode
+        nullable: true
+      - source: mof.MorphineEquivalentDailyDosage
+        name: MorphineEquivalentDailyDosage
+        nullable: true
+      - source: mof.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: mof.Quantity
+        name: Quantity
+        nullable: true
+      - source: mof.RefillsWritten
+        name: RefillsWritten
+        nullable: true
+      - source: mof.Route
+        name: Route
+        nullable: true
+      - source: mof.SecondIndicationForUse
+        name: SecondIndicationForUse
+        nullable: true
+      - source: mof.SixthIndicationForUse
+        name: SixthIndicationForUse
+        nullable: true
+      - source: mof.SourceComboKey_X
+        name: SourceComboKey_X
+        nullable: true
+      - source: mof.StartDateKey
+        name: StartDateKey
+        nullable: true
+      - source: mof.ThirdIndicationForUse
+        name: ThirdIndicationForUse
+        nullable: true
+      - source: mof.Type_X
+        name: Type_X
+        nullable: true
+    filter:
+      from:
+        - MedicationOrderFact as mof
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
+      where:
+        - "mof._IsDeleted = 0"
+  - name: MedDispenseHistory
+    dest_table: MedDispenseHistory
+    type: fact
+    pull_this_cycle: true
+    columns:
+      - source: mdf._IsDeleted
+        name: _IsDeleted
+        nullable: false
+      - source: mdf._IsInferred
+        name: _IsInferred
+        nullable: false
+      - source: mdf.Count
+        name: Count
+        nullable: false
+      - source: mdf.DaysSupply
+        name: DaysSupply
+        nullable: true
+      - source: mdf.DispenseDataSourceType_X
+        name: DispenseDataSourceType_X
+        nullable: true
+      - source: mdf.DoseUnit_X
+        name: DoseUnit_X
+        nullable: true
+      - source: mdf.FilledDateKey
+        name: FilledDateKey
+        nullable: true
+      - source: mdf.FilledInstant
+        name: FilledInstant
+        nullable: true
+      - source: mdf.FilledTimeOfDayKey
+        name: FilledTimeOfDayKey
+        nullable: true
+      - source: mdf.FillNumber
+        name: FillNumber
+        nullable: true
+      - source: mdf.FirstDispense
+        name: FirstDispense
+        nullable: true
+      - source: mdf.Frequency_X
+        name: Frequency_X
+        nullable: true
+      - source: mdf.MedicationDispenseKey
+        name: MedicationDispenseKey
+        nullable: false
+      - source: mdf.MedicationKey
+        name: MedicationKey
+        nullable: false
+      - source: mdf.MedicationOrderKey
+        name: MedicationOrderKey
+        nullable: true
+      - source: mdf.MedicationOrderWrittenDateKey_X
+        name: MedicationOrderWrittenDateKey_X
+        nullable: true
+      - source: mdf.MinimumDose_X
+        name: MinimumDose_X
+        nullable: true
+      - source: mdf.Mode
+        name: Mode
+        nullable: true
+      - source: mdf.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: mdf.PrimaryComponentQuantity
+        name: PrimaryComponentQuantity
+        nullable: true
+      - source: mdf.PrimaryComponentQuantityUnit
+        name: PrimaryComponentQuantityUnit
+        nullable: true
+      - source: mdf.PrimaryComponentUnformattedNdc
+        name: PrimaryComponentUnformattedNdc
+        nullable: true
+      - source: mdf.RawCodeSystem_X
+        name: RawCodeSystem_X
+        nullable: true
+      - source: mdf.RawCodeValue_X
+        name: RawCodeValue_X
+        nullable: true
+      - source: mdf.RefillsRemaining_X
+        name: RefillsRemaining_X
+        nullable: true
+      - source: mdf.RefillsWritten_X
+        name: RefillsWritten_X
+        nullable: true
+      - source: mdf.Route_X
+        name: Route_X
+        nullable: true
+      - source: mdf.SourceComboKey_X
+        name: SourceComboKey_X
+        nullable: true
+      - source: mdf.SupplyEndDateKey_X
+        name: SupplyEndDateKey_X
+        nullable: true
+    filter:
+      from:
+        - MedicationDispenseFact as mdf
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
+      where:
+        - "mdf._IsDeleted = 0"
+  - name: MedAdminHistory
+    dest_table: MedAdminHistory
+    type: fact
+    pull_this_cycle: true
+    columns:
+      - source: maf._IsDeleted
+        name: _IsDeleted
+        nullable: false
+      - source: maf._IsInferred
+        name: _IsInferred
+        nullable: false
+      - source: maf.AdministrationDateKey
+        name: AdministrationDateKey
+        nullable: true
+      - source: maf.AdministrationDepartmentKey
+        name: AdministrationDepartmentKey
+        nullable: true
+      - source: maf.AdministrationInstant
+        name: AdministrationInstant
+        nullable: true
+      - source: maf.AdministrationRoute
+        name: AdministrationRoute
+        nullable: true
+      - source: maf.AgeKey
+        name: AgeKey
+        nullable: true
+      - source: maf.Count
+        name: Count
+        nullable: false
+      - source: maf.EncounterAdmissionInstant
+        name: EncounterAdmissionInstant
+        nullable: true
+      - source: maf.EncounterKey
+        name: EncounterKey
+        nullable: true
+      - source: maf.MedicationAdministrationKey
+        name: MedicationAdministrationKey
+        nullable: false
+      - source: maf.MedicationKey
+        name: MedicationKey
+        nullable: false
+      - source: maf.MedicationOrderKey
+        name: MedicationOrderKey
+        nullable: true
+      - source: maf.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: maf.SourceComboKey_X
+        name: SourceComboKey_X
+        nullable: true
+    filter:
+      from:
+        - MedicationAdministrationFact as maf
+      join:
+        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
+      where:
+        - "maf._IsDeleted = 0"
+  - recipe: IndexDiagnosis
+    name: IndexDiagnosis
+    filter:
+      add_join:
+        - "INNER JOIN {{prefix}}_OtherDiagnoses AS od ON def.DiagnosisEventKey = od.DiagnosisEventKey"
+    vars:
+      ICD_Value: "K50.%"
+table_groups:
+  - name: Diagnoses
+    tables:
+      - OtherDiagnoses
+      - IndexDiagnosis
+  - name: Non-Surgical-Visits
+    tables:
+      - OtherHospitalizations
+      - EDVisitHistory
+      - HospitalAdmissions
+  - name: Meds
+    tables:
+      - MedOrderHistory
+      - MedDispenseHistory
+      - MedAdminHistory

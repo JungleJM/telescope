@@ -71,7 +71,7 @@ cohorts:
     nullable: true
     description: Standardized or normalized name for the concept, used to harmonize
       naming across contributors and terminologies. ICD code type
-    type: NVARCHAR(900)
+    type: NVARCHAR(50)
   - source: dt.Value
     name: BillingCodeValue
     nullable: true
@@ -102,11 +102,11 @@ cohorts:
   - source: tc.Concept
     name: TerminologyConcept
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: tc.Name
     name: TerminologyName
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(550)
   - source: def.Status
     name: Status
     nullable: true
@@ -911,31 +911,31 @@ cohorts:
   - source: mdf._IsDeleted
     name: _IsDeleted
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: mdf._IsInferred
     name: _IsInferred
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: mdf.Count
     name: Count
     nullable: false
-    type: INT
+    type: TINYINT
   - source: mdf.DaysSupply
     name: DaysSupply
     nullable: true
-    type: INT
+    type: SMALLINT
   - source: mdf.DispenseDataSourceType_X
     name: DispenseDataSourceType_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.DoseUnit_X
     name: DoseUnit_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.FilledDateKey
     name: FilledDateKey
     nullable: true
-    type: INT
+    type: BIGINT
   - source: mdf.FilledInstant
     name: FilledInstant
     nullable: true
@@ -943,19 +943,19 @@ cohorts:
   - source: mdf.FilledTimeOfDayKey
     name: FilledTimeOfDayKey
     nullable: true
-    type: INT
+    type: BIGINT
   - source: mdf.FillNumber
     name: FillNumber
     nullable: true
-    type: INT
+    type: NVARCHAR(50)
   - source: mdf.FirstDispense
     name: FirstDispense
     nullable: true
-    type: BIT
+    type: TINYINT
   - source: mdf.Frequency_X
     name: Frequency_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(100)
   - source: mdf.MedicationDispenseKey
     name: MedicationDispenseKey
     nullable: false
@@ -971,15 +971,15 @@ cohorts:
   - source: mdf.MedicationOrderWrittenDateKey_X
     name: MedicationOrderWrittenDateKey_X
     nullable: true
-    type: INT
+    type: BIGINT
   - source: mdf.MinimumDose_X
     name: MinimumDose_X
     nullable: true
-    type: FLOAT
+    type: NUMERIC(19,4)
   - source: mdf.Mode
     name: Mode
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(50)
   - source: mdf.PatientDurableKey
     name: PatientDurableKey
     nullable: false
@@ -987,35 +987,35 @@ cohorts:
   - source: mdf.PrimaryComponentQuantity
     name: PrimaryComponentQuantity
     nullable: true
-    type: FLOAT
+    type: NUMERIC(26,5)
   - source: mdf.PrimaryComponentQuantityUnit
     name: PrimaryComponentQuantityUnit
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.PrimaryComponentUnformattedNdc
     name: PrimaryComponentUnformattedNdc
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.RawCodeSystem_X
     name: RawCodeSystem_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.RawCodeValue_X
     name: RawCodeValue_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.RefillsRemaining_X
     name: RefillsRemaining_X
     nullable: true
-    type: INT
+    type: SMALLINT
   - source: mdf.RefillsWritten_X
     name: RefillsWritten_X
     nullable: true
-    type: INT
+    type: SMALLINT
   - source: mdf.Route_X
     name: Route_X
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: mdf.SourceComboKey_X
     name: SourceComboKey_X
     nullable: true
@@ -1023,7 +1023,7 @@ cohorts:
   - source: mdf.SupplyEndDateKey_X
     name: SupplyEndDateKey_X
     nullable: true
-    type: INT
+    type: BIGINT
   filter:
     from:
     - MedicationDispenseFact as mdf
@@ -1039,15 +1039,15 @@ cohorts:
   - source: maf._IsDeleted
     name: _IsDeleted
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: maf._IsInferred
     name: _IsInferred
     nullable: false
-    type: BIT
+    type: TINYINT
   - source: maf.AdministrationDateKey
     name: AdministrationDateKey
     nullable: true
-    type: INT
+    type: BIGINT
   - source: maf.AdministrationDepartmentKey
     name: AdministrationDepartmentKey
     nullable: true
@@ -1059,7 +1059,7 @@ cohorts:
   - source: maf.AdministrationRoute
     name: AdministrationRoute
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: maf.AgeKey
     name: AgeKey
     nullable: true
@@ -1067,7 +1067,7 @@ cohorts:
   - source: maf.Count
     name: Count
     nullable: false
-    type: INT
+    type: TINYINT
   - source: maf.EncounterAdmissionInstant
     name: EncounterAdmissionInstant
     nullable: true

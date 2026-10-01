@@ -1,5 +1,5 @@
 cosmos_vars:
-  project_db: PROJECTD93A5E7
+  project_db: PROJECTD427046
   cosmos_db: Dual
 run_vars:
   min_date_key: "20190101"
@@ -13,7 +13,8 @@ project_vars:
 vars: {}
 upload_cohorts: []
 multipliers: []
-batching: []
+batching:
+  - chunk: 50000
 cohorts:
   - name: EDVisits
     dest_table: EDVisits
@@ -321,6 +322,8 @@ cohorts:
       ICD_Value:
         - J12.1
         - B97.4
+        - J21.0
+        - J20.5
   - name: HospitalAdmissionFact
     dest_table: HospitalAdmissionFact
     type: fact
@@ -1504,3 +1507,19 @@ cohorts:
       join:
         - "INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = lcrf.EncounterKey"
         - "INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
+  - recipe: IndexDiagnosis
+    name: IndexDiagnosis
+    filter:
+      add_join:
+        - "INNER JOIN {{prefix}}_EDVisits AS ev ON def.EncounterKey = ev.EncounterKey"
+table_groups:
+  - name: Hospitalizations
+    tables:
+      - HospitalAdmissionFact
+      - InpatientVitals
+      - InpatientLabTestComponents
+  - name: Birth
+    tables:
+      - PatientBirthEvent
+      - MotherPatientInfo
+      - PregnancyFact

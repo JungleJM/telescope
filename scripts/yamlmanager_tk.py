@@ -2022,8 +2022,10 @@ class TableGroupViewTests(ViewTest):
         draft.remove_group(0)
         draft.remove_fact_table(next(i for i, c in draft.fact_tables() if c.get("name") == table))
         self.view.show_section("fact")
+        # The recipes file may hold sets of its own, listed before this one.
         picker = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
-                      and str(w.get()).startswith("Block ("))
+                      and any(str(v).startswith("Block (") for v in w.cget("values")))
+        picker.set(next(str(v) for v in picker.cget("values") if str(v).startswith("Block (")))
         next(w for w in picker.master.winfo_children() if isinstance(w, ttk.Button) and w.cget("text") == "Add").invoke()
         self.root.update()
         self.assertEqual(draft.table_groups()[0][1:], ("Block", [table]))

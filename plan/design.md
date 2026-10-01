@@ -396,13 +396,13 @@ The table builder writes no types, but knows each column's for its join checks, 
 
 #### What The Dictionary Records
 
-Each table's columns as its Cosmos dictionary page shows them, and only those with the database icon in its Available column: a column marked SD alone is left out (D116). Types are written as the page writes them (`nvarchar(300)`, `tinyint`, `float`), with any foreign key after them (`bigint (foreign key to LabDim)`). A comment above a table says what was checked against its page, and when; the file's foot lists the tables not yet checked, the ones only partly seen, and the tables a checked foreign key points at that the dictionary lacks (D130).
+Each table's columns as its Cosmos dictionary page shows them, and only those with the database icon in its Available column: a column marked SD alone is left out (D116). Types are written as the page writes them (`nvarchar(300)`, `tinyint`, `float`), with any foreign key after them (`bigint (foreign key to LabDim)`). A comment above a table says what was checked against its page, and when; the file's foot lists what is only partly seen, any screenshotted table left out, and the tables a checked foreign key points at that the dictionary lacks (D130, D160). Every table in the dictionary has been checked against a page.
 
 `standard_where`, at the end of a table, lists the conditions a pull on it normally carries, written without an alias: a live row (`_IsDeleted = 0`; on PatientDim also `IsCurrent`, `IsValid` and `UseInCosmosAnalytics_X`) and, for a checked fact table, the partition key's date window (`ArrivalDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}`) (D120, D130). The table builder adds them, under the table's alias, when the table is chosen; nothing else reads them. A test holds each line's column to its table.
 
-Validation is only as right as the dictionary. `LabComponentResultFact.ReferenceValueHigh_X` and `ReferenceValueLow_X` were recorded as `numeric` and are `nvarchar(300)`, so a `FLOAT` went to Cosmos, where the insert failed with error 8114, which names no column (D114). Most tables have since been checked against their pages (D130); a column the pages lack is gone from the dictionary, so a pull naming it is stopped on the Mac (`MedicationOrderFact.OrderedDateKey` was one). Many flags (`_IsDeleted`, `_IsInferred`) are `tinyint` where the page shows it: a `BIT` would turn a stored 2 into 1 without an error.
+Validation is only as right as the dictionary. `LabComponentResultFact.ReferenceValueHigh_X` and `ReferenceValueLow_X` were recorded as `numeric` and are `nvarchar(300)`, so a `FLOAT` went to Cosmos, where the insert failed with error 8114, which names no column (D114). The tables have since been checked against their pages (D130); a column the pages lack is gone from the dictionary, so a pull naming it is stopped on the Mac (`MedicationOrderFact.OrderedDateKey` was one). Many flags (`_IsDeleted`, `_IsInferred`) are `tinyint` where the page shows it: a `BIT` would turn a stored 2 into 1 without an error.
 
-Nullability is not cross-checked, because `nullable: false` on a nullable column is the documented way to force an `IS NOT NULL` filter.
+Validation does not cross-check a template's nullability, because `nullable: false` on a nullable column is the documented way to force an `IS NOT NULL` filter. The dictionary's own `nullable` is checked against Cosmos by the audit (D161); the Author view copies it onto each column it adds.
 
 ### Keys And Relationships In Cosmos
 
@@ -423,6 +423,19 @@ Validation checks that every column exists with the right type, not that a join 
 - **Columns tab:** each column's type, and for a foreign key the *table* it points at, in blue. An Available column shows where the column exists: an SD icon, a database icon, or both. Only the database icon's columns can be pulled, so only they go in our dictionary (D116). Expanding a row shows its description, whether it allows null, and its de-identification method. A `Partition key` badge (here `StartDateKey`) marks the column that lets SQL Server skip most of the table when filtered; our recipes filter it.
 - **ER Diagram:** the table's own key (filled key icon, `DiagnosisEventKey`), then a "Foreign keys" list (outline key icons). A dashed line runs from each foreign key to the table it points at, ending on the *column* it lands on, which the Columns tab does not give. The ends give the cardinality: a crow's foot on this side (many rows here), a bar on the other (one row there).
 - **For `DiagnosisEventFact`** that reads: `DiagnosisKey` → `DiagnosisDim.DiagnosisKey`; `PatientDurableKey` → `PatientDim.DurableKey`; `EncounterKey` → `EncounterFact.EncounterKey`; `AgeKey` → `DurationDim.DurationKey`; `StartDateKey`, `EndDateKey`, `NotedDateKey_X`, `UserEnteredDateKey` → `DateDim.DateKey`; `SourceComboKey` → `DiagnosisEventSourceBridge`, a bridge from one combination key to several `SourceDim` rows. Our dictionary had `DiagnosisKey` pointing at "DiagnosisDim/DiagnosisTerminologyDim"; the interactive dictionary says `DiagnosisDim`, which the checked entry now has.
+
+#### Checking Screenshots Into The Dictionary
+
+New dictionary-page screenshots go in `reference/DDict image refs/Unordered/`, in any order. To check them in:
+
+1.  **Sort.** Read each page's table name and move its screenshots into a folder named for it, beside the others. If the heading is cut off, the ER diagram's centre box or the reporting table name gives it. A table cut across several screenshots, or taken twice, goes in one folder. `Unordered/` ends empty.
+2.  **Check each table column by column**, as above (What The Dictionary Records, Reading a dictionary page). List only the database icon's columns (D116), with types as the page writes them. The table's own key is `bigint (primary key)`. A foreign key goes after the type, naming the column it lands on where an ER diagram shows it (`bigint (DateKey; foreign key to DateDim)`, `bigint (foreign key to PatientDim.DurableKey)`). The partition key is noted. An existing column keeps its nullability and its description, unless the screenshot shows the page's description whole, which then replaces it. A column the page lacks is removed.
+3.  **`standard_where`**: `_IsDeleted = 0` where the table has it; for a fact table, the partition key's date window; for a Snapshot (Type 2) dimension, `IsCurrent = 1` as well. A page with no `_IsDeleted` gets none. A partitioned table whose partition key is not seen gets no window.
+4.  **Every table with a screenshot goes in**, whether or not a pull reads it; the dictionary audit (D155) says what is wrong. A page whose every column is SD only stays out, since it has nothing to pull (D160).
+5.  **A comment above each table**: that it was checked against its page, and when; where its screenshots are; whether its keys come from an ER diagram or only the Columns tab's links; and what was not seen (descriptions cut off at the right, no Overview, no partition key).
+6.  **The foot**: what is only partly seen, the screenshotted tables left out and why, and the tables a checked foreign key points at that the dictionary lacks.
+7.  **Then**: run the suites. Validate every intake, and compare each transfer YAML's types with what the new dictionary fills in. Export again each one that changed; only its `type:` lines should differ. List what a removed column breaks (every YAML under `YAMLs/` that names it). Build a full bundle, `makebundle.py` with the re-exported intakes queued, not YAMLs only, which does not carry the dictionary, and run the audit with it.
+8.  **Report** each screenshot that hides something (columns past the bottom, a partition key not seen), for the user to take again.
 
 What this means for a join check, still to decide (roadmap, A Join Check From The Dictionary's Keys): relationships come from the interactive dictionary into `datadictionary.yaml` by hand, since SQL cannot supply them. Each needs more than a target table: the column it lands on, its cardinality, whatever filter makes the other side one row (`IsCurrent = 1`, a `Type`), and its sentinel values. Data checks then confirm it: the parent key unique under its filter, and no child rows without a parent, sentinels aside.
 
@@ -882,7 +895,7 @@ With nothing wrong the file is one line, `every pull checks out`. It exits 1 whe
 
 ### The Dictionary Audit
 
-`--audit-dictionary`, and **Audit dictionary** in Run (D155), asks Cosmos (the default database, `COSMOS`) for every dictionary table's columns, one read-only `sys.columns` query each, and writes `runs/dictionary_audit.yaml` with only what the dictionary lists and Cosmos lacks:
+`--audit-dictionary`, and **Audit dictionary** in Run (D155), asks Cosmos (the default database, `COSMOS`) for every dictionary table's columns, with each one's type and nullability, one read-only `sys.columns` query each. It writes `runs/dictionary_audit.yaml` with only what is wrong: what the dictionary lists and Cosmos lacks, and each column whose type or nullability differs from Cosmos's (D161):
 
 ``` yaml
 # dictionary audit, 2026-10-01 09:12, bundle 1b628fc3, database COSMOS: 30 tables, 2 wrong
@@ -891,11 +904,15 @@ tables_not_found:  # the dictionary names them; Cosmos has no such table, or thi
 columns_not_in_cosmos:  # remove these from the dictionary
   MedicationDispenseFact: [ReadyToDispenseDateKey]
   EncounterFact: [FooKey]  # near: FooKey -> FooKey_X
+types_wrong:  # Cosmos's type; dictionary-fix writes it in
+  MedicationDispenseFact: {FillNumber: nvarchar(50), MinimumDose_X: "numeric(19,4)"}
+nullable_wrong:  # Cosmos's nullability; dictionary-fix writes it in
+  VitalsFact: {DateKey: false, Temperature: true}
 ```
 
-Names compare without case. Columns Cosmos has that the dictionary lacks need no fix and are left out. With nothing wrong the file is one line, `the dictionary matches Cosmos`.
+Names compare without case. Columns Cosmos has that the dictionary lacks need no fix and are left out. Cosmos's type is written as a page writes it: `nvarchar(300)` (from its 600 bytes), `numeric(19,4)`, `nvarchar(max)`, and `datetime2` without its default scale. A dictionary type matches when its own words, before any annotation, are Cosmos's (`bigint (DateKey; foreign key to DateDim)` is `bigint`); an abstract type (`string`, `integer`) never matches, so the audit names every one left. A column with no `nullable` counts as nullable, as a pull reads it. Each table's wrong columns are one line, with a value holding a comma quoted, so the file stays short enough to screenshot. With nothing wrong the file is one line, `the dictionary matches Cosmos`.
 
-On the Mac, `python3 scope.py dictionary-fix <file>` takes that file as transcribed, removes each listed column and table from `reference/datadictionary.yaml` by its lines, so every other line and comment stays as written (a table's own comment lines above it go with it), and lists every YAML under `YAMLs/` that still names a removed column (`alias.Column`) or table, to be fixed and exported again. A same-named column of another table is listed too. A name the dictionary lacks is said, not an error.
+On the Mac, `python3 scope.py dictionary-fix <file>` takes that file as transcribed and changes `reference/datadictionary.yaml` by its lines, so every other line and comment stays as written. It removes each listed column and table (a table's own comment lines above it go with it). It writes in each wrong type, keeping the annotation (`integer (DateKey)` becomes `bigint (DateKey)`), and each wrong `nullable:`, adding the line where a column has none. Then it lists every YAML under `YAMLs/` that names a changed column (`alias.Column`) or a removed table, by what to do: a removed one to fix and export again; a retyped one to export again, since its types come from the dictionary at export; a column whose nullability changed, to check the YAML's own `nullable:`, which the Author view copied when the column was added (a `false` there filters out the rows where it is null). A same-named column of another table is listed too. A name the dictionary lacks is said, not an error.
 
 ### Command Line
 

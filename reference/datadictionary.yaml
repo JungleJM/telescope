@@ -1,5 +1,5 @@
 # The data dictionary, checked against the Cosmos dictionary pages
-# (screenshots in reference/DDict image refs/, 2026-09-29).
+# (screenshots in reference/DDict image refs/, 2026-09-29, one folder per table).
 #
 # A checked table has a comment above it saying so. Its types are the page's,
 # lowercase, with any key after them in parentheses (D114, D115); only columns
@@ -10,7 +10,8 @@
 # written without an alias. The builder adds them under the table's alias when
 # the table is chosen, as ordinary where lines (D120).
 #
-# Tables still to check are listed at the bottom of this file.
+# What is only partly seen, and the tables not yet in it, are listed at the
+# bottom of this file.
 DataDictionary:
   # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
   # reference/DDict image refs/PatientDim/): columns, types, and
@@ -1473,101 +1474,113 @@ DataDictionary:
       - "_IsDeleted = 0"
       - "DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/LabComponentDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Descriptions cut off at the right; the old ones kept.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   LabComponentDim:
     description: >
       Lab component dimension table. One row per lab test component (e.g., specific
       analyte/measurement). Contains naming, LOINC codes, units, and data type.
     granularity: >
-      One row per lab component concept (component-level dimension).
+      One row per lab component. For Epic data, only lab-related components.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the component definition.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the component record has been inferred.
+          1/0 column that indicates whether the record is inferred
       Abbreviation:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Short abbreviation used for the component name in clinical workflows.
       BaseName:
-        type: string
+        type: nvarchar(100)
         nullable: true
         description: >
           Base name representing the core analyte or concept underlying the component.
       CommonName:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Common display name for the component as used in clinical practice.
       DataType:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Data type expected for results of this component (e.g., numeric, string).
       DefaultUnit:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Default unit for numeric results for this component (e.g., mg/dL).
       LabComponentKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
           Primary key for the lab component dimension row. Join from
           LabComponentResultFact on LabComponentKey.
       LoincCode:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           LOINC code associated with the component, when mapped.
       LoincName:
-        type: string
+        type: nvarchar(550)
         nullable: true
         description: >
           LOINC long/common name associated with the component.
       Name:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Full display name for the component.
       Subtype:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Component subtype used for further categorization within the type.
       Type:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           High-level component type (e.g., lab analyte, vital-related component).
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/LabComponentSetDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Descriptions cut off at the right; the old ones kept.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   LabComponentSetDim:
     description: >
-      Lab component set dimension, representing value sets or curated lists of
-      lab components. Used to group components for cohorts or measure logic.
+      Lab component set dimension, representing value sets or curated lists of lab
+      components. Used to group components for cohorts or measure logic.
     granularity: >
-      One row per lab component set membership (LabComponentSetKey, LabComponentKey).
+      One row per lab component in a value set.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the set.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the set record has been inferred.
+          1/0 column that indicates whether the record is inferred
       DisplayName:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           End-user-friendly display name for the component set.
@@ -1577,22 +1590,22 @@ DataDictionary:
         description: >
           Component key that is a member of this set.
       LabComponentSetKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
           Primary key for the lab component set dimension row.
       Name:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Internal name for the component set.
       Trusted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
           Indicates whether the set is marked as trusted for use in analytics.
       ValueSetEpicId:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Epic value set identifier for the component set when applicable.
@@ -2340,195 +2353,230 @@ DataDictionary:
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-09-29, and whole on
+  # 2026-09-30; screenshots in reference/DDict image refs/MedicationDispenseFact/):
+  # columns, types, descriptions, and keys from its ER diagram.
+  # The page marks it Partitioned, but no column carries the Partition key
+  # badge (looked for again 2026-09-30), so standard_where has no date window.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   MedicationDispenseFact:
     description: >
-      Outpatient medication dispense fact table. Rows represent fills/dispenses
-      from ambulatory or external pharmacies. Includes days supply, NDC, refills,
-      and dispense timing. Only outpatient dispenses are present.
+      Outpatient medication dispense fact table. Rows represent fills/dispenses from
+      ambulatory or external pharmacies. Includes days supply, NDC, refills, and
+      dispense timing. Only outpatient dispenses are present.
     granularity: >
-      One row per outpatient dispense/fill event (dispense-level fact).
+      One row per medication dispense.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the dispense record.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the record has been inferred.
+          1/0 column that indicates whether the record is inferred
       Count:
-        type: integer
+        type: tinyint
         nullable: false
         description: >
-          Cosmos row count indicator; usually 1 for real dispenses.
+          Artificial measure on which calculations can be done. The value is 0 for rows
+          marked as deleted, 1 otherwise.
       DaysSupply:
-        type: integer
+        type: smallint
         nullable: true
         description: >
-          Number of days of therapy the dispense is expected to cover.
+          Number of days supply dispensed of the medication.
       DispenseDataSourceType_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Source type for the dispense (e.g., Willow Dispense History vs external).
-          Use to distinguish internal vs external dispenses.
+          Brief description of the type of data source that reported the dispense
       DoseUnit_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Dose unit representation for the dispense, when captured.
+          Medication administration unit associated with MinimumDose_X
       FilledDateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim)
         nullable: true
         description: >
-          DateKey representing dispense/fill date (or claim filed date for external).
+          Date a fill was completed. For Willow dispenses, this is the date when the
+          fill was finalized. For other dispenses, this is the date when the claim was
+          filed, which may be different from the fill completion date.
       FilledInstant:
         type: datetime
         nullable: true
         description: >
-          Timestamp for dispense/fill date. For mail order, this is not delivery date.
+          Date and time a fill was completed. For Willow dispenses, this is the date and
+          time when the fill was finalized. For other dispenses, this is the date and
+          time when the claim was filed, which may be different f... (the rest is
+          cut off in the screenshot).
       FilledTimeOfDayKey:
-        type: integer (TimeOfDayKey)
+        type: bigint (TimeOfDayKey; foreign key to TimeOfDayDim)
         nullable: true
         description: >
-          Time-of-day key for fill time.
+          Time of day a fill was completed. For Willow dispenses, this is the time of
+          day when the fill was finalized. For other dispenses, this is the time of day
+          when the claim was filed, which may be different from the... (the rest is
+          cut off in the screenshot).
       FillNumber:
-        type: integer
+        type: nvarchar(50)
         nullable: true
         description: >
-          Fill number (0 for initial, >0 for refills) for Willow dispenses; inconsistent
-          for external dispenses.
+          The fill number for the current dispensed medication by the pharmacy.
+          Designates the sequential order of the original fill or subsequent refills of
+          a prescription. The first fill is a 1 for Willow dispenses. This fie...
+          (the rest is cut off in the screenshot).
       FirstDispense:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Indicates this row represents the first dispense for the corresponding order
-          for Willow; less reliable for external.
+          1/0 column that indicates whether the dispense is a first dose or fill. This
+          column returns 1 if the dispense is a first dose or fill and 0 if the dispense
+          isn't a first dose or fill.
       Frequency_X:
-        type: string
+        type: nvarchar(100)
         nullable: true
         description: >
-          Dispensed frequency text when carried at dispense level.
+          String describing how often the medication is ordered to be taken (e.g. Every
+          8 hours PRN)
       MedicationDispenseKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
-          Primary key for the dispense fact record.
+          Surrogate key used to uniquely identify the record
       MedicationKey:
         type: bigint (foreign key to MedicationDim)
         nullable: false
         description: >
-          Medication associated with the dispense. Masked medications may appear under
-          generic "Masked Medication".
+          Medication or mixture associated with the order
       MedicationOrderKey:
         type: bigint (foreign key to MedicationOrderFact)
         nullable: true
         description: >
-          Order key associated with the dispense. Reliable for Willow ambulatory;
-          inconsistent for external dispenses.
+          Order record which the dispense belongs to. This is only populated for Willow
+          dispenses.
       MedicationOrderWrittenDateKey_X:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim)
         nullable: true
         description: >
-          DateKey referencing when associated medication order was written.
+          The date that the medication order for this dispense was signed
       MinimumDose_X:
-        type: numeric
+        type: numeric(19,4)
         nullable: true
         description: >
-          Minimum dose per administration reflected in this dispense, if provided.
+          Quantity of drug ordered to be administered at each dose. If order has a
+          ranged dose (e.g. 1-2), the value in this column will be the smallest number
+          in the range.
       Mode:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
-          Order mode associated with the dispense; may reflect outpatient/inpatient
-          mode, but external interfaces vary.
+          Mode that indicates whether this was an inpatient or outpatient dispense.
+          Currently, only dispenses with outpatient ordering mode orders appear in
+          Cosmos.
       PatientDurableKey:
         type: bigint (foreign key to PatientDim.DurableKey)
         nullable: false
         description: >
-          Patient associated with the dispense.
+          Patient associated with the order getting dispensed
       PrimaryComponentQuantity:
-        type: numeric
+        type: numeric(26,5)
         nullable: true
         description: >
-          Quantity of primary component dispensed.
+          Quantity of the primary component dispensed
       PrimaryComponentQuantityUnit:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Unit associated with primary component quantity.
+          Unit for the quantity of the primary component dispensed
       PrimaryComponentUnformattedNdc:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Unformatted NDC representing potential package for the medication record;
-          not necessarily the exact NDC dispensed.
+          Raw 11-digit National Drug Code (NDC) for the primary component dispensed
       RawCodeSystem_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Original code system of the dispense record (e.g., NDC).
+          Type of code associated with RawCodeValue_X
       RawCodeValue_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Raw code value representing the product in the source system.
+          Primary code identifying the type of drug dispensed
       RefillsRemaining_X:
-        type: integer
+        type: smallint
         nullable: true
         description: >
-          Remaining refills after this dispense. Reliable for Willow; external mappings
-          vary and can go negative when splits occur.
+          Number of refills remaining on the order after this dispense
       RefillsWritten_X:
-        type: integer
+        type: smallint
         nullable: true
         description: >
-          Number of refills written, as represented at the dispense level. Pre-2019
-          external data primarily uses this.
+          Number of refills ordered, excluding the initial implied dispense. Medications
+          ordered to be dispensed exactly once will have a 0 in this column.
       Route_X:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Route representation at dispense level when documented.
+          Ordered medication administration route (e.g. Oral)
       SourceComboKey_X:
-        type: bigint
+        type: bigint (foreign key to MedicationEventSourceBridge)
         nullable: true
         description: >
-          Composite source key for the dispense.
+          The source organization that reported this medication dispense.
       SupplyEndDateKey_X:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim)
         nullable: true
         description: >
-          DateKey approximating when the supply would end; often derived from days
-          supply and fill date.
+          Date that supply for this dispense would end, if drug is taken as intended.
+          Calculated from FilledDate + DaysSupply
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/MedicationAdministrationFact/): columns, types, and
+  # keys from its ER diagram.
+  # Descriptions cut off at the right; the old ones kept. New columns' not transcribed.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   MedicationAdministrationFact:
     description: >
       Medication administration fact table representing MAR actions. Contains
       administrations and non-given actions except Due. Filter using
-      ActionIsMedAdministration or AdministrationAction values when selecting
-      given doses. Incomplete data for some encounters; union with
-      MedicationOrderComponentFact where Type_X = 'Administered Medication'
-      can improve completeness.
+      ActionIsMedAdministration or AdministrationAction values when selecting given
+      doses. Incomplete data for some encounters; union with
+      MedicationOrderComponentFact where Type_X = 'Administered Medication' can improve
+      completeness.
     granularity: >
-      One row per MAR action for a medication order (administration-action-level fact).
+      One row per medication or feeding product administration.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the administration row.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates an inferred administration record.
+          1/0 column that indicates whether the record is inferred
+      ActionIsMedAdministration:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      AdministrationAction:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       AdministrationDateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim; partition key)
         nullable: true
         description: >
           DateKey representing administration date for the MAR action.
@@ -2543,39 +2591,94 @@ DataDictionary:
         description: >
           Timestamp for the administration action (e.g., Given, Held). De-identified.
       AdministrationRoute:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
           Route documented at administration time (e.g., PO, IV). Some intraoperative
           medications may have route only at administration.
+      AdsOverride:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       AgeKey:
-        type: bigint
+        type: bigint (foreign key to DurationDim)
         nullable: true
         description: >
           Age key representing age at administration time.
+      Concentration:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      ConcentrationUnit:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       Count:
-        type: integer
+        type: tinyint
         nullable: false
         description: >
           Cosmos row count indicator; typically 1 for real MAR rows. Placeholder rows
           have nonpositive keys and often NULL Count.
+      Dose:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      DoseUnit:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      Duration:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      DurationUnit:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       EncounterAdmissionInstant:
         type: datetime
         nullable: true
         description: >
-          Timestamp representing admission associated with the encounter, carried
-          on the administration record.
+          Timestamp representing admission associated with the encounter, carried on the
+          administration record.
       EncounterKey:
         type: bigint (foreign key to EncounterFact)
         nullable: true
         description: >
           Encounter associated with the medication order; for administrations in a
           different contact, this remains the ordering encounter.
+      EquivalentMorphineDose:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      EquivalentMorphineDosePerHourRate:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      IsPrn:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       MedicationAdministrationKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
           Primary key for the medication administration fact row.
+      MedicationComponentComboKey:
+        type: bigint (foreign key to MedicationComponentBridge)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       MedicationKey:
         type: bigint (foreign key to MedicationDim)
         nullable: false
@@ -2593,13 +2696,29 @@ DataDictionary:
         nullable: false
         description: >
           Patient associated with the medication administration action.
+      Rate:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      ScheduledAdministrationDateKey:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
+      ScheduledAdministrationInstant:
+        type: datetime
+        nullable: true
+        description: >
+          On the dictionary page; description cut off in the screenshot.
       SourceComboKey_X:
-        type: bigint
+        type: bigint (foreign key to MedicationEventSourceBridge)
         nullable: true
         description: >
           Composite source key for the administration action, referencing origin system.
     standard_where:
       - "_IsDeleted = 0"
+      - "AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
 
   # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
   # reference/DDict image refs/PregnancyFact/): columns, types, and
@@ -2908,201 +3027,222 @@ DataDictionary:
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/DurationDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Descriptions cut off at the right; the old ones kept.
+  # The page has no _IsDeleted, so no standard_where.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   DurationDim:
     description: >
-      Duration dimension table. Encodes durations in days, weeks, months, years
-      and display strings. Used to represent duration fields as dimensional keys
-      (e.g., MedicationOrderFact.DurationKey).
+      Duration dimension table. Encodes durations in days, weeks, months, years and
+      display strings. Used to represent duration fields as dimensional keys (e.g.,
+      MedicationOrderFact.DurationKey).
     granularity: >
-      One row per distinct duration concept (duration-level dimension).
+      One row per duration between two dates.
     columns:
-      DurationKey:
-        type: bigint
-        nullable: false
-        description: >
-          Primary key for the duration dimension row.
       Days:
-        type: integer
+        type: int
         nullable: true
         description: >
           Duration expressed in days.
       DaysDisplayString:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Human-readable display string for duration in days (e.g., "7 days").
       DisplayString:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           General display string representation for the duration, potentially combining
           multiple units.
+      DurationKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Primary key for the duration dimension row.
       Months:
-        type: integer
+        type: int
         nullable: true
         description: >
           Duration expressed in months.
       MonthsDisplayString:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Human-readable display string for duration in months (e.g., "3 months").
       Weeks:
-        type: integer
+        type: int
         nullable: true
         description: >
           Duration expressed in weeks.
       WeeksDisplayString:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Human-readable display string for duration in weeks (e.g., "2 weeks").
       Years:
-        type: integer
+        type: int
         nullable: true
         description: >
           Duration expressed in years.
       YearsDisplayString:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
           Human-readable display string for duration in years (e.g., "1 year").
 
+  # Checked against its Cosmos dictionary page (2026-09-29, and whole on
+  # 2026-09-30; screenshots in reference/DDict image refs/ProblemListFact/):
+  # columns, types, descriptions, and keys from its ER diagram.
+  # Type, which the page lacks, removed.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   ProblemListFact:
     description: >
-      Problem list fact table. One row per problem list entry for a patient,
-      containing diagnosis keys, dates, chronic flags, and status. Used for
-      longitudinal conditions separate from billing diagnoses.
+      Problem list fact table. One row per problem list entry for a patient, containing
+      diagnosis keys, dates, chronic flags, and status. Used for longitudinal conditions
+      separate from billing diagnoses.
     granularity: >
-      One row per problem list entry per patient (problem-entry-level fact).
+      One row per problem list diagnosis for a patient.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the problem list entry.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the problem list record has been inferred.
+          1/0 column that indicates whether the record is inferred
       AgeKey:
-        type: bigint
+        type: bigint (foreign key to DurationDim)
         nullable: true
         description: >
-          Age key representing patient age at the time the problem was recorded.
+          Patient age as of the start date of the problem list diagnosis. This value is
+          calculated based on StartDateKey and the BirthDate column in PatientDim. This
+          key is calculated in the de-identification process.
       Chronic:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Indicates the problem is flagged as chronic in the source system.
+          1/0 column that indicates whether the diagnosis is chronic. This column
+          returns 1 if the diagnosis is chronic and 0 if the diagnosis isn't chronic.
       Count:
-        type: integer
+        type: tinyint
         nullable: false
         description: >
-          Cosmos row count indicator; typically 1 for real problem list entries.
+          Artificial measure on which calculations can be done. The value is 0 for rows
+          marked as deleted or masked. Masked rows are rows that contain data from
+          exclusively non-greenlit sources or rows that contai... (the rest is cut
+          off in the screenshot).
       DiagnosisKey:
-        type: bigint (foreign key to DiagnosisDim/DiagnosisTerminologyDim)
+        type: bigint (foreign key to DiagnosisDim)
         nullable: false
         description: >
-          Key referencing the diagnosis concept associated with the problem list entry.
+          Diagnosis associated with the problem list entry
       EncounterKey:
         type: bigint (foreign key to EncounterFact)
         nullable: true
         description: >
-          Encounter associated with initial documentation or modification of the problem.
+          Encounter on which the problem list diagnosis was added to the patient.
       EndDateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim)
         nullable: true
         description: >
-          DateKey representing when the problem was resolved or inactivated.
+          Problem list resolved date
       IsCancerProblem:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Indicates the problem is classified as a cancer-related problem.
+          1/0 column that indicates whether the problem list diagnosis is a cancer
+          diagnosis. This column returns 1 if the diagnosis is a cancer diagnosis and 0
+          if the diagnosis is not a cancer diagnosis.
       PatientDurableKey:
         type: bigint (foreign key to PatientDim.DurableKey)
         nullable: false
         description: >
-          Patient associated with the problem list entry.
+          Patient associated with the problem list entry
       ProblemListKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
-          Primary key for the problem list fact record.
+          Surrogate key used to uniquely identify the record
       SourceComboKey_X:
-        type: bigint
+        type: bigint (foreign key to DiagnosisEventSourceBridge)
         nullable: true
         description: >
-          Composite source key for the problem list record, used for origin metadata.
+          Source of the problem list data
       StartDateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim; partition key)
         nullable: true
         description: >
-          DateKey representing when the problem was first recorded or became active.
+          Problem list diagnosis noted date. For Epic data, the value is the noted date
+          when available, otherwise the date of entry.
       Status:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Problem status (e.g., active, resolved, inactive).
-      Type:
-        type: string
-        nullable: true
-        description: >
-          Problem type category (e.g., medical, surgical, social), depending on local
-          configuration.
+          Status of the problem list diagnosis. For Epic data, this column can contain
+          Active or Resolved statuses.
     standard_where:
       - "_IsDeleted = 0"
+      - "StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/TerminologyConceptDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Descriptions cut off at the right; the old ones kept.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   TerminologyConceptDim:
     description: >
-      Terminology concept dimension table. One row per concept in a terminology
-      (e.g., a code or concept in ICD-10-CM, SNOMED CT, RxNorm, ATC, internal
-      value set). Serves as a generic concept backbone that other terminology-
-      specific dimensions (such as DiagnosisTerminologyDim or MedicationCodeDim)
-      reference via TerminologyConceptKey.
+      Terminology concept dimension table. One row per concept in a terminology (e.g., a
+      code or concept in ICD-10-CM, SNOMED CT, RxNorm, ATC, internal value set). Serves
+      as a generic concept backbone that other terminology- specific dimensions (such as
+      DiagnosisTerminologyDim or MedicationCodeDim) reference via TerminologyConceptKey.
     granularity: >
-      One row per terminology concept (concept-level dimension).
+      One row per concept.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the terminology concept record.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the terminology concept record has been inferred rather than
-          directly sourced; useful for lineage and data quality checks.
+          1/0 column that indicates whether the record is inferred
       Concept:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Concept identifier string as used within the terminology or value set
-          (for example, a code or concept ID).
+          Concept identifier string as used within the terminology or value set (for
+          example, a code or concept ID).
       Name:
-        type: string
+        type: nvarchar(550)
         nullable: true
         description: >
           Human-readable name or label for the terminology concept.
       StandardName:
-        type: string
+        type: nvarchar(50)
         nullable: true
         description: >
-          Standardized or normalized name for the concept, used to harmonize
-          naming across contributors and terminologies.
+          Standardized or normalized name for the concept, used to harmonize naming
+          across contributors and terminologies.
       TerminologyConceptKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
-          Primary key for the terminology concept dimension row. Referenced by
-          other terminology tables such as DiagnosisTerminologyDim and
+          Primary key for the terminology concept dimension row. Referenced by other
+          terminology tables such as DiagnosisTerminologyDim and
           TerminologyConceptSetDim.
     standard_where:
       - "_IsDeleted = 0"
-
 
   # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
   # reference/DDict image refs/ProcedureEventFact/): columns, types, and
@@ -3249,237 +3389,519 @@ DataDictionary:
       - "_IsDeleted = 0"
       - "ProcedureStartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/VitalsFact/): columns, types, and
+  # keys from its ER diagram.
+  # Descriptions seen from DiastolicBloodPressure down; above it, cut off
+  # at the right, the old ones kept.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   VitalsFact:
     description: >
-      Vitals fact table. Rows represent individual vital sign measurements
-      (e.g., blood pressure, heart rate, weight, height) associated with
-      encounters and patients. Numeric values are de-identified and may be
-      unit-normalized. Placeholder rows with nonpositive primary keys should
-      be excluded from most analyses.
+      Vitals fact table. Each row is a set of vitals measured at the same date and time
+      (blood pressure, pulse, height, weight and so on), for a patient and usually an
+      encounter.
     granularity: >
-      One row per vital sign measurement per encounter (vital-measurement-level
-      fact).
+      One row per set of vitals measured at the same time.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the vitals record.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the vitals record has been inferred rather than directly
-          sourced; useful for lineage and data quality checks.
+          1/0 column that indicates whether the record is inferred
       BodyMassIndex:
-        type: numeric
+        type: numeric(18,4)
         nullable: true
         description: >
-          BMI value associated with the measurement. May be source-calculated
-          or derived using height and weight; use CalculatedBodyMassIndex_X
-          to distinguish source vs derived in some implementations.
+          BMI value associated with the measurement. May be source-calculated or derived
+          using height and weight; use CalculatedBodyMassIndex_X to distinguish source
+          vs derived in some implementations.
       CalculatedBodyMassIndex_X:
-        type: numeric
+        type: numeric(18,4)
         nullable: true
         description: >
-          BMI calculated by source logic or derived mapping, separate from
-          raw BodyMassIndex when both are present.
+          BMI calculated by source logic or derived mapping, separate from raw
+          BodyMassIndex when both are present.
       Count:
-        type: integer
+        type: tinyint
         nullable: false
         description: >
           Cosmos row count indicator; typically 1 for real vitals rows.
       DateKey:
-        type: integer (DateKey)
+        type: bigint (DateKey; foreign key to DateDim; partition key)
         nullable: false
         description: >
-          DateKey representing when the vital sign was taken. Use this
-          for filtering by date without joining to DateDim.
+          DateKey representing when the vital sign was taken. Use this for filtering by
+          date without joining to DateDim.
       DiastolicBloodPressure:
-        type: numeric
+        type: int
         nullable: true
         description: >
-          Diastolic blood pressure measurement (e.g., mmHg) for this vitals row.
+          Diastolic blood pressure in millimeters of mercury
       EncounterKey:
         type: bigint (foreign key to EncounterFact)
         nullable: true
         description: >
-          Encounter associated with the vitals measurement. Some vitals may be
-          recorded outside a specific encounter and have NULL EncounterKey.
+          Encounter associated with the vitals measurements
       HeadCircumference:
-        type: numeric
+        type: numeric(18,2)
         nullable: true
         description: >
-          Head circumference measurement (often pediatric) for this vitals row.
+          Head circumference in inches
       Height:
-        type: numeric
+        type: numeric(18,2)
         nullable: true
         description: >
-          Height measurement (e.g., centimeters or inches). Unit-normalization
-          may occur in Cosmos de-identification.
+          Height in inches
       LastKnownHeight_X:
-        type: numeric
+        type: numeric(18,2)
         nullable: true
         description: >
-          Derived last-known height for the patient at the time of measurement,
-          used when explicit height is missing for a vitals row.
+          This column stores the patient's height in inches. For patients age 18 and
+          older, it performs a lookback to determine the most recent height measurement
+          for the patient. For patients whose age is under 18, ... (the rest is cut off
+          in the screenshot).
       PatientDurableKey:
         type: bigint (foreign key to PatientDim.DurableKey)
         nullable: false
         description: >
-          Patient durable key associated with the vitals measurement.
+          Link to PatientDim's durable key
       PulseRate:
-        type: numeric
+        type: int
         nullable: true
         description: >
-          Heart rate/pulse measurement (beats per minute).
+          Pulse in heart beats per minute
       RespirationRate:
-        type: numeric
+        type: int
         nullable: true
         description: >
-          Respiration rate measurement (breaths per minute).
+          Respirations per minute
       SourceComboKey:
-        type: bigint (foreign key to VitalsSourceBridge/SourceDim)
+        type: bigint (foreign key to VitalsSourceBridge)
         nullable: true
         description: >
-          Composite source key describing origin of the vitals record.
+          Sources of the vitals measurement. Use this instead of SourceKey if there are
+          multiple sources.
       SpO2:
-        type: numeric
+        type: int
         nullable: true
         description: >
-          Oxygen saturation (SpO2) measurement, typically as percentage.
+          Peripheral oxygen saturation as a percentage
       SystolicBloodPressure:
-        type: numeric
+        type: int
         nullable: true
         description: >
-          Systolic blood pressure measurement (e.g., mmHg) for this vitals row.
+          Systolic blood pressure in millimeters of mercury
       TakenInstant:
         type: datetime
         nullable: true
         description: >
-          Timestamp when the vital sign was taken, de-identified and
-          time-shifted. Often used for intra-encounter ordering.
+          Date and time the vitals were measured
       Temperature:
-        type: numeric
+        type: numeric(18,2)
         nullable: true
         description: >
-          Body temperature measurement (e.g., degrees Celsius or Fahrenheit),
-          potentially unit-normalized in Cosmos.
+          Temperature in Fahrenheit
       VitalsKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
-          Primary key for the vitals fact record. Guard on VitalsKey > 0
-          when excluding placeholder rows.
+          Primary key for the vitals fact record. Guard on VitalsKey > 0 when excluding
+          placeholder rows.
       Weight:
-        type: numeric
+        type: numeric(18,2)
         nullable: true
         description: >
-          Weight measurement (e.g., kilograms or pounds). De-identified and
-          possibly unit-normalized.
+          Weight in pounds
     standard_where:
       - "_IsDeleted = 0"
+      - "DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/CoverageDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Descriptions cut off at the right; the old ones kept.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
   CoverageDim:
     description: >
-      Coverage dimension table. Represents coverage and payor concepts such
-      as financial class, payor vs coverage flags, and self-pay. Referenced
-      from encounter- and admission-level facts via CoverageComboKey_X
-      through CoverageBridgeX.
+      Coverage dimension table. Represents coverage and payor concepts such as financial
+      class, payor vs coverage flags, and self-pay. Referenced from encounter- and
+      admission-level facts via CoverageComboKey_X through CoverageBridgeX.
     granularity: >
-      One row per coverage/payor concept (coverage-level dimension).
+      One row per coverage, benefit plan, or payer.
     columns:
       _IsDeleted:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Logical deletion flag for the coverage record.
+          1/0 column that indicates whether the record is deleted
       _IsInferred:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: false
         description: >
-          Indicates the coverage record has been inferred rather than directly
-          sourced; used for lineage and data quality checks.
+          1/0 column that indicates whether the record is inferred
       CoverageFinancialClass:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Financial class category associated with this coverage (e.g.,
-          commercial, Medicare, Medicaid, self-pay surrogate).
+          Financial class category associated with this coverage (e.g., commercial,
+          Medicare, Medicaid, self-pay surrogate).
       CoverageKey:
-        type: bigint
+        type: bigint (primary key)
         nullable: false
         description: >
-          Primary key for the coverage dimension row. Used in CoverageBridgeX to
-          form composite keys referenced by encounter and admission facts.
+          Primary key for the coverage dimension row. Used in CoverageBridgeX to form
+          composite keys referenced by encounter and admission facts.
       IsCoverage:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Indicates the record represents a coverage concept rather than a
-          pure payor-only concept in mixed configurations.
+          Indicates the record represents a coverage concept rather than a pure
+          payor-only concept in mixed configurations.
       IsPayor:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Indicates the record represents a payor concept. Some records may
-          serve as both payor and coverage depending on local mapping.
+          Indicates the record represents a payor concept. Some records may serve as
+          both payor and coverage depending on local mapping.
       IsSelfPay:
-        type: boolean (flag)
+        type: tinyint (flag)
         nullable: true
         description: >
-          Flag indicating self-pay. When true, this coverage concept represents
-          a self-pay situation for encounters/admissions linked via
-          CoverageComboKey_X.
+          Flag indicating self-pay. When true, this coverage concept represents a
+          self-pay situation for encounters/admissions linked via CoverageComboKey_X.
       ReferenceFinancialClass:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Reference or normalized financial class value for this coverage
-          concept, used to harmonize financial classes across organizations.
+          Reference or normalized financial class value for this coverage concept, used
+          to harmonize financial classes across organizations.
       ReferencePayer:
-        type: string
+        type: nvarchar(300)
         nullable: true
         description: >
-          Reference or normalized payer name associated with this coverage
-          concept, used for cross-organization payer grouping.
+          Reference or normalized payer name associated with this coverage concept, used
+          for cross-organization payer grouping.
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/DiagnosisDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  DiagnosisDim:
+    description: >
+      Diagnosis dimension. Each row is a diagnosis, from the ICD-9, ICD-10 and SNOMED
+      loads. DiagnosisEventFact, ProblemListFact and EncounterFact point at it by
+      DiagnosisKey; the codes are in DiagnosisTerminologyDim.
+    granularity: >
+      One row per diagnosis.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      DiagnosisKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      Name:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Diagnosis name
+    standard_where:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/ProcedureDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Snapshot (Type 2): a row per procedure per date range, IsCurrent = 1
+  # the current one. ProcedureKey, the table's own key, is SD only;
+  # ProcedureEventFact points at DurableKey.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  ProcedureDim:
+    description: >
+      Procedure dimension. Each row is a procedure for a date range: it keeps history,
+      and IsCurrent = 1 marks the current row. For Epic data, only charge procedures.
+    granularity: >
+      One row per procedure for a date range.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      Category:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Category associated with the procedure
+      Code:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Code associated with the procedure
+      CodeSet:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Code set associated with the procedure
+      CptCode:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Current Procedural Terminology (CPT) code associated with the procedure. This
+          column will be changed in the future to have no change tracking (Type 1).
+      DurableKey:
+        type: bigint (durable key, one per procedure; ProcedureKey, the table's own key, is SD only)
+        nullable: true
+        description: >
+          Durable key used to identify the record
+      HcpcsCode:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Healthcare Common Procedure Coding System (HCPCS) code associated with the
+          procedure. This column will be changed in the future to have no change
+          tracking (Type 1).
+      IsCurrent:
+        type: bit (flag)
+        nullable: true
+        description: >
+          1 indicates this is the most recent information, otherwise 0
+      Name:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Name of the procedure
+      OtherCode:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Code associated with the procedure for code types other than CPT, HCPCS, ADA,
+          or ASA codes. This column will be changed in the future to have no change
+          tracking (Type 1).
+      OtherCodeType:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Code type associated with the procedure for code types other than CPT, HCPCS,
+          ADA, or ASA codes. This column will be changed in the future to have no change
+          tracking (Type 1).
+      ShortName:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Shortened name of the procedure
+    standard_where:
+      - "_IsDeleted = 0"
+      - "IsCurrent = 1"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/LabTestFact/): columns, types, and
+  # keys from its ER diagram.
+  # The screenshot's page heading is cut off; its ER diagram and reporting
+  # table name say LabTestFact.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  LabTestFact:
+    description: >
+      Lab test fact. Each row is a lab test. For Epic data, every test performed in
+      Beaker at any status; result-based columns only include what has been sent to the
+      chart.
+    granularity: >
+      One row per lab test.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      Count:
+        type: tinyint
+        nullable: true
+        description: >
+          Artificial measure on which calculations can be done. The value is 0 for rows
+          marked as deleted, 1 otherwise.
+      LabDurableKey:
+        type: bigint (foreign key to LabDim.DurableKey)
+        nullable: true
+        description: >
+          Location where this test was performed or that is responsible for the test.
+          For Epic data, this is the section or case type if available. Otherwise, it is
+          the laboratory where the test was performed.
+      LabTestKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: true
+        description: >
+          Patient the specimen was collected from
+      PrioritizedDateKey:
+        type: bigint (DateKey; foreign key to DateDim; partition key)
+        nullable: true
+        description: >
+          Date the specimen was collected if known, otherwise the best available date
+          representing the order. Not populated for Quality Control specimens. ... (the
+          rest is cut off in the screenshot).
+      PrioritizedInstant_X:
+        type: datetime
+        nullable: true
+        description: >
+          Date and time the specimen was collected if known, otherwise the best
+          available date representing the specimen. This will be the resulting instant
+          or the linked encounter's start instant, if available.
+    standard_where:
+      - "_IsDeleted = 0"
+      - "PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"  # the partition key
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/SourceDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # OrganizationEpicId and OrganizationName are SD only (hidden in the
+  # de-identified data set).
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  SourceDim:
+    description: >
+      Source dimension. Each row is a source from which data was loaded into Caboodle;
+      the source bridges (EncounterSourceBridge and the others) link to it by SourceKey.
+    granularity: >
+      One row per source.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      CompletedTransferEndDate_X:
+        type: date
+        nullable: true
+        description: >
+          The last date that data from this organization has been completely transferred
+          to Cosmos. Each time a source organization upgrades to a new version, all new
+          or modified data elements are transferred to C... (the rest is cut off in the
+          screenshot).
+      CompletedTransferStartDate_X:
+        type: date
+        nullable: true
+        description: >
+          The first date that data from this organization has been completely
+          transferred to Cosmos. Each time a source organization upgrades to a new
+          version, all new or modified data elements are transferred to C... (the rest
+          is cut off in the screenshot).
+      SourceCountry:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          The country associated with this source
+      SourceKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      UseInCosmosAnalytics:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether data associated with the record will be used
+          in analytics on Cosmos. This column will only be populated in Epic hosted
+          Cosmos environments. ... (the rest is cut off in the screenshot).
+    standard_where:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-09-29; screenshots in
+  # reference/DDict image refs/EncounterSourceBridge/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # The page has no _IsDeleted, so no standard_where.
+  # Nullability not checked: no row is expanded in the screenshots.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  EncounterSourceBridge:
+    description: >
+      Encounter source bridge. Each row is one data source in a combination:
+      EncounterFact's SourceComboKey (and EdVisitFact's and HospitalAdmissionFact's
+      EncounterSourceComboKey_X) matches several rows here, one per SourceDim source.
+    granularity: >
+      One row per data source in a combination.
+    columns:
+      EncounterSourceComboKey:
+        type: bigint (primary key, with SourceKey)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      SourceKey:
+        type: bigint (foreign key to SourceDim)
+        nullable: true
+        description: >
+          One of the data sources in the combination
+
 # ---------------------------------------------------------------------------
-# Still to check (as of 2026-09-29)
+# Still to check (as of 2026-09-30)
 #
-# In this dictionary, with no screenshot yet (types still abstract, or as the
-# VM's AI transcribed them; no standard_checks):
-#   - LabComponentDim
-#   - LabComponentSetDim
-#   - MedicationDispenseFact
-#   - MedicationAdministrationFact
-#   - DurationDim
-#   - ProblemListFact
-#   - TerminologyConceptDim
-#   - VitalsFact
-#   - CoverageDim
+# Every table in this dictionary has been checked against a screenshot of its
+# page.
 #
 # Partly seen:
-#   - PatientDim, DiagnosisTerminologyDim: no ER diagram on their pages, so the
-#     column each foreign key lands on is not seen.
+#   - No ER diagram on the page, so the column each foreign key lands on is not
+#     seen: PatientDim, DiagnosisTerminologyDim, LabComponentDim,
+#     LabComponentSetDim, TerminologyConceptDim, DurationDim, CoverageDim,
+#     DiagnosisDim, ProcedureDim, SourceDim, EncounterSourceBridge.
 #   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
 #     (description, granularity) not screenshotted.
-#   - Every checked table: descriptions cut off at the right of the screenshots,
-#     and no row expanded, so new columns' descriptions and all nullability are
-#     not from the page.
+#   - MedicationDispenseFact: the page says Partitioned, but no column carries
+#     the Partition key badge (looked for again 2026-09-30), so it has no date
+#     window. Its Indexes tab may say which column partitions it.
+#   - Every checked table: descriptions cut off at the right of most
+#     screenshots, and no row expanded, so many descriptions and all
+#     nullability are not from the page. Each table's comment says which.
+#
+# Screenshot taken, not added:
+#   - ProcedureSetDim: every column is SD only, so it has nothing to pull (D116).
 #
 # Not in this dictionary, but a checked table's foreign key points at them.
 # Screenshot one before a pull joins it:
-#   - DateDim, TimeOfDayDim, DurationDim (above)
-#   - DiagnosisDim, ProcedureDim, ProviderDim, DepartmentDim, MedicationDim,
-#     LabDim, LabTestFact
-#   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim), CoverageDim (above)
-#   - Source bridges: DiagnosisEventSourceBridge, EncounterSourceBridge,
-#     LabComponentResultSourceBridge, MedicationEventSourceBridge,
-#     ProcedureEventSourceBridge, PatientSourceBridgeX, BirthSourceBridgeX; and
-#     SourceDim, which each bridge links to
+#   - DateDim, TimeOfDayDim
+#   - ProviderDim, DepartmentDim, MedicationDim, LabDim
+#   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim)
+#   - MedicationComponentBridge (MedicationAdministrationFact's
+#     MedicationComponentComboKey), which links to MedicationDim
+#   - Source bridges: DiagnosisEventSourceBridge, LabComponentResultSourceBridge,
+#     MedicationEventSourceBridge, ProcedureEventSourceBridge, VitalsSourceBridge,
+#     PatientSourceBridgeX, BirthSourceBridgeX; each links to SourceDim
 #   - Birth bridges (BirthAnesthesiaBridge, BirthAugmentationBridge,
 #     BirthAugmentationIndicationBridge, BirthCervicalRipeningBridge,
 #     BirthCesareanIndicationBridge, BirthComplicationBridge,

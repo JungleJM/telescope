@@ -12,4 +12,4 @@ cleanup/
 /runs/
 # Bundles and their content_id are build products (D106).
 /dist/
-/images
+plan/images

@@ -173,7 +173,7 @@ cohorts:
     nullable: true
     description: Standardized or normalized name for the concept, used to harmonize
       naming across contributors and terminologies. ICD code type
-    type: NVARCHAR(900)
+    type: NVARCHAR(50)
   - source: dt.Value
     name: BillingCodeValue
     nullable: true
@@ -204,11 +204,11 @@ cohorts:
   - source: tc.Concept
     name: TerminologyConcept
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: tc.Name
     name: TerminologyName
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(550)
   - source: def.Status
     name: Status
     nullable: true
@@ -272,7 +272,7 @@ cohorts:
     nullable: true
     description: Standardized or normalized name for the concept, used to harmonize
       naming across contributors and terminologies. ICD code type
-    type: NVARCHAR(900)
+    type: NVARCHAR(50)
   - source: dt.Value
     name: BillingCodeValue
     nullable: true
@@ -303,11 +303,11 @@ cohorts:
   - source: tc.Concept
     name: TerminologyConcept
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(300)
   - source: tc.Name
     name: TerminologyName
     nullable: true
-    type: NVARCHAR(900)
+    type: NVARCHAR(550)
   - source: def.Status
     name: Status
     nullable: true
