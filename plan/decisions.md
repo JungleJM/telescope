@@ -3451,3 +3451,70 @@ and worried it might misread one, since every failure ends with exit code 1.
 **Decision.** Not built. The two known causes are fixed at the source instead:
 a full database by packaging each group as it finishes (D177), an expired
 sign-in by reconnecting (D176).
+
+### D183. A Cosmos refresh is a `create_date` that moved by more than a day
+
+**Amends D51** (any change, to the millisecond, is a refresh).
+
+**Context.** UC_VisitsMedsDiagnoses' retry (2 October 2026) said
+`Cosmos was refreshed: created 2026-09-17T19:34:56.450 when last run,
+2026-09-17T19:54:30.070 now`, the same for SneakPeek, and started every session
+over. There was no refresh. Cosmos is served by several instances (D37), each
+with its own copy of the database, restored minutes apart at a refresh. D51
+recorded the first instance's value and compared to the millisecond, so a
+connection on another instance read as a refresh. A table group's new Cosmos
+connection (D134) runs the same check mid-pull, and would fail its session.
+
+**Decision.** A database counts as refreshed when its `create_date` differs from
+the recorded one by more than a day. Refreshes come about monthly and the copies
+differ by minutes. Each instance's value is recorded as well (`create_date` per
+`@@SERVERNAME`), so the log can say "another instance, same refresh".
+
+**Consequences.** The test: a manifest recorded on one instance, a connection on
+another 20 minutes newer: nothing starts over; a month newer: everything does.
+
+### D184. Recipe sets: Meds, and Diagnoses with HospitalizationsWithinICDCode
+
+**Follows D135.**
+
+**Context.** Only the Meds set had been saved. In the UC and Crohns templates,
+OtherHospitalizations joins OtherDiagnoses, so it is a hospitalization within
+the pull's ICD codes, and can't sit in another group (D134).
+
+**Decision.** `recipes.yaml` keeps **Meds** (MedOrderHistory,
+MedDispenseHistory, MedAdminHistory) and gains **Diagnoses**: OtherDiagnoses,
+then the hospitalization recipe, renamed from OtherHospitalizations to
+**HospitalizationsWithinICDCode**, which reads it. No other sets for now.
+
+**Consequences.** The rename reaches the recipe and the templates on the Mac
+that use it; a pull already split keeps its old table names.
+
+### D185. clear_projects_db shows every project database, its tables grouped by pull
+
+**Amends D133** (one database, typed in).
+
+**Decision.** The window is a tree, as Status is: one closed row per database in
+`DEFAULT_PROJECTS_DATABASES` (D171) with its GB free, measured as Execute
+measures it (D164), or why the login could not open it. Opening a database
+lists its tables grouped by pull, by table prefix (D163), each with rows and
+MB. The buttons act on what is selected: tables, a pull's group, or a database
+for all its tables. The Database field goes; a database not listed can still be
+typed. It is what Run's View dbo tables opens (D180).
+
+### D186. Author picks a built PK's row key, and a fact table's deduplication, from its columns
+
+**Context.** A random sample on a PK built from the dictionary failed
+validation for want of a key (D60, D69), and Author has no field for one: Row
+key shows only for an uploaded PK. Deduplication (`dedup_keys`,
+`dedup_order_by`, D58) has no field either; both are typed by hand.
+
+**Decision.**
+
+- Every built PK has a **Row key**: a dropdown of its columns, several allowed,
+  written as `key_column(s)`, the table's `...Key` columns offered first. With
+  Random sample ticked and no key, the message points to it.
+- Every fact table has **Deduplicate by** (its columns, several allowed: one key
+  set) and **Keep**: a column and earliest (smallest value, `ORDER BY col`) or
+  latest (largest, `col DESC`). Without Keep, the note says which duplicate
+  survives is arbitrary. Several key sets stay possible by hand.
+- One column picker serves both, and `profile:` (D181) after them.

@@ -27,7 +27,7 @@ When an item here is built, delete it from this file and describe the result in 
 ## Known Bugs
 
 - **Execute sometimes ends mid-pull with exit code 1** (the IBD template, September 2026: `CrohnsPatients`, its first Cosmos session, during `upload_cohorts`, after the SneakPeek sessions finished). No summary, and the step left `running`. Every step catches Python errors, so it was either killed (Stop, or anything else on the VM: Windows gives 1) or an error outside the steps, whose traceback reached only the closing window. The log now keeps the traceback, or where a native crash happened; the next occurrence says which. The next Execute resumes it.
-- **A false "Cosmos was refreshed" starts every session over** (2 October 2026). UC_VisitsMedsDiagnoses' retry said `Cosmos was refreshed: created 2026-09-17T19:34:56.450 when last run, 2026-09-17T19:54:30.070 now`, the same for SneakPeek, and started over. Cosmos is served by several instances (D37), each with its own copy of the database, made minutes apart at a refresh; D51 compares `create_date` to the millisecond, so a connection landing on another instance reads as a refresh. A session that opens a group's connection on another instance mid-pull would fail the same way. How to fix it is in the task list (Cosmos "refreshed" when it was not).
+- **A false "Cosmos was refreshed" starts every session over** (2 October 2026). UC_VisitsMedsDiagnoses' retry said `Cosmos was refreshed: created 2026-09-17T19:34:56.450 when last run, 2026-09-17T19:54:30.070 now`, the same for SneakPeek, and started over. Cosmos is served by several instances (D37), each with its own copy of the database, made minutes apart at a refresh; D51 compares `create_date` to the millisecond, so a connection landing on another instance reads as a refresh. A session that opens a group's connection on another instance mid-pull would fail the same way. Fix agreed (D183), below.
 - **A session longer than about 10 hours fails its next landing with `Login failed for user 'NT AUTHORITY\ANONYMOUS LOGON'`**: the Projects connection outlives the Kerberos ticket it passes to Cosmos. Fix agreed (D176), below. Until then, Retry failed finishes it.
 
 ------------------------------------------------------------------------
@@ -36,13 +36,15 @@ When an item here is built, delete it from this file and describe the result in 
 
 Agreed 2 October 2026. One commit each, with its outcome test.
 
-1.  **The false refresh**, once the task list settles how (Known Bugs).
+1.  **A refresh is a move of more than a day** (D183).
 2.  **The Projects connection per table group, and one retry on an expired sign-in** (D176).
 3.  **A join to a generated table the pull does not make is an error** (D178).
 4.  **Package each table group as it finishes, then empty its tables** (D177).
-5.  **Specify Project DB** (D179).
-6.  **View dbo tables and the multi-column view in Run** (D180); View dbo tables opens whatever clear_projects_db has become (task list: clear_projects_db, every database at once).
-7.  **Counts from `profile:`** (D181), in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
+5.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
+6.  **Specify Project DB** (D179).
+7.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
+8.  **Row key and deduplication in Author** (D186), one column picker.
+9.  **Counts from `profile:`** (D181), on the same picker, in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 
 ------------------------------------------------------------------------
 
@@ -50,7 +52,7 @@ Agreed 2 October 2026. One commit each, with its outcome test.
 
 The software of D151 to D171. Extract it once no pull is executing. If the VM's `datascope.json` names `projects_databases`, delete that line first: it is refused now (D171).
 
-1.  **The show-stopper tests** (D151, D153, D154), steps and what to paste in the task list. Done: `--tdd` (two window tests failed on the VM by listing its real pulls; fixed in the tests, in the next bundle), the reader check, and step 3, which passed (D175). Left: step 4, a night's logs with nothing for `FileBusy|Traceback|exit code 1`; step 5, Execute on `test_over_zero` (split, with Author's `dd_source_not_checked` warning, as expected) must fail its run with `Divide by zero`; then drop the test pulls' tables and delete their run folders and blueprints.
+1.  **The show-stopper tests** (D151, D153, D154), steps and what to paste in the task list. Done: `--tdd` (two window tests failed on the VM by listing its real pulls; fixed in the tests, in the next bundle), the reader check, step 3, which passed (D175), and step 5, which passed (2 October 2026: `test_over_zero`'s run FAILED with `Divide by zero encountered (8134)`). Its scan listed only what was expected: the hand-saved tables of Crohns and UC as `no_count`, the test pulls' empty tables. Left: step 4, a night's logs with nothing for `FileBusy|Traceback|exit code 1`; then drop the test pulls' tables and delete their run folders and blueprints. The scan's header says `bundle c98c60b3`: if that is the extracted bundle, `5754255e…` (D171) is not on the VM yet.
 2.  **After the hand rescue of 1 October** (Crohns, UC: `save_landed.py`): once each pull packages, its emptied tables are empty parquets; copy `saved_parquets\cosmos_parquets\*` and `saved_parquets\sneakpeek_parquets\*` over them, then drop the pull's tables in clear_projects_db (the scan lists the emptied tables, so the automatic drop does not happen). UC's split was fixed by hand for `CrohnsPatientInfo`; its working blueprint on the VM needs the same five lines (`{{PKTable}}`), as the Mac's copies now have. Infant_RSV finished (2 October 2026).
 3.  **A pull's first clean finish under D162–D165**: its log ends with `Dropped its N table(s) from PROJECTD...` (or says why they were kept), clear_projects_db no longer lists them, and `Removed <project>_blueprint.yaml from YAMLs/temp`; Author then offers it as its run folder's copy, and Run, choosing it, says only Re-pull everything pulls it again. The DROP permission is untested.
 4.  **A second new pull** takes a database the first does not use, and its manifest's `database_choice` says why. A pull split before D163, not yet executed, is split again first, so its tables are prefixed and dropped.
