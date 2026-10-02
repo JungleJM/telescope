@@ -2606,6 +2606,52 @@ def check_multiplied_reads(cohorts: list[dict[str, Any]], marker: str, result: C
                 )
 
 
+def check_unknown_reads(
+    template: dict[str, Any], cohorts: list[dict[str, Any]], marker: str, result: CompileResult
+) -> None:
+    """A table that reads a generated table this pull does not make (D178).
+
+    `{{prefix}}_<name>` names one of the pull's own temps: its PK, a fact
+    table or an upload. Any other name fails at Execute with `Invalid object
+    name` (UC's tables still joined the Crohns PK, 1 October 2026).
+    """
+    uploads = [u for u in template.get("upload_cohorts", []) or [] if isinstance(u, dict)]
+    ordered = sorted((c for c in cohorts if isinstance(c, dict)),
+                     key=lambda c: str(c.get("type", "")).lower() != "pk")  # PKs first
+    made: list[str] = []
+    # A multiplied table read by its written name is warned about already (D138).
+    for name in [n for c in ordered for n in (made_name(c), unmultiplied_name(c))] + [
+        str(u.get(key)) for u in uploads for key in ("dest_table", "name") if u.get(key)
+    ]:
+        if name and name not in made:
+            made.append(name)
+    pattern = re.compile(
+        r"(?:\{\{prefix\}\}_|" + re.escape(marker) + r")([A-Za-z0-9_]+)(?![A-Za-z0-9_])"
+    )
+    said: set[tuple[str, str]] = set()
+    for cohort in cohorts:
+        if not isinstance(cohort, dict):
+            continue
+        for _, line in cohort_sql_lines(cohort):
+            for match in pattern.finditer(line):
+                name = match.group(1)
+                pair = (unmultiplied_name(cohort), name)
+                if name in made or pair in said:
+                    continue
+                said.add(pair)
+                looks_pk = bool(re.search(r"patient|pk|cohort|people|person", name, re.I))
+                fix = ("If it is meant to be this pull's PK, read it as `{{prefix}}_{{PKTable}}`; "
+                       if looks_pk else "Name one of this pull's tables instead; ")
+                result.error(
+                    "reads_table_not_made",
+                    f"`{pair[0]}` reads `{{{{prefix}}}}_{name}`, but this pull makes no table "
+                    f"`{name}`, so it fails at Execute with `Invalid object name`. This pull makes: "
+                    + ", ".join(f"`{m}`" for m in made) + ".",
+                    f"{cohort_label(cohort)}.filter",
+                    fix=fix + "a template copied from another pull may still name that pull's tables.",
+                )
+
+
 def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: CompileResult) -> None:
     """A table that reads another fact table must come after it (D134).
 
@@ -3194,6 +3240,7 @@ def compile_yaml(
         check_sql_references(
             rendered_cohorts, dictionary, find_uploaded_pk_table(template, CompileResult()) or pk_cohort_name(rendered_cohorts), result
         )
+        check_unknown_reads(template, rendered_cohorts, temp_marker(template), result)
         check_table_order(rendered_cohorts, temp_marker(template), result)
         check_multiplied_reads(rendered_cohorts, temp_marker(template), result)
         if not result.errors:
@@ -6254,13 +6301,13 @@ class ConfigTests(MakeYamlTest):
 class AddedLinesTests(MakeYamlTest):
     """D105: extra where and join lines on a table, a recipe's included."""
 
-    ADDED_WHERE = "def.DiagnosisKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)"
+    ADDED_WHERE = "def.PatientDurableKey IN (SELECT [PatientDurableKey] FROM {{prefix}}_Patients)"
     COHORT = (
         "  - recipe: OtherDx\n"
         "    name: OtherDx\n"
         "    filter:\n"
         "      add_where:\n"
-        "        - \"def.DiagnosisKey IN (SELECT [Code] FROM {{prefix}}_MedCodes)\"\n"
+        "        - \"def.PatientDurableKey IN (SELECT [PatientDurableKey] FROM {{prefix}}_Patients)\"\n"
         "      add_join:\n"
         "        - \"INNER JOIN PatientDim AS p ON p.DurableKey = def.PatientDurableKey\"\n"
     )
@@ -6290,6 +6337,41 @@ class AddedLinesTests(MakeYamlTest):
         bad = self.COHORT.split("      add_where:")[0] + "      add_where: {a: 1}\n"
         res = compile_yaml(*self.template(bad))
         self.assertHasError(res, "bad_added_lines")
+
+
+class TableNotMadeTests(MakeYamlTest):
+    """D178: a table that reads a generated table the pull does not make."""
+
+    def template(self, join: str) -> tuple[Path, Path]:
+        text = tiny_template().replace(
+            "  - recipe: OtherDx\n    name: OtherDx\n",
+            "  - recipe: OtherDx\n    name: OtherDx\n    filter:\n      add_join:\n"
+            f"        - \"{join}\"\n",
+        )
+        return self.write_pair(text)
+
+    def test_another_pulls_pk_is_refused_naming_the_tables_it_makes(self):
+        # UC's tables joined the Crohns PK (1 October 2026) and failed at Execute.
+        res = compile_yaml(*self.template(
+            "INNER JOIN {{prefix}}_CrohnsPatientInfo AS c ON c.PatientDurableKey = def.PatientDurableKey"))
+        self.assertHasError(res, "reads_table_not_made")
+        found = [m for m in res.errors if m.code == "reads_table_not_made"]
+        self.assertIn("`CrohnsPatientInfo`", found[0].message)
+        self.assertIn("This pull makes: `Patients`", found[0].message)
+        self.assertIn("{{prefix}}_{{PKTable}}", found[0].fix)
+
+    def test_no_transfer_is_written_for_it(self):
+        template, recipes = self.template(
+            "INNER JOIN {{prefix}}_CrohnsPatientInfo AS c ON c.PatientDurableKey = def.PatientDurableKey")
+        res = build_transfer(template, recipes, write=True)
+        self.assertFalse(res.ok)
+        self.assertFalse(res.output_path and Path(res.output_path).exists())
+
+    def test_its_own_pk_and_tables_are_fine(self):
+        res = compile_yaml(*self.template(
+            "INNER JOIN {{prefix}}_Patients AS p2 ON p2.PatientDurableKey = def.PatientDurableKey"))
+        self.assertNotIn("reads_table_not_made", [m.code for m in res.errors])
+        self.assertCompiles(res)
 
 
 class TableOrderTests(MakeYamlTest):
@@ -6722,6 +6804,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "fixes": FixTests,
     "pending_transfer": PendingTransferTests,
     "sql_references": SqlReferenceTests,
+    "table_not_made": TableNotMadeTests,
     "table_order": TableOrderTests,
     "table_groups": TableGroupTests,
     "added_lines": AddedLinesTests,
