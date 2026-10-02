@@ -21,7 +21,7 @@ With it:
 
 - validate the D89.44 cases (how many have a tryptase on record, and how high: baseline above about 8 ng/mL);
 - later, exclude controls with an elevated tryptase (the ctrl\_ pull needs the same table);
-- `Value` is text and `NumericValue` a float; results like "<1.0" have no NumericValue but may have `StructuredBoundaryOperator_X` and `NumericBoundaryValue_X`.
+- `Value` is text and `NumericValue` a float; results like "\<1.0" have no NumericValue but may have `StructuredBoundaryOperator_X` and `NumericBoundaryValue_X`.
 
 ## Department Names
 

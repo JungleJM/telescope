@@ -1,0 +1,347 @@
+---
+title: "Pain Points And What Fixed Them"
+subtitle: "Telescope: from hand-built Cosmos pulls to a pipeline that plans, runs, checks and delivers them"
+date: 2026-10-02
+format:
+  html:
+    toc: true
+    toc-depth: 2
+---
+
+## How To Use This
+
+Every pain point below is one I met, with what was built to fix it. Each one
+is short so it can be lifted into a slide or said aloud. The decision numbers
+(D51 and so on) point into `plan/decisions.md` for the full reasoning, if I am
+asked to go deeper.
+
+**The work in numbers** (17 September to 2 October 2026): 321 commits in 16
+days; 187 recorded decisions; 90 defects logged and fixed by 1 October;
+about 1,050 automated tests; about 36,000 lines of Python. One person
+specified, directed, tested and ran all of it, using AI coding agents, and
+learned SQL, Python and R along the way.
+
+---
+
+## 1. The Core Problem
+
+- **Every pull was hand-built SQL.**
+  Each research question meant writing Cosmos SQL by hand, then moving the
+  results into a project database by hand.
+  *Fix:* Gen1, my first generator on the VM, wrote the SQL from a YAML
+  description of the pull. Telescope replaced it: pulls are assembled from
+  reusable recipes, checked against a data dictionary, and run by a program
+  that writes its own SQL.
+
+- **Getting more data on patients I already had meant pulling them again.**
+  To add information about, say, all Crohn's patients, I had to wait for the
+  whole cohort to be found again before anything new came back.
+  *Fix:* a patient list can be uploaded as the starting cohort. 1.28 million
+  Crohn's patients went up in about two and a half minutes, and the new
+  tables were built from them directly.
+
+- **Big pulls were unreliable.** Gen1 warned past 80 million rows, and one
+  dropped connection lost everything.
+  *Fix:* pulls are planned into sessions, batches and chunks, each recorded as
+  it finishes, so a failure costs one piece, not the whole pull.
+
+- **Gen1 had grown fragile.** One script did parsing, SQL, execution,
+  reporting and file copying.
+  - It chose which SQL to run by searching text, so `PKTable` matched
+    `PKTable2` and that table was dropped and refilled on every run (D31).
+  - It read row counts out of column names (D32).
+  - A misspelt `dedup_key` silently turned deduplication off (D28).
+  - A test row limit applied to every patient table, so a chained cohort
+    became "500 patients and then 500 of their events" (D29).
+
+  *Fix:* rebuilt from scratch, not ported (D2). Each of Gen1's hard-won
+  behaviours became a tested contract, and its architecture was dropped.
+
+---
+
+## 2. A Locked-Down Windows Machine
+
+- **Only the packages already installed.** Nothing can be added.
+  *Fix:* standard library plus the VM's own list. The Mac runs the VM's exact
+  Python and package versions, so code is tested on what it will meet.
+
+- **No web pages.** The VM blocks localhost pages and local HTML files.
+  *Fix:* the browser tool was retired for one tkinter app, Author and Run,
+  identical on the Mac and the VM (D44, D92, D93, D112).
+
+- **Running a pull from the app crashed at once** (`0xC0000142`), and a shell
+  could not be counted on.
+  *Fix:* each pull opens its own console running Python directly, closed only
+  by typing `exit` (D68).
+
+- **Windows' "check if a process is alive" kills it instead.**
+  *Fix:* a heartbeat file marks a running pull (D67).
+
+- **A click froze a finished pull.** Clicking a console window pauses all its
+  output (QuickEdit), so a done pull looked hung.
+  *Fix:* Telescope turns QuickEdit off (D143).
+
+- **A pull died with exit code 1 and left no reason.**
+  *Fix:* the log now keeps any traceback and where a native crash happened, so
+  the next one explains itself.
+
+- **The network share refuses to replace a file that anything has open.** The
+  window showing progress was blocking the pull from saving its progress.
+  *Fix:* saves wait and retry for up to five minutes, then stop with a
+  message saying who usually holds the file; the window reads less often
+  (D153, D154, D175).
+
+- **No database to test against.** Nothing on the Mac can reach Cosmos.
+  *Fix:* fake databases that fail the way real ones do (mid-batch errors,
+  partial landings), and every build checked by me on the VM.
+
+---
+
+## 3. How Cosmos And SQL Server Actually Behave
+
+- **Temporary tables vanish when the connection drops.**
+  *Fix:* the central design idea. Each part of a pull runs inside one held
+  connection, and all SQL is written before connecting (D36).
+
+- **The server's name changes on every connection.**
+  *Fix:* captured fresh each time (D37).
+
+- **Cosmos cannot reach back into the project database.**
+  *Fix:* uploads travel through the client, in fast bulk batches (D38, D54).
+
+- **SQL Server caps an `INSERT ... VALUES` at 1,000 rows, and CSV values
+  arrived as text.**
+  *Fix:* bound parameters, and CSVs converted to typed parquet (D38, D54).
+
+- **The login cannot see table metadata.**
+  *Fix:* rows are counted, never read from metadata (D33).
+
+- **Cosmos is rebuilt monthly.** A pull that spans a rebuild mixes two
+  populations.
+  *Fix:* refresh detection, and a refresh means a full re-pull (D51). Later,
+  a false alarm: Cosmos runs on several copies made minutes apart, so a
+  reconnection looked like a refresh. A refresh is now a move of more than a
+  day (D183).
+
+- **Pulls running side by side overwrote each other's temporary tables.**
+  *Fix:* every pull gets its own prefix, numbered on a clash (D50).
+
+- **The project database filled up** (20 GB cap), stopping pulls while other
+  databases stood empty.
+  *Fix:* a tool to see and clear space (D133); each pull is given the
+  database with the most room (D164); a finished pull's tables are dropped
+  once safely packaged (D165); and, agreed next, each table group is packaged
+  and emptied as it finishes, so a pull needs room only for its largest group
+  (D177).
+
+- **Pulls sharing a database dropped each other's tables.**
+  *Fix:* every project table carries its pull's prefix (D163).
+
+- **Sign-ins expire after 10 hours**, so long sessions failed partway.
+  *Fix:* the connection is reopened per table group, with one retry on an
+  expired sign-in (D176).
+
+- **One very long connection per cohort.**
+  *Fix:* table groups, each on its own connection (D134).
+
+---
+
+## 4. Silent Data Errors
+
+The worst kind: the pull says "done" and the data is wrong.
+
+- **SQL errors were being swallowed.** An error in a later statement of a
+  batch read as "no more results", so IBD Ancestry's White controls (1.2
+  million patients found) landed nothing and were marked done.
+  *Fix:* every error now fails its step, a missing row count is an error, and
+  every server message goes to the log (D151). A scan of every earlier pull
+  then found two more silent losses, one about 9 million rows short (D152).
+
+- **A "resume" feature deleted the batches it claimed to keep**, and its test
+  passed, because the test checked the wrong thing.
+  *Fix:* removed (D46). Since then every bug fix gets a test of the
+  *outcome*, what data ends up where, confirmed to fail with the bug put
+  back.
+
+- **The race split was never applied**: the Black and White cohorts were the
+  same patients. Found on the first dry run on the VM (D59).
+
+- **Chunked runs pulled only the first chunk.** Most of each batch missing,
+  silently.
+
+- **Every cohort ran in every session**: 1,120 SQL files where 168 were
+  right, with the wrong population able to land.
+
+- **An option that quietly left rows out** (`include_other`).
+  *Fix:* retired; the batches together are always the whole cohort (D76).
+
+- **A stratification with no levels** made every table vanish.
+  *Fix:* now an error naming it (D84).
+
+- **A database switch read the wrong database** and labelled it as the other
+  (D39).
+
+- **Fact tables joined to nothing** would have pulled every row in Cosmos.
+  *Fix:* an error at validation (D129).
+
+- **A copied template still joined another pull's cohort.**
+  *Fix:* an error naming what the pull actually makes (D178).
+
+- **Nullability became a hidden filter.** A column marked "never empty" added
+  an `IS NOT NULL` that turned an optional join into a required one, dropping
+  rows.
+  *Fix:* only the safe dictionary corrections applied; new columns to be left
+  optional (D172).
+
+- **A Celiac pull returned Crohn's patients.** I caught it reading the data:
+  the file sent had the wrong code.
+
+---
+
+## 5. A Data Dictionary I Could Not Fully Trust
+
+- **Types in the dictionary were wrong**, and SQL Server's error named no
+  column.
+  *Fix:* every dictionary page screenshotted and checked column by column;
+  templates no longer carry types at all, the dictionary fills them in at
+  export (784 copies removed), so one correction fixes every pull (D114,
+  D115, D130, D160).
+
+- **The dictionary listed a column Cosmos does not have**, found after an
+  11-minute query.
+  *Fix:* an audit button on the VM compares the dictionary with Cosmos, and
+  each session checks its columns exist before building anything (D155,
+  D156, D161).
+
+- **Some dictionary columns exist only in Epic's reporting tool**, not the
+  database.
+  *Fix:* only database columns are recorded (D116).
+
+- **Some "facts" about how Cosmos tables relate were convention or AI
+  paraphrase, never checked by a query.**
+  *Fix:* every fact is graded seen (on a dictionary page), counted (a query
+  ran) or said, and only the first two are trusted.
+
+---
+
+## 6. Mistakes While Authoring
+
+- **SQL typos showed up only at run time**, hours in. Infant RSV had nine
+  (wrong aliases, a misspelt column, unjoined tables).
+  *Fix:* every alias and column checked at validation and as each line is
+  typed; renaming an alias rewrites its lines (D118).
+
+- **"Valid" in the app, failing in the runner.** The saved file differed from
+  what was checked.
+  *Fix:* both read the same saved file; the saving bugs fixed (D103).
+
+- **Hand-edited YAML.**
+  *Fix:* an app with dropdowns, a picker that offers only tables that fit,
+  messages shown at the field they concern (D96, D169). Errors suggest the
+  fix and never guess what I meant (D45).
+
+- **Names that misled.** The dry run looked required; "include other" read as
+  "lump the rest"; a batch's `column` did not read as a requirement.
+  *Fix:* renamed: Preview SQL, Validation Output, `required_column` (D71,
+  D76, D80).
+
+- **Which pull is this window showing?**
+  *Fix:* both halves named in the title, one dropdown at a time (D166).
+
+- **A database field that the runner overrode.**
+  *Fix:* agreed: a "Specify Project DB" box, off by default (D179).
+
+- **Row keys and deduplication typed by hand.**
+  *Fix:* agreed: picked from the table's columns (D186).
+
+---
+
+## 7. Not Knowing What A Long Pull Was Doing
+
+- **A pull printed nothing for hours**, so slow looked the same as hung.
+  *Fix:* every phase, table and upload says when it starts and ends, timed;
+  the table in flight is shown (D136, D166).
+
+- **A finished pull looked stopped**, because only the first table's count was
+  recorded.
+  *Fix:* every table's own row count, in the log, the manifest and the
+  Status tab (D137).
+
+- **Why did it stop?**
+  *Fix:* each pull ends as finished, finished with errors, stopped by user or
+  stopped with errors, and the full manifest is viewable with errors in red
+  (D140, D144).
+
+- **Duplicates or real data?** Celiac's 1.15 million diagnoses looked like a
+  deduplication failure; they were 93 codes per patient.
+  *Fix:* every table records rows per patient (median, 90th percentile, max)
+  (D157).
+
+- **Not knowing a pull's size until it had run.**
+  *Fix:* agreed: a Count button that asks Cosmos first and builds nothing
+  (D181).
+
+---
+
+## 8. Starting Over After Every Failure
+
+- **A failure meant restarting the pull.**
+  *Fix:* a manifest records every step's status; a failed batch is retried
+  alone; chosen sessions can be re-pulled, with a case bringing its controls
+  (D9 to D14, D52, D158).
+
+- **One failure could lose finished work.**
+  *Fix:* "a bird in hand": each cohort is committed as it lands (D55).
+
+- **Random samples changed every run.**
+  *Fix:* deterministic hashing, so a result can be looked at again (D60).
+
+- **One pull at a time.**
+  *Fix:* several pulls side by side, each with its own console, lock and run
+  folder (D57, D67).
+
+---
+
+## 9. Getting Data To Clients
+
+- **Clients are not coders.**
+  *Fix:* Artifacts: parquet files, a plain-language `contents.md` (each
+  table's grain, how its patients were chosen, every column's type and
+  meaning), load scripts in R and Python, and a how-to (D72 to D75).
+
+- **Large files were slow to open.**
+  *Fix:* a parquet viewer that reads only the page on screen (D146).
+
+- **No safe place for backups** (no Git LFS; parquets kept out of GitLab).
+  *Fix:* a backup to a second drive, taken just before packaging replaces a
+  pull (D149).
+
+- **What to hand over.**
+  *Fix:* each pull's folder is the deliverable, with only the client's
+  utilities (D148).
+
+- **Tools mistaken for the vendor's.**
+  *Fix:* a credit line on every window (D145).
+
+---
+
+## 10. Building It Alone, With AI
+
+- **Learning SQL, Python and R from nothing** while building it.
+
+- **Design documents drifted apart** (seven of them).
+  *Fix:* three documents, one job each: what it is, why, and what is left. A
+  fact lives in one place (D47).
+
+- **An AI gave a reason for a rule that never had one**, and I acted on it.
+  *Fix:* an append-only decision log. Every choice has its recorded reason,
+  and reversed decisions keep theirs (D1 onward).
+
+- **Tests that passed while the bug was live.**
+  *Fix:* the outcome-test rule (Section 4).
+
+- **Several AI sessions working at once.**
+  *Fix:* a fixed cycle: the AI answers each topic in the task list and I
+  decide; decisions are written and committed before any code; fixes are
+  built in an agreed order, one commit each; results are discussed before the
+  docs change.
