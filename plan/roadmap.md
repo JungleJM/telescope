@@ -18,7 +18,7 @@ When an item here is built, delete it from this file and describe the result in 
 | `--execute <project>`, the lock, the log, the session readout (D66–D70) | Used on the VM for every run since 25 September 2026, several pulls side by side, each in its own console |
 | Launcher, now the app's Run half; its three dropdowns (D126, D140) | Opened on the VM; Validate, Export split, Preview and Execute used there, and the two dropdowns of D126. The third, and the pulls' finished and stopped words, not yet |
 | On the VM in the bundle `e126f85b…` (29 September 2026), not yet checked there: progress lines and each table's rows (D136, D137); how Execute ended (D140); Artifacts after a clean pull (D141); the run folder (D142); QuickEdit off (D143, tested against a fake console only); the Pull Manifest tab (D144); the credit line (D145); the parquet viewer's buttons (D146); extraction refusing while a pull executes, and the bundle in every window (D147); the deliverable pull folder (D148); the backup (D149); the dictionary line out (D150) | Built and tested on the Mac. The bundle's `--tdd` failed two window tests on Windows only, fixed in the tests in `0f81dc63…`, which is extracted and passes `--tdd` |
-| Errors hidden in a batch (D151), the run scan (D152), manifest saves that wait and readers that let them (D153, D154), the dictionary audit and `dictionary-fix` (D155), the column check (D156), rows per join key (D157), re-pulling chosen sessions (D158), unquoted CSV headers (D159) | On the VM since the bundle `048c3f29…` (30 September 2026). The scan and the audit have run there; the show-stopper tests are under way (task list: Proving the show-stopper is fixed) |
+| Errors hidden in a batch (D151), the run scan (D152), manifest saves that wait and readers that let them (D153, D154), the dictionary audit and `dictionary-fix` (D155), the column check (D156), rows per join key (D157), re-pulling chosen sessions (D158), unquoted CSV headers (D159) | On the VM since the bundle `048c3f29…` (30 September 2026). The scan and the audit have run there; the show-stopper tests are under way (below): manifest saves past a held manifest proven (D175) |
 | One blueprint per project (D162), Projects tables named per pull (D163), a database per pull (D164, D170, D171), drops after packaging (D165), Run and the title (D166), parquets from Status (D167), the Filters layout (D168), messages at their fields (D169) | Built and tested on the Mac; on the VM since `c98c60b3…` (1 October 2026). Seen working there: blueprints in `YAMLs\temp`, the table prefix in the manifest and SQL, the database choice, the title, the dropdowns and bold line, the step in flight, the Filters layout, messages at their fields. The current bundle is `5754255e…` (the six databases, listed in the code only) |
 | Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; on the VM in the bundle `e126f85b…`. No pull uses a group yet: the first is the question of what a group costs (below) |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself is on the VM in the bundle `e126f85b…` |
@@ -27,6 +27,22 @@ When an item here is built, delete it from this file and describe the result in 
 ## Known Bugs
 
 - **Execute sometimes ends mid-pull with exit code 1** (the IBD template, September 2026: `CrohnsPatients`, its first Cosmos session, during `upload_cohorts`, after the SneakPeek sessions finished). No summary, and the step left `running`. Every step catches Python errors, so it was either killed (Stop, or anything else on the VM: Windows gives 1) or an error outside the steps, whose traceback reached only the closing window. The log now keeps the traceback, or where a native crash happened; the next occurrence says which. The next Execute resumes it.
+- **A false "Cosmos was refreshed" starts every session over** (2 October 2026). UC_VisitsMedsDiagnoses' retry said `Cosmos was refreshed: created 2026-09-17T19:34:56.450 when last run, 2026-09-17T19:54:30.070 now`, the same for SneakPeek, and started over. Cosmos is served by several instances (D37), each with its own copy of the database, made minutes apart at a refresh; D51 compares `create_date` to the millisecond, so a connection landing on another instance reads as a refresh. A session that opens a group's connection on another instance mid-pull would fail the same way. How to fix it is in the task list (Cosmos "refreshed" when it was not).
+- **A session longer than about 10 hours fails its next landing with `Login failed for user 'NT AUTHORITY\ANONYMOUS LOGON'`**: the Projects connection outlives the Kerberos ticket it passes to Cosmos. Fix agreed (D176), below. Until then, Retry failed finishes it.
+
+------------------------------------------------------------------------
+
+## Next: Fixes, In Order
+
+Agreed 2 October 2026. One commit each, with its outcome test.
+
+1.  **The false refresh**, once the task list settles how (Known Bugs).
+2.  **The Projects connection per table group, and one retry on an expired sign-in** (D176).
+3.  **A join to a generated table the pull does not make is an error** (D178).
+4.  **Package each table group as it finishes, then empty its tables** (D177).
+5.  **Specify Project DB** (D179).
+6.  **View dbo tables and the multi-column view in Run** (D180); View dbo tables opens whatever clear_projects_db has become (task list: clear_projects_db, every database at once).
+7.  **Counts from `profile:`** (D181), in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 
 ------------------------------------------------------------------------
 
@@ -34,15 +50,16 @@ When an item here is built, delete it from this file and describe the result in 
 
 The software of D151 to D171. Extract it once no pull is executing. If the VM's `datascope.json` names `projects_databases`, delete that line first: it is refused now (D171).
 
-1.  **The show-stopper tests** (D151, D153, D154): the steps and what to paste are in the task list (Proving the show-stopper is fixed; Urgent solve commands), under way on 1 October 2026. The reader check printed `Access is denied` on the share: it refuses to replace an open file whatever the sharing flag, so only the waits (D153) carry a save past a reader, and step 3 (a manifest held for 90 seconds) is the test that decides it.
-2.  **A pull's first clean finish under D162–D165**: its log ends with `Dropped its N table(s) from PROJECTD...` (or says why they were kept), clear_projects_db no longer lists them, and `Removed <project>_blueprint.yaml from YAMLs/temp`; Author then offers it as its run folder's copy, and Run, choosing it, says only Re-pull everything pulls it again. The DROP permission is untested.
-3.  **A second new pull** takes a database the first does not use, and its manifest's `database_choice` says why. A pull split before D163, not yet executed, is split again first, so its tables are prefixed and dropped.
-4.  **The dictionary's true-only fix**: once the runs of 1 October are done, `python3.13 scope.py dictionary-fix reference/Audit/dictionary_audit_true_only.yaml` on the Mac, the YAMLs it names checked, and a bundle. The `false` findings wait for the builder to leave new columns nullable (Smaller Open Items).
-5.  **Re-pull IBD_Ancestry's white sessions** (D158): Re-pull sessions, `UCwhitePatients` and `CrohnswhitePatients`. They land, or fail loudly with the server's message (D151), which is the cause to report.
-6.  **Seen as it runs**: `setup` prints "columns checked" (D156); Status has Median per key, P90 and Max (D157); the log holds `server:` lines (D151).
-7.  **Crohns_DxHxSxRx's Meds group**, retried after `ReadyToDispenseDateKey` was taken out by hand (not in Cosmos): not yet reported.
-8.  **A supporting CSV with a quoted header** (D159) lands without its quotes.
-9.  **Small checks for later**: double-clicking a packaged table in Status opens the parquet viewer on Windows (D167).
+1.  **The show-stopper tests** (D151, D153, D154), steps and what to paste in the task list. Done: `--tdd` (two window tests failed on the VM by listing its real pulls; fixed in the tests, in the next bundle), the reader check, and step 3, which passed (D175). Left: step 4, a night's logs with nothing for `FileBusy|Traceback|exit code 1`; step 5, Execute on `test_over_zero` (split, with Author's `dd_source_not_checked` warning, as expected) must fail its run with `Divide by zero`; then drop the test pulls' tables and delete their run folders and blueprints.
+2.  **After the hand rescue of 1 October** (Crohns, UC: `save_landed.py`): once each pull packages, its emptied tables are empty parquets; copy `saved_parquets\cosmos_parquets\*` and `saved_parquets\sneakpeek_parquets\*` over them, then drop the pull's tables in clear_projects_db (the scan lists the emptied tables, so the automatic drop does not happen). UC's split was fixed by hand for `CrohnsPatientInfo`; its working blueprint on the VM needs the same five lines (`{{PKTable}}`), as the Mac's copies now have. Infant_RSV finished (2 October 2026).
+3.  **A pull's first clean finish under D162–D165**: its log ends with `Dropped its N table(s) from PROJECTD...` (or says why they were kept), clear_projects_db no longer lists them, and `Removed <project>_blueprint.yaml from YAMLs/temp`; Author then offers it as its run folder's copy, and Run, choosing it, says only Re-pull everything pulls it again. The DROP permission is untested.
+4.  **A second new pull** takes a database the first does not use, and its manifest's `database_choice` says why. A pull split before D163, not yet executed, is split again first, so its tables are prefixed and dropped.
+5.  **The dictionary's true-only fix**: once the runs of 1 October are done, `python3.13 scope.py dictionary-fix reference/Audit/dictionary_audit_true_only.yaml` on the Mac, the YAMLs it names checked, and a bundle. The `false` findings wait for the builder to leave new columns nullable (Smaller Open Items).
+6.  **Re-pull IBD_Ancestry's white sessions** (D158): Re-pull sessions, `UCwhitePatients` and `CrohnswhitePatients`. They land, or fail loudly with the server's message (D151), which is the cause to report.
+7.  **Seen as it runs**: `setup` prints "columns checked" (D156); Status has Median per key, P90 and Max (D157); the log holds `server:` lines (D151).
+8.  **Crohns_DxHxSxRx's Meds group**, retried after `ReadyToDispenseDateKey` was taken out by hand (not in Cosmos): not yet reported.
+9.  **A supporting CSV with a quoted header** (D159) lands without its quotes.
+10. **Small checks for later**: double-clicking a packaged table in Status opens the parquet viewer on Windows (D167).
 
 ------------------------------------------------------------------------
 
@@ -103,6 +120,7 @@ Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template add
 ### The App, Later
 
 - **Tabs to come across** (D96): the Cohorts cards with their connections, Graph and Recipes.
+- **A Parquets tab** after Author and Run: the parquet viewer as a tab of its own (D180).
 - **Dark mode, a nice-to-have.** The Mac's Tk follows the system's dark mode already; Windows' Tk 8.6 does not, and styling it by hand is not worth it unless the VM needs it.
 - **A later web UI**, if one is wanted, is designed on the model (D92); the old one is retired (D112).
 - **Joins to Cosmos tables** in the table builder are written out by hand; picking them from the dictionary would need its keys as data (A Join Check, below).

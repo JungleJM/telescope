@@ -331,7 +331,7 @@ cohorts:
       from:
         - EdVisitFact as evf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = evf.PatientDurableKey"
       where:
         - "evf._IsDeleted = 0"
   - name: HospitalAdmissions
@@ -448,7 +448,7 @@ cohorts:
       from:
         - HospitalAdmissionFact as haf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = haf.PatientDurableKey"
       where:
         - "haf._IsDeleted = 0"
   - name: MedOrderHistory
@@ -547,7 +547,7 @@ cohorts:
       from:
         - MedicationOrderFact as mof
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
       where:
         - "mof._IsDeleted = 0"
   - name: MedDispenseHistory
@@ -646,7 +646,7 @@ cohorts:
       from:
         - MedicationDispenseFact as mdf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
       where:
         - "mdf._IsDeleted = 0"
   - name: MedAdminHistory
@@ -703,7 +703,7 @@ cohorts:
       from:
         - MedicationAdministrationFact as maf
       join:
-        - "INNER JOIN {{prefix}}_CrohnsPatientInfo AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
+        - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
       where:
         - "maf._IsDeleted = 0"
   - recipe: IndexDiagnosis

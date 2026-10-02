@@ -94,6 +94,13 @@ class GuiTestCase(unittest.TestCase):
         self.gui = importlib.import_module(f"{package}.gui")
         self.messagebox = self.modules["tkinter.messagebox"]
 
+        # Pulls are found only in the test's folder: on the VM the folder
+        # beside scope.py holds real pulls, which the dropdowns would list.
+        from .. import pulls
+        patcher = mock.patch.object(pulls, "home_folders", lambda cwd=None: [Path(cwd or self.work)])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         from ..launcher import locate_tools
         self.app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
 

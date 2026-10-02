@@ -3272,3 +3272,182 @@ through `dictionary-fix`: they only remove a predicate. Hold the `false`
 findings until the builder leaves new columns nullable, since a column's
 nullability in its table is not its nullability in the pull; the dictionary
 can then record Cosmos's `false` as the fact it is.
+
+### D173. The task list is Markdown, and replies are marked by coloured labels
+
+**Amends D128.**
+
+**Context.** Quarto callouts showed as plain framed boxes in the user's
+editor, with colour only in Quarto Preview. The user tested 24 ways of setting
+a reply apart (`plan/tasklist format tests/`): only 4–7 of the `.md` file
+(a background-coloured box, a border-coloured box, coloured text, LaTeX
+colour) and 21 and 23 of the `.qmd` file (a styled div, coloured text) showed
+(1 October 2026).
+
+**Decision.** The task list is `plan/tasklist.md`. Each reply starts with a
+coloured label on a line of its own, Claude's blue
+(`[**🟦 Claude: <topic>**]{style="color:#4a90e2"}`) and the user's orange
+(`[**🟧 Your response:**]{style="color:#e2904a"}`), and runs until the next
+label (option 6). Option 5, the same colours as a box's border, is the
+alternative the user is open to; it would mark where a reply ends, at the cost
+of a `:::` to close.
+
+### D174. Task-list replies are boxes with a coloured border
+
+**Amends D173.**
+
+**Context.** The coloured labels of D173 (option 6) lost their colour when the
+user typed on the label's line, so their responses ended up as plain bold
+text (1 October 2026).
+
+**Decision.** Each reply is a box with a coloured border (option 5 of
+`plan/tasklist format tests/format_test.md`): Claude's blue (`#4a90e2`),
+headed `**🟦 Claude: <topic>**`, and the user's orange (`#e2904a`), headed
+`**🟧 Your response:**`, each opened by
+`::: {style="border:2px solid <colour>; border-radius:6px; padding:8px 12px; margin:8px 0;"}`
+and closed by `:::`. Claude leaves an empty line inside the orange box to type
+on. The colour lives on the box, so nothing typed inside it can lose it, and
+the closing `:::` marks where a reply ends.
+
+### D175. On the share, the waits carry a manifest save past a reader; no fallback
+
+**Follows D153 and D154.**
+
+**Context.** The reader check on the VM printed `Access is denied`: the share
+(`Z:`) refuses to replace a file that anything has open, whatever sharing flag
+the reader used, so D154's flag does nothing there. Step 3 of the show-stopper
+tests held a pull's manifest open for 90 seconds (2 October 2026): the log said
+`pullmanifest.yaml is busy (Access is denied); trying again in 60s`, twice, and
+the pull finished and packaged itself.
+
+**Decision.** The waits of D153 are enough. The fallback that was held ready,
+writing the new manifest into the existing file once the waits are spent, is
+not built.
+
+**Consequences.** A reader that holds the manifest for more than five minutes
+would still stop a pull with `FileBusy`. Nothing in Scope reads for that long;
+if it happens, the fallback is the answer.
+
+### D176. The Projects connection is opened anew with each table group, and a landing refused for an expired sign-in is tried once more
+
+**Amends D134** (one Cosmos connection per group; Projects kept for the session).
+
+**Context.** Infant_RSV's EDVisits session failed at `EDLabTestComponents` with
+`Login failed for user 'NT AUTHORITY\ANONYMOUS LOGON'` (18456), after landing
+Hospitalizations and Birth. Every landing runs on Projects and reaches Cosmos
+through the linked server (`OPENQUERY`), which passes on the user's Kerberos
+ticket through the Projects connection. That connection was opened once, when
+the session opened (02:24:34), and the failure came at 12:07:24. `klist` on the
+VM shows tickets that last exactly 10 hours (2 October 2026). SneakPeek's
+shorter sessions never reached it.
+
+**Decision.**
+
+- When the table group changes, the Projects connection is closed and opened
+  again, as the Cosmos one is. Nothing on it outlives a landing: each landing's
+  staging table is made and dropped in its own block, and each landing commits.
+- A landing that fails with 18456 or `ANONYMOUS LOGON` reconnects Projects and
+  is tried once more. It fails in `OPENQUERY`, before anything is inserted, so
+  the retry cannot double rows. A second failure fails the run, with a message
+  naming an expired sign-in as the likely cause and Retry failed as the way on.
+
+**Consequences.** A single group longer than the ticket is covered by the retry.
+The test is a fake Projects connection that refuses one landing with 18456: the
+run reconnects, lands, and the rows arrive once.
+
+### D177. A table group is packaged as soon as it finishes, then its tables are emptied
+
+**Context.** Crohns' and UC's Diagnoses runs filled their project databases
+(1 October 2026): OtherDiagnoses alone was 57 million rows, and the groups after
+it failed for space. They were rescued by hand with a one-off script
+(`save_landed.py`, in the task list's history): save each landed table to
+parquet, check its rows, empty it, and leave it out of the retry. The user
+wants this to happen by itself, by table group, since tables in a group can read
+each other.
+
+**Decision.** When every run of a table group is done, Execute writes the
+group's tables to parquet, checks each file's rows against what the runs
+recorded, and empties each table that matches (`TRUNCATE`: the space comes back
+at once, and the table stays). The manifest records the group as packaged, so a
+retry does not pull it again; Re-pull sessions and Re-pull everything do.
+Dropping the tables waits for the whole pull's packaging (D165).
+
+**Consequences.** A pull then needs room for its largest group, not its whole.
+To settle while building: Artifacts replaces the parquet folders each time
+(D72), so it must keep a packaged group's files and not overwrite them from an
+emptied table; the run scan must take an emptied table as expected, not as rows
+lost.
+
+### D178. A join to a generated table the pull does not make is an error
+
+**Context.** UC_VisitsMedsDiagnoses was copied from the Crohns template, and
+five of its tables still joined `{{prefix}}_CrohnsPatientInfo`, the Crohns PK.
+Validation said nothing; UC's Meds failed at Execute with
+`Invalid object name '##ucvis_CrohnsPatientInfo'` (1 October 2026).
+
+**Decision.** Validation reads every `{{prefix}}_<name>` a table joins. A name
+that is not one of the pull's PK, fact tables or uploads is an error, naming the
+table, the name, and the tables the pull does make (the PK first, with
+`{{PKTable}}` as the fix when the name looks like a PK).
+
+**Consequences.** The UC template on the Mac was fixed by hand (`{{PKTable}}`).
+
+### D179. Specify Project DB: a tick box, off by default; ticked means that database
+
+**Amends D164** (the blueprint's database is a preference).
+
+**Context.** Author asks for a project database, and Execute usually chooses
+another (D164), so the field reads as a setting and is not one.
+
+**Decision.** Author's Project section has **Specify Project DB**, off by
+default. Off, the blueprint carries `project_db: auto`, Export split accepts it,
+and Execute chooses (D164). Ticked, a dropdown of the listed databases (D171),
+and the choice is a **must**: Execute uses it even if another pull is there, and
+stops if it has under 6 GB free. Once the pull has run, Author shows the
+database as text, read from the run folder's manifest, with why it was chosen,
+and no field. A blueprint that names a database reads as ticked.
+
+### D180. Run opens the utilities: View dbo tables, and a multi-column view of a text tab
+
+**Decision.**
+
+- **View dbo tables**, a button in Run, opens `clear_projects_db` (D133).
+- **Multi-column view**, a button on each tab that shows text (Validation
+  Output, Pull Log, Pull Manifest), opens the transcription viewer on that
+  tab's text.
+- Each is opened through its module, imported, not by a file name typed in the
+  launcher, so a renamed utility fails a test rather than a button.
+- A **Parquets** tab after Author and Run, the parquet viewer as a tab of its
+  own, is for later (roadmap, The App, Later).
+
+### D181. Counts before, during and after a pull, from a `profile:` in the template
+
+**Context.** A set of hand-written aggregate queries for the HaT PheWAS pull
+(`plan/sql feedback formatting/profile_queries.sql`) answered quickly what a
+pull would return: cohort size, cases per quarter, the codes before the index
+code, Sex against ReliableSex (1 October 2026).
+
+**Decision.**
+
+- A PK or fact table may carry `profile:`, a list of aggregate questions in its
+  own column names: `by:` (columns, with `top:`), `dates_per_key:`, and a
+  calculated grouping as a `source` expression. Each renders as a `GROUP BY`
+  over the table's own SELECT and returns counts only; there is no free SQL.
+- Read at three moments, built in this order: a **Count** button in Run for the
+  PK alone, sent to Cosmos, building nothing (it stays available while a pull
+  runs, D67), with its SQL written to `pull_files/sql/profile.sql`; then the
+  PK's profile after it lands, against the Projects copy, into the log and the
+  manifest, and every table's profile and rows per key (D157) in `contents.md`;
+  last, fact tables in Count, a tick per table, off by default.
+- Counts are exact, small ones included: they are for checking a pull returns
+  what was expected, not for publication.
+
+### D182. No automatic restart on errors Scope recognises
+
+**Context.** The user asked whether Execute could read a failure, recognise a
+known cause (a full database, an expired sign-in) and clear and retry by itself,
+and worried it might misread one, since every failure ends with exit code 1.
+
+**Decision.** Not built. The two known causes are fixed at the source instead:
+a full database by packaging each group as it finishes (D177), an expired
+sign-in by reconnecting (D176).
