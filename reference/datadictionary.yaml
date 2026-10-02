@@ -3869,8 +3869,68 @@ DataDictionary:
         description: >
           One of the data sources in the combination
 
+  # Checked against its Cosmos dictionary page (2026-10-02; screenshots in
+  # reference/DDict image refs/DepartmentDim/): columns, types, and
+  # keys from the Columns tab's links (the page has no ER diagram).
+  # Nullability from the second screenshot's draft (required: true), not the page.
+  # Only columns with the database icon; SD-only columns left out (D116):
+  # ServiceAreaEpicId is SD only.
+  DepartmentDim:
+    description: >
+      Department dimension. Information about locations in a facility; in Cosmos a
+      department is all departments with the same specialty in the same zip code for
+      the same organization. Referenced by DepartmentKey from EncounterFact,
+      HospitalAdmissionFact and other facts; use it to group or stratify by
+      specialty, or to restrict analyses to sites fully usable in Cosmos.
+    granularity: >
+      A bed, room, room group, care area, submitter, department, location, service
+      area, facility profile, or business segment.
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      Country:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Associated country
+      DepartmentKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record. Negative keys are
+          structural placeholders, not real departments.
+      DepartmentSpecialty:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Specialty practiced in the department
+      SiteFullyUsableInCosmosEndDateKey_X:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          The last month with 25% or more of the site's monthly non-zero encounter
+          volume in the timeframe during which the site's organization has completely
+          transferred its data to Cosmos.
+      SiteFullyUsableInCosmosStartDateKey_X:
+        type: bigint (DateKey; foreign key to DateDim)
+        nullable: true
+        description: >
+          The first month with 25% or more of the site's monthly non-zero encounter
+          volume in the timeframe during which the site's organization has completely
+          transferred its data to Cosmos.
+    standard_where:
+      - "_IsDeleted = 0"
+
 # ---------------------------------------------------------------------------
-# Still to check (as of 2026-09-30)
+# Still to check (as of 2026-10-02)
 #
 # Every table in this dictionary has been checked against a screenshot of its
 # page.
@@ -3879,7 +3939,7 @@ DataDictionary:
 #   - No ER diagram on the page, so the column each foreign key lands on is not
 #     seen: PatientDim, DiagnosisTerminologyDim, LabComponentDim,
 #     LabComponentSetDim, TerminologyConceptDim, DurationDim, CoverageDim,
-#     DiagnosisDim, ProcedureDim, SourceDim, EncounterSourceBridge.
+#     DiagnosisDim, ProcedureDim, SourceDim, EncounterSourceBridge, DepartmentDim.
 #   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
 #     (description, granularity) not screenshotted.
 #   - MedicationDispenseFact: the page says Partitioned, but no column carries
@@ -3895,7 +3955,7 @@ DataDictionary:
 # Not in this dictionary, but a checked table's foreign key points at them.
 # Screenshot one before a pull joins it:
 #   - DateDim, TimeOfDayDim
-#   - ProviderDim, DepartmentDim, MedicationDim, LabDim
+#   - ProviderDim, MedicationDim, LabDim
 #   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim)
 #   - MedicationComponentBridge (MedicationAdministrationFact's
 #     MedicationComponentComboKey), which links to MedicationDim

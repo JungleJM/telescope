@@ -1,20 +1,24 @@
 # HaT PheWAS, part 1: the HaT patients and what the PheWAS needs about them.
 # Controls come later, as ctrl_ tables, with the same columns.
 #
-# Three tables, each with every column of its Cosmos tables (per the data dictionary),
+# Four tables, each with every column of its Cosmos tables (per the data dictionary),
 # so Python can cull later. Only join keys that would repeat another column are left
-# out (PatientDim.DurableKey, DiagnosisTerminologyDim.DiagnosisKey, DurationDim.DurationKey).
+# out (PatientDim.DurableKey, DiagnosisTerminologyDim.DiagnosisKey, DurationDim.DurationKey,
+# DepartmentDim.DepartmentKey, LabComponentDim.LabComponentKey). Columns from a LEFT
+# JOIN are nullable whatever the dictionary says: a missing row gives NULLs.
 #   hat_Patients     PK. One row per patient with ANY D89.44 (any Type or Status), at
 #                    their first D89.44. Also the exclusion list for controls. Python
 #                    rebuilds the case set and index date from hat_Diagnoses (Status
 #                    filter, 2-distinct-dates rule).
-#   hat_Encounters   Every encounter in the window. Observation start/end, clinic-visit
-#                    counts, DepartmentKey (DepartmentDim is not in the dictionary yet).
+#   hat_Encounters   Every encounter in the window, with its DepartmentDim row (LEFT
+#                    JOIN). Observation start/end, clinic-visit counts, specialty.
 #   hat_Diagnoses    Every ICD-10-CM diagnosis event in the window, one row per event
 #                    and code. The PheWAS events.
+#   hat_Labs         Every tryptase result in the window (8 LabComponentKeys), with its
+#                    LabComponentDim row (LEFT JOIN). Case validation; later, controls.
 #
 # Cosmos tables read: PatientDim, DiagnosisEventFact, DiagnosisTerminologyDim,
-# DurationDim, EncounterFact.
+# DurationDim, EncounterFact, DepartmentDim, LabComponentResultFact, LabComponentDim.
 #
 # Notes:
 # dt.Type = 'ICD-10-CM' is the spelling Cosmos uses (profile query 6, 2026-10-01).
@@ -338,7 +342,8 @@ cohorts:
     type: fact
     pull_this_cycle: true
     description: >
-      Every encounter for hat_Patients in the window, every EncounterFact column.
+      Every encounter for hat_Patients in the window, every EncounterFact column,
+      and every DepartmentDim column (DepartmentSpecialty) through a LEFT JOIN.
       Python derives first/last encounter (observation start/end) and clinic-visit
       counts from it. A clinic visit is a distinct DateKey with
       IsOutpatientFaceToFaceVisit = 1 and a completed DerivedEncounterStatus.
@@ -466,11 +471,31 @@ cohorts:
       - source: ef.Type
         name: EncounterType
         nullable: true
+      - source: dep.DepartmentSpecialty
+        name: DepartmentSpecialty
+        nullable: true
+      - source: dep.Country
+        name: DepartmentCountry
+        nullable: true
+      - source: dep.SiteFullyUsableInCosmosStartDateKey_X
+        name: SiteFullyUsableInCosmosStartDateKey_X
+        nullable: true
+      - source: dep.SiteFullyUsableInCosmosEndDateKey_X
+        name: SiteFullyUsableInCosmosEndDateKey_X
+        nullable: true
+      - source: dep._IsDeleted
+        name: DepartmentIsDeleted
+        nullable: true
+        description: Not filtered, so encounters keep their department either way.
+      - source: dep._IsInferred
+        name: DepartmentIsInferred
+        nullable: true
     filter:
       from:
         - EncounterFact as ef
       join:
         - "INNER JOIN {{prefix}}_hat_Patients AS pk ON pk.PatientDurableKey = ef.PatientDurableKey"
+        - "LEFT JOIN DepartmentDim AS dep ON dep.DepartmentKey = ef.DepartmentKey"
       where:
         - "ef._IsDeleted = 0"
         - "ef.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
@@ -592,3 +617,159 @@ cohorts:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
         - "dt._IsDeleted = 0"
         - "dt.Type = 'ICD-10-CM'"
+
+  - name: hat_Labs
+    dest_table: hat_Labs
+    type: fact
+    pull_this_cycle: true
+    description: >
+      Every tryptase result for hat_Patients in the window: every LabComponentResultFact
+      column and every LabComponentDim column (LEFT JOIN). Filtered to the eight
+      tryptase LabComponentKeys found on the VM (2026-10-02, LabComponentDim names,
+      common names, base names or LOINC names like '%tryptase%'), all of them kept:
+        2287  Tryptase SerPl-mCnc (mass/volume, LOINC 21582-2; the usual baseline test)
+        8166  Tryptase IgE Qn (IgE antibody to tryptase, 7748-7; not a tryptase level)
+        16740 Tryptase.beta SerPl-mCnc (60539-4)
+        51583 Tryptase Fld-mCnc (body fluid, 45334-0)
+        59082 INACTIVE Tryptase (no LOINC; DefaultUnit ng/mL)
+        75051 Tryptase SerPl-cCnc (enzymatic activity, 12733-2)
+        86072 Tryptase.mature SerPl-cCnc (enzymatic activity, 41870-7)
+        91367 Tryptase SerPl-sCnc (moles/volume, 51834-0)
+      Python validates cases (baseline tryptase above about 8 ng/mL) and, later,
+      screens controls.
+    granularity: One row per lab component result.
+    dedup_keys:
+      - [LabComponentResultKey]
+    dedup_order_by:
+      - LabComponentResultKey
+    columns:
+      - source: lcrf.PatientDurableKey
+        name: PatientDurableKey
+        nullable: false
+      - source: lcrf.LabComponentResultKey
+        name: LabComponentResultKey
+        nullable: false
+      - source: lcrf.LabComponentKey
+        name: LabComponentKey
+        nullable: false
+      - source: lcrf.PrioritizedDateKey
+        name: PrioritizedDateKey
+        nullable: true
+      - source: lcrf.Value
+        name: Value
+        nullable: false
+      - source: lcrf.NumericValue
+        name: NumericValue
+        nullable: true
+      - source: lcrf.Unit
+        name: Unit
+        nullable: true
+      - source: lcrf._IsDeleted
+        name: IsDeleted
+        nullable: false
+      - source: lcrf._IsInferred
+        name: IsInferred
+        nullable: false
+      - source: lcrf.Abnormal
+        name: Abnormal
+        nullable: true
+      - source: lcrf.CollectionInstant
+        name: CollectionInstant
+        nullable: true
+      - source: lcrf.Count
+        name: Count
+        nullable: false
+      - source: lcrf.EncounterKey
+        name: EncounterKey
+        nullable: true
+      - source: lcrf.Flag
+        name: Flag
+        nullable: true
+      - source: lcrf.IsBlankOrUnsuccessfulAttempt
+        name: IsBlankOrUnsuccessfulAttempt
+        nullable: true
+      - source: lcrf.LabTestKey_X
+        name: LabTestKey_X
+        nullable: true
+      - source: lcrf.NumericBoundaryValue_X
+        name: NumericBoundaryValue_X
+        nullable: true
+      - source: lcrf.NumericValueMaximum_X
+        name: NumericValueMaximum_X
+        nullable: true
+      - source: lcrf.NumericValueMinimum_X
+        name: NumericValueMinimum_X
+        nullable: true
+      - source: lcrf.PrioritizedInstant_X
+        name: PrioritizedInstant_X
+        nullable: true
+      - source: lcrf.ProcedureDurableKey
+        name: ProcedureDurableKey
+        nullable: true
+      - source: lcrf.ReferenceValueHigh_X
+        name: ReferenceValueHigh_X
+        nullable: false
+      - source: lcrf.ReferenceValueLow_X
+        name: ReferenceValueLow_X
+        nullable: true
+      - source: lcrf.ReferenceValueNormal_X
+        name: ReferenceValueNormal_X
+        nullable: true
+      - source: lcrf.ResultingLabDurableKey
+        name: ResultingLabDurableKey
+        nullable: true
+      - source: lcrf.ResultInstant
+        name: ResultInstant
+        nullable: true
+      - source: lcrf.SourceComboKey
+        name: SourceComboKey
+        nullable: true
+      - source: lcrf.StructuredBoundaryOperator_X
+        name: StructuredBoundaryOperator_X
+        nullable: true
+      - source: lcd._IsDeleted
+        name: ComponentIsDeleted
+        nullable: true
+      - source: lcd._IsInferred
+        name: ComponentIsInferred
+        nullable: true
+      - source: lcd.Abbreviation
+        name: Abbreviation
+        nullable: true
+      - source: lcd.BaseName
+        name: BaseName
+        nullable: true
+      - source: lcd.CommonName
+        name: CommonName
+        nullable: true
+      - source: lcd.DataType
+        name: ComponentDataType
+        nullable: true
+      - source: lcd.DefaultUnit
+        name: DefaultUnit
+        nullable: true
+      - source: lcd.LoincCode
+        name: LoincCode
+        nullable: true
+      - source: lcd.LoincName
+        name: LoincName
+        nullable: true
+      - source: lcd.Name
+        name: ComponentName
+        nullable: true
+      - source: lcd.Subtype
+        name: ComponentSubtype
+        nullable: true
+      - source: lcd.Type
+        name: ComponentType
+        nullable: true
+    filter:
+      from:
+        - LabComponentResultFact as lcrf
+      join:
+        - "INNER JOIN {{prefix}}_hat_Patients AS pk ON pk.PatientDurableKey = lcrf.PatientDurableKey"
+        - "LEFT JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
+      where:
+        - "lcrf._IsDeleted = 0"
+        - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+        - "lcrf.LabComponentKey IN (2287, 8166, 16740, 51583, 59082, 75051, 86072, 91367)"
