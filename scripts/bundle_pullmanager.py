@@ -61,10 +61,12 @@ CONTENT_ID_NAME = "content_id.txt"
 # is never simply destroyed -- which also suits hand-patching a file there and
 # copying it back.
 #
-# Recipes, the browser UI and the template example stay on the Mac (D49). The
-# VM works from transfer YAMLs, which carry their recipes written out in full,
-# and it cannot open the browser UI anyway; the app's Author half adjusts
-# them there (D94). Nothing the user authors is bundled.
+# The browser UI and the template example stay on the Mac (D49). The VM works
+# from transfer YAMLs, which carry their recipes written out in full, and it
+# cannot open the browser UI anyway; the app's Author half adjusts them there
+# (D94). For now recipes.yaml travels too, so Author on the VM can add recipes
+# (D187, reversing that part of D49 for a while). Nothing else the user
+# authors is bundled.
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 import makeYaml  # noqa: E402  the core files' places (D111)
@@ -79,6 +81,8 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     # from where datascope.json says; published where makeYaml's default
     # finds it in the extracted tree (D111).
     (makeYaml.core_path("datadictionary"), "reference/datadictionary.yaml", "replace"),
+    # For now (D187): recipes, so Author on the VM lists and adds them.
+    (makeYaml.core_path("recipes"), "reference/recipes.yaml", "replace"),
 )
 # .env is deliberately not shipped. Both hosts are DNS aliases with defaults
 # and the database names come from the manifest, so there is nothing to

@@ -52,7 +52,7 @@ The pull takes more than the analysis needs: every column, and rows the analysis
 
 - `IndexIsDeleted`, `IndexDxIsDeleted`, `PatientIsDeleted`, `IsDeleted` (Encounters, Diagnoses, Labs), `TerminologyIsDeleted`: always 0.
 - `IndexICDCode` (always D89.44), `IndexICDType` and Diagnoses' `Vocabulary` (always ICD-10-CM).
-- `PatientDim`'s `IsCurrent`, `IsValid`, `UseInCosmosAnalytics_X` are filtered too, but not pulled.
+- `IsCurrent`, `IsValid`, `UseInCosmosAnalytics_X` (hat_Patients, from PatientDim): always 1.
 
 **Columns of little use to a PheWAS** (look once, then drop): the `…DisplayString` and `…WeeksDisplayString`-style duration strings, `SourceComboKey`s, `Count`, the `Svi…2018_X` columns where the 2020 ones are present, `LastImmunizationQueryInstantUtc`, `BloodType_X` and the Rhesus columns.
 

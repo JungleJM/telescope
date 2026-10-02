@@ -134,6 +134,7 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 
 ### Smaller Open Items
 
+- **Recipes ship for a while** (D187). When the user says to stop: remove the `recipes` entry from `COMPANION_FILES` in `bundle_pullmanager.py`, put back the bundle tests' expectation that no recipes file travels, and the next extraction removes the VM's copy (an edited one kept as `.local`).
 - **The builder leaves new columns nullable** (D172), so a table's nullability in Cosmos stops becoming a row filter (`IS NOT NULL`, which turns a LEFT JOIN into an INNER one), and the audit's 327 `false` findings can then be written into the dictionary as facts. Agreed, not yet built: `_column_from` in the model.
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names. Under multipliers a fact table read this way names the base table, not its level's copy (`UCOrders`), and fails at Execute; validation warns meanwhile (D139).

@@ -3518,3 +3518,26 @@ key shows only for an uploaded PK. Deduplication (`dedup_keys`,
   latest (largest, `col DESC`). Without Keep, the note says which duplicate
   survives is arbitrary. Several key sets stay possible by hand.
 - One column picker serves both, and `profile:` (D181) after them.
+
+### D187. Recipes ship to the VM for a while
+
+**Context.** D49 kept `recipes.yaml` on the Mac: the VM works from blueprints
+with their recipes written out, and two copies could disagree. The user wants
+recipes on the VM for now (2 October 2026), so Author there can add them.
+
+**Decision.** The bundle carries `recipes.yaml` as `reference/recipes.yaml`,
+where makeYaml's default finds it, replaced on extraction like the dictionary
+(an edited copy kept as `.local`). Temporary: it reverses only the recipes
+part of D49, and comes out when the user says.
+
+- On the VM, Prefabricated lists the Mac's recipes, and a template naming
+  recipes validates without `--recipes`. A blueprint still names none, so
+  nothing that already runs changes.
+- The Mac stays the source. A recipe saved on the VM goes to its copy, which
+  the next bundle replaces (the edit kept as `.local`, not merged back).
+- Without a recipes file a template that names recipes is still refused with
+  `recipes_not_found`; the tests check it by removing the shipped copy.
+
+**Consequences.** Two copies again, D49's original worry, accepted for now
+because the Mac's overwrites the VM's on every bundle. How to undo it is in
+the roadmap.

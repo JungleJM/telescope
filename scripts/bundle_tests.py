@@ -173,16 +173,23 @@ class ExtractionPolicyTests(BundleTestCase):
         extract(self.bundle, target)
         return target
 
-    def test_recipes_and_authoring_stay_on_the_mac(self):
-        # D49: the VM works from transfer YAMLs, so neither recipes nor the
-        # browser UI nor a template to author from travel.
+    def test_recipes_travel_for_now(self):
+        # D187: recipes.yaml ships where makeYaml's default finds it, as the
+        # Mac's copy, so Author on the VM lists the same recipes.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        shipped = target / "reference" / "recipes.yaml"
+        self.assertEqual(shipped.read_bytes(), RECIPES_PATH.read_bytes())
+
+    def test_authoring_stays_on_the_mac(self):
+        # D49: the VM works from transfer YAMLs, so neither the browser UI nor
+        # a template to author from travel (recipes do for now, D187).
         target = self.tmp / "runtime"
         extract(self.bundle, target)
         for rel in (
             "YAMLs/recipes.yaml",
             "YAMLs/template.yaml",
             "YAMLs/template.yaml.example",
-            "reference/recipes.yaml",
             "reference/template.yaml",
             "scripts/yamlmanager.py",
             "scripts/yamlmanager_backend.py",
@@ -659,9 +666,9 @@ class EndToEndTests(BundleTestCase):
         self.assertIn("Sessions:", proc.stdout)
 
     def test_the_apps_author_adjusts_a_transfer_yaml_on_the_vm(self):
-        # D93, D94: in the extracted tree, with no recipes, the model opens a
-        # transfer YAML from the working folder, saves the change as an intake,
-        # and exports the transfer again beside scope.py.
+        # D93, D94: in the extracted tree the model opens a transfer YAML from
+        # the working folder, saves the change as an intake, and exports the
+        # transfer again beside scope.py. It finds the shipped recipes (D187).
         work = self.tmp / "work"
         shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
         export = self.run_python(
@@ -687,7 +694,7 @@ class EndToEndTests(BundleTestCase):
         proc = subprocess.run([sys.executable, "-c", script, str(target / "scripts")],
                               capture_output=True, text=True, cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertIn("home work recipes False", proc.stdout)
+        self.assertIn("home work recipes True", proc.stdout)
         # D162: on the VM the saved file is the blueprint Run takes, and the
         # older copy it was opened from is moved aside, so one copy is left.
         self.assertIn("saved True YAMLs/temp/Manager_Valid_Basic_blueprint.yaml", proc.stdout)
@@ -699,8 +706,9 @@ class EndToEndTests(BundleTestCase):
 
     def test_the_vm_pathway_from_a_transfer_yaml(self):
         # D49 end to end. On the Mac: export a transfer YAML. On the VM, with
-        # no recipes anywhere: split it from the working directory by a typed
-        # relative path, then dry-run the manifest.
+        # no recipes anywhere (the shipped copy removed, D187): split it from
+        # the working directory by a typed relative path, then dry-run the
+        # manifest.
         work = self.tmp / "work"
         shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
         export = self.run_python(
@@ -713,6 +721,7 @@ class EndToEndTests(BundleTestCase):
 
         target = self.tmp / "runtime"
         extract(self.bundle, target)
+        (target / "reference" / "recipes.yaml").unlink()
         self.assertFalse((target / "YAMLs" / "recipes.yaml").exists())
         split = subprocess.run(
             [sys.executable, str(target / "scripts" / "makeYaml.py"),
@@ -728,9 +737,26 @@ class EndToEndTests(BundleTestCase):
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
         self.assertTrue(any((work / "sql").rglob("*.sql")))
 
-    def test_a_template_that_still_uses_recipes_is_refused_with_a_pointer(self):
+    def test_a_template_that_uses_recipes_validates_with_the_shipped_recipes(self):
+        # D187: with recipes.yaml shipped, a template naming recipes validates
+        # on the VM, with no --recipes typed.
         target = self.tmp / "runtime"
         extract(self.bundle, target)
+        work = self.tmp / "work"
+        shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
+        proc = subprocess.run(
+            [sys.executable, str(target / "scripts" / "makeYaml.py"),
+             "--template", "01_valid_basic.yaml", "--validate"],
+            capture_output=True, text=True, cwd=work,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("recipes_not_found", proc.stdout)
+
+    def test_a_template_that_still_uses_recipes_is_refused_with_a_pointer(self):
+        # Without a recipes file (the shipped copy removed), still refused.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        (target / "reference" / "recipes.yaml").unlink()
         work = self.tmp / "work"
         shutil.copytree(REPO_ROOT / "YAMLs" / "manager_test_cases", work)
         proc = subprocess.run(
