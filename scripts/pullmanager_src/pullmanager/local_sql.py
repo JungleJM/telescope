@@ -161,18 +161,37 @@ def render_row_counts(
     In a run, the Projects side counts only this batch's rows: the destination
     also holds every earlier batch, which the Cosmos temp does not.
     """
-    dest = str(cohort["dest_table"])
-    table = destination(project_db, dest, table_prefix)
-    where = (
-        f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
+    return (
+        render_cosmos_count(cohort, linked_server, prefix) + "\n\n"
+        + render_projects_count(cohort, project_db, label, table_prefix)
     )
+
+
+def render_cosmos_count(
+    cohort: dict[str, Any], linked_server: str, prefix: str = DEFAULT_TEMP_PREFIX
+) -> str:
+    """The Cosmos temp's rows, read through the linked server."""
+    dest = str(cohort["dest_table"])
     remote = f"SELECT 1 AS dummy FROM {global_temp(dest, prefix)}".replace("'", "''")
     return (
         "SELECT\n"
         f"    {quote_literal(dest)} AS [DestTable],\n"
         "    'cosmos' AS [Side],\n"
         "    COUNT_BIG(1) AS [RowCount]\n"
-        f"FROM OPENQUERY([{linked_server}], '{remote}');\n\n"
+        f"FROM OPENQUERY([{linked_server}], '{remote}');"
+    )
+
+
+def render_projects_count(
+    cohort: dict[str, Any], project_db: str, label: str | None = None, table_prefix: str = ""
+) -> str:
+    """The rows that landed (in a run, this batch's)."""
+    dest = str(cohort["dest_table"])
+    table = destination(project_db, dest, table_prefix)
+    where = (
+        f"\nWHERE {quote_name(BATCH_COLUMN)} = {quote_literal(label)}" if label is not None else ""
+    )
+    return (
         "SELECT\n"
         f"    {quote_literal(dest)} AS [DestTable],\n"
         "    'projects' AS [Side],\n"
@@ -273,9 +292,13 @@ def render_phase(doc: dict[str, Any], block_prefix: str, linked_server: str) -> 
                     meta={"clears": label, "destination": destination(str(project_db), dest, tables)},
                 )
             )
+        # Every read through the linked server comes before the insert (D176): a
+        # landing refused there (an expired sign-in) has inserted nothing, so
+        # it can be tried again without doubling rows.
         parts = [
+            render_cosmos_count(cohort, linked_server, prefix),
             render_transfer(cohort, str(project_db), linked_server, label, prefix, tables),
-            render_row_counts(cohort, str(project_db), linked_server, label, prefix, tables),
+            render_projects_count(cohort, str(project_db), label, tables),
         ]
         probe = render_length_probe(cohort)
         if probe:

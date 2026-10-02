@@ -1493,16 +1493,19 @@ class TableGroupTests(SessionTestCase):
         data["sessions"][0]["runs"] = runs
         dump_yaml(data, self.root / "pullmanifest.yaml")
 
-    def execute(self, *, refuse_after=None, retry_failed=False):
+    def execute(self, *, refuse_after=None, retry_failed=False, projects=None):
         """Each Cosmos connection a fake of its own, `inst1`, `inst2`...; the
-        Cosmos connections after the first `refuse_after` are refused."""
+        Cosmos connections after the first `refuse_after` are refused. One
+        Projects fake (`projects` its options), counted each time it is opened."""
         self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
         self.cosmoses: list[FakeConnection] = []
-        self.projects = FakeConnection("projects", tables=self.tables)
+        self.projects = FakeConnection("projects", tables=self.tables, **(projects or {}))
+        self.projects_opened = 0
         self.said = []
 
         def connect_fn(conn_str, **_):
             if "PROJECTD" in conn_str:
+                self.projects_opened += 1
                 return self.projects
             if refuse_after is not None and len(self.cosmoses) >= refuse_after:
                 raise DatabaseError("Could not connect to COSMOS (COSMOS): login timeout")
@@ -1579,13 +1582,69 @@ class TableGroupTests(SessionTestCase):
         self.assertEqual(self.tables[self.ADMISSIONS], Counter({"all": 10}))
         self.assertEqual(self.tables[DEST], Counter({"all": 10}))
 
+    def test_each_group_opens_projects_anew(self):
+        # D176: the sign-in a landing carries to Cosmos is the Projects
+        # connection's, so each group gets a fresh one, as it does for Cosmos.
+        self.make_grouped()
+        report = self.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(self.projects_opened, 2)
+
+    EXPIRED = ("[28000] Login failed for user 'NT AUTHORITY\\ANONYMOUS LOGON'. (18456)")
+
+    def test_a_landing_refused_for_an_expired_sign_in_is_tried_once_more(self):
+        # Infant_RSV, 2 October 2026: 18456 at a landing ten hours in. The run
+        # reconnects Projects, lands again, and the rows arrive once.
+        self.make_grouped()
+        report = self.execute(projects={"fail_once": {
+            r"OPENQUERY\(\[inst2\], 'SELECT 1 AS dummy FROM ##\S*_Admissions": self.EXPIRED}})
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(self.projects_opened, 3)
+        self.assertEqual(self.tables[self.ADMISSIONS], Counter({"all": 10}))
+        self.assertEqual(self.tables[DEST], Counter({"all": 10}))
+        self.assertTrue(any("sign-in refused" in line for line in self.said), self.said)
+
+    def test_a_refusal_at_the_transfer_itself_does_not_double_rows(self):
+        # The second read through the linked server, the one that fetches the
+        # rows: still before the insert, so the retry lands them once.
+        self.make_grouped()
+        report = self.execute(projects={"fail_once": {
+            r"INTO #\S*Admissions\s+FROM OPENQUERY": self.EXPIRED}})
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(self.tables[self.ADMISSIONS], Counter({"all": 10}))
+
+    def test_every_linked_server_read_comes_before_the_insert(self):
+        # What makes the retry safe: a landing reads Cosmos only before it inserts.
+        self.make_grouped()
+        self.execute()
+        landings = [sql for sql in self.projects.executed if "INSERT INTO PROJECTD" in sql]
+        self.assertTrue(landings)
+        for sql in landings:
+            self.assertLess(sql.rfind("OPENQUERY"), sql.find("INSERT INTO PROJECTD"), sql)
+
+    def test_refused_twice_fails_the_run_naming_the_sign_in(self):
+        self.make_grouped()
+        report = self.execute(projects={"failures": {
+            r"OPENQUERY\(\[inst2\], 'SELECT 1 AS dummy FROM ##\S*_Admissions": self.EXPIRED}})
+        self.assertEqual([label for label, _ in report.failed], ["Patients__Visits"])
+        self.assertIn("expired Kerberos ticket", report.failed[0][1])
+        self.assertIn("Retry failed", report.failed[0][1])
+        self.assertNotIn(self.ADMISSIONS, {k for k, v in self.tables.items() if v})
+
+    def test_another_error_is_not_tried_again(self):
+        self.make_grouped()
+        report = self.execute(projects={"fail_once": {
+            r"OPENQUERY\(\[inst2\], 'SELECT 1 AS dummy FROM ##\S*_Admissions": "timeout"}})
+        self.assertEqual([label for label, _ in report.failed], ["Patients__Visits"])
+        self.assertEqual(self.projects_opened, 2)
+
     def test_the_progress_names_the_group(self):
         self.make_grouped()
         self.execute()
         steps = [re.sub(r"^  \d\d:\d\d:\d\d  ", "", line) for line in self.said]
         self.assertIn("run Meds started", steps)
         self.assertIn("run Visits started", steps)
-        self.assertIn("table group Visits: new Cosmos connection on inst2", steps)
+        self.assertIn("table group Visits: new Cosmos connection on inst2, new Projects connection", steps)
         self.assertEqual(len([s for s in steps if "new Cosmos connection" in s]), 1)
 
     def test_artifacts_packages_every_group_and_a_finished_one_alone(self):

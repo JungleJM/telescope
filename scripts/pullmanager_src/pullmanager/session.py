@@ -62,6 +62,13 @@ MAX_PREFIX_NUMBER = 99
 LARGE_ROW_WARNING = 80_000_000
 
 
+def expired_sign_in(exc: BaseException) -> bool:
+    """A refusal that a fresh connection mends: login failed (18456), or the
+    linked server reached as ANONYMOUS LOGON, once the ticket has expired."""
+    text = str(exc)
+    return "18456" in text or "ANONYMOUS LOGON" in text.upper()
+
+
 class SessionError(RuntimeError):
     """Raised when a session cannot proceed."""
 
@@ -195,13 +202,29 @@ class SessionRunner:
         if not project_db:
             raise SessionError(f"{self.session.session_id}: setup.yaml has no project_db.")
         self.project_db = str(project_db)
+        self._open_projects()
+        self.say(f"connected: Cosmos on {linked_server}, Projects {self.project_db}")
+        self.manifest.save()
+
+    def _open_projects(self) -> None:
+        """A fresh Projects connection, closing the old one (D176).
+
+        Every landing reaches Cosmos through the linked server on this
+        connection, carrying the sign-in it was opened with, which expires
+        after 10 hours on the VM. Nothing on it outlives a landing: each
+        landing's staging table is its own, and each landing commits.
+        """
+        old, self.projects = self.projects, None
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
         self.projects = self._connect(
             self.settings.projects_connection_string(self.project_db),
             login_timeout=self.settings.login_timeout,
             query_timeout=self.settings.query_timeout,
         )
-        self.say(f"connected: Cosmos on {linked_server}, Projects {self.project_db}")
-        self.manifest.save()
 
     def say(self, text: str, depth: int = 0) -> None:
         """One progress line: the time, then the step, indented under its unit."""
@@ -243,7 +266,9 @@ class SessionRunner:
         linked_server = self._open_cosmos()
         self._begin_epoch(linked_server)
         self._pk_temp_missing = True
-        self.say(f"{name}: new Cosmos connection on {linked_server}")
+        # Projects anew too (D176), so its sign-in is as fresh as the group.
+        self._open_projects()
+        self.say(f"{name}: new Cosmos connection on {linked_server}, new Projects connection")
         doc = self._phase_doc("upload_cohorts")
         for cohort in uploads.enabled_uploads(doc):
             dest = uploads.upload_dest(cohort)
@@ -1069,8 +1094,30 @@ class SessionRunner:
         return server_rows, local_rows
 
     def _land(self, block: Any, local_rows: dict[str, int]) -> None:
-        """Transfer one cohort into Projects and commit it."""
-        outcome = self._execute(self.projects, block.sql, label=block.block_id)
+        """Transfer one cohort into Projects and commit it.
+
+        A landing refused for an expired sign-in (D176) is tried once more on a
+        new Projects connection. It fails reading through the linked server,
+        which every landing does before it inserts, so nothing is doubled.
+        """
+        try:
+            outcome = self._execute(self.projects, block.sql, label=block.block_id)
+        except Exception as exc:
+            if not expired_sign_in(exc):
+                raise
+            self.say(f"{self._at()}{block.dest_table}: sign-in refused (expired?); "
+                     "new Projects connection, trying once more", 1)
+            self._open_projects()
+            try:
+                outcome = self._execute(self.projects, block.sql, label=block.block_id)
+            except Exception as again:
+                if not expired_sign_in(again):
+                    raise
+                raise SessionError(
+                    f"{block.dest_table}: Projects refused the sign-in twice ({again}). "
+                    "The likely cause is an expired Kerberos ticket (they last 10 hours "
+                    "on the VM): Retry failed pulls it again on a fresh connection."
+                ) from again
         for row in outcome.rows_of("DestTable", "Side", "RowCount"):
             if row["Side"] == "projects":
                 local_rows[str(row["DestTable"])] = int(row["RowCount"])
