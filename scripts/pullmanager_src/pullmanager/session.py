@@ -263,7 +263,7 @@ class SessionRunner:
         `--execute` compares before any session opens and starts everything
         over if Cosmos moved. This catches a refresh during the run itself.
         """
-        stamps = refresh.read_stamps(self.cosmos)
+        stamps, server = refresh.read(self.cosmos)
         used = refresh.databases_used(self.manifest)
         moved = refresh.changes(self.manifest, stamps, used)
         if moved:
@@ -272,9 +272,13 @@ class SessionRunner:
                 f"Cosmos was refreshed while this pull was running ({described}). Nothing "
                 "more was pulled. Run --execute again: every session will start over."
             )
+        for name, before, after in refresh.same_refresh(self.manifest, stamps, used):
+            self.say(f"{name}: created {after} on {server or 'this instance'}, {before} recorded: "
+                     "another instance, same refresh (D183).", 1)
         seen = {name: value for name, value in stamps.items() if name.lower() in used}
         for name, value in seen.items():
             self.manifest.cosmos_refresh.setdefault(name, value)
+        refresh.record_instance(self.manifest, server, stamps, used)
         self.session.runtime["cosmos_created"] = seen
 
     def _session_temps(self, prefix: str) -> list[str]:

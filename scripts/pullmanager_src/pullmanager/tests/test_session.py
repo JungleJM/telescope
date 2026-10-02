@@ -29,6 +29,8 @@ from ..yaml_io import dump_yaml, load_yaml
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "split"
 INSTANCE = "et4003vpdsql032"
 LAST_REFRESH = datetime(2026, 9, 17, 19, 34, 56, 450000)
+# UC's retry, 2 October 2026: another instance's copy of the same refresh (D183).
+OTHER_INSTANCE_COPY = datetime(2026, 9, 17, 19, 54, 30, 70000)
 NEXT_REFRESH = datetime(2026, 10, 15, 19, 30, 2, 100000)
 DEST = "PROJECTD33A929.dbo.OtherHospitalizations"
 PK_DEST = "PROJECTD33A929.dbo.Patients"
@@ -252,8 +254,9 @@ class FakeConnection:
                 1234 if name.lower() in self.existing_temps else None for name in names
             )])]
         if "sys.databases" in sql:
-            return [(["name", "create_date"],
-                     [("Cosmos", self.created), ("Cosmos_SneakPeek", self.created)])]
+            return [(["name", "create_date", "server"],
+                     [("Cosmos", self.created, self.instance),
+                      ("Cosmos_SneakPeek", self.created, self.instance)])]
         if sql.startswith("SELECT DISTINCT [") and self.found_values is not None:
             return [(["value"], [(v,) for v in self.found_values])]
         if "SELECT DISTINCT" in sql:
@@ -745,11 +748,15 @@ class RefreshTests(SessionTestCase):
         self.stamps = [LAST_REFRESH]
         self.opened: list[str] = []
 
+        self.instances = ["et4003vpdsql032"]
+
     def connect(self, conn_str, **_):
         self.opened.append(conn_str)
         if "PROJECTD" in conn_str:
             return FakeConnection("projects", tables=self.tables)
-        return FakeConnection("cosmos", created=self.stamps.pop(0) if len(self.stamps) > 1 else self.stamps[0])
+        instance = self.instances.pop(0) if len(self.instances) > 1 else self.instances[0]
+        return FakeConnection("cosmos", instance=instance,
+                              created=self.stamps.pop(0) if len(self.stamps) > 1 else self.stamps[0])
 
     def execute(self, **flags):
         args = argparse.Namespace(**{"env": None, "repull": False, "retry_failed": False, **flags})
@@ -795,6 +802,36 @@ class RefreshTests(SessionTestCase):
         self.assertEqual(code, 1)
         self.assertIn("refreshed while this pull was running", out)
         self.assertNotIn(DEST, self.tables)
+
+    def test_another_instance_minutes_newer_is_the_same_refresh(self):
+        # D183: UC's retry read 19:54:30 against a recorded 19:34:56, from another
+        # instance, and started every session over. It must not.
+        self.execute()
+        self.stamps = [OTHER_INSTANCE_COPY]
+        self.instances = ["et4003vpdsql033"]
+        self.opened.clear()
+        code, out, manifest = self.execute()
+        self.assertEqual(code, 0)
+        self.assertNotIn("was refreshed", out)
+        self.assertIn("another instance, same refresh", out)
+        self.assertEqual(len(self.opened), 1, "the finished session must not be pulled again")
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+        # The first value stands for the refresh; each instance keeps its own.
+        self.assertEqual(manifest.cosmos_refresh, {"Cosmos": "2026-09-17T19:34:56.450"})
+        self.assertEqual(manifest.cosmos_refresh_instances, {
+            "et4003vpdsql032": {"Cosmos": "2026-09-17T19:34:56.450"},
+            "et4003vpdsql033": {"Cosmos": "2026-09-17T19:54:30.070"},
+        })
+
+    def test_another_instance_during_the_run_does_not_stop_the_session(self):
+        # A table group's new connection (D134) can land on another instance.
+        self.stamps = [LAST_REFRESH, OTHER_INSTANCE_COPY]
+        self.instances = ["et4003vpdsql032", "et4003vpdsql033"]
+        code, out, manifest = self.execute()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("refreshed while this pull was running", out)
+        self.assertEqual(self.tables[DEST], Counter({"Female": 10, "Male": 10}))
+        self.assertTrue(all(run.status == "done" for run in manifest.sessions[0].runs))
 
     def test_repull_starts_a_finished_pull_over(self):
         self.execute()

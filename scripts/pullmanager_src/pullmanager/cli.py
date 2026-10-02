@@ -678,8 +678,9 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
     except DatabaseError as exc:
         print(f"ERROR could not connect to Cosmos: {exc}", file=sys.stderr)
         return 1
+    server = ""
     try:
-        stamps = refresh.read_stamps(probe)
+        stamps, server = refresh.read(probe)
     except Exception as exc:
         stamps = {}
         print(f"WARNING could not read Cosmos's create_date ({exc}); a refresh cannot be detected.")
@@ -688,7 +689,7 @@ def _execute(manifest: Manifest, args: argparse.Namespace, connect_fn=None,
             probe.close()
         except Exception:
             pass
-    for line in refresh.reconcile(manifest, stamps, refresh.databases_used(manifest)):
+    for line in refresh.reconcile(manifest, stamps, refresh.databases_used(manifest), server):
         print(line)
     manifest.save()
     # D164: its first Execute gives the pull a Projects database of its own.

@@ -331,6 +331,11 @@ class Manifest:
         return self._data.setdefault("cosmos_refresh", {})
 
     @property
+    def cosmos_refresh_instances(self) -> dict[str, dict[str, str]]:
+        """Each instance's (by server name) own `create_date`s, as last seen (D183)."""
+        return self._data.setdefault("cosmos_refresh_instances", {})
+
+    @property
     def last_execute(self) -> dict[str, Any]:
         """When the latest Execute started and ended, its exit code and how
         it ended (D140). Empty before the first; `ended_at` stays empty when
