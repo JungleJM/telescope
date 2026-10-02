@@ -1,0 +1,943 @@
+transfer:
+  from_template: HaT_PheWAS_intake.yaml
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 20150101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: HaT PheWAS
+vars: {}
+upload_cohorts: []
+multipliers: []
+batching:
+- name: chunk
+  kind: row_chunk
+  rows_per_batch: 1000
+  applies_to: PKTable
+cohorts:
+- name: hat_Patients
+  dest_table: hat_Patients
+  type: pk
+  pull_this_cycle: true
+  description: "Every patient with at least one D89.44 (hereditary alpha tryptasemia),\
+    \ at their first D89.44: the index diagnosis event, its terminology row, age,\
+    \ and every PatientDim column.\n"
+  granularity: "One row per patient, at the earliest D89.44 diagnosis event."
+  dedup_keys:
+  - - PatientDurableKey
+  dedup_order_by:
+  - IndexDate
+  - IndexDiagnosisEventKey
+  columns:
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: def.StartDateKey
+    name: IndexDate
+    nullable: true
+    description: DateKey (YYYYMMDD) of the first D89.44.
+    type: BIGINT
+  - source: def.DiagnosisEventKey
+    name: IndexDiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: def.EncounterKey
+    name: IndexEncounterKey
+    nullable: true
+    type: BIGINT
+  - source: dt.Value
+    name: IndexICDCode
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dur.Years
+    name: AgeAtIndex
+    nullable: true
+    description: Age in years at the first D89.44 (AgeKey through DurationDim).
+    type: INT
+  - source: def._IsDeleted
+    name: IndexIsDeleted
+    nullable: false
+    type: TINYINT
+  - source: def._IsInferred
+    name: IndexIsInferred
+    nullable: false
+    type: TINYINT
+  - source: def.AgeKey
+    name: IndexAgeKey
+    nullable: true
+    type: BIGINT
+  - source: def.Chronic
+    name: IndexChronic
+    nullable: true
+    type: TINYINT
+  - source: def.Count
+    name: IndexCount
+    nullable: false
+    type: TINYINT
+  - source: def.DiagnosisKey
+    name: IndexDiagnosisKey
+    nullable: false
+    type: BIGINT
+  - source: def.DocumentedInstant_X
+    name: IndexDocumentedInstant_X
+    nullable: true
+    type: DATETIME2(7)
+  - source: def.EndDateKey
+    name: IndexEndDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.EmergencyDepartmentDiagnosis
+    name: IndexEmergencyDepartmentDiagnosis
+    nullable: true
+    type: TINYINT
+  - source: def.IsPrimary
+    name: IndexIsPrimary
+    nullable: true
+    type: TINYINT
+  - source: def.NotedDateKey_X
+    name: IndexNotedDateKey_X
+    nullable: true
+    type: BIGINT
+  - source: def.PresentOnAdmission
+    name: IndexPresentOnAdmission
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.SourceComboKey
+    name: IndexSourceComboKey
+    nullable: true
+    type: BIGINT
+  - source: def.Status
+    name: IndexStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.Type
+    name: IndexType
+    nullable: true
+    type: NVARCHAR(350)
+  - source: dt._IsDeleted
+    name: IndexDxIsDeleted
+    nullable: false
+    type: TINYINT
+  - source: dt._IsInferred
+    name: IndexDxIsInferred
+    nullable: false
+    type: TINYINT
+  - source: dt.DiagnosisTerminologyKey
+    name: IndexDiagnosisTerminologyKey
+    nullable: false
+    type: BIGINT
+  - source: dt.DisplayString
+    name: IndexDxDisplayString
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.GroupedNameAndCode
+    name: IndexDxGroupedNameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dt.NameAndCode
+    name: IndexDxNameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dt.ReferenceBillingCode
+    name: IndexDxReferenceBillingCode
+    nullable: true
+    type: TINYINT
+  - source: dt.Parent
+    name: IndexDxParent
+    nullable: true
+    type: TINYINT
+  - source: dt.TerminologyConceptKey
+    name: IndexTerminologyConceptKey
+    nullable: true
+    type: BIGINT
+  - source: dt.Type
+    name: IndexICDType
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dur.Days
+    name: AgeAtIndexDays
+    nullable: true
+    type: INT
+  - source: dur.DaysDisplayString
+    name: AgeAtIndexDaysDisplayString
+    nullable: true
+    type: NVARCHAR(50)
+  - source: dur.DisplayString
+    name: AgeAtIndexDisplayString
+    nullable: true
+    type: NVARCHAR(50)
+  - source: dur.Months
+    name: AgeAtIndexMonths
+    nullable: true
+    type: INT
+  - source: dur.MonthsDisplayString
+    name: AgeAtIndexMonthsDisplayString
+    nullable: true
+    type: NVARCHAR(50)
+  - source: dur.Weeks
+    name: AgeAtIndexWeeks
+    nullable: true
+    type: INT
+  - source: dur.WeeksDisplayString
+    name: AgeAtIndexWeeksDisplayString
+    nullable: true
+    type: NVARCHAR(50)
+  - source: dur.YearsDisplayString
+    name: AgeAtIndexYearsDisplayString
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p._IsDeleted
+    name: PatientIsDeleted
+    nullable: false
+    type: TINYINT
+  - source: p._IsInferred
+    name: PatientIsInferred
+    nullable: false
+    type: TINYINT
+  - source: p.AgeInYears
+    name: AgeInYears
+    nullable: true
+    type: TINYINT
+  - source: p.BirthDate
+    name: BirthDate
+    nullable: true
+    type: DATE
+  - source: p.BirthDateAccuracy_X
+    name: BirthDateAccuracy_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p.EarliestPossibleBirthDate_X
+    name: EarliestPossibleBirthDate_X
+    nullable: true
+    type: DATE
+  - source: p.BloodType_X
+    name: BloodType_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p.BloodTypeAndRhesusFactor_X
+    name: BloodTypeAndRhesusFactor_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p.Country
+    name: Country
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.DeathDate
+    name: DeathDate
+    nullable: true
+    description: Ends observation early for patients who died.
+    type: DATE
+  - source: p.Ethnicity
+    name: Ethnicity
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FifthRace
+    name: FifthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FirstRace
+    name: FirstRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FourthRace
+    name: FourthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.GenderIdentity
+    name: GenderIdentity
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.HasPcp_X
+    name: HasPcp_X
+    nullable: true
+    type: TINYINT
+  - source: p.IsCurrent
+    name: IsCurrent
+    nullable: false
+    type: BIT
+  - source: p.IsValid
+    name: IsValid
+    nullable: false
+    type: TINYINT
+  - source: p.LastImmunizationQueryInstantUtc
+    name: LastImmunizationQueryInstantUtc
+    nullable: true
+    type: DATETIME2(7)
+  - source: p.MaritalStatus
+    name: MaritalStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.MultiRacial
+    name: MultiRacial
+    nullable: true
+    type: TINYINT
+  - source: p.PreferredLanguage
+    name: PreferredLanguage
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.PreliminaryCauseOfDeathDiagnosisKey
+    name: PreliminaryCauseOfDeathDiagnosisKey
+    nullable: true
+    type: BIGINT
+  - source: p.PrimaryRUCA_X
+    name: PrimaryRUCA_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p.ReliableSex
+    name: ReliableSex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.RhesusFactor_X
+    name: RhesusFactor_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: p.SecondRace
+    name: SecondRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.Sex
+    name: Sex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SexAssignedAtBirth
+    name: SexAssignedAtBirth
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SourceComboKey_X
+    name: SourceComboKey_X
+    nullable: true
+    type: BIGINT
+  - source: p.SourceCountry_X
+    name: SourceCountry_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.StateOrProvince
+    name: StateOrProvince
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.StateOrProvinceAbbreviation
+    name: StateOrProvinceAbbreviation
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.Status
+    name: PatientStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SviHouseholdCharacteristicsPctlRankByZip2020_X
+    name: SviHouseholdCharacteristicsPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviHouseholdCompositionPctlRankingByZip2018_X
+    name: SviHouseholdCompositionPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: p.SviHousingTypeTransportationPctlRankByZip2020_X
+    name: SviHousingTypeTransportationPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviHousingTypeTransportationPctlRankingByZip2018_X
+    name: SviHousingTypeTransportationPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: p.SviMinorityStatusLanguagePctlRankingByZip2018_X
+    name: SviMinorityStatusLanguagePctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: p.SviOverallPctlRankByZip2020_X
+    name: SviOverallPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviOverallPctlRankingByZip2018_X
+    name: SviOverallPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviSocioeconomicPctlRankByZip2020_X
+    name: SviSocioeconomicPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviSocioeconomicPctlRankingByZip2018_X
+    name: SviSocioeconomicPctlRankingByZip2018_X
+    nullable: true
+    type: NUMERIC(10,4)
+  - source: p.ThirdRace
+    name: ThirdRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.UseInCosmosAnalytics_X
+    name: UseInCosmosAnalytics_X
+    nullable: false
+    type: TINYINT
+  filter:
+    from:
+    - DiagnosisEventFact as def
+    join:
+    - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+    - "INNER JOIN PatientDim AS p ON p.DurableKey = def.PatientDurableKey"
+    - "LEFT JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+    where:
+    - "def._IsDeleted = 0"
+    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dt._IsDeleted = 0"
+    - "dt.Type = 'ICD-10-CM'"
+    - "dt.Value = 'D89.44'"
+    - "p._IsDeleted = 0"
+    - "p.IsCurrent = 1"
+    - "p.IsValid = 1"
+    - "p.UseInCosmosAnalytics_X = 1"
+- name: hat_Encounters
+  dest_table: hat_Encounters
+  type: fact
+  pull_this_cycle: true
+  description: "Every encounter for hat_Patients in the window, every EncounterFact\
+    \ column, and every DepartmentDim column (DepartmentSpecialty) through a LEFT\
+    \ JOIN. Python derives first/last encounter (observation start/end) and clinic-visit\
+    \ counts from it. A clinic visit is a distinct DateKey with IsOutpatientFaceToFaceVisit\
+    \ = 1 and a completed DerivedEncounterStatus.\n"
+  granularity: One row per encounter.
+  dedup_keys:
+  - - EncounterKey
+  dedup_order_by:
+  - EncounterKey
+  columns:
+  - source: ef.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: ef.EncounterKey
+    name: EncounterKey
+    nullable: false
+    type: BIGINT
+  - source: ef.DateKey
+    name: DateKey
+    nullable: false
+    type: BIGINT
+  - source: ef._IsDeleted
+    name: IsDeleted
+    nullable: false
+    type: TINYINT
+  - source: ef._IsInferred
+    name: IsInferred
+    nullable: false
+    type: TINYINT
+  - source: ef.AdmissionDateKey
+    name: AdmissionDateKey
+    nullable: true
+    type: BIGINT
+  - source: ef.AdmissionInstant
+    name: AdmissionInstant
+    nullable: true
+    type: DATETIME2(7)
+  - source: ef.AdmittingProviderDurableKey
+    name: AdmittingProviderDurableKey
+    nullable: true
+    type: BIGINT
+  - source: ef.AgeKey
+    name: AgeKey
+    nullable: true
+    type: BIGINT
+  - source: ef.ArrivalMeans
+    name: ArrivalMeans
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.AttendingProviderDurableKey
+    name: AttendingProviderDurableKey
+    nullable: true
+    type: BIGINT
+  - source: ef.CodingComplete_X
+    name: CodingComplete_X
+    nullable: true
+    type: BIT
+  - source: ef.CodingStatus_X
+    name: CodingStatus_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.Count
+    name: Count
+    nullable: false
+    type: TINYINT
+  - source: ef.CoverageComboKey_X
+    name: CoverageComboKey_X
+    nullable: true
+    type: BIGINT
+  - source: ef.Date
+    name: Date
+    nullable: true
+    type: DATETIME2(7)
+  - source: ef.DepartmentKey
+    name: DepartmentKey
+    nullable: true
+    description: "Foreign key to DepartmentDim, which is not in the data dictionary\
+      \ yet."
+    type: BIGINT
+  - source: ef.DerivedEncounterStatus
+    name: DerivedEncounterStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.DerivedEncounterType_X
+    name: DerivedEncounterType_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.DischargeDateKey
+    name: DischargeDateKey
+    nullable: true
+    type: BIGINT
+  - source: ef.DischargeDisposition
+    name: DischargeDisposition
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.DischargeInstant
+    name: DischargeInstant
+    nullable: true
+    type: DATETIME2(7)
+  - source: ef.DischargeProviderDurableKey
+    name: DischargeProviderDurableKey
+    nullable: true
+    type: BIGINT
+  - source: ef.EndDateKey
+    name: EndDateKey
+    nullable: true
+    type: BIGINT
+  - source: ef.EndInstant
+    name: EndInstant
+    nullable: true
+    type: DATETIME2(7)
+  - source: ef.IsEdVisit
+    name: IsEdVisit
+    nullable: true
+    type: TINYINT
+  - source: ef.IsHospitalAdmission
+    name: IsHospitalAdmission
+    nullable: true
+    type: TINYINT
+  - source: ef.IsHospitalOutpatientVisit
+    name: IsHospitalOutpatientVisit
+    nullable: true
+    type: TINYINT
+  - source: ef.IsOutpatientFaceToFaceVisit
+    name: IsOutpatientFaceToFaceVisit
+    nullable: true
+    type: TINYINT
+  - source: ef.IsPregnant_X
+    name: IsPregnant_X
+    nullable: true
+    type: TINYINT
+  - source: ef.MarkedDoNotBillInsurance
+    name: MarkedDoNotBillInsurance
+    nullable: true
+    type: TINYINT
+  - source: ef.MarkedSelfPay
+    name: MarkedSelfPay
+    nullable: true
+    type: TINYINT
+  - source: ef.PayorComboKey_X
+    name: PayorComboKey_X
+    nullable: true
+    type: BIGINT
+  - source: ef.PlaceOfServiceType_X
+    name: PlaceOfServiceType_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.PrimaryCoverageFinancialClass_X
+    name: PrimaryCoverageFinancialClass_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: ef.PrimaryPayorKey_X
+    name: PrimaryPayorKey_X
+    nullable: true
+    type: BIGINT
+  - source: ef.ProviderDurableKey
+    name: ProviderDurableKey
+    nullable: true
+    type: BIGINT
+  - source: ef.SourceComboKey
+    name: SourceComboKey
+    nullable: true
+    type: BIGINT
+  - source: ef.Type
+    name: EncounterType
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dep.DepartmentSpecialty
+    name: DepartmentSpecialty
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dep.Country
+    name: DepartmentCountry
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dep.SiteFullyUsableInCosmosStartDateKey_X
+    name: SiteFullyUsableInCosmosStartDateKey_X
+    nullable: true
+    type: BIGINT
+  - source: dep.SiteFullyUsableInCosmosEndDateKey_X
+    name: SiteFullyUsableInCosmosEndDateKey_X
+    nullable: true
+    type: BIGINT
+  - source: dep._IsDeleted
+    name: DepartmentIsDeleted
+    nullable: true
+    description: "Not filtered, so encounters keep their department either way."
+    type: TINYINT
+  - source: dep._IsInferred
+    name: DepartmentIsInferred
+    nullable: true
+    type: TINYINT
+  filter:
+    from:
+    - EncounterFact as ef
+    join:
+    - "INNER JOIN {{prefix}}_hat_Patients AS pk ON pk.PatientDurableKey = ef.PatientDurableKey"
+    - "LEFT JOIN DepartmentDim AS dep ON dep.DepartmentKey = ef.DepartmentKey"
+    where:
+    - "ef._IsDeleted = 0"
+    - "ef.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+- name: hat_Diagnoses
+  dest_table: hat_Diagnoses
+  type: fact
+  pull_this_cycle: true
+  description: "Every ICD-10-CM diagnosis event for hat_Patients in the window, every\
+    \ DiagnosisEventFact and DiagnosisTerminologyDim column, so Python can filter\
+    \ (e.g. ruled-out) before collapsing to one row per patient, code and date. The\
+    \ PheWAS event table. D89.44 is kept so Python can count its dates for the case\
+    \ rule, then drop it before the PheWAS.\n"
+  granularity: One row per diagnosis event and code.
+  dedup_keys:
+  - - DiagnosisEventKey
+    - DiagnosisCode
+  dedup_order_by:
+  - DiagnosisEventKey
+  columns:
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: def.StartDateKey
+    name: DiagnosisDate
+    nullable: true
+    type: BIGINT
+  - source: dt.Value
+    name: DiagnosisCode
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.Type
+    name: Vocabulary
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: def.EncounterKey
+    name: EncounterKey
+    nullable: true
+    type: BIGINT
+  - source: def._IsDeleted
+    name: IsDeleted
+    nullable: false
+    type: TINYINT
+  - source: def._IsInferred
+    name: IsInferred
+    nullable: false
+    type: TINYINT
+  - source: def.AgeKey
+    name: AgeKey
+    nullable: true
+    type: BIGINT
+  - source: def.Chronic
+    name: Chronic
+    nullable: true
+    type: TINYINT
+  - source: def.Count
+    name: Count
+    nullable: false
+    type: TINYINT
+  - source: def.DiagnosisKey
+    name: DiagnosisKey
+    nullable: false
+    type: BIGINT
+  - source: def.DocumentedInstant_X
+    name: DocumentedInstant_X
+    nullable: true
+    type: DATETIME2(7)
+  - source: def.EndDateKey
+    name: EndDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.EmergencyDepartmentDiagnosis
+    name: EmergencyDepartmentDiagnosis
+    nullable: true
+    type: TINYINT
+  - source: def.IsPrimary
+    name: IsPrimary
+    nullable: true
+    type: TINYINT
+  - source: def.NotedDateKey_X
+    name: NotedDateKey_X
+    nullable: true
+    type: BIGINT
+  - source: def.PresentOnAdmission
+    name: PresentOnAdmission
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.SourceComboKey
+    name: SourceComboKey
+    nullable: true
+    type: BIGINT
+  - source: def.Status
+    name: DiagnosisStatus
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.Type
+    name: DiagnosisType
+    nullable: true
+    type: NVARCHAR(350)
+  - source: dt._IsDeleted
+    name: TerminologyIsDeleted
+    nullable: false
+    type: TINYINT
+  - source: dt._IsInferred
+    name: TerminologyIsInferred
+    nullable: false
+    type: TINYINT
+  - source: dt.DiagnosisTerminologyKey
+    name: DiagnosisTerminologyKey
+    nullable: false
+    type: BIGINT
+  - source: dt.DisplayString
+    name: DisplayString
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.GroupedNameAndCode
+    name: GroupedNameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dt.NameAndCode
+    name: NameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dt.ReferenceBillingCode
+    name: ReferenceBillingCode
+    nullable: true
+    type: TINYINT
+  - source: dt.Parent
+    name: Parent
+    nullable: true
+    type: TINYINT
+  - source: dt.TerminologyConceptKey
+    name: TerminologyConceptKey
+    nullable: true
+    type: BIGINT
+  filter:
+    from:
+    - DiagnosisEventFact as def
+    join:
+    - "INNER JOIN {{prefix}}_hat_Patients AS pk ON pk.PatientDurableKey = def.PatientDurableKey"
+    - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+    where:
+    - "def._IsDeleted = 0"
+    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dt._IsDeleted = 0"
+    - "dt.Type = 'ICD-10-CM'"
+- name: hat_Labs
+  dest_table: hat_Labs
+  type: fact
+  pull_this_cycle: true
+  description: "Every tryptase result for hat_Patients in the window: every LabComponentResultFact\
+    \ column and every LabComponentDim column (LEFT JOIN). Filtered to the eight tryptase\
+    \ LabComponentKeys found on the VM (2026-10-02, LabComponentDim names, common\
+    \ names, base names or LOINC names like '%tryptase%'), all of them kept:\n  2287\
+    \  Tryptase SerPl-mCnc (mass/volume, LOINC 21582-2; the usual baseline test)\n\
+    \  8166  Tryptase IgE Qn (IgE antibody to tryptase, 7748-7; not a tryptase level)\n\
+    \  16740 Tryptase.beta SerPl-mCnc (60539-4)\n  51583 Tryptase Fld-mCnc (body fluid,\
+    \ 45334-0)\n  59082 INACTIVE Tryptase (no LOINC; DefaultUnit ng/mL)\n  75051 Tryptase\
+    \ SerPl-cCnc (enzymatic activity, 12733-2)\n  86072 Tryptase.mature SerPl-cCnc\
+    \ (enzymatic activity, 41870-7)\n  91367 Tryptase SerPl-sCnc (moles/volume, 51834-0)\n\
+    Python validates cases (baseline tryptase above about 8 ng/mL) and, later, screens\
+    \ controls.\n"
+  granularity: One row per lab component result.
+  dedup_keys:
+  - - LabComponentResultKey
+  dedup_order_by:
+  - LabComponentResultKey
+  columns:
+  - source: lcrf.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: lcrf.LabComponentResultKey
+    name: LabComponentResultKey
+    nullable: false
+    type: BIGINT
+  - source: lcrf.LabComponentKey
+    name: LabComponentKey
+    nullable: false
+    type: BIGINT
+  - source: lcrf.PrioritizedDateKey
+    name: PrioritizedDateKey
+    nullable: true
+    type: BIGINT
+  - source: lcrf.Value
+    name: Value
+    nullable: false
+    type: NVARCHAR(300)
+  - source: lcrf.NumericValue
+    name: NumericValue
+    nullable: true
+    type: FLOAT
+  - source: lcrf.Unit
+    name: Unit
+    nullable: true
+    type: NVARCHAR(100)
+  - source: lcrf._IsDeleted
+    name: IsDeleted
+    nullable: false
+    type: TINYINT
+  - source: lcrf._IsInferred
+    name: IsInferred
+    nullable: false
+    type: TINYINT
+  - source: lcrf.Abnormal
+    name: Abnormal
+    nullable: true
+    type: TINYINT
+  - source: lcrf.CollectionInstant
+    name: CollectionInstant
+    nullable: true
+    type: DATETIME2(7)
+  - source: lcrf.Count
+    name: Count
+    nullable: false
+    type: TINYINT
+  - source: lcrf.EncounterKey
+    name: EncounterKey
+    nullable: true
+    type: BIGINT
+  - source: lcrf.Flag
+    name: Flag
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcrf.IsBlankOrUnsuccessfulAttempt
+    name: IsBlankOrUnsuccessfulAttempt
+    nullable: true
+    type: TINYINT
+  - source: lcrf.LabTestKey_X
+    name: LabTestKey_X
+    nullable: true
+    type: BIGINT
+  - source: lcrf.NumericBoundaryValue_X
+    name: NumericBoundaryValue_X
+    nullable: true
+    type: FLOAT
+  - source: lcrf.NumericValueMaximum_X
+    name: NumericValueMaximum_X
+    nullable: true
+    type: FLOAT
+  - source: lcrf.NumericValueMinimum_X
+    name: NumericValueMinimum_X
+    nullable: true
+    type: FLOAT
+  - source: lcrf.PrioritizedInstant_X
+    name: PrioritizedInstant_X
+    nullable: true
+    type: DATETIME2(7)
+  - source: lcrf.ProcedureDurableKey
+    name: ProcedureDurableKey
+    nullable: true
+    type: BIGINT
+  - source: lcrf.ReferenceValueHigh_X
+    name: ReferenceValueHigh_X
+    nullable: false
+    type: NVARCHAR(300)
+  - source: lcrf.ReferenceValueLow_X
+    name: ReferenceValueLow_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcrf.ReferenceValueNormal_X
+    name: ReferenceValueNormal_X
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcrf.ResultingLabDurableKey
+    name: ResultingLabDurableKey
+    nullable: true
+    type: BIGINT
+  - source: lcrf.ResultInstant
+    name: ResultInstant
+    nullable: true
+    type: DATETIME2(7)
+  - source: lcrf.SourceComboKey
+    name: SourceComboKey
+    nullable: true
+    type: BIGINT
+  - source: lcrf.StructuredBoundaryOperator_X
+    name: StructuredBoundaryOperator_X
+    nullable: true
+    type: NVARCHAR(50)
+  - source: lcd._IsDeleted
+    name: ComponentIsDeleted
+    nullable: true
+    type: TINYINT
+  - source: lcd._IsInferred
+    name: ComponentIsInferred
+    nullable: true
+    type: TINYINT
+  - source: lcd.Abbreviation
+    name: Abbreviation
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.BaseName
+    name: BaseName
+    nullable: true
+    type: NVARCHAR(100)
+  - source: lcd.CommonName
+    name: CommonName
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.DataType
+    name: ComponentDataType
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.DefaultUnit
+    name: DefaultUnit
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.LoincCode
+    name: LoincCode
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.LoincName
+    name: LoincName
+    nullable: true
+    type: NVARCHAR(550)
+  - source: lcd.Name
+    name: ComponentName
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.Subtype
+    name: ComponentSubtype
+    nullable: true
+    type: NVARCHAR(300)
+  - source: lcd.Type
+    name: ComponentType
+    nullable: true
+    type: NVARCHAR(300)
+  filter:
+    from:
+    - LabComponentResultFact as lcrf
+    join:
+    - "INNER JOIN {{prefix}}_hat_Patients AS pk ON pk.PatientDurableKey = lcrf.PatientDurableKey"
+    - "LEFT JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
+    where:
+    - "lcrf._IsDeleted = 0"
+    - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "lcrf.LabComponentKey IN (2287, 8166, 16740, 51583, 59082, 75051, 86072, 91367)"

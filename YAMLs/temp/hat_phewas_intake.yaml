@@ -1,39 +1,9 @@
-# HaT PheWAS, part 1: the HaT patients and what the PheWAS needs about them.
-# Controls come later, as ctrl_ tables, with the same columns.
-#
-# Four tables, each with every column of its Cosmos tables (per the data dictionary),
-# so Python can cull later. Only join keys that would repeat another column are left
-# out (PatientDim.DurableKey, DiagnosisTerminologyDim.DiagnosisKey, DurationDim.DurationKey,
-# DepartmentDim.DepartmentKey, LabComponentDim.LabComponentKey). Columns from a LEFT
-# JOIN are nullable whatever the dictionary says: a missing row gives NULLs.
-#   hat_Patients     PK. One row per patient with ANY D89.44 (any Type or Status), at
-#                    their first D89.44. Also the exclusion list for controls. Python
-#                    rebuilds the case set and index date from hat_Diagnoses (Status
-#                    filter, 2-distinct-dates rule).
-#   hat_Encounters   Every encounter in the window, with its DepartmentDim row (LEFT
-#                    JOIN). Observation start/end, clinic-visit counts, specialty.
-#   hat_Diagnoses    Every ICD-10-CM diagnosis event in the window, one row per event
-#                    and code. The PheWAS events.
-#   hat_Labs         Every tryptase result in the window (8 LabComponentKeys), with its
-#                    LabComponentDim row (LEFT JOIN). Case validation; later, controls.
-#
-# Cosmos tables read: PatientDim, DiagnosisEventFact, DiagnosisTerminologyDim,
-# DurationDim, EncounterFact, DepartmentDim, LabComponentResultFact, LabComponentDim.
-#
-# Notes:
-# dt.Type = 'ICD-10-CM' is the spelling Cosmos uses (profile query 6, 2026-10-01).
-# ICD-9 is left out: everything here postdates the switch to ICD-10.
-# Dual on purpose: SneakPeek (a 1% set) checks the pull works on the smaller set first.
-# D89.44 entered ICD-10-CM on 2021-10-01: an IndexDate before 20211001 is a diagnosis
-# record mapped to D89.44 after the fact. See HaT Considerations.md.
-# Open: check project_db is the one to use.
-
 cosmos_vars:
   project_db: PROJECTD93A5E7
   cosmos_db: Dual
 run_vars:
-  min_date_key: 20150101   # wide on purpose; Python sets the analysis window
-  max_date_key: 20260601   # the latest Cosmos has; move it when Cosmos does
+  min_date_key: 20150101
+  max_date_key: 20260601
 test_options:
   smallset: false
   stop_at_for_pk_table: 10
@@ -44,19 +14,17 @@ vars: {}
 upload_cohorts: []
 multipliers: []
 batching:
-  - chunk: 2000
+  - chunk: 1000
 cohorts:
   - name: hat_Patients
     dest_table: hat_Patients
     type: pk
     pull_this_cycle: true
-    description: >
-      Every patient with at least one D89.44 (hereditary alpha tryptasemia), at their
-      first D89.44: the index diagnosis event, its terminology row, age, and every
-      PatientDim column.
-    granularity: One row per patient, at the earliest D89.44 diagnosis event.
+    description: "Every patient with at least one D89.44 (hereditary alpha tryptasemia), at their first D89.44: the index diagnosis event, its terminology row, age, and every PatientDim column.\n"
+    granularity: "One row per patient, at the earliest D89.44 diagnosis event."
     dedup_keys:
-      - [PatientDurableKey]
+      -
+        - PatientDurableKey
     dedup_order_by:
       - IndexDate
       - IndexDiagnosisEventKey
@@ -336,20 +304,15 @@ cohorts:
         - "p.IsCurrent = 1"
         - "p.IsValid = 1"
         - "p.UseInCosmosAnalytics_X = 1"
-
   - name: hat_Encounters
     dest_table: hat_Encounters
     type: fact
     pull_this_cycle: true
-    description: >
-      Every encounter for hat_Patients in the window, every EncounterFact column,
-      and every DepartmentDim column (DepartmentSpecialty) through a LEFT JOIN.
-      Python derives first/last encounter (observation start/end) and clinic-visit
-      counts from it. A clinic visit is a distinct DateKey with
-      IsOutpatientFaceToFaceVisit = 1 and a completed DerivedEncounterStatus.
+    description: "Every encounter for hat_Patients in the window, every EncounterFact column, and every DepartmentDim column (DepartmentSpecialty) through a LEFT JOIN. Python derives first/last encounter (observation start/end) and clinic-visit counts from it. A clinic visit is a distinct DateKey with IsOutpatientFaceToFaceVisit = 1 and a completed DerivedEncounterStatus.\n"
     granularity: One row per encounter.
     dedup_keys:
-      - [EncounterKey]
+      -
+        - EncounterKey
     dedup_order_by:
       - EncounterKey
     columns:
@@ -404,7 +367,7 @@ cohorts:
       - source: ef.DepartmentKey
         name: DepartmentKey
         nullable: true
-        description: Foreign key to DepartmentDim, which is not in the data dictionary yet.
+        description: "Foreign key to DepartmentDim, which is not in the data dictionary yet."
       - source: ef.DerivedEncounterStatus
         name: DerivedEncounterStatus
         nullable: true
@@ -486,7 +449,7 @@ cohorts:
       - source: dep._IsDeleted
         name: DepartmentIsDeleted
         nullable: true
-        description: Not filtered, so encounters keep their department either way.
+        description: "Not filtered, so encounters keep their department either way."
       - source: dep._IsInferred
         name: DepartmentIsInferred
         nullable: true
@@ -499,20 +462,16 @@ cohorts:
       where:
         - "ef._IsDeleted = 0"
         - "ef.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-
   - name: hat_Diagnoses
     dest_table: hat_Diagnoses
     type: fact
     pull_this_cycle: true
-    description: >
-      Every ICD-10-CM diagnosis event for hat_Patients in the window,
-      every DiagnosisEventFact and DiagnosisTerminologyDim column, so Python can
-      filter (e.g. ruled-out) before collapsing to one row per patient, code and date.
-      The PheWAS event table. D89.44 is kept so Python can count its dates for the
-      case rule, then drop it before the PheWAS.
+    description: "Every ICD-10-CM diagnosis event for hat_Patients in the window, every DiagnosisEventFact and DiagnosisTerminologyDim column, so Python can filter (e.g. ruled-out) before collapsing to one row per patient, code and date. The PheWAS event table. D89.44 is kept so Python can count its dates for the case rule, then drop it before the PheWAS.\n"
     granularity: One row per diagnosis event and code.
     dedup_keys:
-      - [DiagnosisEventKey, DiagnosisCode]
+      -
+        - DiagnosisEventKey
+        - DiagnosisCode
     dedup_order_by:
       - DiagnosisEventKey
     columns:
@@ -617,29 +576,15 @@ cohorts:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
         - "dt._IsDeleted = 0"
         - "dt.Type = 'ICD-10-CM'"
-
   - name: hat_Labs
     dest_table: hat_Labs
     type: fact
     pull_this_cycle: true
-    description: >
-      Every tryptase result for hat_Patients in the window: every LabComponentResultFact
-      column and every LabComponentDim column (LEFT JOIN). Filtered to the eight
-      tryptase LabComponentKeys found on the VM (2026-10-02, LabComponentDim names,
-      common names, base names or LOINC names like '%tryptase%'), all of them kept:
-        2287  Tryptase SerPl-mCnc (mass/volume, LOINC 21582-2; the usual baseline test)
-        8166  Tryptase IgE Qn (IgE antibody to tryptase, 7748-7; not a tryptase level)
-        16740 Tryptase.beta SerPl-mCnc (60539-4)
-        51583 Tryptase Fld-mCnc (body fluid, 45334-0)
-        59082 INACTIVE Tryptase (no LOINC; DefaultUnit ng/mL)
-        75051 Tryptase SerPl-cCnc (enzymatic activity, 12733-2)
-        86072 Tryptase.mature SerPl-cCnc (enzymatic activity, 41870-7)
-        91367 Tryptase SerPl-sCnc (moles/volume, 51834-0)
-      Python validates cases (baseline tryptase above about 8 ng/mL) and, later,
-      screens controls.
+    description: "Every tryptase result for hat_Patients in the window: every LabComponentResultFact column and every LabComponentDim column (LEFT JOIN). Filtered to the eight tryptase LabComponentKeys found on the VM (2026-10-02, LabComponentDim names, common names, base names or LOINC names like '%tryptase%'), all of them kept:\n  2287  Tryptase SerPl-mCnc (mass/volume, LOINC 21582-2; the usual baseline test)\n  8166  Tryptase IgE Qn (IgE antibody to tryptase, 7748-7; not a tryptase level)\n  16740 Tryptase.beta SerPl-mCnc (60539-4)\n  51583 Tryptase Fld-mCnc (body fluid, 45334-0)\n  59082 INACTIVE Tryptase (no LOINC; DefaultUnit ng/mL)\n  75051 Tryptase SerPl-cCnc (enzymatic activity, 12733-2)\n  86072 Tryptase.mature SerPl-cCnc (enzymatic activity, 41870-7)\n  91367 Tryptase SerPl-sCnc (moles/volume, 51834-0)\nPython validates cases (baseline tryptase above about 8 ng/mL) and, later, screens controls.\n"
     granularity: One row per lab component result.
     dedup_keys:
-      - [LabComponentResultKey]
+      -
+        - LabComponentResultKey
     dedup_order_by:
       - LabComponentResultKey
     columns:

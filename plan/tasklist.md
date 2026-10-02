@@ -26,6 +26,8 @@ Select-String -Path runs\*\execute-*.log -Pattern "FileBusy|Traceback|exit code 
 
 Pass: nothing printed.
 
+Agreed (2026-10-02): steps 1 to 3 need nothing more. Step 4 is checked as the real pulls run, with this command after each; no `exit code 1` so far. The clean-up below waits until those pulls are done.
+
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟦 Claude: steps 5 and 6, read**
 
@@ -57,8 +59,15 @@ I'm assuming the ones in Cosmos are eventually copies of the ones in cosmos_parq
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
+**🟧 Your response: you'r esure nothing makes them, even in artifacts? I thought that artifacts makes them specifically. If tha isn't the case then I"m not sure what to do. It sounds like i just have to re-do the whol thing to be sure. (it's short so it's not so bad).**
+:::
 
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: sure, from the code; and the re-pull**
+
+Artifacts writes only `cosmos_parquets`, `sneakpeek_parquets` and `uploads_parquets` (`artifacts.py`, `COSMOS_DIR` and the two beside it). Nothing in Scope names a folder `Cosmos` or `Cosmos_SneakPeek`.
+
+Agreed (2026-10-02): Infant_RSV is pulled again. Done on the VM: its parquet folders (and the `Cosmos` ones) moved into `runs\Infant_RSV\old\`, keeping the manifest, `pull_files\` and logs, so Run's **Re-pull everything** has a pull to start over. To do: extract the next bundle once nothing is executing, then re-pull. The fresh `cosmos_parquets` are the ones to keep.
 :::
 
 **Suggested order**
