@@ -63,3 +63,14 @@ The pull takes more than the analysis needs: every column, and rows the analysis
 - **hat_Encounters:** cancelled or no-show `DerivedEncounterStatus` for visit counts; `DepartmentKey < 0` before grouping by specialty; `DepartmentIsDeleted = 1` if any.
 - **hat_Labs:** component 8166 (IgE antibody, not a level); results with `IsBlankOrUnsuccessfulAttempt = 1`; non-ng/mL `Unit`s (51583 body fluid, 75051 and 86072 enzymatic activity, 91367 moles/volume) unless converted; then decide on 59082 (inactive) by looking at its units and dates.
 - **Every table:** rows outside the analysis window, once Python sets it (the pull starts at 2015-01-01).
+
+## Profile Results (Queries 7 To 11b)
+
+From `plan/sql feedback formatting/profile_queries.sql`, run on the VM (screenshot `plan/images/paste-5.png`, 2 Oct). All D89.44 dates 1990 to 2026-06.
+
+- **Query 7, first D89.44 by year:** only its last row is in the screenshot: 2017, 12 patients, 11 with 2+ dates. So D89.44 rows exist well before the code's 2021 start (mapped after the fact). The pull starts at 2015-01-01: a patient whose true first D89.44 is earlier gets a later index. The earlier rows of this query say how many; worth a second screenshot.
+- **Query 8, other D89.4x before the first D89.44** (1,523 patients): up to 3 months 266, 3 to 12 months 448, 1 to 3 years 400, over 3 years 409. Most are not the same workup recoded: 1,257 of 1,523 came more than 3 months earlier, 809 more than a year.
+- **Query 9, race and ethnicity:** FirstRace White 5,162, blank 494, Black or African American 126, Other Race 64, American Indian or Alaska Native 62, Asian 53, Native Hawaiian or Other Pacific Islander 13. Ethnicity Hispanic or Latino 177 (other rows off screen). The 494 blanks go into Unknown/Other.
+- **Query 10, outpatient face-to-face encounter types** (January 2024, all Cosmos, rows 7 to 14 shown): Procedure visit, Telemedicine, Routine Prenatal, Infusion, Home Care Visit, Surgery, Follow-Up, Anticoagulation Visit, all Complete. The first six rows are off screen. Telemedicine and Home Care carry the face-to-face flag; decide whether they count as clinic visits.
+- **Query 11, distinct D89.44 dates per patient** (5,974): 1 date 2,278 (586 of them in the last 6 months of the window, 739 with a problem-list row); 2 dates 1,112; 3 dates 656; 4 dates 440; 5+ 1,488. So 2+ dates is 3,696 patients.
+- **Query 11b, the Type of D89.44 rows** (patients): Encounter Diagnosis 4,941; Billing Procedure Linked Diagnosis 4,739; Problem List 3,157; Billing Final Diagnosis 3,096; Billing Admission Diagnosis 2,561; Admitting Diagnosis 55; Discharge Diagnosis 5.

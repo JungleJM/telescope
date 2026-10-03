@@ -36,15 +36,46 @@ I think the batching is doing all the c1of6, c2of6, etc. instead of going throug
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: shit - I guess we do need to have a per-table group, then. In that case the table groups are just usable as a shorthand for the user to add a bunch of groups, which is OK.**
+
+**\
+bigger question is, how many chunks should I be doing? I mean, is there any value to chunks at all? if I split into two chunks am I always taking twice the length? Is there any way I can have it actually split up the time instead?**
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: every table its own group; chunks by patient multiply the time, chunks by date would divide it**
+
+**Per-table groups, as I read your answer:** a table in no group runs as a group of its own, one run per table, instead of all ungrouped tables together in one run. A group you name keeps its tables together, as a shorthand for tables that must share a run. Today the tables in no group run together, as one group named `run` (D134); this changes that default. Consequences:
+
+- Retry failed pulls only the table that failed. Once D177 is built, each table is packaged and emptied as it finishes.
+- Two ungrouped tables where one reads the other are now in different groups, so validation refuses them (`table_reads_another_group`), and the fix is a named group for both. Your HaT tables read only the PK, so nothing to change there.
+- A new connection and a PK refill per table: seconds each.
+
+**How many chunks, and are they worth anything?** With chunks by patient, as today, two chunks take about twice as long, for the scan-heavy tables. Cosmos's fact tables are partitioned on their date key (`StartDateKey`, `DateKey`, `PrioritizedDateKey`...), and the HaT times show each query scanning the whole date window whatever the patients: Labs takes 23 minutes for 2,000 patients' rows, as it would for all 6,000. A chunk by patient narrows only the join, not the scan. So:
+
+- **Time:** chunks by patient never save time; N chunks cost about N scans.
+- **What they are for:** keeping each query's temp and each landing small, when a pull is so large that one pass would fill tempdb or the Projects log, or run for many hours in one transaction. Only for pulls of hundreds of thousands of patients; HaT needs none.
+- **How many:** as few as fit. Start with none. Add chunks only after a pull fails for space, and then large ones (`chunk: 100000` or more).
+
+**Splitting the time instead: chunks by date window.** Each pass reads only its own years of the partition key, so Cosmos skips the other partitions, and N windows cost about one whole scan, divided. For example, `min_date_key` to `max_date_key` cut into yearly windows, each run filling `{{min_date_key}}` and `{{max_date_key}}` with its own year. It suits tables filtered on their partition key, which is every fact table's `standard_where`. It doesn't change the PK; each window is a run of its own, so a failed year retries alone. Rows per window vary by year.
+
+**Recommendation:** decide the per-table default now (it's small). Record "chunks by patient never save time" as a finding, which closes the roadmap's **What a batch costs**. Put **chunks by date window** on the roadmap after D177, as its own decision, since it touches the split and the renderer.
+
+**For you to decide:** is my reading of per-table groups right? And do you want chunks by date window on the roadmap?
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 
 :::
+
+bigg
 
 ## Artifacts to "Make Deliverables"
 
 ![](images/paste-2.png)
 
-We are no longer using 'artifacts' to make the artifacts. But if you look at "Artifacts" in design.md, there is a set of deliverables that the client will use - the two parquet folders, the contents.md, loading scripts, utils. I want this button to say "make deliverables" and when you click it it asks the folder you want it placed in. It will copy the deliverables of that project to that folder. \
+We are no longer using 'artifacts' to make the artifacts. But if you look at "Artifacts" in design.md, there is a set of deliverables that the client will use - the two parquet folders, the contents.md, loading scripts, utils. I want this button to say "make deliverables" and when you click it it asks the folder you want it placed in. It will copy the deliverables of that project to that folder.\
 \
 The only other thing is 'load_parquets.r' is based on teh folder, and I want the person to choose what folder that they want to load. Specifically there will be a 'cosmos' a 'sneakpeek' and 'uploaded'. and there should be declarative var at the top of the script that says 'load\_' and each section, that is true or false. That way they can just turn on and off the ones they want. Default is Uploaded and Cosmos.
 
@@ -66,7 +97,7 @@ load_sneakpeek <- FALSE
 load_uploaded  <- TRUE
 ```
 
-  each reading its folder (`cosmos_parquets`, `sneakpeek_parquets`, `uploads_parquets`). The same three in `load_parquets.py` (`LOAD_COSMOS = True`...), so the two scripts agree. A switch that is on, with its folder missing or empty, prints that it found nothing, rather than failing.
+each reading its folder (`cosmos_parquets`, `sneakpeek_parquets`, `uploads_parquets`). The same three in `load_parquets.py` (`LOAD_COSMOS = True`...), so the two scripts agree. A switch that is on, with its folder missing or empty, prints that it found nothing, rather than failing.
 
 **For you to decide:**
 
@@ -78,29 +109,36 @@ load_uploaded  <- TRUE
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 
+1.  **add the blueprint.**
+
+2.  **Actually do /data inside the folder.**
+
+3.  yes it should refuse,l with a question - something like a popup saying "warning: incomplete pull, See 'status' (or whatever) for explanation/what's missing. Still make deliverable of what's been pulled?" with a Continue and Cancel.
 :::
 
-## 'LOINC by Keyword' utility
-
-I'm looking for a name for a utility where I can search for a keyword or keyphrase, and a series of them, and it will return any LOINC, CPT, SNOMED, ICD-10 code with that name in it, in a parquet. I'd like it to be a SQL query-to-parquet that
-
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: a name, where the codes live, and your sentence finished**
+**🟦 Claude: the layout, as I read "/data inside the folder"**
 
-Your note stops at "a SQL query-to-parquet that", so this is a first answer.
+The folder you choose holds the deliverable directly, with the data under `data\`:
 
-**Names:** **Code Finder** (plain, says what it does), **Codes by Keyword**, or **Term Search**. I'd pick **Code Finder**: it isn't tied to LOINC, since it will search four vocabularies.
+``` text
+<chosen folder>\
+  data\
+    cosmos\        (from cosmos_parquets)
+    sneakpeek\     (from sneakpeek_parquets)
+    uploaded\      (from uploads_parquets)
+  load_parquets.R, load_parquets.py   PARQUETS is data\, load_cosmos / load_sneakpeek / load_uploaded
+  contents.md, HOW_TO.md
+  <project>_blueprint.yaml
+  utils.py, utils\client\
+```
 
-**Where each vocabulary is, in the dictionary:**
+- The folder names under `data\` are yours: `cosmos`, `sneakpeek`, `uploaded`, matching the switches. The run folder keeps its own names.
+- The load scripts find `data\` beside themselves, so the folder can be moved or zipped without editing them. Python reads its own location; R takes the folder from where `source()` was run, else the path written in at copy time, and says which it used.
+- A chosen folder that already has a `data\` stops it, naming what is there.
+- An incomplete pull asks: *Warning: incomplete pull. See Status for what is missing. Still make deliverables of what has been pulled?*, with **Continue** and **Cancel**. Continue copies what is packaged, and `contents.md` lists what was left out, as it does now.
 
-- **LOINC**: `LabComponentDim` (`LoincCode`, `LoincName`, `Name`, `CommonName`, `BaseName`), as your tryptase query searched.
-- **CPT**: `ProcedureDim` (`CptCode`, `Name`, `ShortName`; also `HcpcsCode`, `Code` with `CodeSet`).
-- **ICD-10-CM and SNOMED**: `DiagnosisTerminologyDim` (`Value`, `DisplayString`, `NameAndCode`), told apart by `Type`; `DiagnosisDim.Name` for Epic's own diagnosis name.
-- `TerminologyConceptDim` (`Name`, `StandardName`) as a further place to look.
-
-**How it could work:** a small window in `utils\manager\`, like clear_projects_db. You type keywords, one per line; it runs one `LIKE '%keyword%'` query per vocabulary on Cosmos (dimension tables only, no patient data, so it is fast), and writes one parquet with a row per code found: vocabulary, code, name, the keyword that matched, and the table's key (`LabComponentKey`, `DiagnosisKey`...), which is what a pull's filter needs. It shows the count per vocabulary, and opens the parquet in the viewer. The keys could also go straight into a pull: the parquet as a supporting table, read with **In supporting table** (D119).
-
-**For you to answer:** how did your sentence end? And do you want it to search names only, or codes too (so `D89.4` finds `D89.40` to `D89.49`)?
+**For you to decide:** is that the layout you meant? If so, it's ready to write as a decision and put in the roadmap's order.
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
@@ -108,11 +146,30 @@ Your note stops at "a SQL query-to-parquet that", so this is a first answer.
 
 :::
 
+## 7-10 for that prior query
+
+In case we still need that
+
+![](images/paste-5.png)
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: kept in HaT Considerations, with two things they show**
+
+Recorded under **Profile Results** in `HaT Considerations.md`, with the screenshot kept. Two things worth your attention:
+
+- **Query 7** shows only its last row: 2017, 12 patients. So D89.44 rows go back before 2018, and the pull starts at 2015-01-01. A screenshot of its earlier rows would say how many patients have a first D89.44 before 2015 and so get a later index.
+- **Query 11**: 5,974 patients, 3,696 of them on 2+ dates. Of the 2,278 seen once, 586 fall in the window's last 6 months, too recent for a second code.
+
+Nothing for you to decide here; this section can go once you've read it.
+:::
+
 **Suggested order**
 
-1.  **Batching**: decide before the ctrl\_ pull is written; without chunks, it takes about a sixth of the time.
-2.  **Make deliverables**: three small choices, then a small build; it waits behind D177 in the roadmap's order unless you want it sooner.
-3.  **Code Finder**: finish the note first; it's new, and nothing else waits on it.
+1.  **Batching**: confirm per-table groups (small, and it changes how every pull runs), and whether chunks by date window go on the roadmap; decide before the ctrl\_ pull is written.
+2.  **Make deliverables**: confirm the `data\` layout, then it's a decision and goes in the roadmap's order.
+3.  **The profile screenshot**: read and remove.
+
+Moved out: **Code Finder** is in the roadmap under **Code Finder (Future)**, with `temp-tasklist.md` as its full description.
 
 ## Settled
 

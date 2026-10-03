@@ -127,6 +127,16 @@ Later, not now: a **Transfer** tab that queues transfer YAMLs. Each template add
 - **Joins to Cosmos tables** in the table builder are written out by hand; picking them from the dictionary would need its keys as data (A Join Check, below).
 - **Typing in a column field re-checks the draft on each key**, since renames change what validation reads; a slower draft may lag. If it does, check only after a pause, as the other fields do.
 
+### Code Finder (Future)
+
+Low priority (the user, 2 October 2026). A utility that searches Cosmos's code tables for keywords and keeps a growing library of codes, one parquet per vocabulary (`ICD-10.parquet`, `SNOMED.parquet`, `CPT.parquet`, `LOINC.parquet`), each row with every column of its source table and the categories it is filed under. The user's description, with the query and result it grew from, is `plan/temp-tasklist.md`.
+
+- **The search.** A dropdown of the four vocabularies and a comma-separated list of keywords (`tryptase, potassium, magnesium`), each searched alone. Where each vocabulary is in the dictionary: LOINC in `LabComponentDim` (`LoincCode`, `LoincName`, `Name`, `CommonName`, `BaseName`, as the tryptase query searched); CPT in `ProcedureDim` (`CptCode`, `Name`, `ShortName`; `HcpcsCode`, `Code` with `CodeSet`); ICD-10-CM and SNOMED in `DiagnosisTerminologyDim` (`Value`, `DisplayString`, `NameAndCode`, told apart by `Type`), with `DiagnosisDim.Name` and `TerminologyConceptDim` beside them. Dimension tables only, so fast. Whether CPT and SNOMED search as cleanly as LOINC needs looking at on the VM.
+- **Filing.** It asks for a category to file the finds under (`HaT`); a sidebar of the user's categories filters the parquet viewer below (none ticked shows all). A selected row can be marked incorrect, or moved to another category, which also undoes a mark.
+- **Later, in a pull.** A supporting table drawn from the library by vocabulary, keywords and categories (`GI, autoimmune`), copied into a parquet of its own at run time and read with In supporting table (D119). Validate warns of a keyword or category not in the library, with a shortcut to the utility; one left unsearched is searched before the pull starts, its finds added to the pull's parquet and to the library as `uncategorized`.
+
+Open: the name (Code Finder suggested); whether a keyword matches codes too (`D89.4` finding `D89.40` to `D89.49`).
+
 ### A Test Server
 
 The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pull can be run end to end from the Mac. Choosing it would sit beside Cosmos in the app. The server names are already settings (`PULLMANAGER_COSMOS_SERVER`, `PULLMANAGER_PROJECTS_SERVER`), and the ODBC driver and `pyodbc` (5.3.0 on the VM's list) would be needed on the Mac. Not until the servers exist.
