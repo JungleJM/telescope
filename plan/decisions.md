@@ -3541,3 +3541,24 @@ part of D49, and comes out when the user says.
 **Consequences.** Two copies again, D49's original worry, accepted for now
 because the Mac's overwrites the VM's on every bundle. How to undo it is in
 the roadmap.
+
+### D188. A landing reads through the linked server only before it inserts
+
+**Amends D176**, which said a landing refused for an expired sign-in "fails in
+`OPENQUERY`, before anything is inserted".
+
+**Context.** Building D176 (2 October 2026) showed that untrue: a landing
+copied the Cosmos temp, inserted and committed, then counted the Cosmos temp
+again through `OPENQUERY`. A sign-in refused at that count came after the
+rows were in, and the retry landed them twice (the test showed 20 rows, not 10).
+
+**Decision.** A landing counts the Cosmos temp first, then copies it into
+staging, then inserts, then counts what landed and measures widths, which read
+Projects alone. Every read through the linked server precedes the insert, so a
+landing refused at any of them has inserted nothing and can be tried again.
+A test holds the order.
+
+**Consequences.** The counts are the same numbers as before, read in another
+order. The refresh check's instance is read with `SERVERPROPERTY('ServerName')`
+in the same query as the dates (D183): the same name `@@SERVERNAME` gives, kept
+apart from the query OPENQUERY's target is captured with.
