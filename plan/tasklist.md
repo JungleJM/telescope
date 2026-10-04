@@ -65,80 +65,32 @@ bigger question is, how many chunks should I be doing? I mean, is there any valu
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
-:::
-
-bigg
-
-## Artifacts to "Make Deliverables"
-
-![](images/paste-2.png)
-
-We are no longer using 'artifacts' to make the artifacts. But if you look at "Artifacts" in design.md, there is a set of deliverables that the client will use - the two parquet folders, the contents.md, loading scripts, utils. I want this button to say "make deliverables" and when you click it it asks the folder you want it placed in. It will copy the deliverables of that project to that folder.\
-\
-The only other thing is 'load_parquets.r' is based on teh folder, and I want the person to choose what folder that they want to load. Specifically there will be a 'cosmos' a 'sneakpeek' and 'uploaded'. and there should be declarative var at the top of the script that says 'load\_' and each section, that is true or false. That way they can just turn on and off the ones they want. Default is Uploaded and Cosmos.
-
-::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: Make deliverables copies the package to a folder you choose; the load scripts get switches**
-
-**What the code does today.** Artifacts (the button, or `scope.py --artifacts <project>`) reads each finished table from Projects into parquet and writes the deliverable into the pull's own run folder: `cosmos_parquets\`, `sneakpeek_parquets\`, `uploads_parquets\`, `contents.md`, `load_parquets.R` and `.py`, `utils.py` with `utils\client\`, and `HOW_TO.md` (D72 to D75, D148). Execute already does this by itself after a clean pull (D141), then drops the pull's Projects tables (D165). So by hand the button only re-packages, and after the drop there is nothing in Projects to re-package from. The load scripts point at the run folder by its full path (`PARQUETS`), and load every `*_parquets` folder they find.
-
-**Recommendation.**
-
-- **Make deliverables** replaces the Artifacts button. It asks for a folder, then copies the loaded pull's deliverable into `<that folder>\<project>\`: the three parquet folders, `contents.md`, the load scripts, `utils.py` with `utils\client\`, and `HOW_TO.md`. Nothing from `pull_files\`, the manifest or the logs. It reads nothing from Projects. If `<project>\` already exists there, it stops and says so, rather than mixing two copies. It runs in the window with a line per folder copied, since parquets can be gigabytes.
-- **The load scripts are written again in the copy**, with `PARQUETS` set to the copy. Otherwise a copied script would still load from `runs\`.
-- **Re-packaging** from Projects stays as `scope.py --artifacts <project>`, for a rescue, with no button. Execute's own packaging is unchanged.
-- **Switches at the top of `load_parquets.R`:**
-
-``` r
-load_cosmos    <- TRUE
-load_sneakpeek <- FALSE
-load_uploaded  <- TRUE
-```
-
-each reading its folder (`cosmos_parquets`, `sneakpeek_parquets`, `uploads_parquets`). The same three in `load_parquets.py` (`LOAD_COSMOS = True`...), so the two scripts agree. A switch that is on, with its folder missing or empty, prints that it found nothing, rather than failing.
-
-**For you to decide:**
-
-1.  Does the deliverable include what made the pull: the blueprint copy (the template as sent)? I'd include it, since D148 says a deliverable carries what made it, and leave the manifest and logs out.
-2.  Is `<project>\` inside the chosen folder right, or should the files go straight into the folder you pick?
-3.  Should Make deliverables refuse a pull that has not packaged cleanly, or copy what there is with a warning? I'd copy with a warning naming what is missing, since `contents.md` already lists what was left out.
-:::
-
-::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
-1.  **add the blueprint.**
-
-2.  **Actually do /data inside the folder.**
-
-3.  yes it should refuse,l with a question - something like a popup saying "warning: incomplete pull, See 'status' (or whatever) for explanation/what's missing. Still make deliverable of what's been pulled?" with a Continue and Cancel.
+**🟧 Your response:** (in the chat, 2 Oct) This is fascinating. Is there a specific rule of chunking for each type? I mean, I'm not sure how to effectively chunk then.
 :::
 
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: the layout, as I read "/data inside the folder"**
+**🟦 Claude: a rule per purpose; the default is no splitting at all**
 
-The folder you choose holds the deliverable directly, with the data under `data\`:
+Each way of splitting a pull answers one question. Pick by the problem, not by habit; with none of these problems, don't split.
 
-``` text
-<chosen folder>\
-  data\
-    cosmos\        (from cosmos_parquets)
-    sneakpeek\     (from sneakpeek_parquets)
-    uploaded\      (from uploads_parquets)
-  load_parquets.R, load_parquets.py   PARQUETS is data\, load_cosmos / load_sneakpeek / load_uploaded
-  contents.md, HOW_TO.md
-  <project>_blueprint.yaml
-  utils.py, utils\client\
-```
+| Your problem | What to use | Why | Cost |
+|---|---|---|---|
+| **A table failing makes you re-pull the others** | One table per group (D190, now the default) | Each table is its own run; Retry failed pulls only the one that failed | Seconds per table |
+| **The pull takes too long** | Chunks by **date window** (proposed, below) | Each pass scans only its own years, so the passes divide the time | One pass per window, all adding up to about one scan |
+| **One pass runs out of tempdb, or its landing is too big** (an error naming `tempdb` or the log, 9002 or 1105 in tempdb) | Chunks by **patient** (`chunk:`), as few as fit, e.g. `chunk: 100000` | Each pass builds and lands a smaller temp | Every chunk scans the whole date window again: N chunks, about N times the time |
+| **The project database fills** | Not chunks: D177, packaging each group and emptying it | The destination holds every row whatever the chunks | (D177) |
+| **Separate files per value, or matched controls** (by sex, state) | Batching **by value** (`sex`, `state`, D58, D59) | One run and parquet per value; controls sampled per value | Every value scans the window again, as patient chunks do |
 
-- The folder names under `data\` are yours: `cosmos`, `sneakpeek`, `uploaded`, matching the switches. The run folder keeps its own names.
-- The load scripts find `data\` beside themselves, so the folder can be moved or zipped without editing them. Python reads its own location; R takes the folder from where `source()` was run, else the path written in at copy time, and says which it used.
-- A chosen folder that already has a `data\` stops it, naming what is there.
-- An incomplete pull asks: *Warning: incomplete pull. See Status for what is missing. Still make deliverables of what has been pulled?*, with **Continue** and **Cancel**. Continue copies what is packaged, and `contents.md` lists what was left out, as it does now.
+So, for each kind of pull:
 
-**For you to decide:** is that the layout you meant? If so, it's ready to write as a decision and put in the roadmap's order.
+- **A small cohort** (HaT, about 6,000 patients): nothing. One group per table, no chunks.
+- **A large cohort, finishing in a night**: still nothing.
+- **A large cohort that takes too long**: date windows, once built. Yearly windows over 2015 to 2026 is 12 runs, each about a twelfth of the time.
+- **A huge cohort that fails for tempdb**: patient chunks, large, and accept the time. We have not yet seen a tempdb failure; Crohns' and UC's failures were the project database filling, which chunks do not fix.
+
+**Chunks by date window, in short:** a splitter that cuts `min_date_key` to `max_date_key` into windows (a year, say), each a run of its own, filling the dates its tables filter on. It only helps a table filtered on its partition key, which is every fact table's `standard_where`; a table that isn't would scan everything in every window. The PK isn't split; each window joins the whole PK.
+
+**For you to decide:** put **chunks by date window** on the roadmap after D177? It would be its own decision first: what the window is (yearly, or a number of months), and what Author shows.
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
@@ -146,30 +98,31 @@ The folder you choose holds the deliverable directly, with the data under `data\
 
 :::
 
-## 7-10 for that prior query
+## Make a 'utils' tab in scope.py
 
-In case we still need that
-
-![](images/paste-5.png)
+after Run. that way I can just open it easily.
 
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: kept in HaT Considerations, with two things they show**
+**🟦 Claude: a Utils tab after Run, the utilities window's buttons inside the app**
 
-Recorded under **Profile Results** in `HaT Considerations.md`, with the screenshot kept. Two things worth your attention:
+**What the code does today.** The utilities are a window of their own: `python utils.py` opens a button per script in `utils/`, under **Client** (the parquet viewer, the transcription viewer) and **Manager** (clear_projects_db), each opening its own window (D124, D148). The app (`python scope.py`) has two tabs, Author and Run. D180 adds two of the utilities to Run as buttons (View dbo tables, and a multi-column view of a text tab), not yet built; a Parquets tab was left for later.
 
-- **Query 7** shows only its last row: 2017, 12 patients. So D89.44 rows go back before 2018, and the pull starts at 2015-01-01. A screenshot of its earlier rows would say how many patients have a first D89.44 before 2015 and so get a later index.
-- **Query 11**: 5,974 patients, 3,696 of them on 2+ dates. Of the 2,278 seen once, 586 fall in the window's last 6 months, too recent for a second code.
+**Recommendation.** A third tab, **Utils**, after Run, with the same buttons as `utils.py`, under the same headings, read from the same folders, so a script put in `utils/client/` or `utils/manager/` shows in both. Each button opens its utility's window, as it does now. The tab is drawn with the window's own code, so the two can't drift. D180's two buttons stay where they are, since they open a utility on what Run has loaded. The Parquets tab stays for later.
 
-Nothing for you to decide here; this section can go once you've read it.
+**For you to decide:** nothing, unless you want the utilities to open inside the tab rather than in their own windows. That would be a larger change, one utility at a time.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
 :::
 
 **Suggested order**
 
-1.  **Batching**: confirm per-table groups (small, and it changes how every pull runs), and whether chunks by date window go on the roadmap; decide before the ctrl\_ pull is written.
-2.  **Make deliverables**: confirm the `data\` layout, then it's a decision and goes in the roadmap's order.
-3.  **The profile screenshot**: read and remove.
+1.  **Chunks by date window**: on the roadmap or not; it decides how the ctrl\_ pull is split if it is large.
+2.  **The Utils tab**: a yes is enough; it's small.
 
-Moved out: **Code Finder** is in the roadmap under **Code Finder (Future)**, with `temp-tasklist.md` as its full description.
+Moved out: **Make deliverables** is D189 and **one table per group** D190, both in the roadmap's order; the finding that patient chunks repeat the scan is in `design.md`; **Code Finder** is in the roadmap's future items. The profile screenshot was for your HaT repository, so it is gone from here and from `HaT Considerations.md`.
 
 ## Settled
 

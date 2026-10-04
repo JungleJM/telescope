@@ -3562,3 +3562,58 @@ A test holds the order.
 order. The refresh check's instance is read with `SERVERPROPERTY('ServerName')`
 in the same query as the dates (D183): the same name `@@SERVERNAME` gives, kept
 apart from the query OPENQUERY's target is captured with.
+
+### D189. Make deliverables: a folder you choose, the data under `data\`, the load scripts with switches
+
+**Amends D72, D75 and D148.**
+
+**Context.** Execute packages a clean pull by itself (D141) and then drops its
+Projects tables (D165), so the Artifacts button only re-packages, and after the
+drop it has nothing to read. What the user needs is to hand a pull's
+deliverable to a client, somewhere other than `runs\`. The load scripts point
+at the run folder by its full path and load every parquet folder.
+
+**Decision.** (2 October 2026, the user's answers in the task list.)
+
+- **Make deliverables** replaces Run's Artifacts button. It asks for a folder
+  and copies the loaded pull's deliverable into it: `data\cosmos\`,
+  `data\sneakpeek\` and `data\uploaded\` (from the three parquet folders),
+  `load_parquets.R` and `.py`, `contents.md`, `HOW_TO.md`, the blueprint, and
+  `utils.py` with `utils\client\`. Nothing from `pull_files\`, the manifest or
+  the logs. It reads nothing from Projects, and runs in the window with a line
+  per folder copied.
+- A chosen folder that already has a `data\` stops it, naming what is there.
+- A pull not packaged whole asks first: *Warning: incomplete pull. See Status
+  for what is missing. Still make deliverables of what has been pulled?*, with
+  Continue and Cancel. Continue copies what is packaged; `contents.md` lists
+  what was left out.
+- The load scripts are written for the copy and find `data\` beside
+  themselves, so the folder can be moved. At their top, `load_cosmos`,
+  `load_sneakpeek` and `load_uploaded` (`LOAD_COSMOS`... in Python), each
+  reading its folder; Cosmos and uploaded on by default. A switch that is on,
+  with its folder empty or missing, says it found nothing.
+- Re-packaging from Projects stays as `scope.py --artifacts <project>`, with no
+  button. The run folder keeps its own layout (D142).
+
+### D190. Every table is its own table group unless a named group holds it
+
+**Amends D134**, under which the tables in no group ran together, as one group
+named `run`.
+
+**Context.** HaT PheWAS's chunked run built every table for chunk 1, then for
+chunk 2, and a failure anywhere would have re-pulled every table, because the
+run is the unit of retry. The user wants a failure to leave the finished tables
+finished.
+
+**Decision.** A fact table in no named group runs as a group of its own, named
+for the table: one run per table (per batch), its own connections, retried
+alone, and once D177 is built, packaged and emptied alone. A named group is the
+shorthand for tables that must share a run, because one reads another's temp.
+Two ungrouped tables where one reads the other are therefore in different
+groups, and validation refuses them (`table_reads_another_group`), with a named
+group for both as the fix.
+
+**Consequences.** A pull of N ungrouped tables opens N connections and refills
+the PK temp N times: seconds each. A split made before this keeps its runs; a
+new split makes one run per table. Batches still repeat each table's scan
+(design.md, Batching: what a batch costs).

@@ -33,14 +33,16 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-Agreed 2 October 2026. One commit each, with its outcome test. The first three (D183, D176, D178) are built and in the bundle `b822ab77…`; the rest wait until HaT PheWAS and Infant_RSV have run on it, so a fault found there has one cause.
+Agreed 2 October 2026. One commit each, with its outcome test. The first three (D183, D176, D178) are built and in the bundle `b822ab77…`; the rest (D190 and D189 added 2 October) wait until HaT PheWAS and Infant_RSV have run on it, so a fault found there has one cause.
 
-1.  **Package each table group as it finishes, then empty its tables** (D177). The largest; its own bundle.
-2.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
-3.  **Specify Project DB** (D179).
-4.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
-5.  **Row key and deduplication in Author** (D186), one column picker.
-6.  **Counts from `profile:`** (D181), on the same picker, in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
+1.  **Every table its own group unless a named group holds it** (D190). Small, in the split; first, since D177 then packages each table as it finishes.
+2.  **Package each table group as it finishes, then empty its tables** (D177). The largest; its own bundle.
+3.  **Make deliverables** (D189): the button, the `data\` layout, the incomplete-pull question, and the load scripts' switches.
+4.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
+5.  **Specify Project DB** (D179).
+6.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
+7.  **Row key and deduplication in Author** (D186), one column picker.
+8.  **Counts from `profile:`** (D181), on the same picker, in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 
 ------------------------------------------------------------------------
 
@@ -147,7 +149,6 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 - **The builder leaves new columns nullable** (D172), so a table's nullability in Cosmos stops becoming a row filter (`IS NOT NULL`, which turns a LEFT JOIN into an INNER one), and the audit's 327 `false` findings can then be written into the dictionary as facts. Agreed, not yet built: `_column_from` in the model.
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names. Under multipliers a fact table read this way names the base table, not its level's copy (`UCOrders`), and fails at Execute; validation warns meanwhile (D139).
-- **What a batch costs (D87).** Batching builds the PK once; what repeats per batch is every fact-table query, joined to that batch's PK rows. Whether fifty passes cost about one pull or about fifty depends on whether SQL Server seeks each fact table by `PatientDurableKey` or scans its date range on every pass, which nobody has measured. IBD_Ancestry's 24 runs, now timed per table (D136), are the first evidence; a clean comparison is one template three ways on `COSMOS_SneakPeek`, unbatched, `chunk:` and `state`, comparing each run's `duration`. If the fact tables are scanned per pass, prefer fewer, larger batches (`chunk: 100000`).
 - **What a table group costs.** From Crohns_PatientsFromUpload's progress lines (D136): how long its upload's second leg took, Projects to Cosmos. A group repeats about that, so it is what each group adds (D134).
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.
