@@ -22,6 +22,7 @@ When an item here is built, delete it from this file and describe the result in 
 | One blueprint per project (D162), Projects tables named per pull (D163), a database per pull (D164, D170, D171), drops after packaging (D165), Run and the title (D166), parquets from Status (D167), the Filters layout (D168), messages at their fields (D169) | Built and tested on the Mac; on the VM since `c98c60b3…` (1 October 2026). Seen working there: blueprints in `YAMLs\temp`, the table prefix in the manifest and SQL, the database choice, the title, the dropdowns and bold line, the step in flight, the Filters layout, messages at their fields. The bundles since: `5754255e…` (the six databases, listed in the code only), then `b822ab77…` (2 October 2026) |
 | Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; on the VM in the bundle `e126f85b…`. Used on the VM by UC_VisitsMedsDiagnoses (three groups); what a group costs, a PK refill per run, is measured (design.md, Batching) |
 | The refresh margin (D183), the Projects connection per table group and the retry on an expired sign-in (D176, D188), the join check (D178), recipes shipped for a while (D187), DepartmentDim in the dictionary | Built and tested on the Mac (2 October 2026), in the bundle `b822ab77…` with the HaT PheWAS blueprint; not yet extracted on the VM |
+| The upload-not-read warning (D195) and the chunk note (D196), duplicate and blank columns refused, the Diagnoses recipe set (D184), Row key and deduplication pickers (D186), the Utils tab (D194), clear_projects_db over every database (D185), Run's View dbo tables and multi-column view (D180), one table per group (D190) | Built and tested on the Mac (5 October 2026), in the bundle `9e742fd1…`; not yet extracted on the VM |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself is on the VM in the bundle `e126f85b…` |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; the PK parquet seen there (Infant_RSV); `stock.yaml` not yet |
 
@@ -33,24 +34,27 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on the VM has one cause. One commit each, with its outcome test. The user waived checking the docs first: these are small.
-
-**Bundle 1: authoring, validation, utilities, and the split.** Nothing under `scripts/pullmanager_src/pullmanager/` changes except what D190's split needs; before building, the runtime files are compared with `b822ab77…`'s.
-
-1.  **An upload no table reads** (D195): a warning.
-2.  **What chunks cost** (D196): a note at Validate and Preview.
-3.  **The tests still owed**: duplicate output column names, and a blank `source`.
-4.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
-5.  **Row key and deduplication in Author** (D186), one column picker.
-6.  **A Utils tab after Run** (D194).
-7.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
-8.  **Every table its own group unless a named group holds it** (D190). In the split.
+Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on the VM has one cause. Bundle 1 (D195, D196, the owed tests, D184, D186, D194, D185, D180, D190) is built: `9e742fd1…`, below. One commit each, with its outcome test.
 
 **Bundle 2, once bundle 1 has run a real pull: D177 alone.**
 
-9.  **Package each table group as it finishes, then empty its tables** (D177). Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
+1.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
 
 **Later, not in either:** **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
+
+------------------------------------------------------------------------
+
+## Next: On The VM, The Bundle `9e742fd1…`
+
+Built 5 October 2026. The files that run, land and package pulls are unchanged from `b822ab77…` (session, executor, uploads, artifacts, manifest, the command line); what changed is Author, validation and the split (makeYaml), Run's window, the Utils tab and two utilities. Extract it once no pull is executing. To see:
+
+1.  **Validate** on the old UC intake (in `YAMLs\temp\replaced\`, or any template with an upload nothing reads) warns `upload_not_read` (D195); a chunked one prints a `NOTE [chunk_passes]` line with its passes (D196).
+2.  **Author**: a built or recipe PK has **Row key**, a dropdown of its columns, several allowed; each fact table has **Deduplicate by** and **Keep** (D186). Tick and untick, then Save and look at the YAML.
+3.  **The Utils tab** after Run, with the utilities window's buttons (D194).
+4.  **Run**: **View dbo tables** opens clear_projects_db on the loaded pull's database (D180); **Multi-column view** at the top right of Validation Output, Pull Log and Pull Manifest opens the transcription viewer on that tab's text.
+5.  **clear_projects_db** (from Utils or View dbo tables): every listed database with its GB free, or why it could not be opened; opening one shows its tables grouped by pull; selecting a database shows its files; Drop selected on a pull's row drops only its tables, and on a database's row asks for its name (D185). Try it on a database with nothing you need.
+6.  **One table per group** (D190): a new pull's Export split and Preview SQL show one run per ungrouped table (`<session>__<table>__b1of1`). A pull already split keeps its runs. The old `Infant_RSV_transfer.yaml` beside `scope.py`, if still there, is now refused (its tables read each other in no group); the working blueprint groups them and passes.
+7.  **The Diagnoses recipe set** (D184): Add a fact table offers it; HospitalizationsWithinICDCode replaces OtherHospitalizations in the recipe list. The UC and Crohns intakes keep their table `OtherHospitalizations`.
 
 ------------------------------------------------------------------------
 
