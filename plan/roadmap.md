@@ -183,7 +183,6 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 - **One PK per multiplier group.** Two `type: PK` cohorts in one group are an error (`multiple_pk_cohorts`), so each session has exactly one PK.
 - **Multi-step PK.** A PK built from a prior PK (a patient list, then diagnosis events for those patients: `PKTable` built by joining `PKTable2`). The `pk` phase is one YAML; ordered PK cohorts inside it need a representation.
 - **Space in the project database.** Pullmanager neither checks the data file's and log's room before a pull nor drops a finished pull's tables, so a full database is found only when `setup` fails (D133). It could say, at Validate or before `setup`, how full each file is, and name the tables of pulls already packaged as parquets.
-- **Tests still owed**: duplicate output column names and blank `source` expressions in a cohort.
 
 ### A Join Check From The Dictionary's Keys
 

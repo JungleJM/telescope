@@ -3015,6 +3015,44 @@ def dedup_key_names(value: Any) -> list[str]:
     return []
 
 
+def check_output_columns(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """Two columns with one name, or a column with nothing to select.
+
+    Either fails only at Execute, with SQL Server's message (`Column names in
+    each table must be unique`, or `Incorrect syntax near 'AS'`), which names
+    neither the table's column nor the template's line. Names compare as SQL
+    Server compares them, ignoring case.
+    """
+    for cohort in cohorts:
+        if not isinstance(cohort, dict):
+            continue
+        seen: dict[str, int] = {}
+        for idx, column in enumerate(cohort.get("columns", []) or []):
+            if not isinstance(column, dict):
+                continue
+            where = f"{cohort_label(cohort)}.columns[{idx}]"
+            if not str(column.get("source") or "").strip():
+                result.error(
+                    "blank_column_source",
+                    f"Column `{column.get('name') or idx}` of `{cohort.get('name')}` selects nothing: "
+                    "its `source` is blank.",
+                    f"{where}.source",
+                    fix="Give it the expression to select (`def.StartDateKey`), or remove the column.",
+                )
+            name = column.get("name") or (str(column.get("source") or "").split(".")[-1].strip())
+            if not name:
+                continue
+            first = seen.setdefault(str(name).lower(), idx)
+            if first != idx:
+                result.error(
+                    "duplicate_column_name",
+                    f"`{cohort.get('name')}` has two columns named `{name}` (columns[{first}] and "
+                    f"columns[{idx}]); SQL Server refuses a table with both.",
+                    f"{where}.name",
+                    fix="Rename one (`name:`), or remove the duplicate.",
+                )
+
+
 def check_dedup(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
     """Dedup keys and ordering name the cohort's own columns (D58).
 
@@ -3317,6 +3355,7 @@ def compile_yaml(
     dictionary = load_datadictionary(datadictionary_path, result)
     cohorts = import_recipes(template, recipes_doc, result, dictionary)
     apply_table_groups(template, cohorts, result)
+    check_output_columns(cohorts, result)
     check_dedup(cohorts, result)
     check_random_sample(template, cohorts, result)
     cohorts = expand_multipliers(template, cohorts, result)
@@ -5640,6 +5679,60 @@ multipliers:
         self.assertHasError(res, "split_after_build_on_uploaded_pk")
 
 
+class OutputColumnTests(MakeYamlTest):
+    """Two columns with one name, or a blank `source`, are refused at Validate,
+    not left to fail at Execute with a message that names neither."""
+
+    TABLE = """
+  - name: Visits
+    type: fact
+    dest_table: Visits
+    columns:
+{columns}
+    filter:
+      from: EncounterFact AS e
+      join:
+        - "INNER JOIN {{{{prefix}}}}_Patients AS pk ON pk.PatientDurableKey = e.PatientDurableKey"
+"""
+
+    def compile_columns(self, columns: str) -> CompileResult:
+        return self.compile_template(tiny_template(self.TABLE.format(columns=columns)))
+
+    def test_two_columns_with_one_name_are_refused(self):
+        res = self.compile_columns(
+            "      - {source: e.EncounterKey, name: EncounterKey}\n"
+            "      - {source: e.DateKey, name: encounterkey}\n"
+        )
+        self.assertHasError(res, "duplicate_column_name")
+        found = [m for m in res.errors if m.code == "duplicate_column_name"][0]
+        self.assertIn("columns[0] and columns[1]", found.message)
+        self.assertFalse(res.ok)
+
+    def test_a_name_taken_from_the_source_counts(self):
+        res = self.compile_columns(
+            "      - {source: e.EncounterKey}\n"
+            "      - {source: e.DateKey, name: EncounterKey}\n"
+        )
+        self.assertHasError(res, "duplicate_column_name")
+
+    def test_a_blank_source_is_refused(self):
+        res = self.compile_columns(
+            "      - {source: e.EncounterKey, name: EncounterKey}\n"
+            "      - {source: '  ', name: Nothing}\n"
+        )
+        self.assertHasError(res, "blank_column_source")
+        self.assertIn("columns[1].source",
+                      [m for m in res.errors if m.code == "blank_column_source"][0].context)
+
+    def test_distinct_names_pass(self):
+        res = self.compile_columns(
+            "      - {source: e.EncounterKey, name: EncounterKey}\n"
+            "      - {source: e.DateKey, name: DateKey}\n"
+        )
+        self.assertNotIn("duplicate_column_name", [m.code for m in res.errors])
+        self.assertNotIn("blank_column_source", [m.code for m in res.errors])
+
+
 class ChunkPassesTests(MakeYamlTest):
     """D196: a chunked template is told what its chunks cost, as a note."""
 
@@ -6963,6 +7056,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "upload_files": UploadFileTests,
     "uploaded_pk_batching": UploadedPkBatchingTests,
     "chunk_passes": ChunkPassesTests,
+    "output_columns": OutputColumnTests,
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
