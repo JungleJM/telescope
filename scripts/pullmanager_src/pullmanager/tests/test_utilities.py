@@ -106,6 +106,70 @@ class GroupTests(unittest.TestCase):
         self.assertEqual(shipped.get("Manager"), ["clear_projects_db.py"])
 
 
+# Opens the app with its event loop patched out, then prints its tabs and the
+# buttons on its Utils tab, one per line (D194).
+UTILS_TAB_PROBE = """
+import sys, tkinter as tk
+from tkinter import ttk
+seen = []
+def fake_loop(self, n=0):
+    self.update_idletasks()
+    book = next(w for w in self.winfo_children() if isinstance(w, ttk.Notebook))
+    seen.append("TABS " + ",".join(book.tab(t, "text") for t in book.tabs()))
+    utils = self.nametowidget(book.tabs()[-1])
+    stack = list(utils.winfo_children())
+    while stack:
+        widget = stack.pop(0)
+        stack.extend(widget.winfo_children())
+        if isinstance(widget, ttk.Button):
+            seen.append("BUTTON " + str(widget.cget("text")))
+    self.destroy()
+tk.Tk.mainloop = fake_loop
+tk.Misc.mainloop = fake_loop
+opened = tk.Tk.__init__
+def hidden(self, *args, **kwargs):
+    opened(self, *args, **kwargs)
+    self.withdraw()
+tk.Tk.__init__ = hidden
+sys.path.insert(0, sys.argv[1])
+from pullmanager import app
+app.main()
+print("\\n".join(seen))
+"""
+
+
+class UtilsTabTests(unittest.TestCase):
+    """D194: the app's Utils tab, after Run, has the utilities window's buttons."""
+
+    SRC = Path(__file__).resolve().parents[2]
+
+    def test_the_tab_is_after_run_with_a_button_per_utility(self):
+        import subprocess
+
+        try:
+            import tkinter as tk
+
+            tk.Tk().destroy()
+        except Exception as exc:  # noqa: BLE001 - no display, no window to check
+            self.skipTest(f"needs a display ({exc})")
+        done = subprocess.run([sys.executable, "-c", UTILS_TAB_PROBE, str(self.SRC)],
+                              capture_output=True, encoding="utf-8", timeout=120,
+                              cwd=tempfile.gettempdir(), env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+        lines = done.stdout.strip().splitlines()
+        self.assertIn("TABS Author,Run,Utils", lines, done.stderr[-2000:])
+        buttons = [line[len("BUTTON "):] for line in lines if line.startswith("BUTTON ")]
+        self.assertEqual(buttons, [p.stem for p in load_utilities().scripts()])
+
+    def test_the_window_and_the_tab_draw_with_one_function(self):
+        utilities = load_utilities()
+        with mock.patch.object(utilities, "fill") as fill, \
+                mock.patch("tkinter.Tk") as tk_root, mock.patch.object(utilities, "add_credit"):
+            utilities.window(self.SRC / "utils")
+        fill.assert_called_once()
+        self.assertEqual(fill.call_args.args[1], self.SRC / "utils")
+        tk_root.return_value.mainloop.assert_called_once()
+
+
 class CreditTests(unittest.TestCase):
     """D145: every window says who made it."""
 

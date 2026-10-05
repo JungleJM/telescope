@@ -45,14 +45,11 @@ def start(path: Path, cwd: Path | None = None) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, str(path)], cwd=str(cwd or Path.cwd()))
 
 
-def window(folder: Path = UTILS_DIR) -> None:
-    import tkinter as tk
+def fill(frame, folder: Path = UTILS_DIR) -> None:
+    """The buttons, under their headings, into `frame`: this window's, and the
+    app's Utils tab (D194), so the two cannot drift."""
     from tkinter import ttk
 
-    root = tk.Tk()
-    root.title("Utilities")
-    frame = ttk.Frame(root, padding=12)
-    frame.pack(fill="both", expand=True)
     said = ttk.Label(frame, text="", foreground="#6e7781")
 
     def run(path: Path) -> None:
@@ -74,6 +71,17 @@ def window(folder: Path = UTILS_DIR) -> None:
     said.pack(anchor="w", pady=(8, 0))
     ttk.Label(frame, text=f"Add a .py file to {folder} and it appears here.",
               foreground="#6e7781").pack(anchor="w")
+
+
+def window(folder: Path = UTILS_DIR) -> None:
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = tk.Tk()
+    root.title("Utilities")
+    frame = ttk.Frame(root, padding=12)
+    frame.pack(fill="both", expand=True)
+    fill(frame, folder)
     add_credit(root)
     root.mainloop()
 

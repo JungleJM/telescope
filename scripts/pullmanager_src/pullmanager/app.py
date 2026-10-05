@@ -11,6 +11,7 @@ package's location, as the launcher finds makeYaml.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -22,6 +23,17 @@ from .gui import LauncherApp, add_credit
 from .launcher import LauncherError
 
 TITLE = "Telescope"
+
+
+def load_utilities() -> Any:
+    """utilities.py, beside this package, as `utils.py` runs it (D124, D194)."""
+    path = Path(__file__).resolve().parents[1] / "utilities.py"
+    spec = importlib.util.spec_from_file_location("utilities", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No utilities at {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_author(tools: launcher.Tools) -> Any:
@@ -45,8 +57,17 @@ class App:
         self.halves.pack(fill="both", expand=True)
         self.author_frame = ttk.Frame(self.halves)
         self.run_frame = ttk.Frame(self.halves)
+        self.utils_frame = ttk.Frame(self.halves, padding=12)
         self.halves.add(self.author_frame, text="Author")
         self.halves.add(self.run_frame, text="Run")
+        self.halves.add(self.utils_frame, text="Utils")
+        try:
+            # The utilities window's own buttons, each opening its window (D194).
+            load_utilities().fill(self.utils_frame)
+        except Exception as exc:  # noqa: BLE001 - Author and Run work without it
+            ttk.Label(self.utils_frame, wraplength=700, justify="left",
+                      text=f"The utilities could not be listed: {type(exc).__name__}: {exc}\n\n"
+                           "python utils.py opens them in a window of their own.").pack(anchor="nw")
 
         self.author_title = ""
         self.run_title = ""
