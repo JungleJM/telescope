@@ -370,15 +370,14 @@ If the study needs IBD medications, joining `IBD_Meds` would cut these tables to
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response: Block 2\**
-![](images/paste-10.png)
+\*\*🟧 Your response: Block 2\*\* ![](images/paste-10.png)
 :::
 
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟦 Claude: patients don't narrow the read, dates do, and Cosmos reads by column**
 
 | Count | Rows | Seconds |
-|------------------|------------------|------------------|
+|------------------------|------------------------|------------------------|
 | A: 1,000 patients, 2015–2026 | 429,728 | 53.4 (51.8 again: no caching) |
 | C: 10 patients, same window | 3,672 | 49.8 |
 | B: 1,000 patients, 2025 only | 60,401 | 7.4 |
@@ -394,13 +393,14 @@ If the study needs IBD medications, joining `IBD_Meds` would cut these tables to
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
+**🟧 Your response:sure.**
 :::
 
 **Suggested order**
 
-1.  **The columns check** (optional, roadmap): it decides whether the table builder should warn about wide selections.
+1.  **The HaT control pull** (Explorations, HatControl large splitting): it is running now, about six days at this rate, and will likely run out of room. Stop it, trim it, re-pull.
+2.  **The columns check**: answered by that re-pull, whose trimmed tables show whether time falls with columns. The SSMS version in the roadmap is then only needed if it doesn't show.
+3.  **Returning to SP first**: needs a screenshot of where the order looked wrong; the code and both runs say SneakPeek goes first.
 
 Moved out on 5 October: **the Utils tab** is D194, last in the roadmap's Fixes, In Order; Block 2's results are in `design.md` (Batching, What a batch costs).
 
@@ -507,6 +507,111 @@ It seems like many of the roadblocks seem to be related to size of the larger ta
 - larger/sizeable tables
 
 The idea is that we get the data that is core/needed, then the smaller ones to get them out of the way. Then we have these larger ones where chunking is actually useful, and we chunk per patient by doing a series of parquet tables for each group of say 50,000 or 100,000 patients and their data for that specific table. Then, we really can be sure that the size is not going to be an issue for the tables. It woulnd't fix the issue of having to go over the same DIagnosis fact set in Cosmos over and over again (as we can't really use the per-year option due to accuracy issues) but everythign else would be downloaded and ready. As we do chunk 1 or 2, we can then also report how long they took, and based on how many chunks, we can estimate time to finish.
+
+## HatControl large splitting - did I doom myself to an unnecessarily long pull?  
+
+So I ran a HaT control sample, based on the data in my phewas repo. Look at repo /code/pheauxWAS for context, especially tutorial/adapting-cosmos. The intake turned the task into 150 batches - and at this rate it could take weeks. I'm thinking this is simply unnecesssary, but I'm looking to understand if that's the case. I'm wondering if I should simply stop an dturn off the cosmos sneak-peek version to save time.
+
+![](images/paste-3.png)
+
+![](images/paste-4.png)
+
+Of note, it also says that for 300k Cosmos patients it has 3 million encounters, but for 17k patients it has 1.8 million encounters! Somethign seems wrong here.
+
+Look at the logic of this size and tell me based on what you know about approximating wait, woul dthe auto-batching plan we have address this better and save me time?
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: stop it: about six days, and it would run out of room long before; trim the columns and use a few large chunks instead**
+
+**Why 150.** `ctrl_PheWAS_intake.yaml` caps the pool at 300,000 patients (`stop_at_for_pk_table`) and has `chunk: 2000`, so 300,000 ÷ 2,000 = 150 passes. Every pass reads each table's whole date window again, whatever its 2,000 patients (design.md, What a batch costs).
+
+**How long, from your log.** Each chunk takes 55 to 62 minutes:
+
+| Table | Per chunk | Rows per chunk |
+|------------------|------------------|------------------|
+| ctrl_Encounters | 5 to 11 min | about 300,000 |
+| ctrl_Diagnoses | 10 to 12 min | about 930,000 |
+| ctrl_Labs | **31 to 45 min** | 6 to 14 |
+
+150 chunks is **about 140 to 155 hours, roughly six days**. Two-thirds of that is Labs reading its whole window to find about ten tryptase results each time.
+
+**The numbers aren't wrong; Status shows what has landed so far.** The Cosmos run is at `c10of150`, so its 2,967,186 encounters and 9,043,833 diagnoses are for 20,000 patients, not 300,000:
+
+| Per patient | SneakPeek (17,884, done) | Cosmos (20,000 so far) |
+|------------------|------------------|------------------|
+| Encounters | 102 (median 47) | 148 |
+| Diagnoses | 316 (median 125) | 452 |
+
+**It would most likely fail for room before it finished.** Scaled to 300,000 patients, Cosmos's rate gives about 44 million encounters and 136 million diagnoses, both with every column (45 and 30). At any likely row size that is several times the project database's 20 GB, and D177 (emptying as it goes) isn't built. Roughly, a chunk adds about half a GB, so it would fill within the first day or two, after a day or more of pulling.
+
+**The analysis reads a few columns.** `build_group_parquet.py` reads:
+
+| Table | Pulled | Used |
+|------------------|------------------|------------------|
+| ctrl_Encounters | 45 | 6: PatientDurableKey, DateKey, DerivedEncounterStatus, DerivedEncounterType_X, IsEdVisit, IsHospitalAdmission |
+| ctrl_Diagnoses | 30 | 5: PatientDurableKey, DiagnosisDate, DiagnosisCode, Vocabulary, DiagnosisStatus |
+| ctrl_Labs | 40 | 6: PatientDurableKey, LabComponentKey, PrioritizedDateKey, NumericValue, Unit, IsBlankOrUnsuccessfulAttempt |
+
+Each table also needs its dedup key (EncounterKey, DiagnosisEventKey, LabComponentResultKey). Cosmos reads by column (Block 2), so fewer columns should make each pass faster as well as smaller. That is the columns check you agreed to, run on a real pull.
+
+**My recommendation.**
+
+1.  **Stop the Cosmos session now.** Its 10 chunks are not worth keeping, because a retry redoes the run from the start anyway. The SneakPeek session is finished.
+2.  **Trim the three fact tables to the columns above plus their keys.** The PK, `ctrl_Patients` (300,000 rows), stays as it is.
+3.  **`chunk: 100000`: 3 passes, not 150.** With the trimmed columns, Diagnoses' 136 million rows come to roughly 10 GB in all, and about a third of that per pass, which bounds what Cosmos builds at once. Expect hours, not days: 3 passes of at most about an hour each, less if the columns help.
+4.  **Re-pull everything** on the new bundle `9e742fd1` (Export split again). SneakPeek takes 13 minutes, and keeps the two databases' columns alike. With D190 each table runs alone, so a failure in one costs only that table.
+5.  **Keep SneakPeek.** It finished in 13 minutes and is exactly what would have warned you (below).
+
+**Would the auto-batching plan have caught it?** Yes, both stages:
+
+- **The chunk note (D196, in `9e742fd1`)** would have said at Validate: "makes 150 passes of every table ... about 150 times one unchunked pass".
+- **The size estimate's stage 2 (D193)** would have predicted from SneakPeek about 31 million encounters and 95 million diagnoses, far past the room at every column.
+- **Packaging by chunk**, the long-term fix, would let a pull like this keep every column and still fit.
+
+None of those three is built except the note, so today the fix is the hand edit above.
+
+**For you to decide:** stop and re-pull as above? I can write the trimmed `ctrl_PheWAS_intake.yaml` in pheauxWAS for you to carry over, and validate it here.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
+## Returning to SP first
+
+\
+To that end, funny enough the system isn't actually running all the sneakpeek runs first anymore. I think it's because the logic thinks i'm batching by table so do 'patients_sp' then 'patients' then 'diagnosis_sp' then diagnosis'... But no that defeats the purpose. For any future run it should always do all the SPs first for the purpose of testing then go forth and do the regulars.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: agreed, and the code already does it; I need to see where it didn't**
+
+**What the code does today.**
+
+- **The split puts every SneakPeek session first** (D65): makeYaml sorts the sessions SneakPeek first, then cases before controls.
+- **Execute runs the sessions in the manifest's order.**
+- **A session runs all its tables before the next starts.** Batches and table groups (D190) are inside a session, never across two.
+
+So the order is `ctrl_Patients_sp` (PK, Encounters, Diagnoses, Labs), then `ctrl_Patients` (the same). Patients_sp, Patients, Diagnoses_sp, Diagnoses never happens.
+
+**Your two runs agree.**
+
+- **The control pull's Status above:** `ctrl_Patients_sp` is done (its run took 12m 58s) before `ctrl_Patients` began.
+- **HaT PheWAS (2 October):** SneakPeek's whole run finished at 18:28, and the Cosmos PK started at 18:28.
+
+**Where it might have looked otherwise:**
+
+- **A manifest split before D65** keeps its old order, Cosmos first. D65 applies from the next split.
+- **Retry failed** pulls a failed Cosmos session without re-running a SneakPeek one that is done. That is correct, but it looks like Cosmos first.
+- **The Pull Log of a session on its own**, from Re-pull sessions (D158).
+
+**For you to decide:** nothing to change unless one of those doesn't explain it. Which pull, and where did you see the order (Pull Log, Status, the console)? A screenshot of the lines would settle it.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
 
 ## Settled
 

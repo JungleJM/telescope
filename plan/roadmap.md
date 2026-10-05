@@ -158,7 +158,7 @@ Low priority (the user, 2 October 2026). A utility that searches Cosmos's code t
 - **Filing.** It asks for a category to file the finds under (`HaT`); a sidebar of the user's categories filters the parquet viewer below (none ticked shows all). A selected row can be marked incorrect, or moved to another category, which also undoes a mark.
 - **Later, in a pull.** A supporting table drawn from the library by vocabulary, keywords and categories (`GI, autoimmune`), copied into a parquet of its own at run time and read with In supporting table (D119). Validate warns of a keyword or category not in the library, with a shortcut to the utility; one left unsearched is searched before the pull starts, its finds added to the pull's parquet and to the library as `uncategorized`.
 
-Open: the name (Code Finder suggested); whether a keyword matches codes too (`D89.4` finding `D89.40` to `D89.49`).
+A code is matched as written, and `%` widens it (`D89.4%`), D197.
 
 ### Estimate Size And Packaging By Chunk (Future)
 

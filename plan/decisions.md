@@ -3722,3 +3722,18 @@ not the time, so fewer, larger chunks are faster. A note, not a warning: chunks
 are sometimes needed.
 
 **Consequences.** None to running; it is text. Built at Validate and Export split, both in makeYaml; Preview, which is the runtime's dry run, does not say it, so bundle 1 leaves the runtime as it was (5 October 2026).
+
+### D197. The Code Finder matches a code as written; `%` widens it
+
+**Context.** The Code Finder (roadmap, future) searches Cosmos's code tables
+by keyword. A typed code such as `D89.4` could mean that code alone or
+everything under it (`D89.40` to `D89.49`), and which is meant varies.
+
+**Decision.** A code is matched exactly as written: `D89.4` finds `D89.4`,
+`D89.40` finds `D89.40`. A `%` widens it, as SQL's `LIKE` does: `D89.4%` finds
+`D89.4` and everything under it. Words (`tryptase`) are searched in the names
+as before. The name of the utility does not matter to the user (5 October
+2026).
+
+**Consequences.** Nothing is widened for the user; they say so with `%`, as
+in a template's own code lists (`K50.%`).
