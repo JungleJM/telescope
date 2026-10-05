@@ -9,6 +9,9 @@ Run with:  python scope.py --gui
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import tempfile
 import time
 import tkinter as tk
 from pathlib import Path
@@ -20,7 +23,19 @@ from .launcher import LauncherError, Options, Paths
 from .lock import LockInfo, clear_lock_of, live_lock
 from .manifest import Manifest, ManifestError
 from .models import DONE
-from .yaml_io import file_signature, read_shared
+from .yaml_io import file_signature, load_yaml, read_shared
+
+# The utilities Run opens (D180), by their place in the tree: a test holds each
+# to a file there with the main() Run calls, so a renamed one fails a test, not
+# a button.
+UTILS_DIR = Path(__file__).resolve().parents[1] / "utils"
+CLEAR_PROJECTS_DB = UTILS_DIR / "manager" / "clear_projects_db.py"
+TRANSCRIPTION_VIEWER = UTILS_DIR / "client" / "transcription_viewer.py"
+
+
+def start_utility(script: Path, *args: str, cwd: Path | None = None) -> subprocess.Popen:
+    """A utility in its own process, with this Python, as utils.py starts one."""
+    return subprocess.Popen([sys.executable, str(script), *args], cwd=str(cwd or Path.cwd()))
 
 POLL_MS = 100
 STATUS_REFRESH_MS = 3000
@@ -218,6 +233,9 @@ class LauncherApp:
             button.pack(side="left", padx=(0, 6))
             self.action_buttons.append(button)
             self.buttons[text] = button
+        # Opens a window of its own; never greyed while a command runs (D180).
+        ttk.Button(actions, text="View dbo tables", command=self.on_view_dbo_tables).pack(
+            side="left", padx=(12, 6))
         self.stop_button = ttk.Button(actions, text="Stop", command=self.on_stop, state="disabled")
         self.stop_button.pack(side="right")
 
@@ -230,6 +248,7 @@ class LauncherApp:
         self.output = scrolledtext.ScrolledText(
             output_tab, wrap="none", font=("Consolas", 10), state="disabled"
         )
+        self.multicolumn_bar(output_tab, lambda: self.output, "Validation Output")
         self.output.pack(fill="both", expand=True)
         # Validate, Export split and Preview SQL, which run inside the window.
         notebook.add(output_tab, text="Validation Output")
@@ -239,6 +258,7 @@ class LauncherApp:
         self.pull_output = scrolledtext.ScrolledText(
             self.pull_tab, wrap="none", font=("Consolas", 10), state="disabled"
         )
+        self.multicolumn_bar(self.pull_tab, lambda: self.pull_output, "Pull Log")
         self.pull_output.pack(fill="both", expand=True)
         notebook.add(self.pull_tab, text="Pull Log")
 
@@ -248,6 +268,7 @@ class LauncherApp:
         self.manifest_text = scrolledtext.ScrolledText(
             self.manifest_tab, wrap="none", font=("Consolas", 10), state="disabled"
         )
+        self.multicolumn_bar(self.manifest_tab, lambda: self.manifest_text, "Pull Manifest")
         self.manifest_text.pack(fill="both", expand=True)
         for status, colour in STATUS_COLOURS.items():
             self.manifest_text.tag_configure(status, foreground=colour)
@@ -293,6 +314,55 @@ class LauncherApp:
     def _build_status_bar(self) -> None:
         self.bar = ttk.Label(self.frame, text="Ready.", anchor="w", padding=(10, 4))
         self.bar.pack(fill="x", side="bottom")
+
+    # ------------------------------------------------------- the utilities (D180)
+
+    def multicolumn_bar(self, tab: Any, text_widget: Any, name: str) -> None:
+        """Above a text tab: Multi-column view, the transcription viewer on its text."""
+        bar = ttk.Frame(tab)
+        bar.pack(side="top", fill="x")
+        ttk.Button(bar, text="Multi-column view",
+                   command=lambda: self.on_multicolumn(text_widget(), name)).pack(side="right", pady=2)
+
+    def on_multicolumn(self, widget: Any, name: str) -> Path | None:
+        """The tab's text, saved to a file, opened in the transcription viewer
+        in its own process. Returns the file it wrote, for the tests."""
+        text = widget.get("1.0", "end-1c")
+        if not text.strip():
+            messagebox.showinfo("Multi-column view", f"{name} is empty.")
+            return None
+        project = self.loaded_project() or "Run"
+        folder = Path(tempfile.mkdtemp(prefix="scope_view_"))
+        path = folder / f"{project} {name}.txt".replace("/", "_").replace("\\", "_")
+        path.write_text(text, encoding="utf-8")
+        try:
+            start_utility(TRANSCRIPTION_VIEWER, str(path), cwd=self.workdir)
+        except OSError as exc:
+            messagebox.showerror("Multi-column view", f"The transcription viewer did not start: {exc}")
+        return path
+
+    def loaded_project(self) -> str:
+        try:
+            return Path(self.paths().manifest()).parent.name
+        except Exception:  # noqa: BLE001 - nothing loaded
+            return ""
+
+    def loaded_database(self) -> str:
+        """The loaded pull's Projects database, once Execute has chosen it (D164)."""
+        try:
+            data = load_yaml(self.workdir / self.paths().manifest()) or {}
+        except Exception:  # noqa: BLE001 - nothing loaded, or not split yet
+            return ""
+        chosen = str((data.get("database_choice") or {}).get("database") or "")
+        return chosen if chosen.upper().startswith("PROJECTD") else ""
+
+    def on_view_dbo_tables(self) -> None:
+        """clear_projects_db, opened on the loaded pull's database if it has one (D180, D185)."""
+        database = self.loaded_database()
+        try:
+            start_utility(CLEAR_PROJECTS_DB, *([database] if database else []), cwd=self.workdir)
+        except OSError as exc:
+            messagebox.showerror("View dbo tables", f"clear_projects_db did not start: {exc}")
 
     # ------------------------------------------------------------ settings
 
