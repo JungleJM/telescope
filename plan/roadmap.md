@@ -20,7 +20,7 @@ When an item here is built, delete it from this file and describe the result in 
 | On the VM in the bundle `e126f85b…` (29 September 2026), not yet checked there: progress lines and each table's rows (D136, D137); how Execute ended (D140); Artifacts after a clean pull (D141); the run folder (D142); QuickEdit off (D143, tested against a fake console only); the Pull Manifest tab (D144); the credit line (D145); the parquet viewer's buttons (D146); extraction refusing while a pull executes, and the bundle in every window (D147); the deliverable pull folder (D148); the backup (D149); the dictionary line out (D150) | Built and tested on the Mac. The bundle's `--tdd` failed two window tests on Windows only, fixed in the tests in `0f81dc63…`, which is extracted and passes `--tdd` |
 | Errors hidden in a batch (D151), the run scan (D152), manifest saves that wait and readers that let them (D153, D154), the dictionary audit and `dictionary-fix` (D155), the column check (D156), rows per join key (D157), re-pulling chosen sessions (D158), unquoted CSV headers (D159) | On the VM since the bundle `048c3f29…` (30 September 2026). The scan and the audit have run there; the show-stopper tests are under way (below): manifest saves past a held manifest proven (D175) |
 | One blueprint per project (D162), Projects tables named per pull (D163), a database per pull (D164, D170, D171), drops after packaging (D165), Run and the title (D166), parquets from Status (D167), the Filters layout (D168), messages at their fields (D169) | Built and tested on the Mac; on the VM since `c98c60b3…` (1 October 2026). Seen working there: blueprints in `YAMLs\temp`, the table prefix in the manifest and SQL, the database choice, the title, the dropdowns and bold line, the step in flight, the Filters layout, messages at their fields. The bundles since: `5754255e…` (the six databases, listed in the code only), then `b822ab77…` (2 October 2026) |
-| Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; on the VM in the bundle `e126f85b…`. No pull uses a group yet: the first is the question of what a group costs (below) |
+| Table groups (D134, D138), recipe sets (D135), the table-order check, the multiplied-read warning (D139) | Built and tested on the Mac; on the VM in the bundle `e126f85b…`. Used on the VM by UC_VisitsMedsDiagnoses (three groups); what a group costs, a PK refill per run, is measured (design.md, Batching) |
 | The refresh margin (D183), the Projects connection per table group and the retry on an expired sign-in (D176, D188), the join check (D178), recipes shipped for a while (D187), DepartmentDim in the dictionary | Built and tested on the Mac (2 October 2026), in the bundle `b822ab77…` with the HaT PheWAS blueprint; not yet extracted on the VM |
 | `utils/clear_projects_db.py`: a project database's tables and space, and dropping them (D133) | Built and tested against a fake database. A scratch version of it, run on the VM (29 September 2026), dropped all 71 tables and freed the data file; the utility itself is on the VM in the bundle `e126f85b…` |
 | Artifacts: parquets, `contents.md`, load scripts, the stock list (D124), progress and per-table failures (D72–D75, D88, D89); the PK parquet at the PK phase (D87) | Built and tested against a fake Projects connection; the Python load script runs and the R one runs under R `arrow` 25. Run on the VM for Celiac; the PK parquet seen there (Infant_RSV); `stock.yaml` not yet |
@@ -36,13 +36,23 @@ When an item here is built, delete it from this file and describe the result in 
 Agreed 2 October 2026. One commit each, with its outcome test. The first three (D183, D176, D178) are built and in the bundle `b822ab77…`; the rest (D190 and D189 added 2 October) wait until HaT PheWAS and Infant_RSV have run on it, so a fault found there has one cause.
 
 1.  **Every table its own group unless a named group holds it** (D190). Small, in the split; first, since D177 then packages each table as it finishes.
-2.  **Package each table group as it finishes, then empty its tables** (D177). The largest; its own bundle.
+2.  **Package each table group as it finishes, then empty its tables** (D177). The largest; its own bundle. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
 3.  **Make deliverables** (D189): the button, the `data\` layout, the incomplete-pull question, and the load scripts' switches.
 4.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
 5.  **Specify Project DB** (D179).
 6.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
 7.  **Row key and deduplication in Author** (D186), one column picker.
 8.  **Counts from `profile:`** (D181), on the same picker, in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
+9.  **A Utils tab after Run** (D194). Small.
+
+------------------------------------------------------------------------
+
+## Next: On The VM, 4 October 2026
+
+1.  **Whether time grows with columns** (optional; the timing test's Blocks 1 and 2 are done, design.md, Batching). In one SSMS window on `COSMOS`, with `#pk` made as before: `SELECT ef.PatientDurableKey, ef.EncounterKey, ef.DateKey INTO #few` and then `SELECT ef.* INTO #all`, each `FROM EncounterFact AS ef INNER JOIN #pk AS pk ON pk.PatientDurableKey = ef.PatientDurableKey WHERE ef._IsDeleted = 0 AND ef.DateKey BETWEEN 20250101 AND 20251231`, timed as before. `#all` several times `#few` means trimming columns saves time, and the table builder should say so.
+2.  **UC_VisitsMedsDiagnoses again**, from `yamls_to_transfer.py` (`76c813d5…`, replacing `1c208cd6…`): its blueprint has the `IBD_Meds` filter (D192), the five tables already saved turned off (OtherDiagnoses, IndexDiagnosis, OtherHospitalizations, EDVisitHistory, HospitalAdmissions) and 1,000,000-patient chunks, two passes, since every chunk reads each table's whole window again (design.md, Batching). `1c208cd6…`'s Preview on the VM gave 0 errors; if UC is not yet executing, extract `76c813d5…` and Export split again; if it is, let it run. Before Execute: Back up all; copy `cosmos_parquets\`, `sneakpeek_parquets\` and `uploads_parquets\` out of the run folder (packaging replaces them); drop the remaining `ucvis_` tables in PROJECTD52219B (the 9 GB is the unfiltered MedAdminHistory). While it runs: when the SneakPeek Meds finishes, its MedAdminHistory_sp rows over the old 564,163 times about 150 GB is roughly what Cosmos's MedAdminHistory will need; past about 12 GB, Stop. After: copy the saved Visits and Diagnoses parquets back over the empty ones.
+3.  **Crohns_VisitsMedsDiagnoses and Crohns_DxHxSxRx**: their intakes carry the filter (D192); their blueprints wait for each pull's state on the VM (its manifest or Status, and a listing of its parquet folders and `saved_parquets\`), to know which tables to turn off and whether their Meds were pulled unfiltered. Crohns_DxHxSxRx's Meds group (item 11 below) was unfiltered.
+4.  **UC's MedOrderHistory and MedDispenseHistory** (Cosmos) had 0 rows in the failed Meds run of 2 October, their `_sp` copies 310,672 and 181,478: turned off for that retry, or nothing returned? The re-pull answers it.
 
 ------------------------------------------------------------------------
 
@@ -139,6 +149,16 @@ Low priority (the user, 2 October 2026). A utility that searches Cosmos's code t
 
 Open: the name (Code Finder suggested); whether a keyword matches codes too (`D89.4` finding `D89.40` to `D89.49`).
 
+### Estimate Size And Packaging By Chunk (Future)
+
+The user's next step after the fixes (4 October 2026); the task list's Explorations (Guessing/smart chunking, Dynamic ordering) hold the discussion. Size = rows × bytes per row (design.md, What a pull will hold), in three stages, each better than the last:
+
+1.  **At Validate**: bytes per row from the dictionary's types (text at its declared width, or a measured average: `AVG(DATALENGTH(col))` beside the widest value Execute already measures, D34), times rows per patient from earlier pulls (D157's median and 90th percentile), times the PK.
+2.  **After the SneakPeek sessions**, before Cosmos: SneakPeek's rows per patient (D193), with a margin for the extreme patients a 1% sample misses.
+3.  **After the first chunk**: its rows and bytes times the number of chunks. Past the room left in the project database, stop loudly with the numbers; UC would have stopped after chunk 1 of 34 instead of failing at chunk 3 after 38 minutes.
+
+With it: **packaging by chunk** (D177 made finer: each chunk written to parquet as it lands, its rows checked, its table emptied; the parquets stacked, which is exact since each holds other patients), so the database needs room for one chunk of one table; a **chunk size per group**, the fewest chunks that fit, since chunks cost a pass each; and the dynamic ordering (small and depended-on tables first). Open: whether packaging by chunk replaces D177's by group; a table another in its group reads is emptied only once every table of that chunk has landed; the run scan must expect emptied tables.
+
 ### A Test Server
 
 The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pull can be run end to end from the Mac. Choosing it would sit beside Cosmos in the app. The server names are already settings (`PULLMANAGER_COSMOS_SERVER`, `PULLMANAGER_PROJECTS_SERVER`), and the ODBC driver and `pyodbc` (5.3.0 on the VM's list) would be needed on the Mac. Not until the servers exist.
@@ -149,7 +169,7 @@ The user plans SQL Servers on their homelab (Bluefin) holding fake data, so a pu
 - **The builder leaves new columns nullable** (D172), so a table's nullability in Cosmos stops becoming a row filter (`IS NOT NULL`, which turns a LEFT JOIN into an INNER one), and the audit's 327 `false` findings can then be written into the dictionary as facts. Agreed, not yet built: `_column_from` in the model.
 - **Name the column when Cosmos cannot convert.** Error 8114 (and 245, 8115) names no column. When a cohort fails with one, run `sys.dm_exec_describe_first_result_set` on its `SELECT` (it reads no data) and add each column whose source type differs from its declared one to the failure. Agreed in principle, not yet built.
 - **Generated-table dependencies.** Cohorts reference other generated temps by handwritten name (`{{prefix}}_Patients`). It should be structural, so the renderer owns temp names. Under multipliers a fact table read this way names the base table, not its level's copy (`UCOrders`), and fails at Execute; validation warns meanwhile (D139).
-- **What a table group costs.** From Crohns_PatientsFromUpload's progress lines (D136): how long its upload's second leg took, Projects to Cosmos. A group repeats about that, so it is what each group adds (D134).
+- **An upload no table reads** gets no warning: UC's `IBD_Meds` went up on every pull and filtered nothing (D192). Validation could warn, naming the upload.
 - **An uploaded PK is sent to Cosmos whole** in the upload phase of every session, even when every run is batched and refills it from the copy (D61 left it so). To address later: whether a batched uploaded PK needs to go up at all, and once per session.
 - **Matching controls.** A control is sampled at `row_mult` times its case per batch (D59), so it is matched on the batching columns only. Deeper matching (age, and so on) is to address later, as is a control with several case levels.
 - **`split_after_build` on an uploaded PK** is refused (D54). It could be supported by splitting the rows as the copy lands, if a list ever needs it.

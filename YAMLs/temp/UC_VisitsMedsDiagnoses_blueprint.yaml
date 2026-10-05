@@ -47,7 +47,7 @@ multipliers: []
 batching:
 - name: chunk
   kind: row_chunk
-  rows_per_batch: 50000
+  rows_per_batch: 1000000
   applies_to: PKTable
 cohorts:
 - name: OtherDiagnoses
@@ -62,7 +62,7 @@ cohorts:
     - BillingCodeValue
   dedup_order_by:
   - StartDateKey
-  pull_this_cycle: true
+  pull_this_cycle: false
   type: fact
   dest_table: OtherDiagnoses
   columns:
@@ -156,7 +156,7 @@ cohorts:
     the patient underwent.
   granularity: InpatientEncounterKey is per-hospitalization.
   type: fact
-  pull_this_cycle: true
+  pull_this_cycle: false
   dest_table: OtherHospitalizations
   dedup_keys:
   - - InpatientEncounterKey
@@ -253,7 +253,7 @@ cohorts:
 - name: EDVisitHistory
   dest_table: EDVisitHistory
   type: fact
-  pull_this_cycle: true
+  pull_this_cycle: false
   description: All ED Visit Events for the patient's history
   columns:
   - source: evf.AcuityLevel
@@ -630,7 +630,7 @@ cohorts:
 - name: HospitalAdmissions
   dest_table: HospitalAdmissions
   type: fact
-  pull_this_cycle: true
+  pull_this_cycle: false
   columns:
   - source: haf.AdmissionDateKey
     name: AdmissionDateKey
@@ -907,6 +907,7 @@ cohorts:
     - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
     where:
     - "mof._IsDeleted = 0"
+    - "mof.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
 - name: MedDispenseHistory
   dest_table: MedDispenseHistory
   type: fact
@@ -1035,6 +1036,7 @@ cohorts:
     - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
     where:
     - "mdf._IsDeleted = 0"
+    - "mdf.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
 - name: MedAdminHistory
   dest_table: MedAdminHistory
   type: fact
@@ -1107,6 +1109,7 @@ cohorts:
     - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
     where:
     - "maf._IsDeleted = 0"
+    - "maf.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
 - name: IndexDiagnosis
   description: Diagnosis event fact table. Rows represent diagnoses associated with
     encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
@@ -1119,7 +1122,7 @@ cohorts:
     - BillingCodeValue
   dedup_order_by:
   - StartDateKey
-  pull_this_cycle: true
+  pull_this_cycle: false
   type: fact
   dest_table: IndexDiagnosis
   columns:

@@ -3617,3 +3617,81 @@ group for both as the fix.
 the PK temp N times: seconds each. A split made before this keeps its runs; a
 new split makes one run per table. Batches still repeat each table's scan
 (design.md, Batching: what a batch costs).
+
+### D191. Pulls are not split by date window: accuracy first
+
+**Context.** Chunks by patient repeat each fact table's scan (design.md,
+Batching: what a batch costs), so chunks by date window were proposed: each
+pass would read only its own years of the partition key, dividing the time
+instead of multiplying it (2 October 2026). But each window deduplicates on its
+own, so a dedup group that spans windows ("the first time each code appears",
+`PatientDurableKey, BillingCodeValue` ordered by date) keeps one row per window;
+and a table that joins two fact tables, each windowed on its own date, loses the
+rows either side of a window's edge. Both give wrong data with no error. The
+user: accurate data matters most, and a function with a chance of introducing
+error is not used (4 October 2026).
+
+**Decision.** No chunks by date window. A table's rows are split only by
+patient (`chunk:`) or by value (D58), which never split a patient: each
+patient's whole history is in one batch, so a pull returns the same rows split
+or not, wherever each row belongs to one patient, as every fact table joined to
+the PK by `PatientDurableKey` does.
+
+**Consequences.** Time is saved by fewer passes (as few chunks as the room
+allows), not by windows; room is made by packaging (D177). A timing test showing
+that windows would divide the time does not reopen this by itself; validation
+that could prove a table safe to window would.
+
+### D192. A supporting list filters with `IN`, never with a join
+
+**Context.** UC_VisitsMedsDiagnoses uploaded `IBD_Meds` (715 rows) to restrict
+its Meds tables, but no table read it: MedAdminHistory pulled every medication
+for 1.69 million patients, 51 million rows (9 GB) in two chunks of 34, and the
+project database filled (4 October 2026). The Crohns templates had the same gap.
+
+**Decision.** The three Meds tables of UC_VisitsMedsDiagnoses,
+Crohns_VisitsMedsDiagnoses and Crohns_DxHxSxRx keep only the listed medications:
+`<alias>.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)`.
+A list that only filters is read with `IN` (or `EXISTS`), not `INNER JOIN`: a
+join returns a row once per matching list row, so a key listed twice would
+duplicate every row it matches, silently; `IN` keeps or drops each row once.
+
+**Consequences.** UC's re-pull carries the filter (its blueprint, with the
+tables already saved turned off). Nothing yet warns of an upload no table reads;
+it is on the roadmap.
+
+### D193. SneakPeek predicts a Cosmos pull per patient, over the PK's patients it holds
+
+**Context.** HaT PheWAS (2 October 2026) pulled the same tables from both
+databases: SneakPeek's rows per patient matched Cosmos's (medians 210/205,
+530/535, 2/2), and SneakPeek's rows per patient times the Cosmos PK came within
+20% of each table's actual rows, in 1 minute against 3 hours 54. The user will
+mostly upload PKs from now on (4 October 2026). An uploaded PK is sent whole to
+both databases, and only the patients SneakPeek holds match there.
+
+**Decision.** When the size estimate is built (roadmap, Estimate Size), a
+table's rows per patient from SneakPeek are its SneakPeek rows divided by **the
+PK's patients found in SneakPeek**: the SneakPeek PK's size for a generated PK;
+for an uploaded PK, the upload's keys present in SneakPeek's `PatientDim`
+(`IsCurrent = 1`), counted once as the PK goes up and recorded beside the PK's
+rows. Never a table's `per_key` `keys` (patients with at least one row in it),
+which overstates: HaT's Labs by 68%, against 20% over all its patients.
+
+**Consequences.** A 1% sample misses the rare extreme patient (Diagnoses'
+maximum 4,448 there, 42,029 in Cosmos), so the estimate carries a margin. The
+count is new work in the upload phase of a SneakPeek session.
+
+### D194. A Utils tab after Run, its buttons the utilities window's
+
+**Context.** The utilities open from a window of their own (`python utils.py`,
+D124, D148); the user wants them a click away in the app (4 October 2026).
+
+**Decision.** A third tab, **Utils**, after Run, with the same buttons as
+`utils.py` under the same headings (**Client**, **Manager**), read from the
+same folders and drawn by the window's own code, so a script put in
+`utils/client/` or `utils/manager/` shows in both and the two cannot drift.
+Each button opens its utility in its own window, as now. D180's two buttons stay
+in Run, since they open a utility on what Run has loaded.
+
+**Consequences.** Opening a utility inside the tab is not planned; it would be
+a change per utility. The Parquets tab stays for later.

@@ -550,6 +550,7 @@ cohorts:
         - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mof.PatientDurableKey"
       where:
         - "mof._IsDeleted = 0"
+        - "mof.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
   - name: MedDispenseHistory
     dest_table: MedDispenseHistory
     type: fact
@@ -649,6 +650,7 @@ cohorts:
         - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = mdf.PatientDurableKey"
       where:
         - "mdf._IsDeleted = 0"
+        - "mdf.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
   - name: MedAdminHistory
     dest_table: MedAdminHistory
     type: fact
@@ -706,6 +708,7 @@ cohorts:
         - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = maf.PatientDurableKey"
       where:
         - "maf._IsDeleted = 0"
+        - "maf.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)"
   - recipe: IndexDiagnosis
     name: IndexDiagnosis
     filter:

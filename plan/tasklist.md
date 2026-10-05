@@ -74,7 +74,7 @@ bigger question is, how many chunks should I be doing? I mean, is there any valu
 Each way of splitting a pull answers one question. Pick by the problem, not by habit; with none of these problems, don't split.
 
 | Your problem | What to use | Why | Cost |
-|---|---|---|---|
+|------------------|------------------|------------------|------------------|
 | **A table failing makes you re-pull the others** | One table per group (D190, now the default) | Each table is its own run; Retry failed pulls only the one that failed | Seconds per table |
 | **The pull takes too long** | Chunks by **date window** (proposed, below) | Each pass scans only its own years, so the passes divide the time | One pass per window, all adding up to about one scan |
 | **One pass runs out of tempdb, or its landing is too big** (an error naming `tempdb` or the log, 9002 or 1105 in tempdb) | Chunks by **patient** (`chunk:`), as few as fit, e.g. `chunk: 100000` | Each pass builds and lands a smaller temp | Every chunk scans the whole date window again: N chunks, about N times the time |
@@ -94,22 +94,303 @@ So, for each kind of pull:
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
+**🟧 Your response:** Okay, so to play devil's advocate, why wouldn't I just do a standard chunk by date window for everything? Would it not always save the risk of failure, but also not take longer becuase the passes divide the time?
 :::
 
-## Make a 'utils' tab in scope.py
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: not for everything; it can give wrong answers silently, and whether it saves time at all is unmeasured, so test first**
 
-after Run. that way I can just open it easily.
+**Why not a default for every table.**
+
+1.  **It may not divide the time.** "Windows divide the time" is a prediction from the HaT timings, not a measurement. It holds only if SQL Server skips the other years when a query filters on the partition key. If the fact tables are views over something else, are partitioned coarsely, or the filter doesn't reach the partitions, a one-year window costs nearly a whole pass. Then twelve windows cost twelve passes, as patient chunks do. The test below settles this.
+2.  **Wrong rows, silently, when a dedup group spans windows.** Each window dedups on its own. HaT's tables dedup on row keys (`EncounterKey`, `DiagnosisEventKey`, `LabComponentResultKey`). Each row has one date and falls in one window, so they're safe. But a dedup on `PatientDurableKey, BillingCodeValue` ordered by date ("the first time each code appears", common in a PheWAS) keeps one row per window: up to twelve "firsts" per patient and code. The PK (first D89.44) has the same problem, which is why it isn't windowed.
+3.  **Lost rows, silently, across a join of two fact tables.** Suppose a table joins `DiagnosisEventFact` to `EncounterFact` with both dates windowed. A diagnosis dated 2 January on an encounter of 31 December matches in neither window.
+4.  **Only a table filtered on its partition key gains.** A table filtered on another date, or not by date at all, reads everything in every window: N times the cost.
+5.  **A fixed cost per window.** Each window is a run: a connection, the PK copied into Cosmos, and the dimension joins read again. HaT's 1,000-row PK copied in 0s. Crohns' 1.28 million rows took 2m 31s to upload, and copying a PK that size for every window of every table adds hours.
+6.  **Windows are uneven.** Cosmos grows each year, so 2025 may hold several times as many rows as 2016. A yearly window doesn't bound tempdb or the landing; only a cap on rows does.
+7.  **It doesn't lower the risk of failure. It lowers what a failure costs.** More runs means more connections and steps, so slightly more chances to fail, and each is cheaper to retry. With D190 a failed table already retries alone, so what windows add is redoing a 2-minute window of Labs instead of all 23 minutes.
+8.  **The destination still holds every row.** A full project database is D177's problem, whatever the windows.
+
+**So:** windows for a table whose pass is long, and only if the test says they work and the table (a) filters on its partition key, (b) dedups on a row key and (c) joins no other fact table. Validation could check all three and refuse the rest with an error that names the cause (D28). The default stays no splitting.
+
+**A cheap test, in SSMS against the `COSMOS` database** (`Dual` is a template setting, not a database; the timed version given in the chat on 4 Oct runs every step in one go and returns one results grid). It uses Encounters, the cheapest table (about 6 minutes a pass in your screenshot), and HaT's patients, and takes about half an hour. Keep everything in **one query window**, since `#pk` lasts only as long as that connection. Run each query on its own (select it, F5). For each, copy from the Messages tab the `Table 'EncounterFact'…` line and the `elapsed time`.
+
+*Step 0, seconds: what can we see?* A screenshot of the four results is enough. An empty result is an answer too; `sys.partitions` already returns nothing (D33).
+
+``` sql
+SELECT HAS_PERMS_BY_NAME(NULL, 'DATABASE', 'SHOWPLAN') AS can_see_plans;
+
+SELECT name, type_desc FROM sys.objects
+WHERE name IN ('EncounterFact', 'DiagnosisEventFact', 'LabComponentResultFact');
+
+SELECT i.name, i.type_desc, ds.type_desc AS stored_on, ds.name AS storage_name
+FROM sys.indexes AS i
+JOIN sys.data_spaces AS ds ON ds.data_space_id = i.data_space_id
+WHERE i.object_id = OBJECT_ID('dbo.EncounterFact');
+
+SELECT pf.name, prv.boundary_id, prv.value
+FROM sys.partition_functions AS pf
+JOIN sys.partition_range_values AS prv ON prv.function_id = pf.function_id
+ORDER BY pf.name, prv.boundary_id;
+```
+
+These say whether the facts are tables or views (a view hides its partitions); whether they're stored by row or as a columnstore (`CLUSTERED COLUMNSTORE`, which reads only the columns a query names); and whether they're partitioned, and how finely (the boundaries step by year, month or day).
+
+*Step 1: 1,000 HaT patients.* This is one pass over `DiagnosisEventFact`, so a few minutes:
+
+``` sql
+SET STATISTICS IO, TIME ON;
+
+SELECT DISTINCT TOP (1000) def.PatientDurableKey
+INTO #pk
+FROM DiagnosisEventFact AS def
+INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey
+WHERE def._IsDeleted = 0
+  AND def.StartDateKey BETWEEN 20150101 AND 20260601
+  AND dt._IsDeleted = 0 AND dt.Type = 'ICD-10-CM' AND dt.Value = 'D89.44'
+ORDER BY def.PatientDurableKey;
+```
+
+*Step 2: four counts, in the order A, B, C, D, then A again.*
+
+``` sql
+-- A: 1,000 patients, the whole window
+SELECT COUNT_BIG(*) FROM EncounterFact AS ef
+INNER JOIN #pk AS pk ON pk.PatientDurableKey = ef.PatientDurableKey
+WHERE ef._IsDeleted = 0 AND ef.DateKey BETWEEN 20150101 AND 20260601;
+
+-- B: 1,000 patients, 2025 only
+SELECT COUNT_BIG(*) FROM EncounterFact AS ef
+INNER JOIN #pk AS pk ON pk.PatientDurableKey = ef.PatientDurableKey
+WHERE ef._IsDeleted = 0 AND ef.DateKey BETWEEN 20250101 AND 20251231;
+
+-- C: 10 patients, the whole window
+SELECT COUNT_BIG(*) FROM EncounterFact AS ef
+WHERE ef._IsDeleted = 0 AND ef.DateKey BETWEEN 20150101 AND 20260601
+  AND ef.PatientDurableKey IN (SELECT TOP (10) PatientDurableKey FROM #pk ORDER BY PatientDurableKey);
+
+-- D: no patients, the whole window
+SELECT COUNT_BIG(*) FROM EncounterFact AS ef
+WHERE ef._IsDeleted = 0 AND ef.DateKey BETWEEN 20150101 AND 20260601;
+```
+
+What each explanation predicts:
+
+| Query | If each pass reads the whole window | If it finds rows by patient |
+|-------------------|---------------------------|---------------------------|
+| A: 1,000 patients, 2015–2026 | the baseline | the baseline |
+| B: 1,000 patients, 2025 only | about a tenth of A: **windows work** | about A, or a little less |
+| C: 10 patients, 2015–2026 | about A: **patients don't narrow the read** | far less than A |
+| D: no patients, 2015–2026 | about A | more than A |
+| A again | about A | about A |
+
+How to read the edge cases:
+
+- **A again much faster than A:** the first run read from disk and the second from memory, so repeat each query and keep its second time.
+- **A far under 6 minutes:** the count names fewer columns than the real pull. That points to a columnstore, which step 0 should confirm, and is worth knowing in itself, since a pull's time would then grow with its columns.
+- **SHOWPLAN allowed:** run B once more with Include Actual Execution Plan (Ctrl+M) and screenshot the `EncounterFact` operator's tooltip. It shows Seek or Scan, and the partitions it actually read.
+
+*Step 3, only if B is about a tenth of A: the real cost of a Labs window.* Labs takes 23 minutes a pass. `SELECT *` reads every column, more than the pull does, so treat its time as an upper bound:
+
+``` sql
+SELECT lcrf.* INTO #labs
+FROM LabComponentResultFact AS lcrf
+INNER JOIN #pk AS pk ON pk.PatientDurableKey = lcrf.PatientDurableKey
+WHERE lcrf._IsDeleted = 0
+  AND lcrf.PrioritizedDateKey BETWEEN 20250101 AND 20251231
+  AND lcrf.LabComponentKey IN (2287, 8166, 16740, 51583, 59082, 75051, 86072, 91367);
+```
+
+**What each outcome decides.**
+
+- **B a tenth of A, C about A:** the explanation holds. Chunks by date window go on the roadmap, limited by the three checks above.
+- **B about A:** windows don't help, so drop the idea. The only lever left is fewer passes: no chunks, and fewer columns if it's a columnstore.
+- **C far less than A:** Cosmos does find rows by patient. Patient chunks then don't cost N times, and HaT's slowness has another cause (Labs' `LabComponentKey` filter is the first suspect), so we'd profile that next.
+
+**For you to decide:** run it? If step 0 shows views, or nothing, still run step 2. The timings answer the question without the metadata.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct)
+
+- **Wrong rows across windows (2, 3).** Accurate data is the MOST important thing here. If a function has a chance of introducing error I need to know, and we probably shouldn't use it.
+- **Only partition-filtered tables gain (4).** If we're doing smart chunking, and also one run per table, the tables where it wouldn't be of value can just NOT do chunking.
+- **A fixed cost per window (5).** Less of an issue: the large PK doesn't seem to take long to upload. This 1.6 million row PK took 5 seconds (image below). If uploading were an issue, we could split the PK into smaller temporary parquets and run on those. I don't think it is.
+- **Uneven windows (6).** Not really a problem; we could even go backwards in time.
+- **Cheaper to redo, not less likely (7).** That's fine. What I'm trying to avoid is 1) hitting the max space (which is why we delete the tables after packaging them to parquets) and 2) unnecessarily doubling the time.
+- **If the Projects table is the limit:** maybe make smaller parquets of each chunk, then join them in Python, instead of inserting every chunk into the same single Projects table.
+
+![UC_VisitsMedsDiagnoses, UCPatientInfo](images/paste-2.png)
+:::
 
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: a Utils tab after Run, the utilities window's buttons inside the app**
+**🟦 Claude: accuracy first favours patient chunks, packaged chunk by chunk; your UC screenshot supports the test**
 
-**What the code does today.** The utilities are a window of their own: `python utils.py` opens a button per script in `utils/`, under **Client** (the parquet viewer, the transcription viewer) and **Manager** (clear_projects_db), each opening its own window (D124, D148). The app (`python scope.py`) has two tabs, Author and Run. D180 adds two of the utilities to Run as buttons (View dbo tables, and a multi-column view of a text tab), not yet built; a Parquets tab was left for later.
+**Accuracy decides between the two kinds of splitting.** A patient chunk never splits a patient: each patient's whole history is in one chunk. A date window splits every patient's history. So:
 
-**Recommendation.** A third tab, **Utils**, after Run, with the same buttons as `utils.py`, under the same headings, read from the same folders, so a script put in `utils/client/` or `utils/manager/` shows in both. Each button opens its utility's window, as it does now. The tab is drawn with the window's own code, so the two can't drift. D180's two buttons stay where they are, since they open a utility on what Run has loaded. The Parquets tab stays for later.
+- **Patient chunks give the same rows as no chunks** whenever each row belongs to one patient, which holds for every Cosmos fact table joined to the PK by `PatientDurableKey`. A dedup on `PatientDurableKey, BillingCodeValue` or on `EncounterKey` stays inside one chunk. IndexDiagnosis reading OtherDiagnoses works too, because both are filled for the same patients in the same chunk.
+- **Date windows give the same rows only when validation correctly recognises every risky table** (2 and 3 in my last reply). That's a weaker guarantee: a mistake in the check means wrong data and no error. By your rule, date windows stay off the table unless the test shows a saving too large to ignore. Even then, only for tables with a row-key dedup and no join to another fact table, and refused loudly otherwise.
 
-**For you to decide:** nothing, unless you want the utilities to open inside the tab rather than in their own windows. That would be a larger change, one utility at a time.
+**Your idea, parquets per chunk, is the right fix for space.** It is D177 made finer: package each **chunk** as it lands, then empty the table, instead of packaging each group at the end. The Projects database then needs room for one chunk of one table, not the whole pull. "Join in Python" is really stacking: each chunk's file has the same columns and different patients. That's exact, and pyarrow can stream the files into one parquet, or Artifacts can leave them as one folder that arrow (Python and R) reads as a single table. Points to settle when it's built:
+
+- Each chunk's rows must be checked against what the run recorded before the table is emptied, as D177 already does per group.
+- A table that another table in its group reads, like OtherDiagnoses for IndexDiagnosis, can only be emptied once every table of that chunk has landed.
+- The run scan must expect the empty tables.
+
+**On the 5 seconds: a correction, but your conclusion holds.** The `pk` phase's 5s is the Projects copy made from the upload, inside Projects. Carrying the file to Projects and Cosmos is `upload_cohorts`: 1m 34s for 1.69 million rows. Each run copies its PK slice from Projects through Python into Cosmos (`session.py`, `bulk_insert`). With patient chunks the slices add up to one PK per table, so splitting the PK further saves nothing. With date windows, every window copies the whole PK, about a minute here: 12 windows × UC's 8 tables ≈ 1½ hours. That's real, but small next to the passes themselves.
+
+**Not chunking where it doesn't help:** yes. Today the chunk setting belongs to the whole template; every table's session uses it. With D190 each table is its own group, so the natural home is a chunk size per group. That would be a new decision, and it's the base the **Guessing/smart chunking** exploration would build on.
+
+**Your UC screenshot is evidence for the time question.** Non-Surgical-Visits ran 1.69 million patients in 50,000-patient chunks: 34 chunks, 3 tables, 4h 30m, so about 8 minutes a chunk.
+
+- **The tables have no date window at all.** EDVisitHistory and HospitalAdmissions have none, so date windows could never help them.
+- **One table joins two fact tables.** OtherHospitalizations joins `HospitalAdmissionFact` to `DiagnosisEventFact`, the case windows get wrong.
+- **One pass may be all it needs.** If each chunk reads its whole tables, as HaT suggests, the same group in one pass would be about 8 minutes, not 4½ hours. The space was the reason for the chunks.
+
+The test settles it. If it confirms that each pass reads the whole window, then the plan is:
+
+- **Packaging chunk by chunk** for space.
+- **As few chunks as fit**, chosen per group.
+- **No date windows.**
+
+That gets both of your goals, room and no unnecessary time, without any accuracy risk.
+
+**A question:** the Diagnoses group shows 2m 8s. Was that the retry after the hand rescue, with OtherDiagnoses already saved? If it pulled for real, 2 minutes for 1.69 million patients would contradict the HaT timings, and I'd want to know.
+
+**For you to decide:** nothing yet: run the test first. After it, whether packaging chunk by chunk replaces D177's packaging by group, and whether chunks are set per group.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) I think Diagnoses did not? It's a little hard to tell. If the viewer says there's nothing in the diagnoses, it would make sense that there's nothing, though that might be because I pulled the artifacts earlier. I think we can assume it did not, based on these images.
+
+![The run's manifest entry](images/paste-5.png)
+
+![clear_projects_db on PROJECTD52219B](images/paste-6.png)
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: Diagnoses pulled nothing, and that gives us a measurement; the database is full of Visits and Meds rows**
+
+**Diagnoses did not pull, and the manifest proves it, whatever the viewer shows.** `table_rows: {}` means no table landed in any of its 34 chunks. The likeliest reason is that the hand rescue left OtherDiagnoses and IndexDiagnosis out of the retry on the VM's blueprint (the Mac's copy still has them in). The run still went through its chunks: 34 in 128 seconds, about 4 seconds each. So the HaT timings stand uncontradicted.
+
+**That's a clean measurement of the PK refill.** With no tables, each chunk only copied its 50,000 PK rows from Projects into Cosmos: about 4 seconds per 50,000 rows, so about 2 minutes for the whole 1.69 million. I estimated about a minute before. At 2 minutes, date windows on UC would cost 12 windows × 8 tables × 2 minutes ≈ 3 hours of copying alone. Patient chunks still copy only one PK per table in total.
+
+**The database is full of real rows.** A correction (4 Oct): I first read 17 GB as held by no table. Wrong. The window's total (19 tables, 19,988 MB) is the sum of its own table rows, and the list sorts largest first, so the screenshot was scrolled down: the three largest tables are above HospitalAdmissions, out of view. By elimination they are `ucvis_EDVisitHistory`, `ucvis_MedAdminHistory` and `ucvis_upload_IBD_Meds`, holding about 17 GB between them. So Non-Surgical-Visits and part of Meds filled the 20 GB, which is exactly the space problem D177 and packaging chunk by chunk are for. To confirm: scroll the list **up** in clear_projects_db and send the top rows, and the session's error line (Meds probably failed for space).
+
+The log's open transaction is a smaller matter: the log is 5,719 of 12,100 MB, not full. **Open transactions** in the same window names it, if you want to end it.
+
+**For you to decide:** nothing; it's a check.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) After clearing:
+
+![clear_projects_db after clearing](images/paste-7.png)
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: one table alone can outgrow the room, so packaging per group is not enough**
+
+**What the two screenshots show together.**
+
+- **One table holds 9 GB.** `ucvis_MedAdminHistory` is 9,051 MB for 51,187,764 rows, about **185 bytes a row**.
+- **Another table held the rest.** Before clearing, the tables came to 19,988 MB. Take away the 2,613 MB that showed and MedAdminHistory's 9,051, and about 8.3 GB is left: almost certainly `ucvis_EDVisitHistory`, the only large table missing from both screenshots.
+
+**What it means for the design.**
+
+- **D177 alone doesn't fix this.** It packages and empties a *group* once the group finishes. Here a single table (MedAdminHistory, and its Meds group is unfinished) can approach the whole 20 GB on its own. Packaging per group still needs the room for the whole group at once.
+- **Packaging chunk by chunk does fix it.** The database then only ever holds one chunk of one table. In 50,000-patient chunks, MedAdminHistory comes to about 1.5 million rows and 280 MB a chunk (51 million ÷ 34).
+- **It's also the start of the Guessing/smart chunking exploration.** A table's bytes per row (185 here) times the rows a count expects gives its size before pulling. From that, the fewest chunks that fit can be chosen. Each table's figure can be read from Projects after any pull (`MB ÷ rows` in this window), so we can build a list.
+
+**Check before the retry:** were Non-Surgical-Visits' tables (HospitalAdmissions, OtherHospitalizations, EDVisitHistory and their `_sp`) saved to parquet before they were dropped? If not, the retry pulls them again: about 4½ hours. The PK copy (`ucvis_upload_UCPatientInfo`) is gone too, so the retry uploads it again (about 1½ minutes).
+
+**For you to decide:** nothing yet. This adds to the case for packaging chunk by chunk, decided after the SSMS test.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) The Visits tables were saved by Artifacts before I dropped them; redoing the uploaded patient list is fine. The Meds run's manifest entry: it looks like chunk 3. At chunk 3 we hit the 20 GB max???
+
+![The Meds run's manifest entry](images/paste-8.png)
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: two chunks of MedAdminHistory filled the database; the whole table would be about 150 GB, and the IBD meds list is uploaded but nothing reads it**
+
+**Yes, chunk 3, and the numbers add up.**
+
+- **It failed landing chunk 3.** The run failed in `c3of34` (patients 100,000 to 150,000) with 1105, the PRIMARY filegroup full.
+- **Chunks 1 and 2 landed MedAdminHistory's 51,187,764 rows,** about 25.6 million rows and 4.5 GB per 50,000 patients (about 510 administrations a patient). Chunk 3's landing was rolled back.
+- **Meds started with only about 9 GB free.** The Visits group (EDVisitHistory about 8.3 GB, HospitalAdmissions 1.3 GB, the rest) and the PK copy were still in the database, so two chunks filled it.
+
+**Scaled to all 34 chunks, MedAdminHistory alone is about 870 million rows, about 150 GB in Projects, and about 8½ hours** (the run took 38 minutes for two chunks and part of a third, of three tables). Saved chunk by chunk it would fit through the database, 4.5 GB at a time, but it is still huge: as parquet, compressed perhaps 5 to 10 times, it is still 15 to 30 GB of files to keep on the VM and copy off.
+
+**The cause is in the blueprint.**
+
+- **There is no medication filter.** `MedAdminHistory`, `MedOrderHistory` and `MedDispenseHistory` each read their fact table joined to the PK with only `_IsDeleted = 0`: every medication, ever, for 1.69 million patients.
+- **There is no date window either.**
+- **The IBD meds list is uploaded but unused.** `IBD_Meds` (715 rows) lands in Projects, but no table in UC or Crohns joins it.
+
+If the study needs IBD medications, joining `IBD_Meds` would cut these tables to a small fraction. That's a question about the study, not the code.
+
+**Also unexplained:** `table_rows` lists MedAdminHistory and the three `_sp` tables, but not MedOrderHistory or MedDispenseHistory (Cosmos), and both are 0 rows in Projects. Were they turned off for this retry (`pull_this_cycle: false`), or do they return nothing?
+
+**For the design:** this is the first case where a single table is far larger than the database, so no grouping helps. Only these do:
+
+- **packaging chunk by chunk**, at 4.5 GB a chunk;
+- **a filter**;
+- **a size estimate before the pull**: bytes a row × expected rows, which Guessing/smart chunking would make. Validation would have flagged about 150 GB.
+
+**For you to decide:** should the three Meds tables be restricted to the IBD meds list (`IBD_Meds`), and by which column? Or is the full medication history wanted?
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) That's the whole point of `IBD_Meds`; I thought it was being used. Join on `MedicationKey`, in the intake, and for Crohns too. Then restart, with the tables already pulled turned off, so only Meds pulls.
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the Meds filter is in; the SSMS test's Block 1 is back**
+
+**Done (4 Oct).**
+
+- **The filter.** All three Meds tables in `UC_VisitsMedsDiagnoses`, `Crohns_VisitsMedsDiagnoses` and `Crohns_DxHxSxRx` now carry `<alias>.MedicationKey IN (SELECT im.MedicationKey FROM {{prefix}}_IBD_Meds AS im)`. It's `IN`, not a join, so a key listed twice can't duplicate a row (D192).
+- **UC's blueprint.** It has the filter, the five saved tables off, and chunks of 250,000. It went over in `yamls_to_transfer.py` (`1c208cd6…`). Its Preview on the VM: 0 errors.
+- **Crohns.** Only the intakes are fixed. Their blueprints wait for each pull's state on the VM.
+- **Still open:** MedOrderHistory and MedDispenseHistory (Cosmos) had 0 rows in UC's failed Meds run.
+
+**Block 1 of the SSMS test** (on `COSMOS`):
+
+![Block 1](images/paste-9.png)
+
+- **No SHOWPLAN** (`can_see_plans = 0`), so query plans are out; timings are the evidence.
+- **`EncounterFact`, `DiagnosisEventFact` and `LabComponentResultFact` are views,** so they have no indexes or partitions of their own; the tables under them do.
+- **The big fact tables behind the views are finely partitioned:** Encounters 151 partitions, Diagnoses 150, with boundaries from `-4` to `99991231` (the sentinels). 150 is about twelve years by month, so likely **monthly**. A narrower date filter could therefore skip most of a table, *if* the view passes the filter through to its table. Block 2's row B shows whether it does.
+- **The small facts (BedRequest, Bpa…) have 4 partitions:** sentinels only, effectively unpartitioned.
+
+**For you to decide:** nothing; Block 2 is running.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: Block 2\**
+![](images/paste-10.png)
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: patients don't narrow the read, dates do, and Cosmos reads by column**
+
+| Count | Rows | Seconds |
+|------------------|------------------|------------------|
+| A: 1,000 patients, 2015–2026 | 429,728 | 53.4 (51.8 again: no caching) |
+| C: 10 patients, same window | 3,672 | 49.8 |
+| B: 1,000 patients, 2025 only | 60,401 | 7.4 |
+| D: everyone, same window, no join | 20,127,944,022 | 7.6 |
+
+- **C ≈ A:** a hundredth of the patients costs the same. Each pass reads the whole window whatever the patients, so patient chunks cost a pass each. Confirmed, no longer inferred.
+- **B ≈ A/7:** the date filter does reach the partitions through the views. Date windows *would* divide the time; D191 still rules them out for accuracy. The accurate way to the same saving is a pull's own window no wider than the study needs.
+- **D: 20 billion rows in 7.6 seconds** is only possible from a **columnstore**, which reads columns, not rows. The 50 seconds of A is reading every row's `PatientDurableKey` to find the patients. It likely means a pull's time grows with the columns it selects: the count read one column in 50 s, HaT's Encounters pass (40 columns, plus building its temp) took 6 minutes. That reverses part of what I said about trimming columns: little saving in room, but possibly a real one in time. One cheap check is in the roadmap (Next: On The VM, 4 October, item 1).
+
+**What changed:** UC's blueprint goes to 1,000,000-patient chunks (two passes instead of seven), in `yamls_to_transfer.py` `76c813d5…`. If UC isn't executing yet, extract it and Export split again.
+
+**For you to decide:** whether to run the columns check.
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
@@ -119,10 +400,113 @@ after Run. that way I can just open it easily.
 
 **Suggested order**
 
-1.  **Chunks by date window**: on the roadmap or not; it decides how the ctrl\_ pull is split if it is large.
-2.  **The Utils tab**: a yes is enough; it's small.
+1.  **The columns check** (optional, roadmap): it decides whether the table builder should warn about wide selections.
+
+Moved out on 5 October: **the Utils tab** is D194, last in the roadmap's Fixes, In Order; Block 2's results are in `design.md` (Batching, What a batch costs).
 
 Moved out: **Make deliverables** is D189 and **one table per group** D190, both in the roadmap's order; the finding that patient chunks repeat the scan is in `design.md`; **Code Finder** is in the roadmap's future items. The profile screenshot was for your HaT repository, so it is gone from here and from `HaT Considerations.md`.
+
+Moved out on 4 October, the thread above kept while Block 2 is out: **no date windows** is D191, **the Meds filter** D192, **SneakPeek per patient** D193; the measurements (Cosmos's views and partitions, the PK refill, bytes per row, SneakPeek against Cosmos) are in `design.md`; the UC re-pull, the Crohns state, the SSMS test's Block 2 and UC's empty Meds tables are in the roadmap's **Next: On The VM, 4 October 2026**; **Estimate size and packaging by chunk** is in its Open Problems.
+
+# Explorations
+
+## Guessing/smart chunking
+
+If there is some sort of way to figure out which field is going to take the most time, and which field chunking would be less useful for. I think we could set up a dynamic chunking system. For instance, if there is six thousand rows that I need to parse, then one thousand chunks won't really be of value, and in fact, might theoretically give six times the work if I'm gonna go into a child fact table and have to filter through that table six times. It would be better for me to table once pull all the data, so long as all the data being pulled is less than the size of whatever our max transferability is going to be. I think this is not an urgent feature, and in fact might not be doable for a while, but I think right now I'm just guessing it chunks based on what I think is going to make the system faster. I think it's obvious that a one million row system is going to need to be chunked just so that the fact tables it returns is for sure gonna be under the size requirement of the 20 gigabyte you know hard drive space that I can use. But how many is that going to be? Is it you know 50,000 row chunks, 100,000 row chunks, we don't know. I think now that you've shown me you can do a preliminary analysis of how many rows and How much size in theory a query could ask. We could do this in the validate section where you can essentially estimate how much size the data is going to require, and thus anything that goes above let's say 10 gigabytes should be chunked in a way that minimizes the task of pulling, but then also doesn't stretch out the time because of multiple pulls.
+
+This doesn't have to really be a dynamic AI analysis. I think algorithmically we could do this, assuming that there's some sort of standard size per row or something of that sort. It seems to me like an equation that could simply find the lowest mix of time and size such that everything gets chunked over appropriately.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: Estimate size, in three stages, each better than the last** (from the chat, 4 Oct)
+
+**Size = rows × bytes per row.** Each half has a cheap source.
+
+**Bytes per row.**
+
+- **Fixed types** come straight from the dictionary, which Validate already reads: BIGINT 8, INT 4, DATETIME2 8, DATE 3, TINYINT 1. Add about 20 bytes a row for SQL Server's row header and `_batch`.
+- **Text** needs an average length. Before any pull, use the declared width as a cautious upper bound.
+- **Measured width.** Execute already measures each text column's widest value at staging and reports it (D34, D70: measured, never applied to the destination). Adding `AVG(DATALENGTH(col))` to the same query (`local_sql.py`) gives the average a size needs, at almost no cost.
+- **Check against Projects:** UC's MedAdminHistory types give about 140 bytes a row against 185 measured. The rest is pages not filled.
+
+**Rows: counting costs a pass** (the HaT finding), so the rows come from what a pull already learns.
+
+1.  **Preliminary, at Validate:** the PK's size × rows per patient from earlier pulls (D157 records the median, 90th percentile and maximum per patient for every table). A table never pulled shows bytes per row only. A new filter makes an old figure an overestimate, the safe direction.
+2.  **Before the Cosmos sessions, from SneakPeek:** under `Dual` every SneakPeek session runs first (D65), so its rows per patient are known before Cosmos starts, for free. *But first check that SneakPeek is representative per patient.* In UC, MedAdminHistory_sp landed 564,163 rows. Cosmos landed about 510 per patient. If SneakPeek is a 1% sample, UC's \~1.69 million patients would be \~17,000 there, so \~33 per patient, a fifteenth of Cosmos. The `_sp` session's PK rows in UC's manifest give the exact figure. If it really is that much lower, SneakPeek keeps less history per patient and can't be scaled up.
+3.  **After the first chunk, from the pull itself:** chunk 1's rows and bytes × the number of chunks. If that exceeds the room left in the Projects database, stop loudly, with the numbers. UC would have stopped after chunk 1: "MedAdminHistory projects to about 150 GB; the database has 9 GB free". It wouldn't have failed at chunk 3 after 38 minutes.
+
+**What columns are worth** (a side answer from the chat). Dropping columns saves their bytes only, not their share of the column count. The per-row overhead stays, a BIGINT is 8 bytes and a text column can be hundreds. Parquet compresses repetitive columns almost to nothing. Pull time only falls if Cosmos stores its tables by column (step 0 of the SSMS test). So trim wide text columns, not dates and keys. Filtering rows is the big lever.
+
+**For you to decide:** nothing yet. First, the `_sp` session's PK rows in UC's manifest, to see whether SneakPeek can be scaled up.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) HaT's manifest instead, since it's done: the PK and run entries of `hat_Patients_sp` and `hat_Patients` (screenshots in the chat).
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: SneakPeek matches Cosmos per patient, and costs a minute; a good probe**
+
+HaT PheWAS, 2 October:
+
+|   | SneakPeek | Cosmos | SneakPeek's rows/patient × Cosmos PK, against actual |
+|------------------|------------------|------------------|------------------|
+| PK (patients) | 49 | 5,969 | (0.8%: SneakPeek is about 1%) |
+| Encounters per patient: mean, median, p90 | 287, 210, 603 | 327, 205, 768 | 1.71 M against 1.95 M (−12%) |
+| Diagnoses | 935, 530, 2,001 | 964, 535, 2,282 | 5.58 M against 5.76 M (−3%) |
+| Labs | 2.2, 2, 5.2 | 1.8, 2, 6 | 13,200 against 10,984 (+20%) |
+| Time: PK, then the three tables | 18 s, 1 m 4 s | 10 m, 3 h 54 m |  |
+
+**What it shows.**
+
+- **Rows per patient match.** The medians agree almost exactly (210/205, 530/535, 2/2). Scaled up, SneakPeek predicted every table to within about 20%.
+- **SneakPeek misses the rare extreme patient,** as any 1% sample does: Diagnoses' maximum is 4,448 there against 42,029 in Cosmos. So the scaled estimate can run low, and a safety margin of about 25% belongs on it.
+- **It is about 200 times faster:** 1 minute against 4 hours, so as a probe it's practically free. Under `Dual` it already runs first (D65).
+
+**One caution, for an uploaded PK.** HaT's SneakPeek PK was *found in* SneakPeek: 49 patients, its own 1%. An uploaded PK (UC's 1.69 million Cosmos keys) is sent to both databases. Only the patients SneakPeek happens to hold match, so rows per patient must be divided by the patients that **matched**, the `keys` under each table's `per_key`, never by the upload's size. That explains UC's puzzle: its 564,163 MedAdminHistory_sp rows divide by however many of the 1.69 million SneakPeek holds, not by 17,000 guessed. The `per_key` → `keys` for MedAdminHistory_sp in UC's manifest would settle it.
+
+**So the estimate's stage 2 works:** after the SneakPeek sessions, rows per matched patient × bytes per row × the Cosmos PK, plus a margin. Then stage 3 (after the first Cosmos chunk) corrects it.
+
+**For you to decide:** nothing yet; this is evidence for the design. UC's MedAdminHistory_sp `keys` is a nice-to-have check.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 4 Oct) Yes: base it only on the patients that pulled from `_sp`. From here on most of my pulls upload the PK, so that's how the estimate stays accurate.
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: agreed; the patients to divide by are the PK's patients that SneakPeek holds, a count we don't take yet**
+
+**A correction to my last box.** A table's `per_key` → `keys` is the patients with **at least one row in that table**, not the patients SneakPeek holds. Dividing by it overstates: HaT's Labs_sp has 108 rows over 35 `keys`, so 3.1 a patient × 5,969 = 18,400, against 10,984 actual (+68%). Dividing by all 49 PK patients gave +20%. A patient with no labs still counts as a patient.
+
+**The rule, for when the estimate is built:** rows per patient = a table's SneakPeek rows ÷ **the PK's patients found in SneakPeek**.
+
+- **A generated PK:** that's the SneakPeek PK's size (49 for HaT), already recorded.
+- **An uploaded PK:** it is a new count, taken once per SneakPeek session as the PK goes up. It is the upload's keys present in SneakPeek's `PatientDim` (`IsCurrent = 1`), one join over the PK and seconds to run. The manifest would record it beside the PK's rows, as `patients_in_database` or similar. The estimate then scales by the Cosmos PK's size.
+
+**To check it by hand on UC now** (optional): in SSMS on `COSMOS_SneakPeek`, upload or select UC's keys, then `SELECT COUNT(*) FROM <the keys> AS k WHERE EXISTS (SELECT 1 FROM PatientDim AS p WHERE p.DurableKey = k.PatientDurableKey AND p.IsCurrent = 1)`. Then 564,163 ÷ that count should come near Cosmos's \~510 administrations a patient.
+
+**Where it goes:** this is one decision of the size estimate (its stage 2), recorded when the estimate is agreed and put on the roadmap.
+
+**For you to decide:** nothing new; whether and when to put **Estimate size** on the roadmap is the exploration's own question.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+:::
+
+## Dynamic ordering of table pulls depending on dependency and size
+
+It seems like many of the roadblocks seem to be related to size of the larger tables, such as Med Dispense History, Med Admin History, Other DIagnoses, etc. I'm thinking maybe we can do ordering so that data is pulled in this order:\
+
+- pk
+
+- tables that other tables depend on
+
+- small tables
+
+- larger/sizeable tables
+
+The idea is that we get the data that is core/needed, then the smaller ones to get them out of the way. Then we have these larger ones where chunking is actually useful, and we chunk per patient by doing a series of parquet tables for each group of say 50,000 or 100,000 patients and their data for that specific table. Then, we really can be sure that the size is not going to be an issue for the tables. It woulnd't fix the issue of having to go over the same DIagnosis fact set in Cosmos over and over again (as we can't really use the per-year option due to accuracy issues) but everythign else would be downloaded and ready. As we do chunk 1 or 2, we can then also report how long they took, and based on how many chunks, we can estimate time to finish.
 
 ## Settled
 
