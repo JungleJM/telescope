@@ -43,8 +43,9 @@ cohorts:
   - recipe: OtherDiagnoses
     name: OtherDiagnoses
     filter: {}
-  - recipe: OtherHospitalizations
+  - recipe: HospitalizationsWithinICDCode
     name: OtherHospitalizations
+    dest_table: OtherHospitalizations  # its name before D184, kept for this pull
     vars:
       HospitalICDTable: HospitalICDCodes
     filter: {}

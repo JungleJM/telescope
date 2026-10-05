@@ -43,5 +43,5 @@ cohorts:
     vars:
       ICD_Value:
         - K50.%
-  - recipe: OtherHospitalizations
+  - recipe: HospitalizationsWithinICDCode
 

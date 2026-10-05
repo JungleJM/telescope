@@ -79,7 +79,7 @@ upload_cohorts:
 cohorts: #Use recipes premade or make your own tables. Multiplied and batched by the functions above
   - recipe: PatientWithDx #looks at my recipes yaml and pulls those in with those names. Should fully import with variables placed 
     name: Patients
-  - recipe: OtherHospitalizations
+  - recipe: HospitalizationsWithinICDCode
     vars:
       HospitalICDTable: HospitalICDCodes  # the upload above: which ICD codes count
 

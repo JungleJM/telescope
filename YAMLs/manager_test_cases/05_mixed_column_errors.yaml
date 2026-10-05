@@ -40,5 +40,5 @@ batching:
 cohorts:
   - recipe: PatientWithDx
     name: Patients
-  - recipe: OtherHospitalizations
+  - recipe: HospitalizationsWithinICDCode
 

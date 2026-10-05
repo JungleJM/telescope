@@ -34,7 +34,7 @@ batching:
 cohorts:
   - recipe: OtherDiagnoses
     name: OtherDiagnoses
-  - recipe: OtherHospitalizations
+  - recipe: HospitalizationsWithinICDCode
     name: OtherHospitalizations
     vars:
       HospitalICDTable: HospitalICDTable

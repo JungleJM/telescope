@@ -320,12 +320,14 @@ recipes:
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
         - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
 
-  - name: OtherHospitalizations
-    description: Hospitalizations the patient underwent. 
+  - name: HospitalizationsWithinICDCode
+    description: >
+      Hospitalizations with a diagnosis in the pull's hospital ICD list
+      (`HospitalICDTable`, an upload of `DiagnosisCode`s). Was OtherHospitalizations (D184).
     granularity: InpatientEncounterKey is per-hospitalization. 
     type: fact
     pull_this_cycle: true
-    dest_table: OtherHospitalizations
+    dest_table: HospitalizationsWithinICDCode
     dedup_keys:
       - [InpatientEncounterKey]
     columns:
@@ -727,6 +729,12 @@ recipes:
         - "maf._IsDeleted = 0"
 
 recipe_sets:
+  - name: Diagnoses
+    tables:
+      - recipe: OtherDiagnoses
+        name: OtherDiagnoses
+      - recipe: HospitalizationsWithinICDCode
+        name: HospitalizationsWithinICDCode
   - name: Meds
     tables:
       - recipe: MedOrderHistory

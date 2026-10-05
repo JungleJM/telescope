@@ -3459,6 +3459,21 @@ class RecipeSetTests(ModelTest):
         self.assertIn("has no tables", said)
         self.assertEqual(path.read_text(encoding="utf-8"), before)
 
+    def test_the_shipped_diagnoses_set_adds_its_two_tables_as_a_group(self):
+        # D184: Diagnoses is OtherDiagnoses then HospitalizationsWithinICDCode,
+        # the recipe once called OtherHospitalizations.
+        shipped = Path(__file__).resolve().parents[1] / "reference"
+        ws = Workspace(home=self.home, recipes_path=shipped / "recipes.yaml",
+                       dictionary_path=shipped / "datadictionary.yaml",
+                       defaults_path=self.home / "YAMLs" / "template.yaml")
+        self.assertNotIn("OtherHospitalizations", [r.get("name") for r in ws.recipes_doc()["recipes"]])
+        draft = Draft.new(ws)
+        added = draft.add_recipe_set("Diagnoses")
+        cohorts = [draft.doc["cohorts"][i] for i in added]
+        self.assertEqual([c["recipe"] for c in cohorts], ["OtherDiagnoses", "HospitalizationsWithinICDCode"])
+        self.assertEqual(draft.doc["table_groups"],
+                         [{"name": "Diagnoses", "tables": ["OtherDiagnoses", "HospitalizationsWithinICDCode"]}])
+
     def test_a_set_naming_a_recipe_the_file_lacks_is_refused(self):
         path = self.ws.recipes_path
         path.write_text(path.read_text(encoding="utf-8") + "recipe_sets:\n  - name: Broken\n    tables:\n"
