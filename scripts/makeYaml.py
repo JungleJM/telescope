@@ -3121,8 +3121,9 @@ def check_random_sample(template: dict[str, Any], cohorts: list[dict[str, Any]],
             "random_sample_without_key",
             "`random_pk_sample` orders the PK by a hash of its key, but this PK declares none.",
             f"{cohort_label(cohort)}",
-            fix="Add `dedup_keys: [[<key column>]]` or `key_column: <column>` to the PK "
-            "cohort, e.g. `key_column: PatientDurableKey`; or set `random_pk_sample: false`.",
+            fix="In Author: PK Table, Row key (D186). In the YAML: `key_columns: [<column>]` or "
+            "`dedup_keys: [[<key column>]]` on the PK cohort, e.g. `key_columns: [PatientDurableKey]`; "
+            "or set `random_pk_sample: false`.",
         )
 
 

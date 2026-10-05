@@ -443,6 +443,16 @@ class PkInfo:
 
 
 @dataclass
+class DedupInfo:
+    """A fact table's deduplication, as Author shows it (D186)."""
+
+    keys: list[str] = field(default_factory=list)   # the first key set
+    keep_column: str = ""                             # orders the duplicates; '' arbitrary
+    latest: bool = False                              # keep the largest value (DESC)
+    more_sets: int = 0                                # key sets after the first, by hand
+
+
+@dataclass
 class ColumnRow:
     """One column of a supporting table: the file's name for it, and what it lands as."""
 
@@ -1303,6 +1313,99 @@ class Draft:
         text = " ".join(str(text or "").split())
         if text != imported:
             cohort[key] = text
+        self._changed()
+
+    # -------------------------------------------- row key and deduplication (D186)
+
+    def table_columns(self, index: int) -> list[str] | None:
+        """A table's columns as it will land, for its pickers; None if unknown."""
+        merged = self._merged_cohort(index)
+        return my.output_columns(merged) if merged else None
+
+    @staticmethod
+    def key_choices(columns: list[str]) -> list[str]:
+        """A table's columns with its `...Key` columns first (D186)."""
+        keys = [c for c in columns if c.endswith("Key")]
+        return keys + [c for c in columns if c not in keys]
+
+    def row_key(self) -> list[str]:
+        """The PK's row key: an upload's `key_columns`, a built PK's
+        `key_column(s)` (D69, D186)."""
+        pk = self.pk()
+        if pk is None:
+            return []
+        if pk.where == "upload_cohorts":
+            return list(pk.key_columns)
+        merged = self._merged_cohort(pk.index) or {}
+        return split_list(merged.get("key_columns") or merged.get("key_column") or [])
+
+    def set_row_key(self, columns: Any) -> None:
+        """Set the PK's row key; an empty list removes it."""
+        pk = self.pk()
+        if pk is None:
+            raise DraftError("There is no PK Table yet; choose one first.")
+        chosen = split_list(columns)
+        if pk.where == "upload_cohorts":
+            self.update_pk(key_columns=chosen)
+            return
+        cohort = self._cohort(pk.index)
+        cohort.pop("key_column", None)
+        if chosen:
+            cohort["key_columns"] = chosen
+        else:
+            cohort.pop("key_columns", None)
+        self._changed()
+
+    def dedup(self, index: int) -> DedupInfo:
+        """A fact table's deduplication as it will be read: its first key set,
+        the column that chooses the survivor and which end, and how many more
+        key sets were written by hand (D58, D186)."""
+        merged = self._merged_cohort(index) or self._cohort(index)
+        raw = merged.get("dedup_keys") or merged.get("dedup_key") or []
+        if isinstance(raw, str):
+            sets = [[raw]]
+        elif raw and all(isinstance(item, list) for item in raw):
+            sets = [split_list(item) for item in raw]
+        else:
+            sets = [split_list(raw)] if raw else []
+        order = split_list(merged.get("dedup_order_by") or [])
+        column, latest = "", False
+        if order:
+            words = order[0].split()
+            column = words[0]
+            latest = len(words) > 1 and words[1].upper() == "DESC"
+        return DedupInfo(keys=sets[0] if sets else [], keep_column=column, latest=latest,
+                         more_sets=max(len(sets) - 1, 0))
+
+    def set_dedup(self, index: int, keys: Any, keep_column: str = "", latest: bool = False) -> None:
+        """Deduplicate a fact table by one key set, keeping the earliest or
+        latest of `keep_column`; no keys, no deduplication. Key sets after the
+        first, written by hand, are kept. A recipe's own deduplication is
+        overridden by writing the table's (an empty list turns it off)."""
+        cohort = self._cohort(index)
+        if self.cohort_is_pk(cohort):
+            raise DraftError("That is the PK; its rows are set by Row key.")
+        merged = self._merged_cohort(index) or {}
+        recipe = self.ws.recipe(str(cohort.get("recipe") or "")) if cohort.get("recipe") else None
+        recipe_has = any((recipe or {}).get(k) for k in ("dedup_keys", "dedup_key", "dedup_order_by"))
+        chosen = split_list(keys)
+        raw = merged.get("dedup_keys") or []
+        more = [split_list(s) for s in raw[1:]] if raw and all(isinstance(s, list) for s in raw) else []
+        cohort.pop("dedup_key", None)
+        sets = ([chosen] if chosen else []) + more
+        if sets:
+            cohort["dedup_keys"] = sets
+        elif recipe_has:
+            cohort["dedup_keys"] = []
+        else:
+            cohort.pop("dedup_keys", None)
+        column = str(keep_column or "").strip()
+        if column and sets:
+            cohort["dedup_order_by"] = [f"{column} DESC" if latest else column]
+        elif recipe_has:
+            cohort["dedup_order_by"] = []
+        else:
+            cohort.pop("dedup_order_by", None)
         self._changed()
 
     def duplicate_table(self, index: int) -> int:
@@ -3382,6 +3485,101 @@ class TableGroupModelTests(ModelTest):
         self.assertEqual((message.field.section, message.field.index), ("groups", 0))
 
 
+class RowKeyAndDedupTests(ModelTest):
+    """D186: a built PK's row key, and a fact table's deduplication, chosen
+    from their columns and written as makeYaml reads them."""
+
+    VISITS = {
+        "name": "Visits", "dest_table": "Visits", "type": "fact",
+        "columns": [{"source": "e.EncounterKey", "name": "EncounterKey"},
+                    {"source": "e.PatientDurableKey", "name": "PatientDurableKey"},
+                    {"source": "e.DateKey", "name": "DateKey"}],
+        "filter": {"from": "EncounterFact AS e",
+                   "join": ["INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = e.PatientDurableKey"]},
+    }
+
+    def with_visits(self) -> tuple[Draft, int]:
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        return draft, draft.add_fact_table(self.VISITS)
+
+    def transfer_cohort(self, draft: Draft, name: str) -> dict[str, Any]:
+        result = draft.validation()
+        self.assertTrue(result.ok, [m.text for m in result.of_kind("error")])
+        built = my.compile_yaml(template_path=draft.base_path(), recipes_path=self.ws.recipes_path,
+                                datadictionary_path=self.ws.dictionary_path, template_data=draft.doc)
+        self.assertTrue(built.ok, [m.message for m in built.errors])
+        return next(c for c in built.finished_yaml["cohorts"] if c.get("name") == name)
+
+    def test_the_key_columns_come_first(self):
+        self.assertEqual(Draft.key_choices(["Sex", "DateKey", "Name", "PatientDurableKey"]),
+                         ["DateKey", "PatientDurableKey", "Sex", "Name"])
+
+    def test_a_built_pk_takes_a_row_key_and_the_random_sample_then_passes(self):
+        draft = self.draft()
+        draft.set_pk_recipe("Patients")
+        draft.set_var(0, "ICD_Value", "K50%")
+        draft.collect_all = False
+        draft.sample_size = 10
+        draft.random_sample = True
+        self.assertIn("random_sample_without_key", [m.code for m in draft.validation().of_kind("error")])
+        self.assertIn("Row key", " ".join(m.fix for m in draft.validation().messages))
+        draft.set_row_key(["PatientDurableKey"])
+        self.assertEqual(draft.row_key(), ["PatientDurableKey"])
+        self.assertEqual(draft.doc["cohorts"][0]["key_columns"], ["PatientDurableKey"])
+        self.assertNotIn("random_sample_without_key", [m.code for m in draft.validation().of_kind("error")])
+        draft.set_row_key([])
+        self.assertNotIn("key_columns", draft.doc["cohorts"][0])
+
+    def test_an_uploaded_pk_row_key_is_its_key_columns(self):
+        draft = self.draft()
+        draft.set_pk_upload("dbtable", "Given", "dbo.Given", "")
+        draft.set_row_key(["PatientDurableKey", "EncounterKey"])
+        self.assertEqual(draft.pk().key_columns, ["PatientDurableKey", "EncounterKey"])
+        self.assertEqual(draft.row_key(), ["PatientDurableKey", "EncounterKey"])
+
+    def test_dedup_is_written_as_keys_and_the_end_to_keep(self):
+        draft, index = self.with_visits()
+        self.assertEqual(draft.dedup(index).keys, [])
+        draft.set_dedup(index, ["PatientDurableKey", "EncounterKey"], "DateKey", latest=True)
+        info = draft.dedup(index)
+        self.assertEqual((info.keys, info.keep_column, info.latest), (["PatientDurableKey", "EncounterKey"], "DateKey", True))
+        cohort = self.transfer_cohort(draft, "Visits")
+        self.assertEqual(cohort["dedup_keys"], [["PatientDurableKey", "EncounterKey"]])
+        self.assertEqual(cohort["dedup_order_by"], ["DateKey DESC"])
+
+    def test_earliest_is_ascending_and_no_keys_is_no_dedup(self):
+        draft, index = self.with_visits()
+        draft.set_dedup(index, ["EncounterKey"], "DateKey", latest=False)
+        self.assertEqual(draft.doc["cohorts"][index]["dedup_order_by"], ["DateKey"])
+        draft.set_dedup(index, [], "DateKey")
+        self.assertNotIn("dedup_keys", draft.doc["cohorts"][index])
+        self.assertNotIn("dedup_order_by", draft.doc["cohorts"][index])
+
+    def test_key_sets_written_by_hand_after_the_first_are_kept(self):
+        draft, index = self.with_visits()
+        draft.doc["cohorts"][index]["dedup_keys"] = [["EncounterKey"], ["PatientDurableKey", "DateKey"]]
+        self.assertEqual(draft.dedup(index).more_sets, 1)
+        draft.set_dedup(index, ["PatientDurableKey"], "")
+        self.assertEqual(draft.doc["cohorts"][index]["dedup_keys"],
+                         [["PatientDurableKey"], ["PatientDurableKey", "DateKey"]])
+
+    def test_a_recipes_dedup_is_turned_off_by_writing_none(self):
+        recipes = self.ws.recipes_path
+        recipes.write_text(recipes.read_text(encoding="utf-8").replace(
+            "    dest_table: CodedVisits\n", "    dest_table: CodedVisits\n    dedup_keys: [[EncounterKey]]\n"),
+            encoding="utf-8")
+        self.codes_csv()
+        draft = self.codes_draft()
+        draft.bind(1, "CodesTable", "Codes")
+        self.assertEqual(draft.dedup(1).keys, ["EncounterKey"])
+        draft.set_dedup(1, [])
+        self.assertEqual(draft.doc["cohorts"][1]["dedup_keys"], [])
+        self.assertEqual(draft.dedup(1).keys, [])
+        self.assertFalse(self.transfer_cohort(draft, "Codes").get("dedup_keys"))
+
+
 class RecipeSetTests(ModelTest):
     """D135: a table group saved as a recipe set, and the set added as a group."""
 
@@ -3487,7 +3685,7 @@ def run_tdd(verbosity: int = 2) -> int:
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()
     for case in (ProjectTests, PkTests, SupportingTests, SplitterTests, FactTableTests, MessageTests,
-                 SaveTests, PastedCsvTests, TableBuilderTests, SaveRecipeTests, VmFlowTests, VmSideTests, BlueprintTests,
+                 SaveTests, PastedCsvTests, TableBuilderTests, RowKeyAndDedupTests, SaveRecipeTests, VmFlowTests, VmSideTests, BlueprintTests,
                  LocationTests, FilterLineTests, RowKeyTests, TableGroupModelTests,
                  RecipeSetTests):
         suite.addTests(loader.loadTestsFromTestCase(case))

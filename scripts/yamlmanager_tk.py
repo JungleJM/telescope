@@ -505,6 +505,75 @@ def choice_field(view: AuthorView, parent: Any, values: list[str], value: str,
     return box
 
 
+def column_picker(view: AuthorView, parent: Any, columns: list[str], chosen: list[str],
+                  on_change: Callable[[list[str]], Any], width: int = 40) -> ttk.Menubutton:
+    """A dropdown of a table's columns, several allowed (D186). A column chosen
+    before that the table no longer has stays listed, so it can be unticked."""
+    listed = [c for c in chosen if c not in columns] + list(columns)
+    shown = tk.StringVar(value=", ".join(chosen) or "(none)")
+    button = ttk.Menubutton(parent, textvariable=shown, width=width)
+    menu = tk.Menu(button, tearoff=False)
+    ticked = {column: tk.BooleanVar(value=column in chosen) for column in listed}
+
+    def changed() -> None:
+        now = [column for column in listed if ticked[column].get()]
+        shown.set(", ".join(now) or "(none)")
+        view.edit(lambda: on_change(now))
+
+    for column in listed:
+        menu.add_checkbutton(label=column, variable=ticked[column], command=changed)
+    button["menu"] = menu
+    button._ticked = ticked  # for the view's tests
+    button._changed = changed
+    keep(button, shown, *ticked.values())
+    return button
+
+
+def row_key_field(view: AuthorView, parent: Any) -> Any:
+    """The PK's Row key: a picker of its columns when they are known, else typed."""
+    draft = view.draft
+    columns = draft.pk_columns()
+    if columns:
+        return column_picker(view, parent, draft.key_choices(columns), draft.row_key(), draft.set_row_key)
+    return text_field(view, parent, ", ".join(draft.row_key()), draft.set_row_key, 40)
+
+
+ROW_KEY_HINT = ("The columns that make each row one of its own: checked unique before any batch; "
+                "chunks, the random sample and controls follow it (D107, D186).")
+
+
+def dedup_editor(view: AuthorView, parent: Any, index: int) -> None:
+    """Deduplicate by (one key set) and Keep (earliest or latest of a column) (D186)."""
+    draft = view.draft
+    columns = draft.table_columns(index) or []
+    if not columns:
+        return
+    info = draft.dedup(index)
+    form = ttk.Frame(parent)
+    form.pack(fill="x", pady=(4, 0))
+    picker = column_picker(
+        view, form, draft.key_choices(columns), info.keys,
+        lambda keys: draft.set_dedup(index, keys, draft.dedup(index).keep_column, draft.dedup(index).latest))
+    picker._index = index  # for the view's tests
+    grid_row(form, 0, "Deduplicate by", picker, "One row per these columns' values. None: every row is kept.")
+    keep_row = ttk.Frame(form)
+    column = choice_field(view, keep_row, ["(any)"] + columns, info.keep_column or "(any)",
+                          lambda v: draft.set_dedup(index, draft.dedup(index).keys,
+                                                    "" if v == "(any)" else v, draft.dedup(index).latest), 24)
+    column.pack(side="left")
+    latest = tk.BooleanVar(value=info.latest)
+    for text, value in (("earliest (smallest)", False), ("latest (largest)", True)):
+        ttk.Radiobutton(keep_row, text=text, value=value, variable=latest,
+                        command=lambda: view.edit(lambda: draft.set_dedup(
+                            index, draft.dedup(index).keys, draft.dedup(index).keep_column, bool(latest.get())))
+                        ).pack(side="left", padx=(8, 0))
+    keep(keep_row, latest)
+    grid_row(form, 1, "Keep", keep_row,
+             "Which duplicate survives. (any): arbitrary, and it may differ between runs.")
+    if info.more_sets:
+        note(parent, f"{info.more_sets} more key set(s), written by hand, are kept as they are.").pack(anchor="w")
+
+
 def grid_row(parent: Any, row: int, label: str, widget: Any, hint: str = "") -> None:
     ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=3)
     widget.grid(row=row, column=1, sticky="w", pady=3)
@@ -891,15 +960,14 @@ def build_pk(view: AuthorView, parent: Any) -> None:
             grid_row(form, 1, "Recipe", ttk.Label(form, text=pk.recipe))
         if pk.where == "upload_cohorts":
             location_row(view, form, 2, pk.kind, pk.location, lambda v: draft.update_pk(location=v))
-            grid_row(form, 3, "Row key", text_field(view, form, ", ".join(pk.key_columns),
-                                                    lambda v: draft.update_pk(key_columns=v), 40),
-                     "The columns that make each row one of its own: checked unique before any batch; chunks, the random sample and controls follow it (D107).")
+            grid_row(form, 3, "Row key", row_key_field(view, form), ROW_KEY_HINT)
             if pk.kind in model.FILE_KINDS and not view.ws.vm_side:
                 grid_row(form, 4, "", check_field(view, form, "Pending transfer to the VM", pk.pending_transfer,
                                                   lambda on: draft.update_pk(pending_transfer=on), rerender=True),
                          "The file will only exist on the VM (D97).")
             column_editor(view, box, index)
         else:
+            grid_row(form, 2, "Row key", row_key_field(view, form), ROW_KEY_HINT)
             if pk.kind == "dictionary":
                 editing = view.inline_builder
                 if editing is not None and editing.index == index:
@@ -1591,6 +1659,8 @@ def build_fact(view: AuthorView, parent: Any) -> None:
                       "only a change is written (D121).").pack(anchor="w")
         if editing:
             TableBuilderPanel(view, view.inline_builder, box)
+        else:
+            dedup_editor(view, box, index)
         var_editor(view, box, index)
         binding_editor(view, box, index)
         if cohort.get("recipe"):
@@ -2164,6 +2234,33 @@ class SplitAndFactViewTests(ViewTest):
         picker.event_generate("<<ComboboxSelected>>")
         self.root.update()
         self.assertEqual(self.view.draft.doc["cohorts"][index]["vars"]["HospitalICDTable"], "HospitalICDTable")
+
+    def pickers(self) -> list[Any]:
+        return [w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Menubutton) and hasattr(w, "_ticked")]
+
+    def test_a_fact_tables_dedup_is_ticked_from_its_columns(self):
+        # D186: Deduplicate by, a dropdown of the table's columns, several allowed.
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("fact")
+        self.root.update()
+        index, cohort = next((i, c) for i, c in self.view.draft.fact_tables() if c.get("recipe") == "OtherDiagnoses")
+        picker = next(p for p in self.pickers() if getattr(p, "_index", None) == index)
+        for column, var in picker._ticked.items():
+            var.set(column == "PatientDurableKey")
+        picker._changed()
+        self.root.update()
+        self.assertEqual(self.view.draft.dedup(index).keys, ["PatientDurableKey"])
+        self.assertEqual(self.view.draft.doc["cohorts"][index]["dedup_keys"], [["PatientDurableKey"]])
+
+    def test_a_built_pk_has_a_row_key_picker(self):
+        self.open("Celiac_intake.yaml")
+        self.view.show_section("pk")
+        self.root.update()
+        picker = next(p for p in self.pickers() if "PatientDurableKey" in p._ticked)
+        self.assertEqual(list(picker._ticked)[0].endswith("Key"), True)
+        picker._ticked["PatientDurableKey"].set(True)
+        picker._changed()
+        self.assertIn("PatientDurableKey", self.view.draft.row_key())
 
     def test_a_fact_table_moves_by_number(self):
         self.open("Celiac_intake.yaml")
