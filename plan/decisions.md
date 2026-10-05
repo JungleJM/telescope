@@ -3695,3 +3695,30 @@ in Run, since they open a utility on what Run has loaded.
 
 **Consequences.** Opening a utility inside the tab is not planned; it would be
 a change per utility. The Parquets tab stays for later.
+
+### D195. Validate warns of an upload no table reads
+
+**Context.** UC's and the Crohns pulls' `IBD_Meds` went up on every run and
+filtered nothing: no table read it, and nothing said so (#98, D192).
+
+**Decision.** Validation warns, naming the upload, when a non-PK upload is read
+by no table: no cohort's SQL (its filter, joins, conditions, or a variable that
+names it) mentions `{{prefix}}_<dest>`. A warning, not an error: an upload kept
+only to travel with the pull's parquets is allowed.
+
+**Consequences.** The UC and Crohns templates before D192 would have warned.
+
+### D196. Validate and Preview say what chunks cost
+
+**Context.** Every chunk reads each table's whole date window again (design.md,
+What a batch costs), so 34 chunks cost 34 passes. Chunk sizes were chosen as if
+they cost nothing (HaT 1,000, UC 50,000).
+
+**Decision.** A template with `chunk:` gets a note: how many passes it makes
+where the PK's size is known (an uploaded PK's file: its row count), else that
+the passes are the PK's rows divided by the chunk; that each pass reads every
+table's whole date window again; and that chunks bound what one pass lands,
+not the time, so fewer, larger chunks are faster. A note, not a warning: chunks
+are sometimes needed.
+
+**Consequences.** None to running; it is text.

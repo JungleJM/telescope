@@ -33,17 +33,24 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-Agreed 2 October 2026. One commit each, with its outcome test. The first three (D183, D176, D178) are built and in the bundle `b822ab77…`; the rest (D190 and D189 added 2 October) wait until HaT PheWAS and Infant_RSV have run on it, so a fault found there has one cause.
+Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on the VM has one cause. One commit each, with its outcome test. The user waived checking the docs first: these are small.
 
-1.  **Every table its own group unless a named group holds it** (D190). Small, in the split; first, since D177 then packages each table as it finishes.
-2.  **Package each table group as it finishes, then empty its tables** (D177). The largest; its own bundle. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
-3.  **Make deliverables** (D189): the button, the `data\` layout, the incomplete-pull question, and the load scripts' switches.
+**Bundle 1: authoring, validation, utilities, and the split.** Nothing under `scripts/pullmanager_src/pullmanager/` changes except what D190's split needs; before building, the runtime files are compared with `b822ab77…`'s.
+
+1.  **An upload no table reads** (D195): a warning.
+2.  **What chunks cost** (D196): a note at Validate and Preview.
+3.  **The tests still owed**: duplicate output column names, and a blank `source`.
 4.  **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184).
-5.  **Specify Project DB** (D179).
-6.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
-7.  **Row key and deduplication in Author** (D186), one column picker.
-8.  **Counts from `profile:`** (D181), on the same picker, in its own order: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
-9.  **A Utils tab after Run** (D194). Small.
+5.  **Row key and deduplication in Author** (D186), one column picker.
+6.  **A Utils tab after Run** (D194).
+7.  **clear_projects_db over every database, by pull** (D185), then **View dbo tables and the multi-column view in Run** (D180).
+8.  **Every table its own group unless a named group holds it** (D190). In the split.
+
+**Bundle 2, once bundle 1 has run a real pull: D177 alone.**
+
+9.  **Package each table group as it finishes, then empty its tables** (D177). Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
+
+**Later, not in either:** **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 
 ------------------------------------------------------------------------
 
