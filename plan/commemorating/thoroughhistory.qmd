@@ -19,12 +19,11 @@ the finished document.
   design, decision and roadmap documents as they stood then, your notes in
   `post-mortem buildling task.md`, `artifact.md` and `response.md`, and the
   Gen1 analysis (`old_Generator_analysis.qmd`).
-- **Cut-off.** `22c9643` (5 Oct, 05:40): the findings of a long exploration
-  of what a chunk costs, written into the documents as D191 to D194, after
-  HaT PheWAS's chunked run (D190) and UC's Meds run that filled its
-  database. Much of it happened in a chat and the task list, recorded in the
-  task list's boxes as it went; the commit carries the result. Earlier
-  versions of this record stopped at `a7d7f76` (2 Oct, 16:23), and at
+- **Cut-off.** `3b69f25` (5 Oct, 06:37): the first of two bundles built
+  from the agreed fixes (`9e742fd1`), authoring, validation, utilities and
+  one table per group, the runtime that pulls left as it was. Earlier
+  versions of this record stopped at `22c9643` (5 Oct, 05:40), the findings
+  of the chunking exploration (D191 to D194), at `a7d7f76` (2 Oct, 16:23), and at
   `30ceff7` (25 Sep, 02:21), `2e17998` (27 Sep, 12:13),
   `b4dec41` (27 Sep, 16:30), `a9a577a` (28 Sep, 03:28), `00bfcd3` (28 Sep,
   07:31), `87f10d7` (28 Sep), `94e8b7c` (28 Sep, 21:06), `d30e427` (29 Sep,
@@ -37,7 +36,7 @@ the finished document.
   `CLAUDE.md` moved to `.claude/CLAUDE.md`; commits before then name the old
   paths, which is what Section 12's commands use.
 - **Citations.** Commits are cited by short hash (`a129b74`) and decisions by
-  number (D1 to D194). Section 12 explains how to recover any deleted document.
+  number (D1 to D196). Section 12 explains how to recover any deleted document.
 - **Proprietary detail.** Server names, project database names and internal
   paths are left out on purpose. Scrub further before sharing anything.
 
@@ -176,9 +175,14 @@ divide the time, were ruled out because they can return wrong rows silently
 list was read by no table (#98), and its three Meds tables now read it
 (D192). SneakPeek's rows per patient were found to predict Cosmos's within
 20% in a two-hundredth of the time (D193), the basis of a size estimate put on the
-roadmap as future work.
+roadmap as future work. Later on 5 Oct the agreed fixes were split into
+two bundles, so a fault on the VM would have one cause: the first, built
+within the hour as `9e742fd1`, holds authoring, validation, the utilities
+and one table per group (D180, D184 to D186, D190, D194 to D196), with the
+files that run pulls unchanged; the second, packaging each group as it
+finishes (D177), waits until the first has run a real pull.
 
-**The pain point.** Your note says you "identified a specific pain point,
+**The pain point. Your note says you "identified a specific pain point,
 detailed it and then investigated all the reasons why it occurred". The record
 does not say what the pain point was **[Ask]**.
 
@@ -198,31 +202,31 @@ recoverable, reproducible and hard to get wrong.
 
 ## 2. By The Numbers
 
-Fifteen columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
+Sixteen columns: 25 Sep 02:21 (`30ceff7`, where this record first stopped),
 27 Sep 12:13 (`2e17998`), 27 Sep 16:30 (`b4dec41`), 28 Sep 03:28 (`a9a577a`),
 28 Sep 07:31 (`00bfcd3`), 29 Sep 01:33 (`d30e427`), 29 Sep 06:58
 (`8ed5881`), 29 Sep 08:16 (`1576200`), 29 Sep 16:43 (`ee6108a`), 29 Sep
-21:37 (`267f66a`), 29 Sep 22:30 (`44da5d9`), 30 Sep 07:55 (`1b7dd08`), 1 Oct 03:47 (`be02320`), 2 Oct 16:23 (`a7d7f76`) and the cut-off, 5 Oct 05:40 (`22c9643`). A blank means unchanged from the column before.
+21:37 (`267f66a`), 29 Sep 22:30 (`44da5d9`), 30 Sep 07:55 (`1b7dd08`), 1 Oct 03:47 (`be02320`), 2 Oct 16:23 (`a7d7f76`), 5 Oct 05:40 (`22c9643`) and the cut-off, 5 Oct 06:37 (`3b69f25`). A blank means unchanged from the column before.
 
-| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | 28 Sep, 07:31 | 29 Sep, 01:33 | 29 Sep, 06:58 | 29 Sep, 08:16 | 29 Sep, 16:43 | 29 Sep, 21:37 | 29 Sep, 22:30 | 30 Sep, 07:55 | 1 Oct, 03:47 | 2 Oct, 16:23 | 5 Oct, 05:40 | Basis |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days |  |  | 12 days |  |  |  |  |  | 13 days | 14 days | 15 days | 18 days | git log |
-| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | 205 (18 more, each with a Claude co-author line) | 216 (11 more, each with a Claude co-author line) | 238 (22 more; 19 with a Claude co-author line, the rest yours: the checked dictionary, your answers, the snapshot before the remake) | 246 (8 more; 7 with a Claude co-author line, and yours: the six transfer YAMLs) | 262 (16 more, each with a Claude co-author line) | 270 (8 more, each with a Claude co-author line) | 280 (10 more, each with a Claude co-author line) | 294 (14 more, each with a Claude co-author line) | 309 (15 more, each with a Claude co-author line) | 322 (13 more; 11 with a Claude co-author line, the rest yours: the task-list format tests and the pain-point document) | 327 (5 more, each with a Claude co-author line) | git log |
-| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  |  |  |  |  |  |  |  |  |  |  |  |  | **[Measured]** git log |
-| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | about 26,500 lines, the browser UI's 3,822 removed: YAML Manager 5,982; the app's model 2,564 and Author view 1,973; `datascope.py` 53; runtime 6,948; its tests 5,604; bundle tooling 1,903; `viewparquets.py` 369; your utilities 1,069 | about 26,650 lines: YAML Manager 6,115; the app's model 2,585; the rest unchanged | about 27,500 lines: YAML Manager 6,408; the app's model 2,943 and Author view 2,234; `scope.py` 55, `utils.py` 17, `utilities.py` 72; runtime 7,093; its tests 5,725; bundle tooling 2,079; `viewparquets.py` 369, now in `utils/`; the transcription viewer 507 | about 28,700 lines: `clear_projects_db.py` 400, in `utils/`; `tidy_images.py` 148; `scope.py` 61; the runtime's tests 5,832; the rest unchanged | about 30,700 lines: YAML Manager 6,876; the app's model 3,292 and Author view 2,375; runtime 7,576; its tests 6,422; the rest unchanged | about 31,600 lines: runtime 7,808; its tests 6,811; `viewparquets.py` 570; the rest nearly unchanged | about 32,400 lines: runtime 8,104 (`backup.py` new); its tests 7,074; the utilities, now in `client/` and `manager/`, 1,584; the rest nearly unchanged | about 34,400 lines: runtime 9,030 (`scan.py`, `audit.py`, `columncheck.py`, `perkey.py` new); its tests 7,786; the app's model 3,332; `dictionary_fix.py` 260; the rest nearly unchanged | about 36,300 lines: YAML Manager 6,968; the app's model 3,486 and Author view 2,619; runtime 9,679 (`databases.py`, `drops.py` new); its tests 8,386; bundle tooling 2,350; `dictionary_fix.py` 395; the utilities 1,584 | about 36,800 lines: YAML Manager 7,051; the Author view 2,628; runtime 9,836; its tests 8,489; the rest nearly unchanged |  | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
-| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | 798 in five suites (176, 467, 73, the app's model 59 and view 23), the browser UI's 21 retired with it | 802 (178, 467, 73, the app's model 61 and view 23) | 846 (187, 475, 79, the app's model 75 and view 30) | 857 in six suites (187, 480, 79, the app's model 75 and view 30, `tidy_images` 6) | 919 (204, 514, 79, the app's model 84 and view 32, `tidy_images` 6) | 931 (204, 526, 79, the app's model 84 and view 32, `tidy_images` 6) | 950 (204, 540, 84, the app's model 84 and view 32, `tidy_images` 6) | 1,000 in seven suites (204, 584, 84, the app's model 86 and view 32, `tidy_images` 6, `dictionary_fix` 4) | 1,051 (206, 620, 88, the app's model 89 and view 36, `tidy_images` 6, `dictionary_fix` 6) | 1,065 (209, 628, 90, the app's model 89 and view 37, `tidy_images` 6, `dictionary_fix` 6) |  | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
-| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | → 467 |  | → 475 | → 480 | → 514 | → 526 | → 540 | → 584 | → 620 | → 628 |  | commit messages, design.md, then **[Measured]** |
-| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | 113 | 116 | 128; D129 to D131 recorded with this update | 133 | 143 | 146 | 150 | 159 | 172; D172 recorded with this update | 187; D188 recorded with this update | 194 | decisions.md |
-| First decision record | 39 decisions, 22 Sep 22:47 |  |  |  |  |  |  |  |  |  |  |  |  |  |  | `ea74c3d` |
-| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | still 3, now in `plan/`; the testing guide moved beside its scripts |  | still 3, and `plan/tasklist.qmd` for what is under discussion (D128) |  |  |  |  |  |  |  |  | D47 |
-| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | 3,174 lines at the cut-off, before this update's additions | 3,238 lines at the cut-off, before this update's additions | 3,441 lines at the cut-off, before this update's additions | 3,570 lines at the cut-off, before this update's additions | 3,878 lines at the cut-off, before this update's additions | 3,942 lines at the cut-off, before this update's additions | 4,038 lines at the cut-off, before this update's additions | 4,137 lines at the cut-off, before this update's additions | 4,480 lines at the cut-off, before this update's additions | 4,776 lines at the cut-off, before this update's additions | 4,986 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
-| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  |  | 20 tables, 3,162 lines: your ProcedureEventFact, VitalsFact and CoverageDim; now `recipes/datadictionary.yaml` | 3,168 lines; one table, LabComponentResultFact, checked against its page (D114, D116) | 21 tables, 3,494 lines: checked against the pages and made the dictionary, with each table's `standard_where` (D130); now `reference/` |  |  |  |  | 3,488 lines: `MedicationDispenseFact.ReadyToDispenseDateKey` removed, not in Cosmos | 3,910 lines: every screenshotted table checked in (D160) | 3,970 lines, 27 tables: DepartmentDim added from its page (2 Oct) |  | **[Measured]** `YAMLs/datadictionary.yaml` |
-| VM software inventory | 1,375 lines | unchanged |  |  | unchanged; now `recipes/DSVM Plugins.yaml` |  | unchanged; now `reference/DSVM Plugins.yaml` |  |  |  |  |  |  |  |  | commit `38a4d55` |
-| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | 1,183 KB, 54 files; no longer committed (D106) | 1,193 KB, 54 files | 1,385 KB, 61 files, carrying four transfer YAMLs (`2e5d7f8c...`) | 1,302 KB, 59 files, the runtime alone (a check build, `1b31fd3b...`) | 1,404 KB, 59 files, the runtime alone (`77742a9a...`) | 1,442 KB, 60 files, the runtime alone (`ca0fa906...`), replacing `77742a9a...`, never sent | 1,475 KB, 62 files, the runtime alone (`e126f85b...`); `0da7ee9d...` before it, never sent | 1,584 KiB, 70 files, carrying Crohns_DxHxSxRx's corrected transfer YAML (`1b628fc3...`) | 1,660 KiB, 72 files, the runtime alone (`5754255e...`); `c98c60b3...` before it carried two blueprints | 1,730 KiB, 74 files, carrying the HaT PheWAS blueprint and, for now, `recipes.yaml` (`b822ab77...`) | 68 KiB, 1 file: UC's blueprint alone (`yamls_to_transfer.py`, `76c813d5...`; `1c208cd6...` before it) | D41 for the first two; **[Measured]** for the rest |
-| Defects listed in Section 8 | 35 | 45 | 46 | 51 | 56 | 60 | 73 | 74 | 79 | 79 | 79 | 85 | 90 | 97 | 98 | my compilation from commits and decisions |
-| One fix's effect | sample template went from 1,120 generated SQL files to 168 |  |  |  |  |  |  |  |  |  |  |  |  |  |  | `61befa4` |
-| First live pull | 8 sessions, 48 units, running | ran to the end |  |  |  |  |  |  |  |  |  |  |  |  |  | see below; roadmap |
-| Pulls running at once | 1 | 3 |  |  |  |  | none: stopped, for the fresh start | 3, started again once the project database was cleared | Infant_RSV and Crohns_PatientsFromUpload ran to the end; UC_Visits was still executing |  |  | 3 overnight: Crohns_DxHxSxRx, Celiac and IBD_Ancestry | several, each on a Projects database of its own (D164) | HaT PheWAS and Infant_RSV's re-pull, waiting on the bundle | HaT PheWAS finished; UC's Meds re-pull waiting on its blueprint | `bdd3cc6` |
+| Measure | 25 Sep | 27 Sep, 12:13 | 27 Sep, 16:30 | 28 Sep, 03:28 | 28 Sep, 07:31 | 29 Sep, 01:33 | 29 Sep, 06:58 | 29 Sep, 08:16 | 29 Sep, 16:43 | 29 Sep, 21:37 | 29 Sep, 22:30 | 30 Sep, 07:55 | 1 Oct, 03:47 | 2 Oct, 16:23 | 5 Oct, 05:40 | 5 Oct, 06:37 | Basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Telescope elapsed time | 8 days | 10 days, from 17 Sep | 11 days |  |  | 12 days |  |  |  |  |  | 13 days | 14 days | 15 days | 18 days | 18 days | git log |
+| Commits | 130 | 163 (33 more; 25 with a Claude co-author line) | 174 (11 more; 10 with a Claude co-author line) | 187 (13 more; 12 with a Claude co-author line, one of them Haiku 4.5) | 205 (18 more, each with a Claude co-author line) | 216 (11 more, each with a Claude co-author line) | 238 (22 more; 19 with a Claude co-author line, the rest yours: the checked dictionary, your answers, the snapshot before the remake) | 246 (8 more; 7 with a Claude co-author line, and yours: the six transfer YAMLs) | 262 (16 more, each with a Claude co-author line) | 270 (8 more, each with a Claude co-author line) | 280 (10 more, each with a Claude co-author line) | 294 (14 more, each with a Claude co-author line) | 309 (15 more, each with a Claude co-author line) | 322 (13 more; 11 with a Claude co-author line, the rest yours: the task-list format tests and the pain-point document) | 327 (5 more, each with a Claude co-author line) | 339 (12 more, each with a Claude co-author line) | git log |
+| Commit hours | every hour except 10:00 | every hour: `bc68346` was the first at 10:00 |  |  |  |  |  |  |  |  |  |  |  |  |  |  | **[Measured]** git log |
+| Python in the repository | about 18,200 lines: YAML Manager 5,020; browser UI 3,290; runtime 4,653; its tests 3,806; bundle tooling 1,380 | about 22,800 lines: YAML Manager 5,363; browser UI 3,284; runtime 6,696; its tests 5,328; bundle tooling 1,618; `viewparquets.py` 365 | about 23,700 lines: YAML Manager 5,451; browser UI 3,822; runtime 6,716; its tests 5,443; bundle tooling 1,795; `viewparquets.py` 369 | about 29,100 lines: YAML Manager 5,743; browser UI 3,822; the app's model 2,198 and Author view 1,664; runtime 6,846; its tests 5,538; bundle tooling 1,833; `viewparquets.py` 369; your utilities 1,069 (transcription viewer 507, lab collator 314, parquet-upload test 248) | about 26,500 lines, the browser UI's 3,822 removed: YAML Manager 5,982; the app's model 2,564 and Author view 1,973; `datascope.py` 53; runtime 6,948; its tests 5,604; bundle tooling 1,903; `viewparquets.py` 369; your utilities 1,069 | about 26,650 lines: YAML Manager 6,115; the app's model 2,585; the rest unchanged | about 27,500 lines: YAML Manager 6,408; the app's model 2,943 and Author view 2,234; `scope.py` 55, `utils.py` 17, `utilities.py` 72; runtime 7,093; its tests 5,725; bundle tooling 2,079; `viewparquets.py` 369, now in `utils/`; the transcription viewer 507 | about 28,700 lines: `clear_projects_db.py` 400, in `utils/`; `tidy_images.py` 148; `scope.py` 61; the runtime's tests 5,832; the rest unchanged | about 30,700 lines: YAML Manager 6,876; the app's model 3,292 and Author view 2,375; runtime 7,576; its tests 6,422; the rest unchanged | about 31,600 lines: runtime 7,808; its tests 6,811; `viewparquets.py` 570; the rest nearly unchanged | about 32,400 lines: runtime 8,104 (`backup.py` new); its tests 7,074; the utilities, now in `client/` and `manager/`, 1,584; the rest nearly unchanged | about 34,400 lines: runtime 9,030 (`scan.py`, `audit.py`, `columncheck.py`, `perkey.py` new); its tests 7,786; the app's model 3,332; `dictionary_fix.py` 260; the rest nearly unchanged | about 36,300 lines: YAML Manager 6,968; the app's model 3,486 and Author view 2,619; runtime 9,679 (`databases.py`, `drops.py` new); its tests 8,386; bundle tooling 2,350; `dictionary_fix.py` 395; the utilities 1,584 | about 36,800 lines: YAML Manager 7,051; the Author view 2,628; runtime 9,836; its tests 8,489; the rest nearly unchanged |  | about 37,900 lines: YAML Manager 7,378; the app's model 3,699 and Author view 2,725; runtime 9,927; its tests 8,685; the utilities 1,746; the rest nearly unchanged | **[Measured]** `wc -l` at the commit, blank and comment lines included; says nothing about who typed them |
+| Automated tests | 545 (YAML Manager 133, runtime 346, bundle 57, UI 9) | 671 (149, 447, 66, 9) | 698 (153, 453, 71, 21) | 778 (167, 461, 72, 21, and the app's model 42 and view 15) | 798 in five suites (176, 467, 73, the app's model 59 and view 23), the browser UI's 21 retired with it | 802 (178, 467, 73, the app's model 61 and view 23) | 846 (187, 475, 79, the app's model 75 and view 30) | 857 in six suites (187, 480, 79, the app's model 75 and view 30, `tidy_images` 6) | 919 (204, 514, 79, the app's model 84 and view 32, `tidy_images` 6) | 931 (204, 526, 79, the app's model 84 and view 32, `tidy_images` 6) | 950 (204, 540, 84, the app's model 84 and view 32, `tidy_images` 6) | 1,000 in seven suites (204, 584, 84, the app's model 86 and view 32, `tidy_images` 6, `dictionary_fix` 4) | 1,051 (206, 620, 88, the app's model 89 and view 36, `tidy_images` 6, `dictionary_fix` 6) | 1,065 (209, 628, 90, the app's model 89 and view 37, `tidy_images` 6, `dictionary_fix` 6) |  | 1,101 (223, 640, 90, the app's model 97 and view 39, `tidy_images` 6, `dictionary_fix` 6) | design.md for 25 Sep; **[Measured]** by running all four suites on 27 Sep, all passing, none skipped |
+| Runtime test growth | 47 → 94 → 135 → 155 → 182 → 230 → 249 → 289 → 346 | → 447 | → 453 | → 461 | → 467 |  | → 475 | → 480 | → 514 | → 526 | → 540 | → 584 | → 620 | → 628 |  | → 640 | commit messages, design.md, then **[Measured]** |
+| Architecture decisions | 71 (D69 to D71 decided at 03:29, just after, `d46b666`) | 91 | 98 | 102 | 113 | 116 | 128; D129 to D131 recorded with this update | 133 | 143 | 146 | 150 | 159 | 172; D172 recorded with this update | 187; D188 recorded with this update | 194 | 196 | decisions.md |
+| First decision record | 39 decisions, 22 Sep 22:47 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | `ea74c3d` |
+| Design documents consolidated | 7 → 3 | still 3 | still 3 | still 3, and a testing guide added at the root by another session | still 3, now in `plan/`; the testing guide moved beside its scripts |  | still 3, and `plan/tasklist.qmd` for what is under discussion (D128) |  |  |  |  |  |  |  |  |  | D47 |
+| Current design documents | 2,797 lines | 2,705 lines, after your editor re-wrapped design.md and the roadmap (word counts barely moved) | 2,890 lines | 2,882 lines at the cut-off, before this update's additions | 3,174 lines at the cut-off, before this update's additions | 3,238 lines at the cut-off, before this update's additions | 3,441 lines at the cut-off, before this update's additions | 3,570 lines at the cut-off, before this update's additions | 3,878 lines at the cut-off, before this update's additions | 3,942 lines at the cut-off, before this update's additions | 4,038 lines at the cut-off, before this update's additions | 4,137 lines at the cut-off, before this update's additions | 4,480 lines at the cut-off, before this update's additions | 4,776 lines at the cut-off, before this update's additions | 4,986 lines at the cut-off, before this update's additions | 5,027 lines at the cut-off, before this update's additions | **[Measured]** design, decisions, roadmap; `e515d2b`, `be56174` |
+| Data dictionary | 17 Cosmos tables, 2,836 lines | unchanged |  |  | 20 tables, 3,162 lines: your ProcedureEventFact, VitalsFact and CoverageDim; now `recipes/datadictionary.yaml` | 3,168 lines; one table, LabComponentResultFact, checked against its page (D114, D116) | 21 tables, 3,494 lines: checked against the pages and made the dictionary, with each table's `standard_where` (D130); now `reference/` |  |  |  |  | 3,488 lines: `MedicationDispenseFact.ReadyToDispenseDateKey` removed, not in Cosmos | 3,910 lines: every screenshotted table checked in (D160) | 3,970 lines, 27 tables: DepartmentDim added from its page (2 Oct) |  |  | **[Measured]** `YAMLs/datadictionary.yaml` |
+| VM software inventory | 1,375 lines | unchanged |  |  | unchanged; now `recipes/DSVM Plugins.yaml` |  | unchanged; now `reference/DSVM Plugins.yaml` |  |  |  |  |  |  |  |  |  | commit `38a4d55` |
+| Bundle size | 211 KB → 451 KB → 699 KB | 875 KB | 883 KB | 1,116 KB, 53 files | 1,183 KB, 54 files; no longer committed (D106) | 1,193 KB, 54 files | 1,385 KB, 61 files, carrying four transfer YAMLs (`2e5d7f8c...`) | 1,302 KB, 59 files, the runtime alone (a check build, `1b31fd3b...`) | 1,404 KB, 59 files, the runtime alone (`77742a9a...`) | 1,442 KB, 60 files, the runtime alone (`ca0fa906...`), replacing `77742a9a...`, never sent | 1,475 KB, 62 files, the runtime alone (`e126f85b...`); `0da7ee9d...` before it, never sent | 1,584 KiB, 70 files, carrying Crohns_DxHxSxRx's corrected transfer YAML (`1b628fc3...`) | 1,660 KiB, 72 files, the runtime alone (`5754255e...`); `c98c60b3...` before it carried two blueprints | 1,730 KiB, 74 files, carrying the HaT PheWAS blueprint and, for now, `recipes.yaml` (`b822ab77...`) | 68 KiB, 1 file: UC's blueprint alone (`yamls_to_transfer.py`, `76c813d5...`; `1c208cd6...` before it) | 1,757 KiB, 73 files, the runtime alone (`9e742fd1...`) | D41 for the first two; **[Measured]** for the rest |
+| Defects listed in Section 8 | 35 | 45 | 46 | 51 | 56 | 60 | 73 | 74 | 79 | 79 | 79 | 85 | 90 | 97 | 98 |  | my compilation from commits and decisions |
+| One fix's effect | sample template went from 1,120 generated SQL files to 168 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | `61befa4` |
+| First live pull | 8 sessions, 48 units, running | ran to the end |  |  |  |  |  |  |  |  |  |  |  |  |  |  | see below; roadmap |
+| Pulls running at once | 1 | 3 |  |  |  |  | none: stopped, for the fresh start | 3, started again once the project database was cleared | Infant_RSV and Crohns_PatientsFromUpload ran to the end; UC_Visits was still executing |  |  | 3 overnight: Crohns_DxHxSxRx, Celiac and IBD_Ancestry | several, each on a Projects database of its own (D164) | HaT PheWAS and Infant_RSV's re-pull, waiting on the bundle | HaT PheWAS finished; UC's Meds re-pull waiting on its blueprint | UC's Meds re-pull, then the new bundle's checks | `bdd3cc6` |
 
 How the first live pull's figures were reached:
 
@@ -1543,6 +1547,41 @@ and ended in one commit (`22c9643`).
   since one table can outgrow the database alone.
 - A Utils tab after Run was agreed (D194).
 
+### 5 Oct, Morning: The First Of Two Bundles (12 commits)
+
+The history was extended (`15e080e`). You asked what could be built without
+risk to the pulls themselves, chose the safe set, one table per group (D190)
+and packaging per group (D177), then asked whether the cycle was too big. It
+was: D177 changes Execute and empties tables of real data, so the work was
+split into two bundles and D177 left for the second (`9cef629`, with D195
+and D196). Then, one commit each, every suite run before each:
+
+- **An upload no table reads** is warned of (D195, `7d7f746`); it fires on
+  UC's old intake and not on the fixed one.
+- **What chunks cost**, a new kind of message, a note (D196, `d1a7991`):
+  printed by Validate and Export split, not by Preview, so the runtime stayed
+  untouched.
+- **Two columns with one name, or a blank `source`**, refused at Validate
+  (`0140ec8`), the two tests the roadmap had owed since September.
+- **The Diagnoses recipe set and HospitalizationsWithinICDCode** (D184,
+  `7bedb72`). D184's premise, that the recipe reads OtherDiagnoses, was not
+  so: it reads the hospital ICD list. The set and the rename were built as
+  decided; the pulls that used the old name keep their table name.
+- **Row key and deduplication from one column picker** (D186, `961ab9d`), a
+  dropdown of a table's columns with several allowed, tested on a real Tk.
+- **A Utils tab** (D194, `380fae0`), drawn by the utilities window's own code.
+- **clear_projects_db over every database**, a tree grouped by pull (D185,
+  `954a994`), and **Run's View dbo tables and Multi-column view** (D180,
+  `8c45672`).
+- **Every table its own group** (D190, `b288e07`): thirteen tests that
+  pinned the old shared run were rewritten to the new rule, and the check
+  found that the old Infant_RSV transfer YAML, though not its working
+  blueprint, has tables reading each other with no group.
+
+Before building, the files changed since `b822ab77` were listed: none of the
+code that executes, lands or packages a pull. The bundle `9e742fd1` and the
+roadmap's list of what to see on the VM followed (`3b69f25`).
+
 ---
 
 ## 6. The Work, By Role
@@ -2035,6 +2074,10 @@ design document.
 | Chunks by patient, small, as a habit (1,000 for HaT, 50,000 for UC) | As few as the room allows | Every chunk reads each table's whole date window again | D190; design.md, Batching |
 | Chunks by date window, to divide the time | Never built | A dedup or a join spanning windows returns wrong rows silently | D191 |
 | A list that filters, joined with `INNER JOIN` | `IN (SELECT ...)` | A key listed twice would duplicate every row it matches | D192 |
+| One bundle for every agreed fix | Two: authoring and the split first, D177 alone after | A fault on the VM should have one cause; D177 empties tables of real data | `9cef629` |
+| clear_projects_db on one database, typed in | Every listed database, a tree grouped by pull | Six databases, and a pull's tables are known by their prefix | D185 |
+| The OtherHospitalizations recipe | HospitalizationsWithinICDCode, in a Diagnoses set | Its name did not say it keeps only hospitalizations in the ICD list | D184 |
+| Row key and deduplication typed by hand | Picked from the table's columns | A misspelt key switched deduplication off, silently | D186 |
 
 ---
 
@@ -2160,7 +2203,7 @@ design document.
 
 ---
 
-## 9. Decision Index (D1 To D194)
+## 9. Decision Index (D1 To D196)
 
 One line each, paraphrasing the decision's title; the reasoning is in
 `decisions.md`.
@@ -2361,6 +2404,8 @@ One line each, paraphrasing the decision's title; the reasoning is in
 | 192 | A supporting list filters with `IN`, never with a join |
 | 193 | SneakPeek predicts a Cosmos pull per patient, over the PK's patients it holds |
 | 194 | A Utils tab after Run, its buttons the utilities window's |
+| 195 | Validate warns of an upload no table reads |
+| 196 | Validate and Preview say what chunks cost |
 
 D84 to D91 were built on 27 Sep (`1aa3568` to `abb3c7e`). D92 to D98 were
 decided that afternoon and built overnight (`d20692c` to `95b38b9`); D99 to
@@ -2387,7 +2432,9 @@ building D176, written down with this update. D189 and D190 came from the task
 list between 2 and 4 Oct, after HaT PheWAS's run. D191 to D194 came from a
 chat on 4 and 5 Oct, written into the task list as it went and into the
 documents in one commit, with no code: D191 and D193 record findings ruled on,
-D192 a template fix and the rule behind it.
+D192 a template fix and the rule behind it. D195 and D196 came the same
+morning from what the exploration taught, committed with the fixes' new order
+before any code; D196 records, as built, that Preview does not say it.
 
 ---
 
@@ -2588,7 +2635,7 @@ resume line.
     parquets. Nothing in Scope makes folders by those names; who or what did?
     (Infant_RSV is being pulled again either way.)
 48. **The pain-point document's numbers** (`a7d7f76`) say 187 decisions and 90
-    defects; by this update they are 194 and 98. Should it follow this record,
+    defects; by this update they are 196 and 98. Should it follow this record,
     or stay as written for 2 Oct?
 49. **The IBD medication list (#98).** Was it ever read by a table, in Gen1 or
     an earlier template, or was the filter always missing? And were Crohns'
@@ -2600,6 +2647,10 @@ resume line.
     went from a question about loop order to a measured model of how Cosmos
     reads, a template defect and a size estimate. Is it a story you want
     told, and in how much detail?
+52. **D184's premise.** It says the hospitalization recipe reads
+    OtherDiagnoses; the recipe reads the hospital ICD list instead. Was
+    another table meant, or is the set's reason only that the two are pulled
+    together?
 
 **Attribution, and my recommendation.**
 
