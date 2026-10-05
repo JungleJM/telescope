@@ -652,8 +652,7 @@ From the HaT control pull (above): every table takes every column (D28 there), w
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
+**🟧 Your response:** (in the chat, 5 Oct) It needs to be study-specific (so not option 2). Not sure yet how to implement it; I'll come back to it later. For now, re-running the PheWAS control pull with the barebones intake.
 :::
 
 ## Returning to SP first
