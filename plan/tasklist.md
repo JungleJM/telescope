@@ -574,6 +574,31 @@ None of those three is built except the note, so today the fix is the hand edit 
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 5 Oct) Stopping, and re-doing it with chunks of 100,000. The study's size can move: 5 times the cases instead of 50 if 50 takes weeks. Odd that 1.2 million patients was so much quicker; is it the department join?
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the 1.2 million pulled one patient table and no events; the pool's size changes the room, hardly the time**
+
+**Why 1.2 million was quick.** Crohns_PatientsFromUpload pulled one table, `PatientInfo`, from `PatientDim`: one row per patient and no events. Its 13 chunks read a dimension table 13 times, in 5m 43s altogether. The control pull reads three fact tables, every encounter, diagnosis and tryptase result from 2015 on, and each pass reads their whole date window.
+
+**The department join isn't the cause.** `LEFT JOIN DepartmentDim` adds a few columns to each encounter, one department per encounter, so it never adds rows. The rows are all of each patient's encounters (about 148) and diagnoses (about 452). The time is the passes, Labs' above all.
+
+**50 times or 5 times.** Block 2 showed that a pass costs nearly the same whatever its patients (10 patients 50 s, 1,000 patients 53 s). So with `chunk: 100000`:
+
+| Pool | Passes | Time (about an hour a pass now; less with trimmed columns) | Rows: diagnoses |
+|------------------|------------------|------------------|------------------|
+| 300,000 (50 times) | 3 | about 3 hours | about 136 million |
+| 30,000 (5 times) | 1 | about 1 hour | about 14 million |
+
+The pool's size mostly decides the **room**, not the time. At 50 times with every column it likely won't fit in 20 GB. Trimmed to the columns the analysis reads, it likely will. 5 times fits either way, but leaves fewer controls after the eligibility rules and matching. Your plan expects 50 to give 10 per case, so 5 would give about 1.
+
+**My suggestion:** keep 50 times and trim the columns, if you want 10 matched controls per case. Otherwise somewhere between, such as 20 times (120,000, 2 passes).
+
+**For you to decide:** the pool's size, and whether I write the trimmed intake.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 
 :::
