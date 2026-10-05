@@ -2471,6 +2471,35 @@ def apply_table_groups(template: dict[str, Any], cohorts: list[dict[str, Any]], 
     for cohort in cohorts:
         if isinstance(cohort, dict):
             cohort.pop("table_group", None)
+    named_groups(template, cohorts, result)
+    own_groups(cohorts, result)
+
+
+def own_groups(cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """Every fact table in no named group runs as a group of its own, named
+    for the table (D190), so a failure leaves the finished tables finished."""
+    named = {safe_id(str(c["table_group"]), "group").lower(): str(c["table_group"])
+             for c in cohorts if isinstance(c, dict) and c.get("table_group")}
+    for cohort in cohorts:
+        if not isinstance(cohort, dict) or cohort.get("table_group") or not cohort.get("name") \
+                or str(cohort.get("type", "")).lower() == "pk":
+            continue
+        name = str(cohort["name"])
+        taken = named.get(safe_id(name, "group").lower())
+        if taken is not None:
+            result.error(
+                "table_group_name_taken",
+                f"`{name}` is in no table group, so it runs as a group of its own named for it, but "
+                f"a table group is already called `{taken}`.",
+                f"{cohort_label(cohort)}",
+                fix=f"Add `{name}` to table group `{taken}`, or rename the table or the group.",
+            )
+            continue
+        cohort["table_group"] = name
+
+
+def named_groups(template: dict[str, Any], cohorts: list[dict[str, Any]], result: CompileResult) -> None:
+    """The template's `table_groups`, checked, each table's group recorded on it."""
     groups = template.get("table_groups")
     if groups in (None, [], {}):
         return
@@ -2532,12 +2561,17 @@ def apply_table_groups(template: dict[str, Any], cohorts: list[dict[str, Any]], 
 
 
 def group_order(finished_yaml: dict[str, Any], cohorts: list[dict[str, Any]]) -> list[str | None]:
-    """The groups these tables run in: as `table_groups` lists them, then no group."""
-    present = {c.get("table_group") for c in cohorts}
+    """The groups these tables run in: as `table_groups` lists them, then each
+    table in no named group, as a group of its own, in Fact Tables order (D190).
+    A table with no group at all (a split from before D190) runs last."""
+    present = [c.get("table_group") for c in cohorts]
     order: list[str | None] = [
         str(g["name"]).strip() for g in finished_yaml.get("table_groups") or []
         if isinstance(g, dict) and str(g.get("name") or "").strip() in present
     ]
+    for group in present:
+        if group is not None and group not in order:
+            order.append(group)
     if None in present:
         order.append(None)
     return order
@@ -2721,7 +2755,11 @@ def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: Compil
                 if mine != theirs:
                     if pair not in said:
                         said.add(pair)
-                        named = {g: f"table group `{g}`" if g else "no group" for g in (mine, theirs)}
+                        # A group named for its one table is that table's own (D190).
+                        own = {g for c, g in ((cohort, mine), (other, theirs))
+                               if g and g in (str(c.get("name")), base(c))}
+                        named = {g: ("its own group" if g in own else f"table group `{g}`")
+                                 if g else "no group" for g in (mine, theirs)}
                         result.error(
                             "table_reads_another_group",
                             f"`{pair[0]}` ({named[mine]}) reads `{pair[1]}` ({named[theirs]}). Each "
@@ -3603,8 +3641,8 @@ def grouped_runs(session_id: str, runs: list[SplitRun], groups: list[str | None]
     """Every batch once per table group, group by group (D134).
 
     Groups are outside batches: every batch of Meds, then every batch of
-    Visits. The tables in no group keep the runs they had, so a template with
-    no groups splits exactly as before.
+    Visits. Every table has a group (D190); the case of none is a split
+    from before it, whose runs are kept as they were.
     """
     if groups in ([], [None]):
         return runs
@@ -4964,7 +5002,8 @@ class SplitPlanTests(MakeYamlTest):
         phases = sessions[0]["phases"]
         self.assertEqual(set(phases), {"setup", "upload_cohorts", "pk"})
         self.assertEqual(phases["pk"]["pk_source"]["kind"], "generated")
-        self.assertEqual([r["run_id"] for r in sessions[0]["runs"]], ["Patients__run"])
+        # D190: its one fact table runs as a group of its own.
+        self.assertEqual([r["run_id"] for r in sessions[0]["runs"]], ["Patients__OtherDx"])
 
     def test_multiplier_gives_one_session_per_group_each_batched(self):
         res = self.plan_split(extra="""
@@ -4992,7 +5031,8 @@ batching:
                 sid = session["session_id"]
                 self.assertEqual(
                     [r["run_id"] for r in session["runs"]],
-                    [f"{sid}__b1of3-Female", f"{sid}__b2of3-Male", f"{sid}__b3of3-sex-other"],
+                    [f"{sid}__OtherDx__b1of3-Female", f"{sid}__OtherDx__b2of3-Male",
+                     f"{sid}__OtherDx__b3of3-sex-other"],
                 )
                 first = session["runs"][0]["batch"]
                 self.assertEqual([d["value"] for d in first["dimensions"]], ["Female"])
@@ -6649,24 +6689,35 @@ class TableOrderTests(MakeYamlTest):
             f"      join:\n        - \"INNER JOIN {{{{prefix}}}}_{reads} AS r ON r.{col} = {alias}.PatientDurableKey\"\n"
         )
 
+    # Tables that read each other share a named group (D190), else each runs alone.
+    BOTH = "table_groups:\n  - name: Meds\n    tables: [Admins, Orders]\n"
+
     def test_a_table_reading_one_further_down_is_refused(self):
         # Admins read Orders, but Orders is built after them: the temp does not exist yet.
-        res = self.compile_template(extra=self.fact("Admins", reads="Orders") + self.fact("Orders"))
+        res = self.compile_template(extra=self.fact("Admins", reads="Orders") + self.fact("Orders") + self.BOTH)
         self.assertHasError(res, "table_read_before_built")
         message = next(m for m in res.errors if m.code == "table_read_before_built")
         self.assertIn("`Admins` reads `Orders`", message.message)
         self.assertIn("Move `Admins` below `Orders`", message.fix)
 
     def test_in_order_it_compiles(self):
-        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders"))
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + self.BOTH)
         self.assertCompiles(res)
+
+    def test_two_tables_in_no_group_reading_each_other_are_refused(self):
+        # D190: each runs as a group of its own, on its own connection.
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders"))
+        self.assertHasError(res, "table_reads_another_group")
+        message = next(m for m in res.errors if m.code == "table_reads_another_group")
+        self.assertIn("`Admins` (its own group) reads `Orders` (its own group)", message.message)
+        self.assertIn("Put `Admins` and `Orders` in one group", message.fix)
 
     def test_reading_the_pk_or_an_upload_is_not_an_order(self):
         res = self.compile_template(extra=self.fact("Visits"))
         self.assertCompiles(res)
 
     def test_each_multiplier_level_reports_once(self):
-        extra = self.fact("Admins", reads="Orders") + self.fact("Orders") + (
+        extra = self.fact("Admins", reads="Orders") + self.fact("Orders") + self.BOTH + (
             "multipliers:\n  - name: IBDType\n    stage: during_build\n    levels:\n"
             "      - strat: UC\n        vars: {ICD_Value: [K51]}\n"
             "      - strat: Crohns\n        vars: {ICD_Value: [K50]}\n"
@@ -6684,7 +6735,8 @@ class TableOrderTests(MakeYamlTest):
         # D138: each level's copy is UCOrders, CrohnsOrders; `{{prefix}}_Orders`
         # names a temp nobody makes. Warned, not refused, until the renderer
         # names it (roadmap: Generated-table dependencies).
-        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + self.MULTIPLIED)
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + self.BOTH
+                                    + self.MULTIPLIED)
         self.assertCompiles(res)
         found = [m for m in res.warnings if m.code == "multiplied_table_read_by_name"
                  and "`Admins`" in m.message]
@@ -6730,13 +6782,13 @@ class TableGroupTests(MakeYamlTest):
             found.append((run["run_id"], run.get("group"), [c["name"] for c in doc["cohorts"]]))
         return found
 
-    def test_each_group_runs_its_own_tables_and_the_rest_run_last(self):
+    def test_each_group_runs_its_own_tables_and_each_other_table_runs_alone(self):
         res, out_dir = self.split(self.tables() + self.GROUPS)
         self.assertCompiles(res)
         self.assertEqual(self.run_tables(out_dir), [
             ("Patients__Meds", "Meds", ["Orders", "Admins"]),
             ("Patients__Visits", "Visits", ["Visits"]),
-            ("Patients__run", None, ["OtherDx"]),
+            ("Patients__OtherDx", "OtherDx", ["OtherDx"]),
         ])
         # Applied, so a run document cannot apply it again.
         self.assertNotIn("table_groups", load_yaml(out_dir / SPLIT_FILES_DIR / "sessions/Patients/runs/Meds.yaml"))
@@ -6750,16 +6802,24 @@ class TableGroupTests(MakeYamlTest):
             ("Patients__Meds__b2of2-sex-other", ["Orders", "Admins"]),
             ("Patients__Visits__b1of2-Female", ["Visits"]),
             ("Patients__Visits__b2of2-sex-other", ["Visits"]),
-            ("Patients__b1of2-Female", ["OtherDx"]),
-            ("Patients__b2of2-sex-other", ["OtherDx"]),
+            ("Patients__OtherDx__b1of2-Female", ["OtherDx"]),
+            ("Patients__OtherDx__b2of2-sex-other", ["OtherDx"]),
         ])
 
-    def test_no_groups_splits_as_before(self):
-        res, out_dir = self.split(self.tables())
+    def test_with_no_groups_each_table_runs_alone_in_fact_tables_order(self):
+        # D190: a failure leaves the finished tables finished.
+        res, out_dir = self.split(self.fact("Orders") + self.fact("Visits"))
         self.assertCompiles(res)
         self.assertEqual(self.run_tables(out_dir), [
-            ("Patients__run", None, ["OtherDx", "Orders", "Admins", "Visits"]),
+            ("Patients__OtherDx", "OtherDx", ["OtherDx"]),
+            ("Patients__Orders", "Orders", ["Orders"]),
+            ("Patients__Visits", "Visits", ["Visits"]),
         ])
+
+    def test_a_table_named_as_a_group_it_is_not_in_is_refused(self):
+        groups = "table_groups:\n  - name: Visits\n    tables: [Orders]\n"
+        res = self.compile_template(extra=self.fact("Orders") + self.fact("Visits") + groups)
+        self.assertHasError(res, "table_group_name_taken")
 
     def test_each_multiplier_level_gets_its_groups(self):
         extra = self.tables() + self.GROUPS + (
@@ -6771,8 +6831,8 @@ class TableGroupTests(MakeYamlTest):
         self.assertCompiles(res)
         sessions = res.analysis["split_plan"]["sessions"]
         self.assertEqual([[r["run_id"] for r in s["runs"]] for s in sessions], [
-            ["UCPatients__Meds", "UCPatients__Visits", "UCPatients__run"],
-            ["CrohnsPatients__Meds", "CrohnsPatients__Visits", "CrohnsPatients__run"],
+            ["UCPatients__Meds", "UCPatients__Visits", "UCPatients__OtherDx"],
+            ["CrohnsPatients__Meds", "CrohnsPatients__Visits", "CrohnsPatients__OtherDx"],
         ])
 
     def test_reading_a_table_in_another_group_is_refused(self):
@@ -6787,7 +6847,7 @@ class TableGroupTests(MakeYamlTest):
         groups = "table_groups:\n  - name: Meds\n    tables: [Admins]\n"
         res = self.compile_template(extra=self.fact("Orders") + self.fact("Admins", reads="Orders") + groups)
         self.assertHasError(res, "table_reads_another_group")
-        self.assertIn("reads `Orders` (no group)", next(
+        self.assertIn("reads `Orders` (its own group)", next(
             m.message for m in res.errors if m.code == "table_reads_another_group"))
 
     def test_what_a_group_may_not_list(self):
@@ -6813,7 +6873,7 @@ class TableGroupTests(MakeYamlTest):
         res = self.compile_template(extra=self.fact("Orders").replace(
             "    type: fact\n", "    type: fact\n    table_group: Meds\n"))
         self.assertCompiles(res)
-        self.assertNotIn("table_group", self.cohorts_by_name(res)["Orders"])
+        self.assertEqual(self.cohorts_by_name(res)["Orders"]["table_group"], "Orders")
 
     def test_the_transfer_carries_its_groups_and_splits_the_same(self):
         template, recipes = self.write_pair(extra=self.tables() + self.GROUPS)

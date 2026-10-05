@@ -1530,7 +1530,7 @@ class Draft:
         self._changed()
 
     def remove_group(self, index: int) -> None:
-        """Its tables go back to running with the tables in no group."""
+        """Its tables go back to running each as a group of its own (D190)."""
         self._group(index)
         del self.doc["table_groups"][index]
         if not self.doc["table_groups"]:

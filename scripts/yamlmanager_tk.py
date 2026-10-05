@@ -1648,7 +1648,7 @@ def build_fact(view: AuthorView, parent: Any) -> None:
         note(box, "Type a position and press Enter to move it; the PK keeps its place.").pack(anchor="w")
         group = draft.group_of(str(cohort.get("name") or ""))
         note(box, f"Table group: {group}" if group else
-             "Table group: none (runs with the other tables in no group)").pack(anchor="w")
+             "Table group: none (it runs as a group of its own, D190)").pack(anchor="w")
         if not built:
             texts = ttk.Frame(box)
             texts.pack(fill="x", pady=(4, 0))
@@ -1943,7 +1943,7 @@ def build_groups(view: AuthorView, parent: Any) -> None:
             "Each group is pulled on a Cosmos connection of its own, every batch of it before the next "
             "group, so the log names what is being pulled and a stuck or failed group costs only itself. "
             "Inside a group, tables run in Fact Tables order; a table cannot read a table in another group.")
-    note(parent, "Tables in no group run together, as one group, after the groups.").pack(anchor="w", pady=(0, 6))
+    note(parent, "A table in no group runs as a group of its own, after the groups (D190). Tables that read each other share a group.").pack(anchor="w", pady=(0, 6))
     ungrouped = draft.ungrouped_tables()
     for index, name, tables in draft.table_groups():
         box = entry_box(view, parent, f"Table group: {name}", "groups", index)
