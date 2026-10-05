@@ -2652,6 +2652,40 @@ def check_unknown_reads(
                 )
 
 
+def check_unread_uploads(
+    template: dict[str, Any], cohorts: list[dict[str, Any]], marker: str, result: CompileResult
+) -> None:
+    """An upload no table reads (D195).
+
+    UC's `IBD_Meds` went up on every run and filtered nothing (#98). A
+    warning, not an error: an upload may travel only to be packaged with the
+    pull. An uploaded PK is read as `{{PKTable}}`, so it is not asked about.
+    """
+    read: set[str] = set()
+    pattern = re.compile(
+        r"(?:\{\{prefix\}\}_|" + re.escape(marker) + r")([A-Za-z0-9_]+)(?![A-Za-z0-9_])"
+    )
+    for cohort in cohorts:
+        if isinstance(cohort, dict):
+            for _, line in cohort_sql_lines(cohort):
+                read.update(match.group(1) for match in pattern.finditer(line))
+    for idx, upload in enumerate(template.get("upload_cohorts", []) or []):
+        if not isinstance(upload, dict) or str(upload.get("type", "")).lower() == "pk":
+            continue
+        names = [str(upload.get(key)) for key in ("dest_table", "name") if upload.get(key)]
+        if not names or read.intersection(names):
+            continue
+        result.warn(
+            "upload_not_read",
+            f"Upload `{names[0]}` goes up with the pull, but no table reads it, so it filters "
+            "nothing.",
+            f"upload_cohorts[{idx}] ({names[0]})",
+            fix=f"Join or filter on `{{{{prefix}}}}_{names[0]}` where it is meant to apply "
+            f"(a list that only filters: `<alias>.<column> IN (SELECT ... FROM "
+            f"{{{{prefix}}}}_{names[0]})`, D192), or remove the upload.",
+        )
+
+
 def check_table_order(cohorts: list[dict[str, Any]], marker: str, result: CompileResult) -> None:
     """A table that reads another fact table must come after it (D134).
 
@@ -3241,6 +3275,7 @@ def compile_yaml(
             rendered_cohorts, dictionary, find_uploaded_pk_table(template, CompileResult()) or pk_cohort_name(rendered_cohorts), result
         )
         check_unknown_reads(template, rendered_cohorts, temp_marker(template), result)
+        check_unread_uploads(template, rendered_cohorts, temp_marker(template), result)
         check_table_order(rendered_cohorts, temp_marker(template), result)
         check_multiplied_reads(rendered_cohorts, temp_marker(template), result)
         if not result.errors:
@@ -6339,6 +6374,41 @@ class AddedLinesTests(MakeYamlTest):
         self.assertHasError(res, "bad_added_lines")
 
 
+class UnreadUploadTests(MakeYamlTest):
+    """D195: an upload no table reads is warned about, by name (#98)."""
+
+    TEMPLATE = TableBindingTests.TEMPLATE
+    compile = TableBindingTests.compile
+
+    def test_an_upload_no_table_reads_is_named(self):
+        res = self.compile(cohort_vars="    vars: {CodesTable: Codes}")
+        found = [m for m in res.warnings if m.code == "upload_not_read"]
+        self.assertEqual([m.context for m in found], ["upload_cohorts[1] (Unrelated)"])
+        self.assertIn("no table reads it", found[0].message)
+
+    def test_an_upload_a_table_reads_is_not(self):
+        res = self.compile(cohort_vars="    vars: {CodesTable: Codes}")
+        self.assertNotIn("(Codes)", " ".join(m.context for m in res.warnings))
+
+    def test_an_upload_read_only_in_a_where_counts_as_read(self):
+        # UC's Meds tables read IBD_Meds in an IN (SELECT ...) condition (D192).
+        text = self.TEMPLATE.format(extra_vars="", extra_uploads="", cohort_vars="").replace(
+            '        - "INNER JOIN {{prefix}}_{{CodesTable}} AS c ON c.Code = e.EncounterKey"',
+            '        - "INNER JOIN {{prefix}}_Codes AS c ON c.Code = e.EncounterKey"\n'
+            '      where:\n'
+            '        - "e.EncounterKey IN (SELECT u.Something FROM {{prefix}}_Unrelated AS u)"',
+        )
+        (self.tmp / "codes.csv").write_text("Code,Label\nK50,Crohns\n", encoding="utf-8")
+        (self.tmp / "unrelated.csv").write_text("Something\nx\n", encoding="utf-8")
+        res = self.compile_template(text)
+        self.assertFalse(has_warning(res, "upload_not_read"), summarize_result(res))
+
+    def test_an_uploaded_pk_is_not_asked_about(self):
+        (self.tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n1,2\n", encoding="utf-8")
+        res = self.compile_template(uploaded_pk_template())
+        self.assertFalse(has_warning(res, "upload_not_read"), summarize_result(res))
+
+
 class TableNotMadeTests(MakeYamlTest):
     """D178: a table that reads a generated table the pull does not make."""
 
@@ -6805,6 +6875,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "pending_transfer": PendingTransferTests,
     "sql_references": SqlReferenceTests,
     "table_not_made": TableNotMadeTests,
+    "unread_uploads": UnreadUploadTests,
     "table_order": TableOrderTests,
     "table_groups": TableGroupTests,
     "added_lines": AddedLinesTests,
