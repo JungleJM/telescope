@@ -3737,3 +3737,15 @@ as before. The name of the utility does not matter to the user (5 October
 
 **Consequences.** Nothing is widened for the user; they say so with `%`, as
 in a template's own code lists (`K50.%`).
+
+### D198. Status shows a table green once its run is done
+
+**Context.** In Run's Status, a table's row stays black while its run and
+session are green, so a finished SneakPeek session read as unfinished (the HaT
+control pull, 5 October 2026).
+
+**Decision.** A table row takes its run's colour once the run is done (green),
+and the PK's table its phase's. A table under a run still running or failed is
+black, as now, since its rows are what has landed so far.
+
+**Consequences.** Run's window only; nothing a pull does changes.

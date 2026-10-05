@@ -599,6 +599,59 @@ The pool's size mostly decides the **room**, not the time. At 50 times with ever
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 5 Oct) I saw the SneakPeek tables in black, so I assumed they weren't done: when a whole batch is done, its tables should show green too. I like trimming, but I asked earlier whether trimming columns saves space and you said no; why is this different? Give me a copy with only the necessary columns, all those the PheWAS study needs, not just the joins. How could I choose this in future: a "barebones" blueprint of the core columns?
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the barebones intake is written; why trimming pays here; green tables are D198**
+
+**The copy.** It is `pheauxWAS/tutorial/adapting-cosmos/ctrl_PheWAS_barebones_intake.yaml`, beside the original, which is unchanged. It was checked against the study's plan (`reference/plan`), not only against `build_group_parquet.py`:
+
+| Table | Columns | Kept for |
+|------------------|------------------|------------------|
+| ctrl_Encounters | 12 of 45 | clinic visits, ED visits and admissions (D8, D31); the observation span; `DepartmentKey`, `DepartmentSpecialty`, `DepartmentIsDeleted` and the `SiteFullyUsableInCosmos` dates, for the specialty and complete-site questions in HaT Considerations; `EncounterKey`, the dedup key |
+| ctrl_Diagnoses | 7 of 30 | ICD-10-CM code and date (D15); `DiagnosisStatus` and `DiagnosisType`, for the ruled-out filter (D17); `DiagnosisEventKey` and the code, the dedup keys |
+| ctrl_Patients | all 62 | 300,000 rows: small, and every covariate stays open (D10, SVI...) |
+| ctrl_Labs | all 40 | a few rows a pass; D28 keeps every tryptase column, and results like "<1.0" need `Value` and the boundary columns |
+
+It also has `chunk: 100000`. It validates exactly as the original does: one expected warning, `RandomOrder`, and the upload file is needed only on the VM. A dry run here makes one run per table. Its header says what was kept and why. A column left out (an encounter's providers, PresentOnAdmission) needs a re-pull to add later.
+
+**Why trimming pays here, after I said it barely did.** That answer was about MedAdminHistory: 15 columns, nearly all 8-byte keys and dates. Dropping one date there saves about 8 of 185 bytes a row. Here it is different in two ways:
+
+- **The tables are wide, and much of the width is text.** Diagnoses carries `DisplayString`, `NameAndCode`, `GroupedNameAndCode`, `ReferenceBillingCode` and `Parent`: long text on every one of about 136 million rows. Cutting 30 columns to 7, and 45 to 12, removes most of each row, not a sliver.
+- **Time.** I said time would fall only if Cosmos reads by column. Block 2 has since shown that it does, so fewer columns should also mean faster passes. This pull will measure how much.
+
+**Green tables (D198).** In Status a table row stays black while its run and session are green. A table whose run is done will be green; one still pulling or failed keeps its colour. This is in the roadmap, with the next bundle.
+
+**For you to decide:** nothing here; the barebones question is below, under Barebones blueprints.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
+## Barebones blueprints: choosing only the columns a study needs
+
+From the HaT control pull (above): every table takes every column (D28 there), which costs room and, now that Cosmos is known to read by column, time. A study usually knows which columns it reads.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: three ways to choose columns; a list the study supplies is the one that fits**
+
+**What the code does today.** The table builder takes every column of a table's source, typed from the dictionary, and you remove columns one at a time. A recipe carries whatever columns it was saved with. Nothing knows which columns an analysis will read.
+
+**Options.**
+
+1.  **A list from the study (recommended).** A table gets **Keep only these columns**: paste or load a list (`PatientDurableKey, DateKey, DerivedEncounterStatus...`), and every other column is removed, its keys kept. The list can come from the analysis itself, as `build_group_parquet.py`'s `ENCOUNTER_COLS` did, so the pull and the study can't drift. Validate warns when a listed column isn't in the table, and when a dedup key would be removed.
+2.  **A "core" set in the dictionary.** Each table marks its core columns (keys, dates, codes, status, type), and the builder offers Every column or Core. It needs no study, but "core" is a guess, and this study needed department and site columns that a core set would likely leave out.
+3.  **Saved column sets.** A table's chosen columns saved by name ("PheWAS encounters") and reused, as recipes are. Useful once several studies share a shape.
+
+**Recommendation.** 1, with 3 later if studies repeat. Pair it with the size estimate (roadmap), which would show what trimming saves before the pull.
+
+**For you to decide:** whether to put **Keep only these columns** on the roadmap, and whether the list is pasted, loaded from a file, or both.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 
 :::

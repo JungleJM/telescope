@@ -40,6 +40,8 @@ Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on
 
 1.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
 
+**Small, with the next bundle:** **a table green once its run is done** in Status (D198), Run's window only.
+
 **Later, not in either:** **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 
 ------------------------------------------------------------------------
