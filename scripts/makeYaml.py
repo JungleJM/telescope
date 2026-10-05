@@ -87,6 +87,8 @@ class CompileResult:
     # Files marked `pending_transfer` that are not here yet (D97): expected,
     # so neither an error nor a warning.
     pending: list[Message] = field(default_factory=list)
+    # Information, neither a fault nor a doubt: what a choice costs (D196).
+    notes: list[Message] = field(default_factory=list)
     finished_yaml: dict[str, Any] = field(default_factory=dict)
     analysis: dict[str, Any] = field(default_factory=dict)
     graph: dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
@@ -101,6 +103,9 @@ class CompileResult:
 
     def pend(self, code: str, message: str, context: str = "", fix: str = "") -> None:
         self.pending.append(Message("PENDING", code, message, context, fix))
+
+    def note(self, code: str, message: str, context: str = "", fix: str = "") -> None:
+        self.notes.append(Message("NOTE", code, message, context, fix))
 
 
 @dataclass
@@ -1119,6 +1124,7 @@ def validate_and_resolve(
     validate_upload_references(template, uploads, analysis, result, base_dir)
     validate_multipliers(template, cohorts, table_schemas, result)
     validate_batching(template, recipes_doc, cohorts, table_schemas, result)
+    note_chunk_passes(template, recipes_doc, base_dir, result)
     return resolved_cohorts
 
 
@@ -2782,6 +2788,58 @@ def load_datadictionary(path: str | Path | None, result: CompileResult) -> dict[
 BATCHING_KINDS = ("column_values", "row_chunk")
 
 
+def uploaded_pk_rows(template: dict[str, Any], base_dir: Path) -> int | None:
+    """An uploaded PK file's row count, where the file is here; else None."""
+    for upload in template.get("upload_cohorts", []) or []:
+        if not isinstance(upload, dict) or str(upload.get("type", "")).lower() != "pk":
+            continue
+        loc = upload.get("file_loc")
+        if not loc:
+            return None
+        path = resolve_file(base_dir, str(loc))
+        if not path.is_file():
+            return None
+        try:
+            if path.suffix.lower() == ".parquet":
+                import pyarrow.parquet as pq  # noqa: PLC0415 - the VM has it; the Mac may not
+                return int(pq.ParquetFile(str(path)).metadata.num_rows)
+            with path.open("rb") as handle:
+                return max(sum(1 for _ in handle) - 1, 0)  # less the header
+        except Exception:  # noqa: BLE001 - a count is only a nicety here
+            return None
+    return None
+
+
+def note_chunk_passes(
+    template: dict[str, Any], recipes_doc: dict[str, Any], base_dir: Path, result: CompileResult
+) -> None:
+    """What `chunk:` costs (D196): every chunk reads each table's whole date
+    window again (design.md, What a batch costs), so N chunks take about N
+    passes. A note: chunks are sometimes needed, for room."""
+    normalized = normalize_batching(template.get("batching", []) or [], recipes_doc, CompileResult())
+    for item in normalized:
+        size = item.get("rows_per_batch")
+        if str(item.get("kind")) != "row_chunk" or isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+            continue
+        rows = uploaded_pk_rows(template, base_dir)
+        if rows is not None:
+            passes = max(-(-rows // size), 1)
+            how_many = (f"`chunk: {size:,}` over the PK's {rows:,} rows makes {passes:,} "
+                        f"pass{'es' if passes != 1 else ''} of every table")
+        else:
+            passes = 0
+            how_many = (f"`chunk: {size:,}` makes one pass of every table per {size:,} PK rows "
+                        "(the PK's size is known once it is built)")
+        result.note(
+            "chunk_passes",
+            how_many + ". Each pass reads the table's whole date window again, whatever its "
+            "patients, so the time grows with the passes"
+            + (f": about {passes:,} times one unchunked pass" if passes > 1 else "")
+            + ". Chunks bound what one pass lands, not the time: fewer, larger chunks are faster.",
+            f"{item.get('_source', 'batching')} ({item.get('name')})",
+        )
+
+
 def validate_batching(template: dict[str, Any], recipes_doc: dict[str, Any], cohorts: list[dict[str, Any]], table_schemas: dict[str, list[str] | None], result: CompileResult) -> None:
     """Check each batching definition field by field.
 
@@ -3187,6 +3245,11 @@ def build_report(result: CompileResult) -> str:
         lines.append("")
         lines.append("## Pending Transfer")
         for msg in result.pending:
+            lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
+    if result.notes:
+        lines.append("")
+        lines.append("## Notes")
+        for msg in result.notes:
             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
     lines.append("")
     lines.append("## Expanded Cohorts")
@@ -5577,6 +5640,42 @@ multipliers:
         self.assertHasError(res, "split_after_build_on_uploaded_pk")
 
 
+class ChunkPassesTests(MakeYamlTest):
+    """D196: a chunked template is told what its chunks cost, as a note."""
+
+    def compile_with(self, batching: str, rows: int = 5) -> CompileResult:
+        body = "".join(f"{i},{i * 10}\n" for i in range(1, rows + 1))
+        (self.tmp / "pks.csv").write_text("PatientDurableKey,DiagnosisEventKey\n" + body, encoding="utf-8")
+        return self.compile_template(uploaded_pk_template() + batching)
+
+    def test_an_uploaded_pk_is_counted_into_passes(self):
+        res = self.compile_with("batching:\n  - chunk: 2\n", rows=5)
+        self.assertCompiles(res)
+        notes = [m for m in res.notes if m.code == "chunk_passes"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("over the PK's 5 rows makes 3 passes", notes[0].message)
+        self.assertIn("about 3 times one unchunked pass", notes[0].message)
+        # A note, not a warning: it does not count against the template.
+        self.assertFalse(has_warning(res, "chunk_passes"))
+
+    def test_a_generated_pk_is_told_per_rows(self):
+        res = self.compile_template(tiny_template("batching:\n  - chunk: 50000\n"))
+        notes = [m for m in res.notes if m.code == "chunk_passes"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("one pass of every table per 50,000 PK rows", notes[0].message)
+
+    def test_no_chunk_no_note(self):
+        res = self.compile_with("")
+        self.assertEqual(res.notes, [])
+
+    def test_validate_prints_it(self):
+        res = self.compile_with("batching:\n  - chunk: 2\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            print_messages(res)
+        self.assertIn("NOTE  [chunk_passes]", out.getvalue())
+
+
 class DescriptionFieldTests(MakeYamlTest):
     """D74: granularity and column descriptions reach the split; D72: the
     separate_parquets flag reaches each batch."""
@@ -6863,6 +6962,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "temp_prefix": TempPrefixTests,
     "upload_files": UploadFileTests,
     "uploaded_pk_batching": UploadedPkBatchingTests,
+    "chunk_passes": ChunkPassesTests,
     "transfer": TransferTests,
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
@@ -6956,7 +7056,8 @@ def warn_retired_options(raw: dict[str, Any], result: CompileResult) -> None:
 
 
 def print_messages(result: CompileResult) -> None:
-    for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings), ("PEND ", result.pending)):
+    for label, messages in (("ERROR", result.errors), ("WARN ", result.warnings), ("PEND ", result.pending),
+                            ("NOTE ", result.notes)):
         for msg in messages:
             where = f" at {msg.context}" if msg.context else ""
             print(f"{label} [{msg.code}]{where}: {msg.message}")

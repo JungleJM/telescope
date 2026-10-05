@@ -3721,4 +3721,4 @@ table's whole date window again; and that chunks bound what one pass lands,
 not the time, so fewer, larger chunks are faster. A note, not a warning: chunks
 are sometimes needed.
 
-**Consequences.** None to running; it is text.
+**Consequences.** None to running; it is text. Built at Validate and Export split, both in makeYaml; Preview, which is the runtime's dry run, does not say it, so bundle 1 leaves the runtime as it was (5 October 2026).
