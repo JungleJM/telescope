@@ -91,6 +91,89 @@ class DropTests(unittest.TestCase):
             self.tool.check_database("COSMOS")
 
 
+class SpaceDatabase(FakeDatabase):
+    """A database that also answers for its files and its log, or cannot be opened."""
+
+    def __init__(self, tables, files=(("ROWS", 18000, 20000),)):
+        super().__init__(tables)
+        self.files = files
+        self.closed = False
+
+    def cursor(self):
+        db = self
+
+        class Cursor(FakeCursor):
+            def execute(self, sql):
+                if "sys.database_files" in sql:
+                    self.rows = [(f"f{i}", kind, used, used, cap) for i, (kind, used, cap) in enumerate(db.files)]
+                    return self
+                if "sys.databases" in sql:
+                    self.rows = [("SIMPLE", "NOTHING")]
+                    return self
+                return super().execute(sql)
+
+            def fetchone(self):
+                return self.rows[0] if self.rows else None
+
+        return Cursor(db)
+
+    def close(self):
+        self.closed = True
+
+
+class EveryDatabaseTests(unittest.TestCase):
+    """D185: every listed database with its room, its tables grouped by pull."""
+
+    def setUp(self):
+        self.tool = load()
+
+    def test_the_listed_databases_are_pullmanagers_own(self):
+        from pullmanager.config import DEFAULT_PROJECTS_DATABASES
+
+        self.assertEqual(self.tool.listed_databases(), list(DEFAULT_PROJECTS_DATABASES))
+
+    def test_tables_group_by_their_pulls_prefix_largest_first(self):
+        tables = [("dbo", "ucvis_MedAdminHistory", 51_187_764, 9051), ("dbo", "hatphe_hat_Labs", 10, 1),
+                  ("dbo", "ucvis_upload_IBD_Meds", 715, 0), ("dbo", "Scratch", 3, 0)]
+        grouped = self.tool.by_pull(tables)
+        self.assertEqual([pull for pull, _ in grouped], ["ucvis", "hatphe", "(no prefix)"])
+        self.assertEqual([r[1] for r in grouped[0][1]], ["ucvis_MedAdminHistory", "ucvis_upload_IBD_Meds"])
+
+    def test_free_space_is_the_data_files_room_to_their_caps(self):
+        db = SpaceDatabase([], files=(("ROWS", 18000, 20000), ("ROWS", 500, 1000), ("LOG", 100, 20000)))
+        self.assertEqual(self.tool.free_mb(db), 2500.0)
+        self.assertIsNone(self.tool.free_mb(SpaceDatabase([], files=(("ROWS", 1, None),))))
+
+    def test_a_database_that_cannot_be_opened_says_why_and_the_others_load(self):
+        catalog = self.tool.Catalog()
+        good = SpaceDatabase([("ucvis_EDVisits", 500)])
+
+        def connect(name):
+            if name == "PROJECTDBAD":
+                raise RuntimeError("Login failed for user (18456)\nmore")
+            return good
+
+        for name in ("PROJECTDBAD", "PROJECTDGOOD"):
+            catalog.load(name, connect)
+        self.assertEqual(catalog.row_text("PROJECTDBAD"), "could not be opened (Login failed for user (18456))")
+        self.assertEqual(catalog.row_text("PROJECTDGOOD"), "2.0 GB free, 1 table(s)")
+        self.assertTrue(good.closed)
+
+    def test_a_selection_means_its_tables_a_pulls_or_a_whole_databases(self):
+        catalog = self.tool.Catalog()
+        catalog.tables = {
+            "PROJECTDA": [("dbo", "ucvis_A", 1, 1), ("dbo", "ucvis_B", 1, 1), ("dbo", "hat_C", 1, 1)],
+            "PROJECTDB": [("dbo", "x_D", 1, 1)],
+        }
+        t = self.tool.targets
+        self.assertEqual(t(["table\x00PROJECTDA\x00dbo\x00hat_C"], catalog), {"PROJECTDA": [("dbo", "hat_C")]})
+        self.assertEqual(t(["pull\x00PROJECTDA\x00ucvis"], catalog),
+                         {"PROJECTDA": [("dbo", "ucvis_A"), ("dbo", "ucvis_B")]})
+        self.assertEqual(t(["db\x00PROJECTDB", "pull\x00PROJECTDA\x00ucvis", "table\x00PROJECTDA\x00dbo\x00ucvis_A"],
+                           catalog),
+                         {"PROJECTDB": [("dbo", "x_D")], "PROJECTDA": [("dbo", "ucvis_A"), ("dbo", "ucvis_B")]})
+
+
 class SettingsTests(unittest.TestCase):
     def test_the_environment_wins_over_a_env_and_defaults_fill_the_rest(self):
         tool = load()
