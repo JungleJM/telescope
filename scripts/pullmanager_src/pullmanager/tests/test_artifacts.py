@@ -38,6 +38,16 @@ HOSPITALIZATIONS = [
 ]
 
 
+def client_tools() -> list[str]:
+    """The client's scripts beside this code, as Artifacts copies them: what a
+    bundle holds back is not there (D200)."""
+    from ..loaders import STOCK_DIR
+
+    folder = STOCK_DIR.parent / "utils" / "client"
+    return [p.name for p in sorted(folder.iterdir(), key=lambda path: path.name.lower())
+            if p.is_file() and p.suffix == ".py" and not p.name.startswith(("_", "."))]
+
+
 def pyarrow_or_skip(case):
     try:
         import pyarrow  # noqa: F401
@@ -490,10 +500,10 @@ class LoaderTests(ArtifactTestCase):
 
     def test_the_load_scripts_viewer_and_how_to_are_written_at_the_run_folders_root(self):
         written = self.write()
-        self.assertEqual(sorted(p.relative_to(self.out).as_posix() for p in written), [
-            "HOW_TO.md", "load_parquets.R", "load_parquets.py",
-            "utils.py", "utils/client/transcription_viewer.py", "utils/client/viewparquets.py",
-        ])
+        self.assertEqual(sorted(p.relative_to(self.out).as_posix() for p in written), sorted([
+            "HOW_TO.md", "load_parquets.R", "load_parquets.py", "utils.py",
+            *(f"utils/client/{name}" for name in client_tools()),
+        ]))
         self.assertIn(self.out.resolve().as_posix(), (self.out / "load_parquets.R").read_text())
         self.assertFalse(list(self.out.glob("examine_parquets.*")))
 
@@ -519,7 +529,7 @@ class LoaderTests(ArtifactTestCase):
         window = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(window)
         self.assertEqual([(heading, [p.name for p in paths]) for heading, paths in window.sections()],
-                         [("Client", ["transcription_viewer.py", "viewparquets.py"])])
+                         [("Client", client_tools())])
 
     def test_the_viewer_copy_says_the_bundle_it_was_packaged_with(self):
         # D147: in a pull's folder there is no bundle above it to read.

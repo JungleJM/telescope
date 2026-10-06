@@ -28,10 +28,10 @@ class UtilitiesTests(unittest.TestCase):
         self.folder = Path(self._tmp.name)
 
     def test_each_script_is_offered_by_name_and_underscored_ones_are_not(self):
-        for name in ("viewparquets.py", "Transcription_viewer.py", "_helper.py", "notes.txt"):
+        for name in ("viewparquets.py", "Other_viewer.py", "_helper.py", "notes.txt"):
             (self.folder / name).write_text("", encoding="utf-8")
         self.assertEqual([p.name for p in self.utilities.scripts(self.folder)],
-                         ["Transcription_viewer.py", "viewparquets.py"])
+                         ["Other_viewer.py", "viewparquets.py"])
 
     def test_a_script_runs_with_this_python_in_its_own_process(self):
         script = self.folder / "viewparquets.py"
@@ -102,7 +102,10 @@ class GroupTests(unittest.TestCase):
     def test_the_shipped_ones_are_sorted(self):
         utilities = load_utilities()
         shipped = {h: [p.name for p in ps] for h, ps in utilities.sections()}
-        self.assertEqual(shipped.get("Client"), ["transcription_viewer.py", "viewparquets.py"])
+        # Client's list differs by where it runs: a bundle can hold one back (D200).
+        client = shipped.get("Client") or []
+        self.assertIn("viewparquets.py", client)
+        self.assertEqual(client, sorted(client, key=str.lower))
         self.assertEqual(shipped.get("Manager"), ["clear_projects_db.py"])
 
 
@@ -197,12 +200,6 @@ class CreditTests(unittest.TestCase):
             "clear_projects_db": (self.SRC / "utils" / "manager", "import clear_projects_db; clear_projects_db.main([])"),
             "the app": (self.SRC, "from pullmanager import app; app.main()"),
         }
-        try:
-            import PIL  # noqa: F401  the transcription viewer draws with Pillow
-            windows["the transcription viewer"] = (
-                self.SRC / "utils" / "client", "import transcription_viewer; transcription_viewer.main([])")
-        except ImportError:
-            pass
         # D147: beside it, the bundle each window runs from; none from source.
         from ..config import bundle_id
 

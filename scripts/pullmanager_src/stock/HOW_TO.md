@@ -16,7 +16,7 @@ Everything this pull produced is in this folder:
 | `uploads_parquets/` | Lists that were uploaded to make the pull, as supplied. |
 | `pullmanifest.yaml`, `execute-*.log` | The pull's record and its latest log; earlier logs are in `older_logs/`. |
 | `pull_files/` | What ran the pull: the split and its SQL. Not needed to use the data. |
-| `utils.py`, `utils/client/` | A small window of tools: the parquet viewer, to look at the tables, and the transcription viewer, to show text as a page you can save as an image. |
+| `utils.py`, `utils/client/` | A small window of tools, among them the parquet viewer, to look at the tables. |
 | `load_parquets.R`, `load_parquets.py` | Open every table in R or Python without reading it into memory. |
 
 ## Looking At The Data
@@ -25,9 +25,6 @@ Run `python utils.py` in this folder (or open it in VSCodium and run it), then
 **viewparquets**. It opens on this pull: press **Cosmos** or
 **Cosmos_SneakPeek**, then a table's button. A second table opens beside the
 first; a third replaces the older of the two. **Browse...** opens any parquet.
-
-To send a picture of an error or of text, **transcription_viewer** lays text
-out as a page and saves it as a PDF or PNG.
 
 ## Working With The Data
 

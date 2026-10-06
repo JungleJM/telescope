@@ -5,8 +5,7 @@ and each column's type and nullability where they differ from Cosmos's (D161).
 in Cosmos, and a pull failed on it after an eleven-minute query. This asks
 Cosmos for each dictionary table's columns and writes
 `runs/dictionary_audit.yaml` with only what did not check out, short enough
-to be copied off the VM by screenshot and read back by `scope.py
-dictionary-fix` on the Mac.
+to read at a glance; `scope.py dictionary-fix` applies it to the dictionary.
 """
 
 from __future__ import annotations

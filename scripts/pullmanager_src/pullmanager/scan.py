@@ -3,7 +3,7 @@
 Errors a batch hid (D151) left tables `done` with fewer rows than Cosmos
 built, or none. This reads every pull under the runs folder, without a
 database, and writes `runs/run_scan.yaml` with only what did not check out,
-short enough to be copied off the VM by screenshot.
+short enough to read at a glance.
 """
 
 from __future__ import annotations

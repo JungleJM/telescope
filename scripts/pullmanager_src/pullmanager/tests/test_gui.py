@@ -384,7 +384,7 @@ class RunningPullTests(GuiTestCase):
 
 
 class UtilityButtonTests(GuiTestCase):
-    """D180: View dbo tables, and Multi-column view on each text tab."""
+    """D180: View dbo tables."""
 
     def setUp(self):
         super().setUp()
@@ -392,15 +392,14 @@ class UtilityButtonTests(GuiTestCase):
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(dict(SAMPLE_MANIFEST, database_choice={"database": "PROJECTD52219B"}), self.manifest)
 
-    def test_the_utilities_run_opens_are_where_it_looks_with_the_main_it_calls(self):
+    def test_the_utility_run_opens_is_where_it_looks_with_the_main_it_calls(self):
         import ast
 
-        for script in (self.gui.CLEAR_PROJECTS_DB, self.gui.TRANSCRIPTION_VIEWER):
-            with self.subTest(script=script.name):
-                self.assertTrue(script.is_file(), script)
-                tree = ast.parse(script.read_text(encoding="utf-8"))
-                main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
-                self.assertEqual([a.arg for a in main.args.args], ["argv"])
+        script = self.gui.CLEAR_PROJECTS_DB
+        self.assertTrue(script.is_file(), script)
+        tree = ast.parse(script.read_text(encoding="utf-8"))
+        main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+        self.assertEqual([a.arg for a in main.args.args], ["argv"])
 
     def test_view_dbo_tables_opens_clear_projects_db_on_the_pulls_database(self):
         with mock.patch.object(self.gui, "start_utility") as start:
@@ -412,24 +411,6 @@ class UtilityButtonTests(GuiTestCase):
         with mock.patch.object(self.gui, "start_utility") as start:
             self.app.on_view_dbo_tables()
         start.assert_called_once_with(self.gui.CLEAR_PROJECTS_DB, cwd=self.work)
-
-    def test_multi_column_view_opens_the_tabs_text_in_the_viewer(self):
-        widget = mock.MagicMock()
-        widget.get.return_value = "UCPatientInfo: setup done\nUCPatientInfo: pk done"
-        with mock.patch.object(self.gui, "start_utility") as start:
-            path = self.app.on_multicolumn(widget, "Pull Log")
-        self.addCleanup(lambda: path.unlink(missing_ok=True))
-        self.assertEqual(path.name, "IBD_Ancestry Pull Log.txt")
-        self.assertEqual(path.read_text(encoding="utf-8"), "UCPatientInfo: setup done\nUCPatientInfo: pk done")
-        start.assert_called_once_with(self.gui.TRANSCRIPTION_VIEWER, str(path), cwd=self.work)
-
-    def test_an_empty_tab_says_so_and_opens_nothing(self):
-        widget = mock.MagicMock()
-        widget.get.return_value = "  \n"
-        with mock.patch.object(self.gui, "start_utility") as start:
-            self.assertIsNone(self.app.on_multicolumn(widget, "Validation Output"))
-        start.assert_not_called()
-        self.messagebox.showinfo.assert_called()
 
 
 class FakeConsole:
