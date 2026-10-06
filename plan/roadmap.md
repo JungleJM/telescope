@@ -34,13 +34,7 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-**Now (6 October 2026): two bundles that say nothing of how the software arrives.** Built in this order, each its own commit, pushed:
-
-1.  **Bundle 1** (D201): comments and docstrings on bundling, extraction and the Mac dropped at build time; the window foot and the audit and scan headers say `version`; VM messages no longer point at the Mac. `dist/bundle1.py`.
-2.  **Bundle 2** (D202): bundle 1, plus the code names renamed (`version_id`, `.runtime-manifest.json`, `VERSION = ""`). `dist/bundle2.py`. The user tests it on the VM on 7 October; if it fails, back to bundle 1.
-
-
-Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on the VM has one cause. Bundle 1 (D195, D196, the owed tests, D184, D186, D194, D185, D180, D190) is built: `9e742fd1…`, below. One commit each, with its outcome test.
+**On the VM, 7 October 2026: bundle 2 (D202), with bundle 1 (D201) as the fallback.** Both are built from `main` (bundle 1 `b6efc01c…`, `dist/bundle1.py`, at `f2a90dc`; bundle 2 `11036600…`, `dist/bundle2.py`), and installing 2 over 1 was rehearsed on the Mac. The checks are in the task list (Testing bundle 2). If bundle 2 fails, `python bundle1.py --extract pullmanager_runtime --force`, and revert `610defb` (D202).
 
 **Bundle 2, once bundle 1 has run a real pull: D177 alone.**
 
@@ -113,7 +107,7 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 7.  **QuickEdit** (D143): click inside Execute's window while it runs. The title should not change to "Select", and the lines keep coming.
 8.  **The Pull Manifest tab** (D144): on a pull with a failure, the tab shows the manifest with its error red; double-clicking the failed row in Status shows that error, highlighted. Then `--retry-failed` pulls only that run, and a second `--execute` says "nothing left to pull".
 9.  **The parquet viewer** (D146): from `python utils.py`, the dropdown lists the pulls that have run, as Run does; a pull opens on its Cosmos tables; a third table replaces the older of two. The copy in a pull's folder opens on that pull alone. A large lab table opens quickly now that only the page shown is read into Python.
-10. **The credit line** (D145) at the foot of each window, the viewer in a pull's folder included, with `· bundle` and the same 8 characters `bundle.py` showed as its `content_id` (D147); `python scope.py --version` says it too.
+10. **The credit line** (D145) at the foot of each window, the viewer in a pull's folder included, with `· version` (D202; `· bundle` before) and the same 8 characters `bundle.py` showed as its `content_id` (D147); `python scope.py --version` says it too.
 11. **Extraction refuses while a pull executes** (D147): with a pull running, `python bundle.py` names it and extracts nothing. Once nothing runs, it says it removed the previous `pullmanager_runtime`.
 12. **The backup** (D149): in Run, Browse a backup folder on the other drive; Artifacts on a packaged pull says `backed up to <folder>\<project>`, and the old parquets are there. With the drive unplugged, it goes to `runs\backup` with a warning at the end. Back up all backs up each pull, skipping one executing.
 13. **A pull's folder as a deliverable** (D148): after Artifacts, `utils.py` in it opens a window with the parquet viewer only; the viewer opens on that pull. Your own `python utils.py` shows Client and Manager.

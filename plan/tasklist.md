@@ -789,17 +789,21 @@ There are 47 conditions. The 28 in `GI_Conditions_intake.yaml` match it code for
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟦 Claude: what to check on the VM, and how to fall back**
 
+**Built (6 Oct).** Bundle 1 is `b6efc01c…` (commit `f2a90dc`); bundle 2 is `11036600…` (commit `610defb`). On the Mac, bundle 1 then bundle 2 were installed into one scratch folder as the VM will see them: no `--force`, the record renamed, `--tdd` passing, `version 11036600` shown, and the code still knowing it is on the VM. Neither carries a pull's blueprint: the GI Conditions blueprint went in `0ee5c6d4…`.
+
 **Bundle 2 (`dist/bundle2.py`)**
 
-1.  `python bundle2.py`, then y. It should extract over the current folder, which still has the old record name, without asking for `--force`.
+1.  `python bundle2.py`, then y. It should install over the current folder, which still has the old record name, without asking for `--force`.
 2.  `python scope.py --tdd` passes.
-3.  The foot of the app, the utilities window and the parquet viewer says `version <id>`, not `bundle`.
+3.  The foot of the app, the utilities window and the parquet viewer says `version 11036600`, not `bundle`.
 4.  Author opens a blueprint, Validate passes, Export split and Preview SQL work. That proves makeYaml still knows it is on the VM, through the renamed record.
 5.  Delete `bundle2.py`.
 
-**If it fails:** extract `bundle1.py` into a fresh folder (`python bundle1.py --extract pullmanager_runtime --force`). Bundle 1's extractor does not know bundle 2's record name, so without `--force` it refuses. Then tell me what failed.
+**If it fails:** `python bundle1.py --extract pullmanager_runtime --force`. Bundle 1's installer does not know bundle 2's record name, so without `--force` it refuses (rehearsed). Then tell me what failed, and I revert `610defb`.
 
-**For you to decide:** nothing until the test. Afterwards, whether bundle 2's renames stay (D202), or go back to bundle 1's (D201).
+**What either still says:** the installer file itself (`bundle1.py`, `bundle2.py`; delete it after use); in bundle 2, Author's Mac-only bundle-building code (the Exports tab's queue and buttons, 25 lines) and the R package `bundle` in the package list. Bundle 1 also keeps the code names.
+
+**For you to decide:** nothing until the test. Afterwards, whether bundle 2's renames stay (D202), or go back to bundle 1's (D201). Later, whether to take Author's Mac-only bundle-building code out of what ships (option 3).
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
