@@ -478,16 +478,16 @@ def default_recipes_path() -> Path:
 
 YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
 MISSING_TEMPLATE_FIX = (
-    "Pass `--template` with the file to use. On the VM that is a transfer YAML, "
-    "exported on the Mac with `makeYaml.py --export-transfer`."
+    "Pass `--template` with the file to use: on the VM, the project's blueprint in "
+    "YAMLs/temp/ (one that stands alone is written by `makeYaml.py --export-transfer`)."
 )
 
 
 def missing_template_message(template_path: Path) -> str | None:
     """A useful sentence for a template that does not exist, or None if it does.
 
-    The bundle ships no template (D49): the VM works from transfer YAMLs, so
-    running without --template from an extracted bundle points at nothing.
+    In an extracted bundle main() refuses a missing --template before this:
+    the shipped template is where a new draft starts, not a pull (D199).
     """
     path = Path(template_path)
     if path.is_file():
@@ -7222,7 +7222,9 @@ def print_messages(result: CompileResult) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compile YAML Manager templates.")
-    parser.add_argument("--template", default=str(default_template_path()))
+    # No default in an extracted bundle: its template is where a new draft
+    # starts (D199), not a pull, so validating it unasked would mislead.
+    parser.add_argument("--template", default=None)
     parser.add_argument("--recipes", default=str(default_recipes_path()))
     parser.add_argument("--out", default=None)
     parser.add_argument(
@@ -7268,6 +7270,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.tdd is not None:
         return run_tdd(None if args.tdd == "all" else args.tdd)
+
+    if args.template is None and not (args.inspect_recipes or args.csv_to_parquet):
+        if (project_root() / ".bundle-manifest.json").is_file():
+            print(f"ERROR template_not_given: No --template given. {MISSING_TEMPLATE_FIX}")
+            return 1
+        args.template = str(default_template_path())
 
     if args.inspect_recipes:
         result = inspect_recipes(args.recipes)

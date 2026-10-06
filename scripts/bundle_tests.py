@@ -181,16 +181,31 @@ class ExtractionPolicyTests(BundleTestCase):
         shipped = target / "reference" / "recipes.yaml"
         self.assertEqual(shipped.read_bytes(), RECIPES_PATH.read_bytes())
 
+    def test_the_template_package_list_and_walkthrough_travel(self):
+        # D199: what a developer on the VM reads beside the code, and the
+        # template a new draft starts from, each where makeYaml looks for it.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        import makeYaml
+
+        for key in ("template", "vm_plugins"):
+            with self.subTest(core=key):
+                shipped = target / makeYaml.CORE_DEFAULTS[key]
+                self.assertEqual(shipped.read_bytes(), makeYaml.core_path(key).read_bytes())
+        self.assertEqual(
+            (target / "HowThisRepoWorks.md").read_bytes(),
+            (REPO_ROOT / "HowThisRepoWorks.md").read_bytes(),
+        )
+
     def test_authoring_stays_on_the_mac(self):
-        # D49: the VM works from transfer YAMLs, so neither the browser UI nor
-        # a template to author from travel (recipes do for now, D187).
+        # D49: the browser UI does not travel (recipes do, D187; the template
+        # does, D199).
         target = self.tmp / "runtime"
         extract(self.bundle, target)
         for rel in (
             "YAMLs/recipes.yaml",
             "YAMLs/template.yaml",
             "YAMLs/template.yaml.example",
-            "reference/template.yaml",
             "scripts/yamlmanager.py",
             "scripts/yamlmanager_backend.py",
         ):

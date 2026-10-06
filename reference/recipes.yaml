@@ -226,7 +226,7 @@ recipes:
         - "def._IsDeleted = 0"
         - "dt._IsDeleted = 0"
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
         - "{{sql_condition('dt.Value', ICD_Value)}}"
 
   - name: OtherDiagnoses
@@ -318,7 +318,7 @@ recipes:
         - "def._IsDeleted = 0"
         - "dt._IsDeleted = 0"
         - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
 
   - name: HospitalizationsWithinICDCode
     description: >
@@ -470,7 +470,7 @@ recipes:
         - "pk.ArrivalDateKey >= 0"
         - "age.Years BETWEEN {{IndexAgeMin}} AND {{IndexAgeMax}}"
         - "d.EmergencyDepartmentDiagnosis = 1"
-        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
+        - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
         - "{{sql_condition('dt.Value', ICD_Value)}}"
   - name: MedOrderHistory
     dest_table: MedOrderHistory

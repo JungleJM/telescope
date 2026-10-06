@@ -3749,3 +3749,28 @@ and the PK's table its phase's. A table under a run still running or failed is
 black, as now, since its rows are what has landed so far.
 
 **Consequences.** Run's window only; nothing a pull does changes.
+
+### D199. The bundle carries the template, the VM's package list, and a walkthrough for developers
+
+**Context.** A developer on the VM is to read the code there and see how a
+template becomes SQL (6 October 2026). They see the VM as the whole system,
+so what they read must not mention the Mac or anything copied from it. The
+template and the VM's package list were not shipped (D49): the VM worked from
+blueprints alone.
+
+**Decision.** Every bundle carries `reference/template.yaml`, `reference/DSVM
+Plugins.yaml` and `HowThisRepoWorks.md`, each replaced on extraction like the
+dictionary. `HowThisRepoWorks.md` is brief. It explains the layers (SQL, a
+table as YAML, recipes, the template, YAML Manager, Pullmanager, Scope), then
+each step from template to SQL to parquet with the functions that do it. It
+says nothing about the Mac, copying, or how the system came to be, and it is
+kept true as the code changes.
+
+**Consequences.**
+
+- Reverses the template part of D49. In an extracted bundle, `makeYaml.py`
+  without `--template` is refused and names the blueprint to pass. It used
+  to say that because no template existed there; now it is checked.
+- A bundled path may contain spaces (the package list's does). The
+  extractor's file headers read a path up to ` SHA256:`. Each bundle carries
+  its own extractor, so older bundles are unaffected.

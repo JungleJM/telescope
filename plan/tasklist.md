@@ -690,6 +690,98 @@ So the order is `ctrl_Patients_sp` (PK, Encounters, Diagnoses, Labs), then `ctrl
 
 :::
 
+## Does the PheWAS need every encounter and every diagnosis?
+
+(in the chat, 5 Oct, with the barebones control pull running) For the sake of argument: does the PheWAS really need *every* encounter or *every* diagnosis? What about collecting only encounters within x years of the index date they're tied to, and only the first instance of each diagnosis (deduplication)?
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: no to first-instance diagnoses; yes to windows, and to encounters as a few summary rows. The biggest saving is pulling diagnoses for the matched controls only**
+
+**What the analysis reads** (pheauxWAS design.md and decisions):
+
+- **Diagnoses.** A patient counts as a phecode case only if the code is on **2 or more distinct dates**, inside the window. The primary window is the 3 years before index; the sensitivity window is everything after (D12). Ruled-out diagnoses are dropped in Python before dates are counted (D17).
+- **Encounters.** Encounters only feed patient-level numbers. Those are the first and last completed encounter (`YearsBeforeIndex`, `YearsAfterIndex`), and clinic-visit days, ED visits and admissions within 365 days of index. No analysis reads an encounter row itself.
+- **Every control's index is known at pull time.** It's the sampled clinic visit in `ctrl_Patients`, so a window relative to index can go in the SQL. D191 forbade date windows as a way to split a pull. A window that's part of what the study measures is a different thing.
+
+**Diagnoses: first instance only would break the case rule.** The first instance alone can't tell 1 date from 2, and it's taken before ruled-out rows are dropped. What's safe:
+
+1.  **A window:** `DiagnosisDate >= IndexDate - 30000` (index minus 3 years, as YYYYMMDD) plus a few months' margin. Python applies the exact window, as now. This drops the decades of older history that no window reads. The cost: the `all` window is gone, and a longer lookback later means pulling again.
+2.  **Fewer rows per date (optional):** drop ruled-out rows in the SQL, then dedup to one row per patient, code and date. That's the same result Python computes from D17's rows. Only worth it if diagnoses are still large after the window.
+
+**Encounters: three small tables instead of every row.** Each works with what Telescope does today (dedup and where lines):
+
+- **First encounter:** completed encounters, deduplicated by `PatientDurableKey`, keeping the earliest `DateKey`. One row per patient.
+- **Last encounter:** the same, keeping the latest.
+- **Encounters around index:** completed Office Visit, Follow-Up, ED and admission encounters with `DateKey` within about a year of `IndexDate` (±10000 as YYYYMMDD, slightly wide). Python counts the exact 365 days.
+
+Each still reads the whole date range in Cosmos, since a filter relative to each patient's index can't skip partitions. The saving is in rows landed, and at 300,000 patients that's most of the cost.
+
+**Bigger than both: diagnoses and labs for the matched only.** D16 had this, and D30 dropped it because Telescope couldn't sample controls inside Cosmos. It doesn't need to:
+
+- **Stage 1:** `ctrl_Patients` plus the three encounter tables, for the 300,000-patient pool. Then MatchIt.
+- **Stage 2:** upload the matched keys, about 30,000 at 5×, as the PK (an uploaded PK works today). Pull diagnoses and labs for those patients only.
+
+That's about a tenth of the diagnosis rows, before any window, and it doesn't touch how anything is analysed. The cost is two pulls and a match in between.
+
+**For you to decide:**
+
+- Whether to propose these to pheauxWAS as decisions there. Its D12, D16/D30 and D23 change.
+- Which ones to take:
+  - Stage 2 alone is the largest saving, and it changes no analysis.
+  - The window drops the `all` option.
+  - The encounter summaries change `build_group_parquet.py`'s inputs.
+
+None of this needs a Telescope change. A `GROUP BY` table (one row per patient with counts) would be cleaner than three encounter tables, but it's a new feature.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
+## A code library in YAML: `reference/codes/ICDs.yaml`
+
+(in the chat, 6 Oct) Moved the GI conditions to `reference/codes/ICDs.yaml`, per the Code Finder idea. I like it as YAML more than as parquet: YAML for people to read, maybe a YAML-to-parquet step after each update, since I won't add to a parquet by hand. Or keep it YAML from the start and have `scope.py` copy it over. Grouped by specialty (GI, Cardiology, Allergy...) and then disease type (Upper GI, pancreatic, autoimmune, heart failure...), so I can add sections as I go, as if recreating the ICDs for the GI multiplier.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: keep YAML as the only source; pick conditions from it in Author, which writes them into the template; make a parquet only when something reads one**
+
+**Done in the chat.** `ICDs.yaml` is now `specialties > GI > <disease type> > <condition>`. The disease types are UpperGI, GIBleeding, FunctionalBowel, Diverticular, AutoimmuneInflammatory, Colorectal, Pancreatic, Biliary, Liver, CirrhosisComplications and ViralHepatitis. Each condition has `name`, `icd9`, `icd10` and an optional `note`. A condition's key (`GERD`, `PepticUlcer`) is its multiplier level name, so its tables come out as `GERDPtsWithDx`.
+
+There are 47 conditions. The 28 in `GI_Conditions_intake.yaml` match it code for code. The rest are the items that intake left out (screening, history, cirrhosis complications, EPI, hepatitis C...), kept under their own disease types.
+
+**What the code does today.** Nothing reads `reference/codes/`. It is not in `datascope.json`, and no bundle carries it. The intake's 28 levels were written by hand. The roadmap's Code Finder plans a parquet per vocabulary, with categories, read later as a supporting table (In supporting table, D119).
+
+**Ways a pull could use the library:**
+
+1.  **Picked in Author, written into the template.** Under Multipliers: "From the code library", where you tick a specialty, disease types or single conditions. It writes one level per condition, with `ICD_Value` set to its codes, as the GI intake has now. The template and blueprint show every code (D45). Nothing new travels to the VM, and editing the library later never changes a pull already written.
+2.  **Named in the template, expanded at Validate** (`codes: GI/Pancreatic`). The template is shorter, but editing the library silently changes the next export of an old intake. I'd not do this.
+3.  **A parquet made from the YAML** (`scope.py codes`, pyarrow on both machines), one row per code: Vocabulary, Code, Condition, DiseaseType, Specialty, Name. It is only needed once a table reads codes from a supporting table rather than from a level's `ICD_Value`, or once the Code Finder exists. Generate it then, never by hand. The YAML stays the source.
+
+**Recommendation:** 1 now, with:
+- a `codes` entry in `datascope.json` (D111);
+- a check of the library on load. Condition keys must be unique across all specialties, since they become table names. ICD-10 codes must start with a letter, and ICD-9 codes must be digits, V or E. A clash is a loud error naming both places.
+
+3 waits for the Code Finder.
+
+**For you to decide:**
+
+- 1, 2 or 3 (or 1 now and 3 later).
+- Should condition keys be unique across the whole library (as now), or only within a specialty, with the specialty added to the table name when two specialties clash?
+- Should other vocabularies (SNOMED, CPT, LOINC) get their own files beside `ICDs.yaml`, as the Code Finder's one-parquet-per-vocabulary has it?
+
+**Suggested order**
+
+1.  The library check and the `datascope.json` entry: small, and they stop a bad edit before any pull reads the file.
+2.  "From the code library" in Author's Multipliers: what makes the YAML pay off.
+3.  The parquet, with the Code Finder: nothing reads one yet.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
 ## Settled
 
 Nothing waiting.

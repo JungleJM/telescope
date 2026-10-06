@@ -12,105 +12,228 @@ project_vars:
   project_folder: GI Conditions
 vars: {}
 upload_cohorts: []
-# One PtsWithDx table per disease (<Disease>PtsWithDx), each patient at their
-# first code of that disease. Codes from YAMLs/general_gi_conditions.yaml,
-# ICD-9-CM and ICD-10-CM in one list (they cannot match each other's codes).
-# A code without % matches exactly; with %, it and everything under it.
-# HaT is pulled elsewhere and left out (D89.44 is ICD-10 only).
 multipliers:
   - name: Disease
     stage: during_build
     levels:
       - strat: GERD
         vars:
-          ICD_Value: ["530.81", "530.11", "K21%"]
+          ICD_Value:
+            - "530.81"
+            - "530.11"
+            - "K21%"
       - strat: DyspepsiaGastritis
         vars:
-          ICD_Value: ["536.8", "535%", "K30", "K29%"]
+          ICD_Value:
+            - "536.8"
+            - "535%"
+            - K30
+            - "K29%"
       - strat: HPylori
         vars:
-          ICD_Value: ["041.86", "B96.81"]
+          ICD_Value:
+            - "041.86"
+            - B96.81
       - strat: PepticUlcer
         vars:
-          ICD_Value: ["531%", "532%", "533%", "534%", "K25%", "K26%", "K27%", "K28%"]
+          ICD_Value:
+            - "531%"
+            - "532%"
+            - "533%"
+            - "534%"
+            - "K25%"
+            - "K26%"
+            - "K27%"
+            - "K28%"
       - strat: UpperGIBleed
         vars:
-          ICD_Value: ["578.0", "578.1", "K92.0", "K92.1"]
+          ICD_Value:
+            - "578.0"
+            - "578.1"
+            - K92.0
+            - K92.1
       - strat: LowerGIBleed
         vars:
-          ICD_Value: ["569.3", "K62.5"]
+          ICD_Value:
+            - "569.3"
+            - K62.5
       - strat: ColorectalPolyps
         vars:
-          ICD_Value: ["211.3", "211.4", "K63.5", "K62.1", "D12%"]
+          ICD_Value:
+            - "211.3"
+            - "211.4"
+            - K63.5
+            - K62.1
+            - "D12%"
       - strat: IBS
         vars:
-          ICD_Value: ["564.1", "K58%"]
+          ICD_Value:
+            - "564.1"
+            - "K58%"
       - strat: Constipation
         vars:
-          ICD_Value: ["564.0%", "K59.0%"]
+          ICD_Value:
+            - "564.0%"
+            - "K59.0%"
       - strat: Diarrhea
         vars:
-          ICD_Value: ["787.91", "558.9", "R19.7", "K52.9", "K52.83%"]
+          ICD_Value:
+            - "787.91"
+            - "558.9"
+            - R19.7
+            - K52.9
+            - "K52.83%"
       - strat: Diverticulosis
         vars:
-          ICD_Value: ["562.00", "562.02", "562.10", "562.12",
-                      "K57.10", "K57.11", "K57.30", "K57.31", "K57.50", "K57.51", "K57.90", "K57.91"]
+          ICD_Value:
+            - "562.00"
+            - "562.02"
+            - "562.10"
+            - "562.12"
+            - K57.10
+            - K57.11
+            - K57.30
+            - K57.31
+            - K57.50
+            - K57.51
+            - K57.90
+            - K57.91
       - strat: Diverticulitis
         vars:
-          ICD_Value: ["562.01", "562.03", "562.11", "562.13",
-                      "K57.0%", "K57.12", "K57.13", "K57.2%", "K57.32", "K57.33",
-                      "K57.4%", "K57.52", "K57.53", "K57.8%", "K57.92", "K57.93"]
+          ICD_Value:
+            - "562.01"
+            - "562.03"
+            - "562.11"
+            - "562.13"
+            - "K57.0%"
+            - K57.12
+            - K57.13
+            - "K57.2%"
+            - K57.32
+            - K57.33
+            - "K57.4%"
+            - K57.52
+            - K57.53
+            - "K57.8%"
+            - K57.92
+            - K57.93
       - strat: Crohns
         vars:
-          ICD_Value: ["555%", "K50%"]
+          ICD_Value:
+            - "555%"
+            - "K50%"
       - strat: UC
         vars:
-          ICD_Value: ["556%", "K51%"]
+          ICD_Value:
+            - "556%"
+            - "K51%"
       - strat: Celiac
         vars:
-          ICD_Value: ["579.0", "K90.0"]
+          ICD_Value:
+            - "579.0"
+            - K90.0
       - strat: GallstoneBiliary
         vars:
-          ICD_Value: ["574%", "575.0", "575.1%", "576.1", "576.2", "K80%", "K81%", "K83.09", "K83.1"]
+          ICD_Value:
+            - "574%"
+            - "575.0"
+            - "575.1%"
+            - "576.1"
+            - "576.2"
+            - "K80%"
+            - "K81%"
+            - K83.09
+            - K83.1
       - strat: AcutePancreatitis
         vars:
-          ICD_Value: ["577.0", "K85%"]
+          ICD_Value:
+            - "577.0"
+            - "K85%"
       - strat: ChronicPancreatitis
         vars:
-          ICD_Value: ["577.1", "K86.0", "K86.1"]
+          ICD_Value:
+            - "577.1"
+            - K86.0
+            - K86.1
       - strat: MASLD
         vars:
-          ICD_Value: ["571.8", "K76.0", "K75.81"]
+          ICD_Value:
+            - "571.8"
+            - K76.0
+            - K75.81
       - strat: AlcoholLiverDisease
         vars:
-          ICD_Value: ["571.0", "571.1", "571.2", "571.3", "K70%"]
+          ICD_Value:
+            - "571.0"
+            - "571.1"
+            - "571.2"
+            - "571.3"
+            - "K70%"
       - strat: AlcoholicCirrhosis
         vars:
-          ICD_Value: ["571.2", "K70.3%"]
+          ICD_Value:
+            - "571.2"
+            - "K70.3%"
       - strat: Cirrhosis
         vars:
-          ICD_Value: ["571.2", "571.5", "571.6", "K70.3%", "K74.3", "K74.4", "K74.5", "K74.6%"]
+          ICD_Value:
+            - "571.2"
+            - "571.5"
+            - "571.6"
+            - "K70.3%"
+            - K74.3
+            - K74.4
+            - K74.5
+            - "K74.6%"
       - strat: AcuteLiverFailure
         vars:
-          ICD_Value: ["570", "K72.0%"]
+          ICD_Value:
+            - "570"
+            - "K72.0%"
       - strat: PSC
         vars:
-          ICD_Value: ["K83.01"]
+          ICD_Value:
+            - K83.01
       - strat: PBC
         vars:
-          ICD_Value: ["K74.3"]
+          ICD_Value:
+            - K74.3
       - strat: ChronicViralHepatitis
         vars:
-          ICD_Value: ["070.22", "070.23", "070.32", "070.33", "070.44", "070.54", "070.49", "070.59",
-                      "B18%"]
+          ICD_Value:
+            - "070.22"
+            - "070.23"
+            - "070.32"
+            - "070.33"
+            - "070.44"
+            - "070.54"
+            - "070.49"
+            - "070.59"
+            - "B18%"
       - strat: HepatitisB
         vars:
-          ICD_Value: ["070.2%", "070.3%", "V02.61", "B16%", "B18.0", "B18.1", "B19.1%", "Z22.51"]
+          ICD_Value:
+            - "070.2%"
+            - "070.3%"
+            - V02.61
+            - "B16%"
+            - B18.0
+            - B18.1
+            - "B19.1%"
+            - Z22.51
       - strat: HepatitisA
         vars:
-          ICD_Value: ["070.0", "070.1", "B15%"]
+          ICD_Value:
+            - "070.0"
+            - "070.1"
+            - "B15%"
 batching: []
 cohorts:
   - recipe: PatientWithDx
     name: PtsWithDx
     dest_table: PtsWithDx
+    filter: {}
+  - recipe: IndexDiagnosis
+    name: IndexDiagnosisDetails
+    filter: {}
+    granularity: "(Deduplicated) - First diagnoses of a disease by ICD code, for each PatientDurableKey."

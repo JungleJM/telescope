@@ -12,6 +12,7 @@ Read before working:
 
 - A fact lives in one of those three documents only. Status lives only in the roadmap.
 - When code changes behaviour, update `design.md` in the same commit, except during a planned run of fixes (below), where the docs catch up after the user has discussed the results. When an item is built, delete it from the roadmap. When something is decided, add a numbered decision.
+- `HowThisRepoWorks.md` (root; in every bundle, D199) walks a developer on the VM from template to SQL to parquet, naming the functions. When a step or a function it names changes, update it in the same commit. It is written as if everything runs on the VM: no Mac, no copying over, no history.
 - Do not add new design documents. A temporary brief for the VM (questions to put to its AI) is the exception; delete it once its answers are folded in. `plan/tasklist.md` is not a design document: it holds only what is still under discussion (D128).
 - **"Update docs"** means all four: bring `design.md`, `decisions.md` and `roadmap.md` up to date with the code by the rules above, then extend `plan/commemorating/thoroughhistory.qmd` from its stated cut-off to the latest commit (timeline, numbers, defects, decision index, open questions) and move the cut-off. Last, run `python3 scope.py images`, which deletes every pasted image (`paste-*`) in an `images/` folder under `plan/` that no document mentions (D132). The history is a record, not a design document: it may repeat facts, and it keeps what the other three have since deleted.
 

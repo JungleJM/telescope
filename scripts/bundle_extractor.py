@@ -29,10 +29,12 @@ import sys
 import time
 from pathlib import Path
 
+# A path may have spaces (`reference/DSVM Plugins.yaml`, D199); safe_relpath
+# refuses one that starts or ends with a space.
 BEGIN_RE = re.compile(
-    r"^# === BEGIN FILE: (?P<path>\S+) SHA256: (?P<sha>[0-9a-f]{64}) SIZE: (?P<size>\d+) ===$"
+    r"^# === BEGIN FILE: (?P<path>.+?) SHA256: (?P<sha>[0-9a-f]{64}) SIZE: (?P<size>\d+) ===$"
 )
-END_RE = re.compile(r"^# === END FILE: (?P<path>\S+) ===$")
+END_RE = re.compile(r"^# === END FILE: (?P<path>.+) ===$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 MANIFEST_FILENAME = ".bundle-manifest.json"

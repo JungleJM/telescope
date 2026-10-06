@@ -1,0 +1,455 @@
+transfer:
+  from_template: GI_Conditions_intake.yaml
+  recipes_sha256: 6b1358e7cf97
+  recipes_used:
+  - IndexDiagnosis
+  - PatientWithDx
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Dual
+run_vars:
+  min_date_key: 19900101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: GI Conditions
+vars: {}
+upload_cohorts: []
+multipliers:
+- name: Disease
+  stage: during_build
+  levels:
+  - strat: GERD
+    vars:
+      ICD_Value:
+      - "530.81"
+      - "530.11"
+      - "K21%"
+  - strat: DyspepsiaGastritis
+    vars:
+      ICD_Value:
+      - "536.8"
+      - "535%"
+      - K30
+      - "K29%"
+  - strat: HPylori
+    vars:
+      ICD_Value:
+      - "041.86"
+      - B96.81
+  - strat: PepticUlcer
+    vars:
+      ICD_Value:
+      - "531%"
+      - "532%"
+      - "533%"
+      - "534%"
+      - "K25%"
+      - "K26%"
+      - "K27%"
+      - "K28%"
+  - strat: UpperGIBleed
+    vars:
+      ICD_Value:
+      - "578.0"
+      - "578.1"
+      - K92.0
+      - K92.1
+  - strat: LowerGIBleed
+    vars:
+      ICD_Value:
+      - "569.3"
+      - K62.5
+  - strat: ColorectalPolyps
+    vars:
+      ICD_Value:
+      - "211.3"
+      - "211.4"
+      - K63.5
+      - K62.1
+      - "D12%"
+  - strat: IBS
+    vars:
+      ICD_Value:
+      - "564.1"
+      - "K58%"
+  - strat: Constipation
+    vars:
+      ICD_Value:
+      - "564.0%"
+      - "K59.0%"
+  - strat: Diarrhea
+    vars:
+      ICD_Value:
+      - "787.91"
+      - "558.9"
+      - R19.7
+      - K52.9
+      - "K52.83%"
+  - strat: Diverticulosis
+    vars:
+      ICD_Value:
+      - "562.00"
+      - "562.02"
+      - "562.10"
+      - "562.12"
+      - K57.10
+      - K57.11
+      - K57.30
+      - K57.31
+      - K57.50
+      - K57.51
+      - K57.90
+      - K57.91
+  - strat: Diverticulitis
+    vars:
+      ICD_Value:
+      - "562.01"
+      - "562.03"
+      - "562.11"
+      - "562.13"
+      - "K57.0%"
+      - K57.12
+      - K57.13
+      - "K57.2%"
+      - K57.32
+      - K57.33
+      - "K57.4%"
+      - K57.52
+      - K57.53
+      - "K57.8%"
+      - K57.92
+      - K57.93
+  - strat: Crohns
+    vars:
+      ICD_Value:
+      - "555%"
+      - "K50%"
+  - strat: UC
+    vars:
+      ICD_Value:
+      - "556%"
+      - "K51%"
+  - strat: Celiac
+    vars:
+      ICD_Value:
+      - "579.0"
+      - K90.0
+  - strat: GallstoneBiliary
+    vars:
+      ICD_Value:
+      - "574%"
+      - "575.0"
+      - "575.1%"
+      - "576.1"
+      - "576.2"
+      - "K80%"
+      - "K81%"
+      - K83.09
+      - K83.1
+  - strat: AcutePancreatitis
+    vars:
+      ICD_Value:
+      - "577.0"
+      - "K85%"
+  - strat: ChronicPancreatitis
+    vars:
+      ICD_Value:
+      - "577.1"
+      - K86.0
+      - K86.1
+  - strat: MASLD
+    vars:
+      ICD_Value:
+      - "571.8"
+      - K76.0
+      - K75.81
+  - strat: AlcoholLiverDisease
+    vars:
+      ICD_Value:
+      - "571.0"
+      - "571.1"
+      - "571.2"
+      - "571.3"
+      - "K70%"
+  - strat: AlcoholicCirrhosis
+    vars:
+      ICD_Value:
+      - "571.2"
+      - "K70.3%"
+  - strat: Cirrhosis
+    vars:
+      ICD_Value:
+      - "571.2"
+      - "571.5"
+      - "571.6"
+      - "K70.3%"
+      - K74.3
+      - K74.4
+      - K74.5
+      - "K74.6%"
+  - strat: AcuteLiverFailure
+    vars:
+      ICD_Value:
+      - "570"
+      - "K72.0%"
+  - strat: PSC
+    vars:
+      ICD_Value:
+      - K83.01
+  - strat: PBC
+    vars:
+      ICD_Value:
+      - K74.3
+  - strat: ChronicViralHepatitis
+    vars:
+      ICD_Value:
+      - "070.22"
+      - "070.23"
+      - "070.32"
+      - "070.33"
+      - "070.44"
+      - "070.54"
+      - "070.49"
+      - "070.59"
+      - "B18%"
+  - strat: HepatitisB
+    vars:
+      ICD_Value:
+      - "070.2%"
+      - "070.3%"
+      - V02.61
+      - "B16%"
+      - B18.0
+      - B18.1
+      - "B19.1%"
+      - Z22.51
+  - strat: HepatitisA
+    vars:
+      ICD_Value:
+      - "070.0"
+      - "070.1"
+      - "B15%"
+batching: []
+cohorts:
+- name: PtsWithDx
+  description: Diagnosis event fact table. Rows represent diagnoses associated with
+    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+    for prevalence; rows are at the billing/event grain. First DiagnosisEvent of disease
+    X for patient, with patient info (sex, birthdate etc) and Index Event info (Age
+    at Diagnosis, ICD code, etc.)
+  granularity: One DiagnosisEvent, only the earliest found, for each patient (by PatientDurableKey).
+  type: PK
+  pull_this_cycle: true
+  dest_table: PtsWithDx
+  dedup_keys:
+  - - PatientDurableKey
+  dedup_order_by:
+  - IndexDate
+  columns:
+  - source: dxf.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: p.Sex
+    name: Sex
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.NameAndCode
+    name: ICDName
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dur.Years
+    name: AgeAtIndexDiagnosis
+    nullable: true
+    description: Duration expressed in years. Age in Years of patient at earliest
+      diagnosis of index condition
+    type: INT
+  - source: p.BirthDate
+    name: BirthDate
+    nullable: true
+    type: DATE
+  - source: p.StateOrProvince
+    name: StateOrProvince
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.StateOrProvinceAbbreviation
+    name: StateOrProvinceAbbreviation
+    nullable: false
+    type: NVARCHAR(300)
+  - source: p.Country
+    name: Country
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.Value
+    name: ICDCode
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dxf.StartDateKey
+    name: IndexDate
+    nullable: true
+    type: BIGINT
+  - source: dxf.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: dxf.EncounterKey
+    name: IndexEncounter
+    nullable: false
+    type: BIGINT
+  - source: p.DurableKey
+    name: DurableKey
+    nullable: false
+    type: BIGINT
+  - source: p.FirstRace
+    name: FirstRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SecondRace
+    name: SecondRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.ThirdRace
+    name: ThirdRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FourthRace
+    name: FourthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.FifthRace
+    name: FifthRace
+    nullable: true
+    type: NVARCHAR(300)
+  - source: p.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviOverallPctlRankByZip2020_X
+    name: SviOverallPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  - source: p.SviSocioeconomicPctlRankByZip2020_X
+    name: SviSocioeconomicPctlRankByZip2020_X
+    nullable: true
+    type: NUMERIC(6,4)
+  filter:
+    from:
+    - DiagnosisEventFact as dxf
+    join:
+    - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = dxf.DiagnosisKey"
+    - "INNER JOIN PatientDim AS p ON p.DurableKey = dxf.PatientDurableKey"
+    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = dxf.AgeKey"
+    where:
+    - "dxf.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dxf.StartDateKey >= 0"
+    - "dxf._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
+    - "p.IsValid = 1"
+    - "p.IsCurrent = 1"
+    - "p.UseInCosmosAnalytics_X = 1"
+    - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9-CM')"
+    - "{{sql_condition('dt.Value', ICD_Value)}}"
+- name: IndexDiagnosisDetails
+  description: Diagnosis event fact table. Rows represent diagnoses associated with
+    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
+    for prevalence; rows are at the billing/event grain. Each patient's first diagnosis
+    of each of the disease's codes (ICD_Value), with date, age at diagnosis, event
+    data
+  granularity: "(Deduplicated) - First diagnoses of a disease by ICD code, for each\
+    \ PatientDurableKey."
+  dedup_keys:
+  - - PatientDurableKey
+    - BillingCodeValue
+  dedup_order_by:
+  - StartDateKey
+  pull_this_cycle: true
+  type: fact
+  dest_table: IndexDiagnosis
+  columns:
+  - source: def.DiagnosisEventKey
+    name: DiagnosisEventKey
+    nullable: false
+    type: BIGINT
+  - source: tc.StandardName
+    name: BillingCodeType
+    nullable: true
+    description: Standardized or normalized name for the concept, used to harmonize
+      naming across contributors and terminologies. ICD code type
+    type: NVARCHAR(50)
+  - source: dt.Value
+    name: BillingCodeValue
+    nullable: true
+    type: NVARCHAR(300)
+  - source: dt.NameAndCode
+    name: NameAndCode
+    nullable: true
+    type: NVARCHAR(850)
+  - source: dur.Years
+    name: AgeAtDiagnosis
+    nullable: true
+    type: INT
+  - source: def.IsPrimary
+    name: IsPrimary
+    nullable: true
+    type: TINYINT
+  - source: dt.ReferenceBillingCode
+    name: IsReferenceBillingCode
+    nullable: true
+    description: "1/0 flag (tinyint) on its dictionary page: whether this row's code\
+      \ is the reference billing code. Not the code itself; that is in Value. 0/1\
+      \ of if this was used as the code for Billing submission"
+    type: TINYINT
+  - source: def.Type
+    name: TypeOfDx
+    nullable: true
+    type: NVARCHAR(350)
+  - source: tc.Concept
+    name: TerminologyConcept
+    nullable: true
+    type: NVARCHAR(300)
+  - source: tc.Name
+    name: TerminologyName
+    nullable: true
+    type: NVARCHAR(550)
+  - source: def.Status
+    name: Status
+    nullable: true
+    type: NVARCHAR(300)
+  - source: def.StartDateKey
+    name: StartDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.EndDateKey
+    name: EndDateKey
+    nullable: true
+    type: BIGINT
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    nullable: false
+    type: BIGINT
+  - source: def.DiagnosisKey
+    name: DiagnosisKey
+    nullable: false
+    type: BIGINT
+  - source: def.EncounterKey
+    name: EncounterKey
+    nullable: false
+    type: BIGINT
+  filter:
+    from:
+    - DiagnosisEventFact AS def
+    join:
+    - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey"
+    - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
+    - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
+    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
+    where:
+    - "def._IsDeleted = 0"
+    - "dt._IsDeleted = 0"
+    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM', 'ICD-9-CM')"
+    - "{{sql_condition('dt.Value', ICD_Value)}}"

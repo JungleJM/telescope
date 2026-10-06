@@ -1,0 +1,253 @@
+# ICD code library, for people to read and edit.
+#
+# Laid out as specialty > disease type > condition. A condition's key
+# (GERD, PepticUlcer) is the name it takes as a multiplier level, so a pull's
+# tables come out as <key><table> (GERDPtsWithDx). Add a section by copying
+# one: a new specialty, a new disease type under it, or a new condition.
+#
+# Each condition has:
+#   name:   what it is, in words
+#   icd9:   ICD-9-CM codes (DiagnosisTerminologyDim.Type 'ICD-9-CM')
+#   icd10:  ICD-10-CM codes ('ICD-10-CM'; letter-led, so they cannot match an ICD-9 code)
+#   note:   optional, why a code is in or out
+#
+# Codes are matched as written, with decimals, as Cosmos stores them; a % widens
+# a code to it and everything under it (K21% is K21, K21.0, K21.00 ...), D197.
+# Conditions overlap; a code may be in several. Validate a code against the
+# release in force at the encounter date.
+
+specialties:
+
+  GI:
+
+    UpperGI:
+      GERD:
+        name: GERD and reflux esophagitis
+        icd9: ["530.81", "530.11"]
+        icd10: ["K21%"]
+      Esophagitis:
+        name: Other or unspecified esophagitis
+        icd9: ["530.10", "530.19"]
+        icd10: ["K20.8%", "K20.9%"]
+        note: Not necessarily reflux-related.
+      DyspepsiaGastritis:
+        name: Dyspepsia, gastritis and duodenitis
+        icd9: ["536.8", "535%"]
+        icd10: ["K30", "K29%"]
+        note: ICD-9 536.8 includes other stomach-function disorders.
+      HPylori:
+        name: H. pylori infection
+        icd9: ["041.86"]
+        icd10: ["B96.81"]
+        note: Etiologic code; does not by itself establish gastritis or ulcer disease.
+      PepticUlcer:
+        name: Gastric, duodenal, unspecified peptic and gastrojejunal ulcers
+        icd9: ["531%", "532%", "533%", "534%"]
+        icd10: ["K25%", "K26%", "K27%", "K28%"]
+
+    GIBleeding:
+      UpperGIBleed:
+        name: Upper GI bleeding
+        icd9: ["578.0", "578.1"]
+        icd10: ["K92.0", "K92.1"]
+        note: Melena does not prove an upper source; ICD-9 578.1 also includes blood in stool. Lesion-specific bleeding codes are not here.
+      LowerGIBleed:
+        name: Lower GI bleeding
+        icd9: ["569.3"]
+        icd10: ["K62.5"]
+        note: Does not capture every cause (diverticular, vascular, inflammatory, neoplastic, hemorrhoidal).
+      NonspecificGIBleed:
+        name: GI bleeding or blood in stool, site unspecified
+        icd9: ["578.1", "578.9"]
+        icd10: ["K92.2"]
+
+    FunctionalBowel:
+      IBS:
+        name: Irritable bowel syndrome
+        icd9: ["564.1"]
+        icd10: ["K58%"]
+      Constipation:
+        name: Constipation and outlet dysfunction
+        icd9: ["564.0%"]
+        icd10: ["K59.0%"]
+        note: Unspecified, slow-transit, outlet dysfunction and other subtypes.
+      Diarrhea:
+        name: Diarrhea and selected noninfectious colitis
+        icd9: ["787.91", "558.9"]
+        icd10: ["R19.7", "K52.9", "K52.83%"]
+        note: Diarrhea symptom (not chronicity), unspecified noninfectious colitis, and microscopic colitis (K52.83%; its ICD-9 558.9 is nonspecific).
+
+    Diverticular:
+      Diverticulosis:
+        name: Diverticulosis, small or large intestine, with or without bleeding
+        icd9: ["562.00", "562.02", "562.10", "562.12"]
+        icd10: ["K57.10", "K57.11", "K57.30", "K57.31", "K57.50", "K57.51", "K57.90", "K57.91"]
+      Diverticulitis:
+        name: Diverticulitis, small or large intestine, including with perforation or abscess
+        icd9: ["562.01", "562.03", "562.11", "562.13"]
+        icd10: ["K57.0%", "K57.12", "K57.13", "K57.2%", "K57.32", "K57.33",
+                "K57.4%", "K57.52", "K57.53", "K57.8%", "K57.92", "K57.93"]
+
+    AutoimmuneInflammatory:
+      Crohns:
+        name: Crohn disease
+        icd9: ["555%"]
+        icd10: ["K50%"]
+      UC:
+        name: Ulcerative colitis
+        icd9: ["556%"]
+        icd10: ["K51%"]
+      Celiac:
+        name: Celiac disease
+        icd9: ["579.0"]
+        icd10: ["K90.0"]
+      IntestinalMalabsorption:
+        name: Intestinal malabsorption, including celiac
+        icd9: ["579%"]
+        icd10: ["K90%"]
+        note: Not a celiac-specific phenotype.
+
+    Colorectal:
+      ColorectalPolyps:
+        name: Colon and rectal polyps and benign neoplasms
+        icd9: ["211.3", "211.4"]
+        icd10: ["K63.5", "K62.1", "D12%"]
+        note: D12.1 is appendix; ICD-9 211.4 also includes anal canal.
+      ColorectalCancerScreening:
+        name: Colorectal cancer screening
+        icd9: ["V76.51", "V76.41"]
+        icd10: ["Z12.11", "Z12.12"]
+      HistoryOfPolyps:
+        name: Personal history of colonic polyps
+        icd9: ["V12.72"]
+        icd10: ["Z86.010%"]
+      FamilyHistoryDigestiveCancer:
+        name: Family history of digestive malignancy
+        icd9: ["V16.0"]
+        icd10: ["Z80.0"]
+        note: Includes digestive malignancies beyond colorectal cancer.
+
+    Pancreatic:
+      AcutePancreatitis:
+        name: Acute pancreatitis
+        icd9: ["577.0"]
+        icd10: ["K85%"]
+      ChronicPancreatitis:
+        name: Chronic pancreatitis
+        icd9: ["577.1"]
+        icd10: ["K86.0", "K86.1"]
+      ExocrinePancreaticInsufficiency:
+        name: Exocrine pancreatic insufficiency and pancreatic steatorrhea
+        icd9: ["577.8", "579.4"]
+        icd10: ["K86.81", "K90.3"]
+        note: ICD-9 577.8 is other specified pancreatic disease, not specific for EPI.
+      PancreaticPseudocyst:
+        name: Pancreatic pseudocyst
+        icd9: ["577.2"]
+        icd10: ["K86.3"]
+        note: ICD-9 577.2 includes pancreatic cysts and pseudocysts.
+
+    Biliary:
+      GallstoneBiliary:
+        name: Gallstones, cholecystitis, cholangitis and biliary obstruction
+        icd9: ["574%", "575.0", "575.1%", "576.1", "576.2"]
+        icd10: ["K80%", "K81%", "K83.09", "K83.1"]
+        note: Stone-associated cholangitis may be coded under K80%; PSC is separate.
+      PSC:
+        name: Primary sclerosing cholangitis
+        icd10: ["K83.01"]
+        note: ICD-10 only. K83.01 dates from October 2017; before it PSC was coded as cholangitis (K83.0, ICD-9 576.1), which is not specific.
+      PBC:
+        name: Primary biliary cholangitis
+        icd10: ["K74.3"]
+        note: ICD-10 only; ICD-9 571.6 (biliary cirrhosis) includes secondary biliary cirrhosis.
+
+    Liver:
+      MASLD:
+        name: MASLD/MASH, historically NAFLD/NASH
+        icd9: ["571.8"]
+        icd10: ["K76.0", "K75.81"]
+        note: ICD-9 571.8 is broad; fatty-liver codes alone do not establish metabolic criteria.
+      HepaticFibrosis:
+        name: Hepatic fibrosis
+        icd9: ["571.5"]
+        icd10: ["K74.0%"]
+        note: Not specific for MASLD/MASH; ICD-9 571.5 also includes nonalcoholic cirrhosis.
+      AlcoholLiverDisease:
+        name: Alcohol-associated liver disease
+        icd9: ["571.0", "571.1", "571.2", "571.3"]
+        icd10: ["K70%"]
+      AlcoholicCirrhosis:
+        name: Alcohol-associated cirrhosis
+        icd9: ["571.2"]
+        icd10: ["K70.3%"]
+      Cirrhosis:
+        name: Cirrhosis, any cause
+        icd9: ["571.2", "571.5", "571.6"]
+        icd10: ["K70.3%", "K74.3", "K74.4", "K74.5", "K74.6%"]
+        note: K74.3 is primary biliary cholangitis and does not by itself prove cirrhosis.
+      AcuteLiverFailure:
+        name: Acute and subacute liver failure
+        icd9: ["570"]
+        icd10: ["K72.0%"]
+      HepaticFailure:
+        name: Hepatic failure, any
+        icd9: ["570", "572.8"]
+        icd10: ["K72%", "K70.4%"]
+        note: Not specific for decompensated cirrhosis; ICD-9 codes are broad.
+      AbnormalLiverTests:
+        name: Abnormal liver enzymes or function studies
+        icd9: ["790.4", "790.5", "794.8"]
+        icd10: ["R74.0%", "R74.8", "R94.5"]
+        note: Does not establish a liver-disease etiology.
+
+    CirrhosisComplications:
+      Ascites:
+        name: Nonmalignant ascites
+        icd9: ["789.59"]
+        icd10: ["R18.8"]
+      PortalHypertension:
+        name: Portal hypertension
+        icd9: ["572.3"]
+        icd10: ["K76.6"]
+      EsophagealVarices:
+        name: Esophageal varices
+        icd9: ["456.0", "456.1", "456.2%"]
+        icd10: ["I85%"]
+      GastricVarices:
+        name: Gastric varices
+        icd9: ["456.8"]
+        icd10: ["I86.4"]
+        note: ICD-9 456.8 includes other specified varices.
+      HepaticEncephalopathy:
+        name: Hepatic encephalopathy
+        icd9: ["572.2"]
+        icd10: ["K76.82"]
+        note: K76.82 is missing from older ICD-10 releases.
+      SBP:
+        name: Spontaneous bacterial peritonitis
+        icd9: ["567.23"]
+        icd10: ["K65.2"]
+      HepatorenalSyndrome:
+        name: Hepatorenal syndrome
+        icd9: ["572.4"]
+        icd10: ["K76.7"]
+
+    ViralHepatitis:
+      ChronicViralHepatitis:
+        name: Chronic viral hepatitis, any
+        icd9: ["070.22", "070.23", "070.32", "070.33", "070.44", "070.54", "070.49", "070.59"]
+        icd10: ["B18%"]
+        note: ICD-9 070.49 and 070.59 are not specific for chronic infection.
+      HepatitisA:
+        name: Hepatitis A
+        icd9: ["070.0", "070.1"]
+        icd10: ["B15%"]
+      HepatitisB:
+        name: Hepatitis B, acute, chronic, unspecified or carrier
+        icd9: ["070.2%", "070.3%", "V02.61"]
+        icd10: ["B16%", "B18.0", "B18.1", "B19.1%", "Z22.51"]
+      ChronicHepatitisC:
+        name: Chronic hepatitis C
+        icd9: ["070.44", "070.54"]
+        icd10: ["B18.2"]
