@@ -46,7 +46,7 @@ SOURCES = {published: source for source, published, _policy in bundled_files()}
 
 def shipped_bytes(published: str) -> bytes:
     """A file as the bundle carries it, which is not always its source's bytes (D200)."""
-    return shipped_text(SOURCES[published], "replace").encode("utf-8")
+    return shipped_text(SOURCES[published], "replace", published).encode("utf-8")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -189,6 +189,56 @@ class BuildTests(BundleTestCase):
         with self.assertRaises(BundleError) as caught:
             render_bundle(root)
         self.assertIn("pullmanager/notes.py:1", str(caught.exception))
+
+    def test_the_shipped_prose_says_nothing_of_how_it_arrives(self):
+        # D201: comments and docstrings on bundling, extraction and the Mac are
+        # the Mac's alone; what a VM user sees is reworded.
+        import bundle_scrub
+
+        sections, _ = read_bundle(self.bundle)
+        for section in sections:
+            with self.subTest(path=section["path"]):
+                self.assertEqual(bundle_scrub.mentions(section["path"], section["content"]), [])
+        gui = next(s["content"] for s in sections if s["path"] == "pullmanager/gui.py")
+        self.assertIn("\\u00b7 version", gui)
+        self.assertIn("\\u00b7 bundle", (SOURCE_ROOT / "pullmanager" / "gui.py").read_text(encoding="utf-8"))
+
+    def test_scrubbed_python_keeps_the_rest_and_still_compiles(self):
+        import bundle_scrub
+
+        text = (
+            '"""Launcher for the extracted runtime.\n\n'
+            '    python scope.py          # the app\n'
+            '    python utils.py          # at the root on the Mac\n"""\n\n'
+            "# Built by makebundle.py, so not for editing:\n"
+            "# it is rewritten.\n"
+            "X = 1  # carried in the bundle\n\n\n"
+            "def f():\n"
+            '    """From the bundle\'s manifest."""\n'
+            "    return X\n"
+        )
+        out = bundle_scrub.scrub_python("t.py", text)
+        compile(out, "t.py", "exec")
+        self.assertEqual(bundle_scrub.mentions("t.py", out), [])
+        self.assertIn("python scope.py", out)
+        self.assertIn("X = 1\n", out)
+        self.assertIn("return X", out)
+
+    def test_a_build_with_delivery_prose_left_stops_naming_the_line(self):
+        root = self.tmp / "src"
+        (root / "stock").mkdir(parents=True)
+        (root / "stock" / "notes.md").write_text("Copy it over from the Mac.\n", encoding="utf-8")
+        (root / "run.py").write_text("X = 1\n", encoding="utf-8")
+        with self.assertRaises(BundleError) as caught:
+            render_bundle(root)
+        self.assertIn("stock/notes.md:1", str(caught.exception))
+
+    def test_wording_that_no_longer_matches_stops_the_build(self):
+        import bundle_scrub
+
+        with self.assertRaises(bundle_scrub.ScrubError) as caught:
+            bundle_scrub.reword("pullmanager/launcher.py", "nothing to reword\n")
+        self.assertIn("VM_WORDING", str(caught.exception))
 
     def test_rebuild_is_byte_identical(self):
         self.assertEqual(render_bundle(), render_bundle())
@@ -582,7 +632,7 @@ class LauncherTests(BundleTestCase):
         self.run_bundle_answering("y\n")
         run = self.run_python("scope.py", "--version")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertIn(f"bundle {manifest['content_id'][:8]}", run.stdout)
+        self.assertIn(f"version {manifest['content_id'][:8]}", run.stdout)
 
     def test_its_lock_rule_is_pullmanagers(self):
         import bundle_extractor
@@ -665,7 +715,7 @@ class LauncherTests(BundleTestCase):
         shutil.rmtree(self.work / "pullmanager_runtime")
         run = self.run_python("scope.py", "--version")
         self.assertNotEqual(run.returncode, 0)
-        self.assertIn("python bundle.py --extract pullmanager_runtime", run.stderr)
+        self.assertIn("the pullmanager_runtime folder is missing", run.stderr)
 
 
 class EndToEndTests(BundleTestCase):

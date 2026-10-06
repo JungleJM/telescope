@@ -70,6 +70,7 @@ CONTENT_ID_NAME = "content_id.txt"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 import makeYaml  # noqa: E402  the core files' places (D111)
+import bundle_scrub  # noqa: E402  what the bundle says about itself (D200, D201)
 
 COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
     (REPO_ROOT / "scripts" / "makeYaml.py", "scripts/makeYaml.py", "replace"),
@@ -146,6 +147,10 @@ STOCK_DIR = "stock"
 # False, and revert the commit that removed Multi-column view (D200).
 HELD_BACK = ("utils/client/transcription_viewer.py",)
 NO_SCREENSHOT_MENTIONS = True
+# D201: the bundle's prose says nothing of bundling, extraction or the Mac;
+# bundle_scrub rewords what a VM user sees and drops the rest. False ships the
+# Mac's text as it is.
+VM_ONLY_PROSE = True
 SCREENSHOT_WORDS = re.compile(r"transcri|screenshot", re.IGNORECASE)
 # Across line breaks, since descriptions are folded YAML.
 SCREENSHOT_REWORDS = (
@@ -235,13 +240,18 @@ def find_transfer(name: str, folder: Path = REPO_ROOT) -> Path:
     )
 
 
-def shipped_text(path: Path, policy: str) -> str:
+def shipped_text(path: Path, policy: str, published: str | None = None) -> str:
     """A file as the bundle carries it. A blueprint is placed in YAMLs/temp/
     on the VM (D162), two folders below the one it was exported to, so each
     relative `file_loc` gains `../../` to reach the same file (D103)."""
     text = read_source(path)
     if NO_SCREENSHOT_MENTIONS:
         text = without_screenshots(path, text)
+    if VM_ONLY_PROSE and policy != ROOT_POLICY:
+        try:
+            text = bundle_scrub.scrub(published or path.name, text)
+        except bundle_scrub.ScrubError as exc:
+            raise BundleError(str(exc)) from exc
     if policy != ROOT_POLICY or not path.name.endswith(BLUEPRINT_SUFFIX):
         return text
     import makeYaml
@@ -380,8 +390,10 @@ def build_sections(
     mentions: list[str] = []
     for path, published, policy in bundled_files(root, transfers, yamls_only):
         rel = safe_relpath(published)
-        text = shipped_text(path, policy)
-        if NO_SCREENSHOT_MENTIONS:
+        text = shipped_text(path, policy, rel)
+        if VM_ONLY_PROSE and policy != ROOT_POLICY:
+            mentions += bundle_scrub.mentions(rel, text)
+        elif NO_SCREENSHOT_MENTIONS:
             mentions += screenshot_mentions(rel, text)
         raw = text.encode("utf-8")
         sha = hashlib.sha256(raw).hexdigest()
@@ -391,9 +403,10 @@ def build_sections(
         lines.append(f"# === END FILE: {rel} ===")
     if mentions:
         raise BundleError(
-            "The bundle would mention screenshots or transcribing, which it must not for now "
-            "(D200). Reword each line, or add a rewording to SCREENSHOT_REWORDS in "
-            "scripts/bundle_pullmanager.py:\n  " + "\n  ".join(mentions))
+            "The bundle would mention screenshots or transcribing (D200), or in its prose "
+            "bundling, extraction or the Mac (D201), which it must not for now. Reword each "
+            "line, or add a rewording to SCREENSHOT_REWORDS in scripts/bundle_pullmanager.py "
+            "or VM_WORDING in scripts/bundle_scrub.py:\n  " + "\n  ".join(mentions))
     return entries, lines
 
 

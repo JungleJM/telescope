@@ -49,11 +49,11 @@ OLD_LAUNCHER_NAME = "pullmanager.py"
 LAUNCHER_SIGNATURE = '''#!/usr/bin/env python3
 """Runs Pullmanager from '''
 LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
-"""Runs Pullmanager from {folder}, the folder bundle.py extracted beside this file.
+"""Runs Pullmanager from {folder}, the folder beside this file.
 
-Written by `python bundle.py --extract`, and rewritten by every extraction, so
-it is not for editing. With no arguments it opens the launcher window; anything
-else goes to Pullmanager as typed (--dry-run, --execute, --tdd, a manifest).
+Not for editing: it is written for you. With no arguments it opens the app;
+anything else goes to Pullmanager as typed (--dry-run, --execute, --tdd, a
+manifest).
 """
 
 import runpy
@@ -62,7 +62,7 @@ from pathlib import Path
 
 ENTRY = Path(__file__).resolve().parent / {folder!r} / "pullmanager.py"
 if not ENTRY.is_file():
-    sys.exit(f"No Pullmanager at {{ENTRY}}. Extract it again: python bundle.py --extract {folder}")
+    sys.exit(f"No Pullmanager at {{ENTRY}}: the {folder} folder is missing.")
 sys.argv[0] = str(ENTRY)
 runpy.run_path(str(ENTRY), run_name="__main__")
 '''
@@ -72,8 +72,8 @@ UTILS_LAUNCHER_NAME = "utils.py"
 UTILS_LAUNCHER_TEMPLATE = '''#!/usr/bin/env python3
 """Opens the utilities window from {folder}: a button for each script in its utils/.
 
-Written by `python bundle.py --extract`, and rewritten by every extraction, so
-it is not for editing. `python utils.py --list` names the scripts.
+Not for editing: it is written for you. `python utils.py --list` names the
+scripts.
 """
 
 import runpy
@@ -82,7 +82,7 @@ from pathlib import Path
 
 ENTRY = Path(__file__).resolve().parent / {folder!r} / "utilities.py"
 if not ENTRY.is_file():
-    sys.exit(f"No utilities at {{ENTRY}}. Extract it again: python bundle.py --extract {folder}")
+    sys.exit(f"No utilities at {{ENTRY}}: the {folder} folder is missing.")
 sys.argv[0] = str(ENTRY)
 runpy.run_path(str(ENTRY), run_name="__main__")
 '''
@@ -597,7 +597,7 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     for path, aside in place_root_files(bundle_path, target):
         print(f"Wrote {path}{placed_note(aside, Path(target).resolve().parent)}")
     print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}  (rewritten, pointing at the new version)")
-    print(f"Every window now says `bundle {manifest['content_id'][:8]}` at its foot.")
+    print(f"Every window now says `version {manifest['content_id'][:8]}` at its foot.")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the app "
           f"(`python {LAUNCHER_NAME} --tdd` tests the delivery); `python {UTILS_LAUNCHER_NAME}` "
           "the utilities.")
