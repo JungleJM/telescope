@@ -782,28 +782,18 @@ There are 47 conditions. The 28 in `GI_Conditions_intake.yaml` match it code for
 
 :::
 
-## Testing bundle 2, with bundle 1 as the fallback
+## Author's bundle-building code in what ships (option 3)
 
-(in the chat, 6 Oct) Nothing on the VM should mention transcribing screenshots (D200), bundling, copying over, or un-bundling. If in doubt, say nothing of how updating is done or how code is added. Keep all of it on the Mac. Bundle 1 does the prose; bundle 2 also renames the code names. I test bundle 2 in the morning and go back to bundle 1 if it fails.
+(in the chat, 7 Oct) Bundle 2 works on the VM; from now on nothing that ships says how it got there (D203).
 
 ::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: what to check on the VM, and how to fall back**
+**🟦 Claude: the one place code still names bundling**
 
-**Built (6 Oct).** Bundle 1 is `b6efc01c…` (commit `f2a90dc`); bundle 2 is `11036600…` (commit `610defb`). On the Mac, bundle 1 then bundle 2 were installed into one scratch folder as the VM will see them: no `--force`, the record renamed, `--tdd` passing, `version 11036600` shown, and the code still knowing it is on the VM. Neither carries a pull's blueprint: the GI Conditions blueprint went in `0ee5c6d4…`.
+Author's Exports tab has the bundle queue and the Bundle With Manager and Bundle YAMLs only buttons. They only appear on the Mac, but their code ships: 25 lines in `yamlmanager_model.py` and `yamlmanager_tk.py` (`make_bundle`, `queue_add`, the `bundle_pullmanager` import). A developer reading Author's code on the VM would see them.
 
-**Bundle 2 (`dist/bundle2.py`)**
+Taking them out of what ships means moving that code into a Mac-only module that Author loads when it is there. It's a refactor of the two Author files, with no change to what either machine shows.
 
-1.  `python bundle2.py`, then y. It should install over the current folder, which still has the old record name, without asking for `--force`.
-2.  `python scope.py --tdd` passes.
-3.  The foot of the app, the utilities window and the parquet viewer says `version 11036600`, not `bundle`.
-4.  Author opens a blueprint, Validate passes, Export split and Preview SQL work. That proves makeYaml still knows it is on the VM, through the renamed record.
-5.  Delete `bundle2.py`.
-
-**If it fails:** `python bundle1.py --extract pullmanager_runtime --force`. Bundle 1's installer does not know bundle 2's record name, so without `--force` it refuses (rehearsed). Then tell me what failed, and I revert `610defb`.
-
-**What either still says:** the installer file itself (`bundle1.py`, `bundle2.py`; delete it after use); in bundle 2, Author's Mac-only bundle-building code (the Exports tab's queue and buttons, 25 lines) and the R package `bundle` in the package list. Bundle 1 also keeps the code names.
-
-**For you to decide:** nothing until the test. Afterwards, whether bundle 2's renames stay (D202), or go back to bundle 1's (D201). Later, whether to take Author's Mac-only bundle-building code out of what ships (option 3).
+**For you to decide:** whether and when. Nothing a VM user sees depends on it.
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}

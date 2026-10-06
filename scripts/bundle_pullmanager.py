@@ -139,12 +139,11 @@ if __name__ == "__main__":
 # them (D89): every file in it ships, not only Python.
 STOCK_DIR = "stock"
 
-# For now (D200), the bundle says nothing of screenshots or of transcribing
-# them: the transcription viewer stays on the Mac, the dictionary's copy drops
-# its comments and rewords what its descriptions say about screenshots, and a
-# build that would still carry either word stops, naming each line. To ship
-# the viewer again: remove it from HELD_BACK, set NO_SCREENSHOT_MENTIONS to
-# False, and revert the commit that removed Multi-column view (D200).
+# The bundle says nothing of screenshots or of transcribing them (D200, D203):
+# the transcription viewer stays on the Mac (the user copies it into the VM's
+# utils/ when needed), the dictionary's copy drops its comments and rewords
+# what its descriptions say about screenshots, and a build that would still
+# carry either word stops, naming each line.
 HELD_BACK = ("utils/client/transcription_viewer.py",)
 NO_SCREENSHOT_MENTIONS = True
 # D201: the bundle's prose says nothing of bundling, extraction or the Mac;
@@ -404,7 +403,7 @@ def build_sections(
     if mentions:
         raise BundleError(
             "The bundle would mention screenshots or transcribing (D200), or in its prose "
-            "bundling, extraction or the Mac (D201), which it must not for now. Reword each "
+            "bundling, extraction or the Mac (D201), which it must not (D203). Reword each "
             "line, or add a rewording to SCREENSHOT_REWORDS in scripts/bundle_pullmanager.py "
             "or VM_WORDING in scripts/bundle_scrub.py:\n  " + "\n  ".join(mentions))
     return entries, lines

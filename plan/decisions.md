@@ -3866,3 +3866,26 @@ tab's buttons and the queue) is not removed. Built as `dist/bundle2.py`.
   fresh folder, or with `--force`.
 - What remains: the Exports tab's code and the `bundle_pullmanager` import in
   Author, Mac-only; and the R package named `bundle` in the package list.
+
+### D203. Nothing the bundle carries says how it got there, from now on
+
+**Context.** Bundle 2 (D202) worked on the VM (7 October 2026). The user now
+takes it as given that nothing on the VM mentions bundling or transcribing,
+and wants it to stay that way. When the transcription viewer is needed there,
+the user copies it into `utils/` by hand.
+
+**Decision.** D200 to D202 are standing rules, not "for now".
+- **The scrub, the wording table and the guard stay on.** These are
+  `HELD_BACK`, `NO_SCREENSHOT_MENTIONS`, `VM_ONLY_PROSE` and
+  `bundle_scrub.py`.
+- **Prose in a bundled file is written without these topics.** That covers
+  comments, docstrings, messages, `HOW_TO.md`, `HowThisRepoWorks.md` and the
+  dictionary's descriptions. The topics are bundling, extraction or
+  installing, copying over, the Mac, screenshots and transcribing.
+- **Where those facts live instead:** `plan/` and the Mac-only files
+  (`scripts/bundle_*.py`, `makebundle.py`, `scope.py`).
+- **The rule is in `.claude/CLAUDE.md`**, so every session follows it.
+
+**Consequences.** The build's guard is the backstop, not the method. A
+comment that would only be dropped at build time is better not written.
+Reversing D200's viewer removal is no longer planned.

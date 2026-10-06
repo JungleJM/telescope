@@ -34,8 +34,6 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-**On the VM, 7 October 2026: bundle 2 (D202), with bundle 1 (D201) as the fallback.** Both are built from `main` (bundle 1 `b6efc01c…`, `dist/bundle1.py`, at `f2a90dc`; bundle 2 `11036600…`, `dist/bundle2.py`), and installing 2 over 1 was rehearsed on the Mac. The checks are in the task list (Testing bundle 2). If bundle 2 fails, `python bundle1.py --extract pullmanager_runtime --force`, and revert `610defb` (D202).
-
 **Bundle 2, once bundle 1 has run a real pull: D177 alone.**
 
 1.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
