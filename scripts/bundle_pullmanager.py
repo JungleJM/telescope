@@ -138,6 +138,23 @@ if __name__ == "__main__":
 # them (D89): every file in it ships, not only Python.
 STOCK_DIR = "stock"
 
+# For now (D200), the bundle says nothing of screenshots or of transcribing
+# them: the transcription viewer stays on the Mac, the dictionary's copy drops
+# its comments and rewords what its descriptions say about screenshots, and a
+# build that would still carry either word stops, naming each line. To ship
+# the viewer again: remove it from HELD_BACK, set NO_SCREENSHOT_MENTIONS to
+# False, and revert the commit that removed Multi-column view (D200).
+HELD_BACK = ("utils/client/transcription_viewer.py",)
+NO_SCREENSHOT_MENTIONS = True
+SCREENSHOT_WORDS = re.compile(r"transcri|screenshot", re.IGNORECASE)
+# Across line breaks, since descriptions are folded YAML.
+SCREENSHOT_REWORDS = (
+    (r"\(the\s+rest\s+is\s+cut\s+off\s+in\s+the\s+screenshot\)", "(the rest is not recorded)"),
+    (r"description\s+cut\s+off\s+in\s+the\s+screenshot", "description not recorded"),
+    (r"Overview\s+tab\s+not\s+screenshotted;\s+not\s+yet\s+transcribed\.", "Overview tab not yet recorded."),
+    (r"not\s+yet\s+transcribed", "not yet recorded"),
+)
+
 
 def source_files(root: Path = SOURCE_ROOT) -> list[Path]:
     """Every .py file that should ship, and every stock file, sorted for
@@ -146,6 +163,7 @@ def source_files(root: Path = SOURCE_ROOT) -> list[Path]:
         path
         for path in root.rglob("*.py")
         if "__pycache__" not in path.parts
+        and path.relative_to(root).as_posix() not in HELD_BACK
     ]
     stock = root / STOCK_DIR
     if stock.is_dir():
@@ -222,6 +240,8 @@ def shipped_text(path: Path, policy: str) -> str:
     on the VM (D162), two folders below the one it was exported to, so each
     relative `file_loc` gains `../../` to reach the same file (D103)."""
     text = read_source(path)
+    if NO_SCREENSHOT_MENTIONS:
+        text = without_screenshots(path, text)
     if policy != ROOT_POLICY or not path.name.endswith(BLUEPRINT_SUFFIX):
         return text
     import makeYaml
@@ -236,6 +256,25 @@ def shipped_text(path: Path, policy: str) -> str:
         upload["file_loc"] = makeYaml.repoint_file_loc(str(upload["file_loc"]), path.parent,
                                                        path.parent / "YAMLs" / "temp")
     return makeYaml.dump_yaml_text(doc)
+
+
+def without_screenshots(path: Path, text: str) -> str:
+    """The dictionary without its comments, and any YAML's descriptions
+    without what they say about screenshots (D200)."""
+    if path.suffix not in (".yaml", ".yml"):
+        return text
+    if path.resolve() == makeYaml.core_path("datadictionary").resolve():
+        text = "".join(line for line in text.splitlines(keepends=True)
+                       if not line.lstrip().startswith("#"))
+    for pattern, words in SCREENSHOT_REWORDS:
+        text = re.sub(pattern, words, text)
+    return text
+
+
+def screenshot_mentions(published: str, text: str) -> list[str]:
+    """Each line that still names screenshots or transcribing (D200)."""
+    return [f"{published}:{number}: {line.strip()[:100]}"
+            for number, line in enumerate(text.splitlines(), 1) if SCREENSHOT_WORDS.search(line)]
 
 
 def read_queue(folder: Path = TEMP_DIR) -> list[str]:
@@ -338,15 +377,23 @@ def build_sections(
 ) -> tuple[list[dict], list[str]]:
     entries: list[dict] = []
     lines: list[str] = []
+    mentions: list[str] = []
     for path, published, policy in bundled_files(root, transfers, yamls_only):
         rel = safe_relpath(published)
         text = shipped_text(path, policy)
+        if NO_SCREENSHOT_MENTIONS:
+            mentions += screenshot_mentions(rel, text)
         raw = text.encode("utf-8")
         sha = hashlib.sha256(raw).hexdigest()
         entries.append({"path": rel, "sha256": sha, "size": len(raw), "policy": policy})
         lines.append(f"# === BEGIN FILE: {rel} SHA256: {sha} SIZE: {len(raw)} ===")
         lines.extend(encode_payload_lines(text))
         lines.append(f"# === END FILE: {rel} ===")
+    if mentions:
+        raise BundleError(
+            "The bundle would mention screenshots or transcribing, which it must not for now "
+            "(D200). Reword each line, or add a rewording to SCREENSHOT_REWORDS in "
+            "scripts/bundle_pullmanager.py:\n  " + "\n  ".join(mentions))
     return entries, lines
 
 

@@ -35,12 +35,18 @@ from bundle_pullmanager import (  # noqa: E402
     bundled_files,
     encode_payload_lines,
     render_bundle,
+    shipped_text,
     source_files,
 )
 
 # Published path -> the file it came from. Companion files live outside the
 # source tree, so a published path no longer implies SOURCE_ROOT / path.
 SOURCES = {published: source for source, published, _policy in bundled_files()}
+
+
+def shipped_bytes(published: str) -> bytes:
+    """A file as the bundle carries it, which is not always its source's bytes (D200)."""
+    return shipped_text(SOURCES[published], "replace").encode("utf-8")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -147,6 +153,43 @@ class BuildTests(BundleTestCase):
         self.assertIn("scripts/makeYaml.py", published)
         self.assertIn(makeYaml.CORE_DEFAULTS["datadictionary"], published)
 
+    def test_the_transcription_viewer_is_held_back(self):
+        # D200: it stays on the Mac, and nothing shipped names it.
+        sections, _ = read_bundle(self.bundle)
+        published = {section["path"] for section in sections}
+        self.assertTrue((SOURCE_ROOT / "utils" / "client" / "transcription_viewer.py").is_file())
+        self.assertNotIn("utils/client/transcription_viewer.py", published)
+        for section in sections:
+            with self.subTest(path=section["path"]):
+                self.assertIsNone(re.search(r"transcri|screenshot", section["content"], re.IGNORECASE))
+
+    def test_the_shipped_dictionary_is_the_same_data_without_screenshot_notes(self):
+        # D200: comments dropped and descriptions reworded; tables, columns and
+        # types as the Mac's.
+        import makeYaml
+
+        source = makeYaml.load_yaml(SOURCES["reference/datadictionary.yaml"])
+        target = self.tmp / "dictionary.yaml"
+        target.write_bytes(shipped_bytes("reference/datadictionary.yaml"))
+        shipped = makeYaml.load_yaml(target)
+        self.assertEqual(set(shipped), set(source))
+        for table, entry in source.items():
+            if isinstance(entry, dict) and isinstance(entry.get("columns"), dict):
+                with self.subTest(table=table):
+                    self.assertEqual(
+                        {name: col.get("type") for name, col in entry["columns"].items()},
+                        {name: col.get("type") for name, col in shipped[table]["columns"].items()},
+                    )
+        self.assertIn("(the rest is not recorded)", target.read_text(encoding="utf-8"))
+
+    def test_a_build_that_would_mention_screenshots_stops_naming_the_line(self):
+        root = self.tmp / "src"
+        (root / "pullmanager").mkdir(parents=True)
+        (root / "pullmanager" / "notes.py").write_text("# Copied off by screenshot.\n", encoding="utf-8")
+        with self.assertRaises(BundleError) as caught:
+            render_bundle(root)
+        self.assertIn("pullmanager/notes.py:1", str(caught.exception))
+
     def test_rebuild_is_byte_identical(self):
         self.assertEqual(render_bundle(), render_bundle())
 
@@ -159,7 +202,7 @@ class BuildTests(BundleTestCase):
             with self.subTest(path=section["path"]):
                 self.assertEqual(
                     section["content"].encode("utf-8"),
-                    SOURCES[section["path"]].read_bytes(),
+                    shipped_bytes(section["path"]),
                 )
 
 
@@ -254,7 +297,7 @@ class ExtractionPolicyTests(BundleTestCase):
         self.assertFalse((target / "reference/datadictionary.yaml.local").exists())
         self.assertEqual(
             (target / "reference/datadictionary.yaml").read_bytes(),
-            SOURCES["reference/datadictionary.yaml"].read_bytes(),
+            shipped_bytes("reference/datadictionary.yaml"),
         )
 
     def test_a_kept_copy_survives_the_next_update(self):
@@ -287,7 +330,7 @@ class ExtractionPolicyTests(BundleTestCase):
 
     def test_a_replaced_file_is_updated_but_the_old_one_is_kept(self):
         target = self.extract_twice("reference/datadictionary.yaml", "# edited on the VM\n")
-        shipped = (SOURCES["reference/datadictionary.yaml"]).read_bytes()
+        shipped = shipped_bytes("reference/datadictionary.yaml")
         self.assertEqual((target / "reference/datadictionary.yaml").read_bytes(), shipped)
         self.assertEqual(
             (target / "reference/datadictionary.yaml.local").read_text(encoding="utf-8"),
@@ -398,7 +441,7 @@ class ExtractionTests(BundleTestCase):
         target = self.tmp / "runtime"
         for rel in extract(self.bundle, target):
             with self.subTest(path=rel):
-                self.assertEqual((target / rel).read_bytes(), SOURCES[rel].read_bytes())
+                self.assertEqual((target / rel).read_bytes(), shipped_bytes(rel))
 
     def test_leaves_no_scratch_directories(self):
         extract(self.bundle, self.tmp / "runtime")
@@ -614,7 +657,8 @@ class LauncherTests(BundleTestCase):
         listed = self.run_python("utils.py", "--list")
         self.assertEqual(listed.returncode, 0, listed.stderr)
         self.assertIn("viewparquets.py", listed.stdout.split())
-        self.assertIn("transcription_viewer.py", listed.stdout.split())
+        # Held back for now (D200).
+        self.assertNotIn("transcription_viewer.py", listed.stdout.split())
 
     def test_a_missing_folder_says_to_extract_again(self):
         self.run_python("bundle.py", "--extract")

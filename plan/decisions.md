@@ -3774,3 +3774,38 @@ kept true as the code changes.
 - A bundled path may contain spaces (the package list's does). The
   extractor's file headers read a path up to ` SHA256:`. Each bundle carries
   its own extractor, so older bundles are unaffected.
+
+### D200. For now the bundle says nothing of screenshots or of transcribing them
+
+**Context.** The VM is to be shown to others, and nothing on it may mention
+transcribing text from screenshots, nor carry a tool for it (6 October
+2026). The transcription viewer (D148, D180), the dictionary's notes on the
+screenshots it was checked against, and two docstrings did. The Mac keeps
+the viewer; the user will say when it goes back in.
+
+**Decision.**
+
+- The bundle holds back `utils/client/transcription_viewer.py`
+  (`HELD_BACK`). It stays on the Mac, where the utilities window and a
+  pull's folder still offer it.
+- Run's Multi-column view (D180) is removed from the code in a commit of its
+  own, since it only opened the viewer. The shipped tests, `HOW_TO.md`, and
+  the audit's and scan's docstrings no longer name the viewer or screenshots.
+- The bundle's copy of the dictionary drops its comment lines. Every
+  shipped YAML has its descriptions' notes reworded: "cut off in the
+  screenshot" becomes "not recorded", and "not yet transcribed" becomes "not
+  yet recorded" (`SCREENSHOT_REWORDS`). The Mac's dictionary keeps them.
+- With `NO_SCREENSHOT_MENTIONS`, a build stops if any file it would carry
+  still contains `transcri` or `screenshot`, naming each line, so a new
+  mention cannot slip in.
+
+**Consequences.**
+
+- To ship the viewer again:
+  - Remove it from `HELD_BACK`.
+  - Set `NO_SCREENSHOT_MENTIONS` to False.
+  - Revert the commit that removed Multi-column view.
+- Pull folders made on the VM before this keep their copy of the viewer. The
+  next extraction removes it from the runtime.
+- Easy to reverse was chosen over keeping the button: hiding it while the
+  viewer was absent would still have named the viewer in shipped code.

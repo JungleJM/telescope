@@ -53,7 +53,7 @@ Built 5 October 2026. The files that run, land and package pulls are unchanged f
 1.  **Validate** on the old UC intake (in `YAMLs\temp\replaced\`, or any template with an upload nothing reads) warns `upload_not_read` (D195); a chunked one prints a `NOTE [chunk_passes]` line with its passes (D196).
 2.  **Author**: a built or recipe PK has **Row key**, a dropdown of its columns, several allowed; each fact table has **Deduplicate by** and **Keep** (D186). Tick and untick, then Save and look at the YAML.
 3.  **The Utils tab** after Run, with the utilities window's buttons (D194).
-4.  **Run**: **View dbo tables** opens clear_projects_db on the loaded pull's database (D180); **Multi-column view** at the top right of Validation Output, Pull Log and Pull Manifest opens the transcription viewer on that tab's text.
+4.  **Run**: **View dbo tables** opens clear_projects_db on the loaded pull's database (D180).
 5.  **clear_projects_db** (from Utils or View dbo tables): every listed database with its GB free, or why it could not be opened; opening one shows its tables grouped by pull; selecting a database shows its files; Drop selected on a pull's row drops only its tables, and on a database's row asks for its name (D185). Try it on a database with nothing you need.
 6.  **One table per group** (D190): a new pull's Export split and Preview SQL show one run per ungrouped table (`<session>__<table>__b1of1`). A pull already split keeps its runs. The old `Infant_RSV_transfer.yaml` beside `scope.py`, if still there, is now refused (its tables read each other in no group); the working blueprint groups them and passes.
 7.  **The Diagnoses recipe set** (D184): Add a fact table offers it; HospitalizationsWithinICDCode replaces OtherHospitalizations in the recipe list. The UC and Crohns intakes keep their table `OtherHospitalizations`.
@@ -110,7 +110,7 @@ The user stopped every run and cleared the VM's pulls to start over (29 Septembe
 10. **The credit line** (D145) at the foot of each window, the viewer in a pull's folder included, with `· bundle` and the same 8 characters `bundle.py` showed as its `content_id` (D147); `python scope.py --version` says it too.
 11. **Extraction refuses while a pull executes** (D147): with a pull running, `python bundle.py` names it and extracts nothing. Once nothing runs, it says it removed the previous `pullmanager_runtime`.
 12. **The backup** (D149): in Run, Browse a backup folder on the other drive; Artifacts on a packaged pull says `backed up to <folder>\<project>`, and the old parquets are there. With the drive unplugged, it goes to `runs\backup` with a warning at the end. Back up all backs up each pull, skipping one executing.
-13. **A pull's folder as a deliverable** (D148): after Artifacts, `utils.py` in it opens a window with the parquet and transcription viewers only; the viewer opens on that pull. Your own `python utils.py` shows Client and Manager.
+13. **A pull's folder as a deliverable** (D148): after Artifacts, `utils.py` in it opens a window with the parquet viewer only; the viewer opens on that pull. Your own `python utils.py` shows Client and Manager.
 14. **The dictionary line is gone from Run** (D150), and Validate still names `reference\datadictionary.yaml` in the extracted folder.
 
 ### Still Unchecked From The First Live Runs
