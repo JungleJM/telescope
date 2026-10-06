@@ -111,7 +111,7 @@ class Workspace:
             recipes_path=my.default_recipes_path(),
             dictionary_path=my.default_datadictionary_path(),
             defaults_path=my.default_template_path(),
-            vm_side=(my.project_root() / ".bundle-manifest.json").is_file(),
+            vm_side=(my.project_root() / ".runtime-manifest.json").is_file(),
             runs_dir=my.runs_root(),
         )
 
@@ -3182,11 +3182,11 @@ class VmSideTests(ModelTest):
         with self.assertRaises(DraftError):
             draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", pending_transfer=True)
 
-    def test_an_extracted_bundle_is_the_vm_side(self):
+    def test_an_installed_runtime_is_the_vm_side(self):
         from unittest import mock
         with mock.patch.object(my, "project_root", return_value=self.home):
             self.assertFalse(Workspace.default().vm_side)
-            (self.home / ".bundle-manifest.json").write_text("{}", encoding="utf-8")
+            (self.home / ".runtime-manifest.json").write_text("{}", encoding="utf-8")
             self.assertTrue(Workspace.default().vm_side)
 
 

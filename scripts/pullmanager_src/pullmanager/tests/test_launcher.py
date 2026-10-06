@@ -46,7 +46,7 @@ class LocateToolsTests(TempDirTestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("", encoding="utf-8")
 
-    def test_finds_the_extracted_bundle_layout(self):
+    def test_finds_the_installed_layout(self):
         self.make("pullmanager.py", "scripts/makeYaml.py", "pullmanager/__init__.py")
         tools = locate_tools(self.tmp / "pullmanager")
         self.assertEqual(tools.make_yaml, self.tmp / "scripts" / "makeYaml.py")
@@ -76,7 +76,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(command[1], str(TOOLS.make_yaml))
         self.assertEqual(command[2:], ["--template", "T_transfer.yaml", "--validate"])
 
-    def test_blank_optional_inputs_fall_back_to_the_bundled_copies(self):
+    def test_blank_optional_inputs_fall_back_to_the_installed_copies(self):
         command = command_validate(TOOLS, Paths(template="T.yaml"))
         self.assertNotIn("--datadictionary", command)
 
@@ -522,7 +522,7 @@ class SettingsTests(TempDirTestCase):
         saved = save_settings(loaded, self.tmp)
         self.assertNotIn("datadictionary", saved.read_text(encoding="utf-8"))
 
-    def test_live_in_the_working_directory_not_the_bundle(self):
+    def test_live_in_the_working_directory_not_the_runtime(self):
         # The extracted bundle is replaced on update, so remembered choices
         # kept inside it would be lost every time.
         path = save_settings(Paths(template="x"), self.tmp)

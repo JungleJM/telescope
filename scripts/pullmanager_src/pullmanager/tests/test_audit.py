@@ -78,7 +78,7 @@ class AuditTests(unittest.TestCase):
     def test_the_report_lists_only_what_did_not_check_out(self):
         text = report(audit_dictionary(FakeCosmos(), DICTIONARY, "COSMOS"), "abcd1234")
         self.assertTrue(text.startswith("# dictionary audit, "))
-        self.assertIn("bundle abcd1234, database COSMOS: 3 tables, 3 wrong", text)
+        self.assertIn("version abcd1234, database COSMOS: 3 tables, 3 wrong", text)
         self.assertIn("  - NoSuchTable", text)
         self.assertIn("  MedicationDispenseFact: [ReadyToDispenseDateKey, RefillsRemaining]"
                       "  # near: RefillsRemaining -> RefillsRemaining_X", text)

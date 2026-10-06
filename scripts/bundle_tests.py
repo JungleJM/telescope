@@ -201,7 +201,14 @@ class BuildTests(BundleTestCase):
                 self.assertEqual(bundle_scrub.mentions(section["path"], section["content"]), [])
         gui = next(s["content"] for s in sections if s["path"] == "pullmanager/gui.py")
         self.assertIn("\\u00b7 version", gui)
-        self.assertIn("\\u00b7 bundle", (SOURCE_ROOT / "pullmanager" / "gui.py").read_text(encoding="utf-8"))
+
+    def test_shipped_code_names_say_nothing_of_bundling(self):
+        # D202: renamed in the source, so the bundle's code reads the same.
+        sections, _ = read_bundle(self.bundle)
+        for section in sections:
+            with self.subTest(path=section["path"]):
+                for old in ("bundle_id", "stamp_bundle", "BUNDLE = ", ".bundle-manifest.json"):
+                    self.assertNotIn(old, section["content"])
 
     def test_scrubbed_python_keeps_the_rest_and_still_compiles(self):
         import bundle_scrub
@@ -265,6 +272,18 @@ class ExtractionPolicyTests(BundleTestCase):
         (target / rel).write_text(edited, encoding="utf-8")
         extract(self.bundle, target)
         return target
+
+    def test_a_folder_with_the_old_record_name_updates_without_force(self):
+        # D202: extracted before the rename, its record is .bundle-manifest.json.
+        target = self.tmp / "runtime"
+        extract(self.bundle, target)
+        (target / MANIFEST_FILENAME).rename(target / ".bundle-manifest.json")
+        (target / "reference/datadictionary.yaml").write_text("# edited on the VM\n", encoding="utf-8")
+        extract(self.bundle, target)
+        self.assertTrue((target / MANIFEST_FILENAME).is_file())
+        self.assertFalse((target / ".bundle-manifest.json").exists())
+        self.assertEqual((target / "reference/datadictionary.yaml.local").read_text(encoding="utf-8"),
+                         "# edited on the VM\n")
 
     def test_recipes_travel_for_now(self):
         # D187: recipes.yaml ships where makeYaml's default finds it, as the
@@ -569,14 +588,14 @@ class LauncherTests(BundleTestCase):
         self.assertIn("content_id: ", before_prompt)
         self.assertTrue((self.work / "pullmanager_runtime" / "pullmanager.py").is_file())
         self.assertTrue((self.work / "scope.py").is_file())
-        self.assertNotIn("extracted  ", run.stdout)
+        self.assertNotIn("wrote  ", run.stdout)
 
     def test_anything_but_yes_extracts_nothing(self):
         for answer in ("n\n", "\n", ""):
             with self.subTest(answer=answer):
                 run = self.run_bundle_answering(answer)
                 self.assertEqual(run.returncode, 0, run.stderr)
-                self.assertIn("Nothing extracted", run.stdout)
+                self.assertIn("Nothing installed", run.stdout)
                 self.assertFalse((self.work / "pullmanager_runtime").exists())
                 self.assertFalse((self.work / "scope.py").exists())
 
@@ -748,7 +767,7 @@ class EndToEndTests(BundleTestCase):
         target = self.tmp / "runtime"
         proc = self.run_python(str(self.bundle), "--extract", str(target))
         self.assertEqual(proc.returncode, 2)
-        self.assertIn("BUNDLE ERROR", proc.stderr)
+        self.assertIn("ERROR:", proc.stderr)
         self.assertFalse(target.exists())
 
     def test_runtime_reads_a_freshly_generated_split_manifest(self):
@@ -1179,7 +1198,7 @@ class QueueTests(unittest.TestCase):
         vm.mkdir()
         with contextlib.redirect_stdout(io.StringIO()):
             unpack(full, vm / "pullmanager_runtime", quiet=True)
-        runtime_manifest = (vm / "pullmanager_runtime" / ".bundle-manifest.json").read_bytes()
+        runtime_manifest = (vm / "pullmanager_runtime" / ".runtime-manifest.json").read_bytes()
         (vm / "pullmanager_runtime" / "mine.txt").write_text("kept\n", encoding="utf-8")
         scope = (vm / "scope.py").read_bytes()
         yamls, _, _ = self.build(yamls_only=True)
@@ -1188,7 +1207,7 @@ class QueueTests(unittest.TestCase):
             unpack(yamls, vm / "pullmanager_runtime", quiet=True)
         self.assertTrue((vm / "YAMLs" / "temp" / "Celiac_blueprint.yaml").is_file())
         self.assertTrue((vm / "YAMLs" / "temp" / "IBD_Ancestry_blueprint.yaml").is_file())
-        self.assertEqual((vm / "pullmanager_runtime" / ".bundle-manifest.json").read_bytes(), runtime_manifest)
+        self.assertEqual((vm / "pullmanager_runtime" / ".runtime-manifest.json").read_bytes(), runtime_manifest)
         self.assertTrue((vm / "pullmanager_runtime" / "mine.txt").is_file())
         self.assertEqual((vm / "scope.py").read_bytes(), scope)
         self.assertIn("left as it is", out.getvalue())

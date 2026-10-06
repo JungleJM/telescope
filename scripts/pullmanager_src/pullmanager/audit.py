@@ -135,9 +135,9 @@ def _flow(values: dict[str, Any]) -> str:
     return "{" + ", ".join(f"{k}: {text(v)}" for k, v in values.items()) + "}"
 
 
-def report(result: Audit, bundle: str = "") -> str:
+def report(result: Audit, version: str = "") -> str:
     header = (f"# dictionary audit, {time.strftime('%Y-%m-%d %H:%M')}"
-              f"{f', bundle {bundle}' if bundle else ''}, database {result.database}: "
+              f"{f', version {version}' if version else ''}, database {result.database}: "
               f"{result.checked} tables, {result.wrong} wrong")
     lines = [header]
     if not result.wrong:
@@ -162,8 +162,8 @@ def report(result: Audit, bundle: str = "") -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_report(result: Audit, runs: Path, bundle: str = "") -> tuple[Path, str]:
-    text = report(result, bundle)
+def write_report(result: Audit, runs: Path, version: str = "") -> tuple[Path, str]:
+    text = report(result, version)
     path = Path(runs) / AUDIT_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

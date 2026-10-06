@@ -135,16 +135,16 @@ def stock_how_to(project: str, parquets: Path, source: Path | None = None) -> st
 RETIRED_STOCK = ("viewparquets.py",)
 
 
-def stamp_bundle(text: bytes) -> bytes:
-    """A stock script's `BUNDLE = ""` line given this bundle's id (D147): the
+def stamp_version(text: bytes) -> bytes:
+    """A stock script's `VERSION = ""` line given this bundle's id (D147): the
     copy in a pull's folder has no bundle above it to read, so it says the
     bundle it was packaged with. Anything else is copied as it is."""
-    from .config import bundle_id
+    from .config import version_id
 
-    found = bundle_id()
+    found = version_id()
     if not found:
         return text
-    return text.replace(b'\nBUNDLE = ""', f'\nBUNDLE = "{found}"'.encode("utf-8"), 1)
+    return text.replace(b'\nVERSION = ""', f'\nVERSION = "{found}"'.encode("utf-8"), 1)
 
 
 def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
@@ -174,7 +174,7 @@ def write_loaders(run_dir: Path, parquets: Path, project: str) -> list[Path]:
         if source.name == HOW_TO:
             path.write_text(stock_how_to(project, location, source), encoding="utf-8")
         elif source.suffix == ".py":
-            path.write_bytes(stamp_bundle(source.read_bytes()))
+            path.write_bytes(stamp_version(source.read_bytes()))
         else:
             shutil.copyfile(source, path)
         written.append(path)

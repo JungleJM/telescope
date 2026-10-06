@@ -37,7 +37,18 @@ BEGIN_RE = re.compile(
 END_RE = re.compile(r"^# === END FILE: (?P<path>.+) ===$")
 DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
-MANIFEST_FILENAME = ".bundle-manifest.json"
+MANIFEST_FILENAME = ".runtime-manifest.json"
+# What earlier extractions wrote instead (D202): still recognised as ours, read
+# for its hashes, and gone with the old tree once the new one is swapped in.
+OLD_MANIFEST_FILENAMES = (".bundle-manifest.json",)
+
+
+def extraction_record(target: Path) -> Path | None:
+    """The record a previous extraction left in `target`, new name or old."""
+    for name in (MANIFEST_FILENAME, *OLD_MANIFEST_FILENAMES):
+        if (target / name).is_file():
+            return target / name
+    return None
 
 # Where the runtime goes when no folder is named: beside the bundle itself, so
 # where it was run from does not matter. The launcher is written beside that
@@ -308,15 +319,18 @@ def refuse_while_executing(folder: Path) -> None:
     if running:
         raise BundleError(
             f"{', '.join(running)} {'is' if len(running) == 1 else 'are'} executing now, from the "
-            "software this would replace. Nothing was extracted. Let it finish, or stop it "
-            "(Stop in Run, or Ctrl+C in its window), then run the bundle again."
+            "software this would replace. Nothing was installed. Let it finish, or stop it "
+            "(Stop in Run, or Ctrl+C in its window), then run this again."
         )
 
 
 def previous_extraction_hashes(target: Path) -> dict[str, str]:
     """Path to SHA-256 of every file the previous extraction wrote, or {}."""
     try:
-        recorded = json.loads((target / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        record = extraction_record(target)
+        if record is None:
+            return {}
+        recorded = json.loads(record.read_text(encoding="utf-8"))
         return {
             str(entry["path"]): str(entry["sha256"])
             for entry in recorded.get("files", [])
@@ -353,10 +367,10 @@ def extract(bundle_path: Path, target: Path, force: bool = False) -> list[str]:
     if target.exists():
         if not target.is_dir():
             raise BundleError(f"Extraction target exists and is not a directory: {target}")
-        owned = (target / MANIFEST_FILENAME).is_file()
+        owned = extraction_record(target) is not None
         if not owned and not force:
             raise BundleError(
-                f"Refusing to replace {target}: it is not a previous bundle extraction "
+                f"Refusing to replace {target}: it was not written by this installer "
                 f"(no {MANIFEST_FILENAME}). Pass --force to overwrite it anyway."
             )
 
@@ -581,13 +595,13 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
         return
     refuse_while_executing(Path(target).resolve().parent)
     old_files = 0
-    if (Path(target) / MANIFEST_FILENAME).is_file():
+    if extraction_record(Path(target)) is not None:
         old_files = sum(1 for path in Path(target).rglob("*") if path.is_file())
     written = extract(bundle_path, target, force=force)
     if not quiet:
         for path in written:
-            print(f"extracted  {path}")
-    print(f"\nExtracted {len(written)} files to {target.resolve()}")
+            print(f"wrote  {path}")
+    print(f"\nInstalled {len(written)} files in {target.resolve()}")
     if old_files:
         # Swapped, not merged (D6): nothing of the old version is left to run.
         print(f"Removed the previous {Path(target).name} ({old_files} files); only the new "
@@ -628,12 +642,12 @@ def interactive(bundle_path: Path) -> int:
             answer = input(f"Write {', '.join(carried)} into {bundle_path.parent}, leaving the "
                            f"software as it is? [y/N] ")
         else:
-            answer = input(f"Extract into {target} and write "
+            answer = input(f"Install into {target} and write "
                            f"{', '.join([LAUNCHER_NAME, UTILS_LAUNCHER_NAME] + carried)} beside it? [y/N] ")
     except EOFError:
         answer = ""
     if answer.strip().lower() not in ("y", "yes"):
-        print("Nothing extracted.")
+        print("Nothing installed.")
         return 0
     unpack(bundle_path, target, quiet=True)
     return 0
@@ -670,7 +684,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
         try:
             return interactive(bundle_path)
         except BundleError as exc:
-            print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
+            print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
     try:
@@ -689,7 +703,7 @@ def bundle_main(argv: list[str] | None = None) -> int:
                 target = bundle_path.parent / DEFAULT_TARGET
             unpack(bundle_path, target, force=args.force)
     except BundleError as exc:
-        print(f"BUNDLE ERROR: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
     return 0

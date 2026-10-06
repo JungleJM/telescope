@@ -399,7 +399,7 @@ def transfer_home() -> Path:
     makebundle.py, which carries transfer YAMLs from there (`yaml=`). In an
     extracted bundle, the working folder beside it, never inside it."""
     root = project_root()
-    return root.parent if (root / ".bundle-manifest.json").is_file() else root
+    return root.parent if (root / ".runtime-manifest.json").is_file() else root
 
 
 class ConfigError(RuntimeError):
@@ -5331,7 +5331,7 @@ DataDictionary:
         self.assertIn("--template", res.errors[0].fix)
         self.assertIn("--export-transfer", res.errors[0].fix)
 
-    def test_real_dictionary_accepts_the_bundled_recipes(self):
+    def test_real_dictionary_accepts_the_shipped_recipes(self):
         # The shipped recipes and dictionary must agree, or every template
         # built from them fails.
         res = compile_yaml(
@@ -6060,10 +6060,10 @@ batching:
         # Its upload travels with it, at the same path relative to it.
         self.assertTrue((root / "data" / "codes.csv").is_file())
 
-    def test_in_an_extracted_bundle_it_goes_beside_it_not_inside(self):
+    def test_in_an_installed_runtime_it_goes_beside_it_not_inside(self):
         root = self.tmp / "work" / "pullmanager_runtime"
         root.mkdir(parents=True)
-        (root / ".bundle-manifest.json").write_text("{}", encoding="utf-8")
+        (root / ".runtime-manifest.json").write_text("{}", encoding="utf-8")
         with mock.patch(f"{__name__}.project_root", return_value=root):
             self.assertEqual(transfer_home(), self.tmp / "work")
 
@@ -6354,7 +6354,7 @@ class DedupTests(MakeYamlTest):
         res = self.compile_template(extra=self.cohort(dedup_keys="[[BillingCodeValue]]"))
         self.assertHasError(res, "bad_dedup_column")
 
-    def test_the_bundled_recipes_dedup_by_their_own_columns(self):
+    def test_the_shipped_recipes_dedup_by_their_own_columns(self):
         # IndexDiagnosis ordered by a column it lacks and wrote into
         # OtherDiagnoses; both kept one row per code across every patient.
         path = default_recipes_path()
@@ -7272,7 +7272,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_tdd(None if args.tdd == "all" else args.tdd)
 
     if args.template is None and not (args.inspect_recipes or args.csv_to_parquet):
-        if (project_root() / ".bundle-manifest.json").is_file():
+        if (project_root() / ".runtime-manifest.json").is_file():
             print(f"ERROR template_not_given: No --template given. {MISSING_TEMPLATE_FIX}")
             return 1
         args.template = str(default_template_path())

@@ -35,21 +35,9 @@ class ScrubError(ValueError):
 
 
 # Messages a VM user can see, and what the bundle says instead. Code names are
-# left (D201); the Mac-only bundle-building code in Author is left too.
+# renamed in the source (D202); the Mac-only bundle-building code in Author
+# is left.
 VM_WORDING: dict[str, list[tuple[str, str]]] = {
-    "pullmanager/gui.py": [("\\u00b7 bundle", "\\u00b7 version")],
-    "utilities.py": [("\\u00b7 bundle", "\\u00b7 version")],
-    "utils/client/viewparquets.py": [("\\u00b7 bundle", "\\u00b7 version")],
-    "utils/manager/clear_projects_db.py": [("\\u00b7 bundle", "\\u00b7 version")],
-    "pullmanager/tests/test_utilities.py": [("\\u00b7 bundle", "\\u00b7 version")],
-    "pullmanager/tests/test_artifacts.py": [
-        ("Designed and built by Jason Mathias \\u00b7 bundle ca0fa906",
-         "Designed and built by Jason Mathias \\u00b7 version ca0fa906"),
-    ],
-    "pullmanager/cli.py": [('f", bundle {found}"', 'f", version {found}"')],
-    "pullmanager/audit.py": [("f', bundle {bundle}'", "f', version {bundle}'")],
-    "pullmanager/scan.py": [("f', bundle {bundle}'", "f', version {bundle}'")],
-    "pullmanager/tests/test_audit.py": [("bundle abcd1234, database", "version abcd1234, database")],
     "pullmanager/databases.py": [('"pullmanager/config.py and bundle again, "', '"pullmanager/config.py, "')],
     "pullmanager/launcher.py": [('"Run it from an extracted bundle."', '"Run it from the folder that holds them."')],
     "scripts/makeYaml.py": [

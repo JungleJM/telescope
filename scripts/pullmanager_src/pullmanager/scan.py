@@ -124,9 +124,9 @@ def scan_runs(home: Path) -> tuple[Path, str, int]:
         if problems:
             found[pull.name] = problems
     count = sum(count_problems(p) for p in found.values())
-    bundle = config.bundle_id()
+    version = config.version_id()
     header = (f"# run scan, {time.strftime('%Y-%m-%d %H:%M')}"
-              f"{f', bundle {bundle}' if bundle else ''}: {len(pulls)} pulls, {count} problems")
+              f"{f', version {version}' if version else ''}: {len(pulls)} pulls, {count} problems")
     lines = [header]
     if not found:
         lines.append("every pull checks out" if pulls else "no pulls under runs/")

@@ -68,7 +68,7 @@ def code_home(code_root: Path) -> Path:
     """The working folder for code at `code_root`: its parent in an extracted
     bundle, else itself (the repository), as makeYaml's transfer_home."""
     code_root = Path(code_root)
-    return code_root.parent if (code_root / ".bundle-manifest.json").is_file() else code_root
+    return code_root.parent if (code_root / ".runtime-manifest.json").is_file() else code_root
 
 
 def core_path(key: str, code_root: Path) -> Path:
@@ -81,11 +81,11 @@ def core_path(key: str, code_root: Path) -> Path:
     return Path(code_root) / CORE_DEFAULTS[key]
 
 
-def bundle_id() -> str:
+def version_id() -> str:
     """The first 8 characters of the extracted bundle's content_id (D147), from
-    the .bundle-manifest.json above this file; empty when run from source."""
+    the .runtime-manifest.json above this file; empty when run from source."""
     for folder in Path(__file__).resolve().parents:
-        manifest = folder / ".bundle-manifest.json"
+        manifest = folder / ".runtime-manifest.json"
         if manifest.is_file():
             try:
                 return str(json.loads(manifest.read_text(encoding="utf-8"))["content_id"])[:8]

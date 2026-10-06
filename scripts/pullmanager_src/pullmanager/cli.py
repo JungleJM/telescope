@@ -474,7 +474,7 @@ def audit_dictionary(args: argparse.Namespace, connect_fn=None, cwd: Path | None
         except Exception:
             pass
     home = Path(cwd or Path.cwd())
-    written, text = write_report(result, config.runs_dir(home), config.bundle_id())
+    written, text = write_report(result, config.runs_dir(home), config.version_id())
     print(text, end="")
     print(f"Written to {written}")
     return 1 if result.wrong else 0
@@ -803,11 +803,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to pullmanifest.yaml. With --execute, a project's name will do: "
              "IBD_Ancestry means runs/IBD_Ancestry/split/pullmanifest.yaml.",
     )
-    from .config import bundle_id
+    from .config import version_id
 
-    found = bundle_id()
+    found = version_id()
     parser.add_argument("--version", action="version",
-                        version=f"pullmanager {__version__}" + (f", bundle {found}" if found else ""))
+                        version=f"pullmanager {__version__}" + (f", version {found}" if found else ""))
     parser.add_argument(
         "--dry-run",
         action="store_true",

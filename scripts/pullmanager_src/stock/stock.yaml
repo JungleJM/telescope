@@ -3,7 +3,7 @@
 # folder of its own there, and `as:` gives it another name. `folder:` copies
 # every script in a folder, so a script added to utils/client/ reaches every
 # pull without an entry here. HOW_TO.md has {project} and {parquets} filled
-# in; a script's `BUNDLE = ""` gets the bundle (D147); everything else is
+# in; a script's `VERSION = ""` gets the bundle (D147); everything else is
 # copied as it is.
 files:
   - HOW_TO.md

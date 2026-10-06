@@ -72,8 +72,8 @@ CREDIT = "Designed and built by Jason Mathias"
 
 
 def credit_text() -> str:
-    found = config.bundle_id()
-    return f"{CREDIT} \u00b7 bundle {found}" if found else CREDIT
+    found = config.version_id()
+    return f"{CREDIT} \u00b7 version {found}" if found else CREDIT
 
 
 def add_credit(root) -> None:

@@ -510,11 +510,11 @@ class LoaderTests(ArtifactTestCase):
     def test_the_viewer_is_the_stock_copy(self):
         from ..loaders import STOCK_DIR
 
-        from ..loaders import stamp_bundle
+        from ..loaders import stamp_version
 
         self.write()
         self.assertEqual((self.out / "utils" / "client" / "viewparquets.py").read_bytes(),
-                         stamp_bundle((STOCK_DIR.parent / "utils" / "client" / "viewparquets.py").read_bytes()))
+                         stamp_version((STOCK_DIR.parent / "utils" / "client" / "viewparquets.py").read_bytes()))
 
     def test_the_pull_folder_gets_a_utilities_window_with_the_client_tools_only(self):
         # D148: the user's own window, with only what the client is meant to have.
@@ -531,22 +531,22 @@ class LoaderTests(ArtifactTestCase):
         self.assertEqual([(heading, [p.name for p in paths]) for heading, paths in window.sections()],
                          [("Client", client_tools())])
 
-    def test_the_viewer_copy_says_the_bundle_it_was_packaged_with(self):
+    def test_the_viewer_copy_says_the_version_it_was_packaged_with(self):
         # D147: in a pull's folder there is no bundle above it to read.
         import importlib.util
         from unittest import mock
 
         from .. import config
 
-        with mock.patch.object(config, "bundle_id", return_value="ca0fa906"):
+        with mock.patch.object(config, "version_id", return_value="ca0fa906"):
             self.write()
         copy = self.out / "utils" / "client" / "viewparquets.py"
-        self.assertIn('\nBUNDLE = "ca0fa906"', copy.read_text(encoding="utf-8"))
-        self.assertIn('\nBUNDLE = "ca0fa906"', (self.out / "utils.py").read_text(encoding="utf-8"))
+        self.assertIn('\nVERSION = "ca0fa906"', copy.read_text(encoding="utf-8"))
+        self.assertIn('\nVERSION = "ca0fa906"', (self.out / "utils.py").read_text(encoding="utf-8"))
         spec = importlib.util.spec_from_file_location("packaged_viewer", copy)
         viewer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(viewer)
-        self.assertEqual(viewer.credit_text(), "Designed and built by Jason Mathias \u00b7 bundle ca0fa906")
+        self.assertEqual(viewer.credit_text(), "Designed and built by Jason Mathias \u00b7 version ca0fa906")
 
     def use_stock(self, listing: str, files: dict[str, str]):
         """A stock folder in the scratch space, with `files` beside it by path."""

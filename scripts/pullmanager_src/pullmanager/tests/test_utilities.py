@@ -201,10 +201,10 @@ class CreditTests(unittest.TestCase):
             "the app": (self.SRC, "from pullmanager import app; app.main()"),
         }
         # D147: beside it, the bundle each window runs from; none from source.
-        from ..config import bundle_id
+        from ..config import version_id
 
-        found = bundle_id()
-        expected = "Designed and built by Jason Mathias" + (f" \u00b7 bundle {found}" if found else "")
+        found = version_id()
+        expected = "Designed and built by Jason Mathias" + (f" \u00b7 version {found}" if found else "")
         for name, (folder, code) in windows.items():
             with self.subTest(window=name):
                 self.assertEqual(self.probe(folder, code), [expected])
