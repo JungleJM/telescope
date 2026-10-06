@@ -134,7 +134,7 @@ recipes:
         - "p.IsValid = 1"
         - "p.IsCurrent = 1"
         - "p.UseInCosmosAnalytics_X = 1"
-        - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9 CM')"
+        - "dt.Type IN ('ICD-10-AM','ICD-10-CA','ICD-10-CM', 'ICD-9-CM')"
         - "{{sql_condition('dt.Value', ICD_Value)}}"
 
   - name: IndexDiagnosis
