@@ -34,6 +34,12 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
+**Now (6 October 2026): two bundles that say nothing of how the software arrives.** Built in this order, each its own commit, pushed:
+
+1.  **Bundle 1** (D201): comments and docstrings on bundling, extraction and the Mac dropped at build time; the window foot and the audit and scan headers say `version`; VM messages no longer point at the Mac. `dist/bundle1.py`.
+2.  **Bundle 2** (D202): bundle 1, plus the code names renamed (`version_id`, `.runtime-manifest.json`, `VERSION = ""`). `dist/bundle2.py`. The user tests it on the VM on 7 October; if it fails, back to bundle 1.
+
+
 Agreed 2 October 2026, reordered 5 October into two bundles, so a fault found on the VM has one cause. Bundle 1 (D195, D196, the owed tests, D184, D186, D194, D185, D180, D190) is built: `9e742fd1…`, below. One commit each, with its outcome test.
 
 **Bundle 2, once bundle 1 has run a real pull: D177 alone.**

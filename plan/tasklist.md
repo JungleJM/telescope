@@ -782,6 +782,31 @@ There are 47 conditions. The 28 in `GI_Conditions_intake.yaml` match it code for
 
 :::
 
+## Testing bundle 2, with bundle 1 as the fallback
+
+(in the chat, 6 Oct) Nothing on the VM should mention transcribing screenshots (D200), bundling, copying over, or un-bundling. If in doubt, say nothing of how updating is done or how code is added. Keep all of it on the Mac. Bundle 1 does the prose; bundle 2 also renames the code names. I test bundle 2 in the morning and go back to bundle 1 if it fails.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: what to check on the VM, and how to fall back**
+
+**Bundle 2 (`dist/bundle2.py`)**
+
+1.  `python bundle2.py`, then y. It should extract over the current folder, which still has the old record name, without asking for `--force`.
+2.  `python scope.py --tdd` passes.
+3.  The foot of the app, the utilities window and the parquet viewer says `version <id>`, not `bundle`.
+4.  Author opens a blueprint, Validate passes, Export split and Preview SQL work. That proves makeYaml still knows it is on the VM, through the renamed record.
+5.  Delete `bundle2.py`.
+
+**If it fails:** extract `bundle1.py` into a fresh folder (`python bundle1.py --extract pullmanager_runtime --force`). Bundle 1's extractor does not know bundle 2's record name, so without `--force` it refuses. Then tell me what failed.
+
+**For you to decide:** nothing until the test. Afterwards, whether bundle 2's renames stay (D202), or go back to bundle 1's (D201).
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
 ## Settled
 
 Nothing waiting.

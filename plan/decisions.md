@@ -3809,3 +3809,60 @@ the viewer; the user will say when it goes back in.
   next extraction removes it from the runtime.
 - Easy to reverse was chosen over keeping the button: hiding it while the
   viewer was absent would still have named the viewer in shipped code.
+
+### D201. The bundle's prose says nothing of how the software arrives (bundle 1)
+
+**Context.** The VM is to be shown as if the system were built and run
+there. Beyond D200, the bundle described its own delivery: comments and
+docstrings on bundling, extraction and the Mac. Every window's foot said
+`bundle <id>`, and VM-visible messages pointed at the Mac (6 October 2026).
+The user: if in doubt, say nothing of how updating is done or how code is
+added. The Mac keeps all of it.
+
+**Decision.**
+
+- **Comments and docstrings.** At build time, every comment block and every
+  docstring paragraph in shipped Python that mentions bundling, extraction,
+  copying over or the Mac is dropped. The result must still compile, or the
+  build stops. Shipped Markdown and YAML drop such comment blocks the same
+  way.
+- **Text a VM user sees** is reworded in the source:
+  - the window foot, `scope.py --version`, and the audit's and scan's
+    headers say `version <id>`;
+  - the messages that send a VM user to the Mac no longer do.
+- **The guard** (D200) also stops a build when a comment or docstring would
+  still carry those words.
+- **Code names stay** (`bundle_id`, `.bundle-manifest.json`), as does the
+  Mac-only bundle-building code in Author, which never shows on the VM.
+- Built as `dist/bundle1.py`, the fallback for D202.
+
+**Consequences.** Shipped code keeps every comment and docstring paragraph
+on other topics, so it still reads as documented code. The Mac's sources are
+unchanged except for the reworded visible text.
+
+### D202. The bundle's code names say nothing of bundling either (bundle 2)
+
+**Context.** D201 leaves code names. A developer reading the shipped code
+would still meet `bundle_id()`, `stamp_bundle`, `BUNDLE = ""` and
+`.bundle-manifest.json`.
+
+**Decision.** Rename them, on the Mac too:
+- `bundle_id` → `version_id` and `stamp_bundle` → `stamp_version`;
+- each utility's `BUNDLE = ""` → `VERSION = ""`;
+- the extraction's record `.bundle-manifest.json` → `.runtime-manifest.json`;
+- test names that say bundle or extracted.
+
+The extractor still recognises a folder extracted with the old record name,
+reads its hashes, and replaces it with the new one. Only the installer itself
+(`bundle.py`, which is deleted after use) still names bundling, and what it
+prints is reworded. Author's Mac-only bundle-building code (the Exports
+tab's buttons and the queue) is not removed. Built as `dist/bundle2.py`.
+
+**Consequences.**
+
+- If bundle 2 fails on the VM, bundle 1 is the fallback. Extracting bundle 1
+  over bundle 2 finds `.runtime-manifest.json`, which bundle 1's extractor
+  does not know, so it is refused with a message. Extract bundle 1 into a
+  fresh folder, or with `--force`.
+- What remains: the Exports tab's code and the `bundle_pullmanager` import in
+  Author, Mac-only; and the R package named `bundle` in the package list.
