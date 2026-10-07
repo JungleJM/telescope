@@ -3911,3 +3911,37 @@ ahead of D177.
 checks per table. Until D177 packages each group as it finishes, a pull's
 tables turn purple only at its end; once D177 is built, group by group. A table
 packaged by hand outside Scope (`saved_parquets\`) is not looked for.
+
+### D205. Scope, blueprints, and no Exports tab in what ships
+
+**Context.** On the VM, after bundle 2 (7 October 2026), the window's title
+still said "Telescope", Author still had an Exports tab, and the words
+"transfer YAML" and `transfer:` appeared in Author, in Run's field, and at the
+top of every blueprint. The user wants these gone as the highest priority:
+they speak of things carried from elsewhere (D203). On the VM the app is
+opened by `scope.py`.
+
+**Decision.**
+- **The app is Scope**, on both machines: the window's title begins `Scope`.
+- **"Transfer YAML" is "blueprint"** in everything that ships: labels,
+  buttons, messages, comments, docstrings, and the shipped tests' file names.
+  Run's field is **Blueprint**; Author's **Transfer to Run** is **Open in Run**.
+  The code's names for that file follow (`build_transfer` becomes
+  `build_blueprint`, and so on), as D202 did for the bundle's. Moving rows
+  between servers keeps the word *transfer* where SQL Server uses it (a
+  landing's `render_transfer`): that is not about the file.
+- **A blueprint's first key is `blueprint:`**, not `transfer:`. A file with
+  `transfer:` (every blueprint and run-folder copy on the VM today) is still
+  read, and is written back with `blueprint:` when next saved or exported. The
+  older file names ending `_transfer.yaml` are still recognised, to be set
+  aside as before (D162), under a constant that says only "older name".
+- **The Exports tab, and the bundle queue and buttons on it, leave what
+  ships.** Author takes optional tabs from a module it finds beside it, if
+  any; the Mac's (`scripts/author_extras.py`, not bundled) adds Exports and
+  queues a saved intake. On the VM there is no such module, so no tab, and no
+  code about bundles. This settles option 3 (the task list, 6 October).
+
+**Consequences.** One bundle with D198 and D204. A blueprint on the VM changes
+its first key when Author next saves it; nothing reads the key's name but
+makeYaml. The build's guard (D201) gains `transfer YAML`, `Exports` and
+`Telescope` as words that stop a build, so they cannot come back.

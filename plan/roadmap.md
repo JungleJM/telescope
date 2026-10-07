@@ -35,14 +35,15 @@ When an item here is built, delete it from this file and describe the result in 
 
 ## Next: Fixes, In Order
 
-**First, a small bundle of Run's window only: what has been pulled and packaged, shown in Status.** Agreed 7 October 2026, so a double-click on a packaged table is deliberate.
+**First, a small bundle: what has been pulled and packaged, shown in Status, and the words the VM still shows.** Agreed 7 October 2026, so a double-click on a packaged table is deliberate.
 
-1.  **A table green once its run is done** (D198).
-2.  **A packaged table purple**, and a double-click on an unpackaged one saying why it opened Pull Manifest (D204).
+1.  **A table green once its run is done** (D198). Built (`c5a6cad`).
+2.  **A packaged table purple**, and a double-click on an unpackaged one saying why it opened Pull Manifest (D204). Built (`c5a6cad`).
+3.  **Scope, blueprints, and no Exports tab in what ships** (D205): highest priority (the user, 7 October 2026).
 
 **Then, alone in its bundle, once a real pull has run on the VM's current software (`11036600…`): D177.**
 
-3.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
+4.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
 
 **Later, not in either:** **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 

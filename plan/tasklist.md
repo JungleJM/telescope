@@ -132,24 +132,6 @@ There are 47 conditions. The 28 in `GI_Conditions_intake.yaml` match it code for
 **🟧 Your response:**
 :::
 
-## Author's bundle-building code in what ships (option 3)
-
-(in the chat, 7 Oct) Bundle 2 works on the VM; from now on nothing that ships says how it got there (D203).
-
-::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: the one place code still names bundling**
-
-Author's Exports tab has the bundle queue and the Bundle With Manager and Bundle YAMLs only buttons. They only appear on the Mac, but their code ships: 25 lines in `yamlmanager_model.py` and `yamlmanager_tk.py` (`make_bundle`, `queue_add`, the `bundle_pullmanager` import). A developer reading Author's code on the VM would see them.
-
-Taking them out of what ships means moving that code into a Mac-only module that Author loads when it is there. It's a refactor of the two Author files, with no change to what either machine shows.
-
-**For you to decide:** whether and when. Nothing a VM user sees depends on it.
-:::
-
-::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-:::
-
 ## Pull and clear \_sp files when batch done
 
 (from `tasklist-temp.md`) When the \_sp of a project is done, archive them to parquets and then clear the drive space. It should also be happening for each table as discussed before. It does not seem to be happening. Confirm current status of that feature.
@@ -202,6 +184,27 @@ Taking them out of what ships means moving that code into a Mac-only module that
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:** (in the chat, 7 Oct) The error is lost. Restarting GI_Conditions from 2015 (11 years is plenty) as a smaller pull, and retrying. Nothing for Claude to do.
+
+Then found it, in the manifest: `GERDPtsWithDx/pk/GERDPtsWithDx: batch 1/1 failed: ... The transaction log for database 'ProjectD52219B' is full due to 'ACTIVE_TRANSACTION' and the holdup lsn is (884:224898:1). (9002)`, finished 6 Oct 20:48.
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the project database's log, not its data file; and possibly an old open transaction**
+
+**What 9002 says.** The data file had room. The **log** of ProjectD52219B was full, during GERD's PK landing, and it couldn't reuse its space because a transaction was still open. There are two ways that happens, and both may have played a part:
+
+- **GERD's own insert.** The PK lands in one `INSERT` transaction (design.md, Space In The Projects Database), and the log holds all of it until it commits. A PK of several GB needs that much log, up to the log's 20,000 MB cap.
+- **An open transaction left from before.** On 4 October, clear_projects_db showed this same database's log "waiting on an open transaction" (5,719 of 12,100 MB used). If that transaction was never ended, the log has kept every change since then. Each pull then starts with less log room, until a large insert fills it.
+
+**Before GERD comes round again:** in clear_projects_db on ProjectD52219B, look at the log's line. If it says it's waiting on an open transaction, press **Open transactions**, end the one it names (or close the SSMS tab that holds it), then **Free log**. The 2015 window makes GERD's PK smaller, which helps either way.
+
+**For the code, later:** a PK landed in pieces, each its own transaction, would need log room for one piece only. That's the same idea as packaging by chunk, for the PK phase. I'd decide it with the size estimate.
+
+**For you to decide:** nothing now; check the open transaction before the retry reaches GERD.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
 :::
 
 **Suggested order: what to tackle next**
@@ -212,11 +215,10 @@ Taking them out of what ships means moving that code into a Mac-only module that
 4.  **Does the PheWAS need every encounter and every diagnosis?**: the barebones control pull is running, and pulling diagnoses for the matched controls only would cut its largest table to about a tenth. A pheauxWAS decision; no Telescope change.
 5.  **Returning to SP first**: needs a screenshot of where the order looked wrong; the code and both runs say SneakPeek goes first.
 6.  **The code library**: its check and `datascope.json` entry are small, and stop a bad edit before anything reads the file; nothing reads it yet.
-7.  **Author's bundle-building code**: nothing a VM user sees depends on it.
 
 Moved out on 6 October: the batching thread (**one table per group** D190, **no date windows** D191, **the Meds filter** D192, **SneakPeek per patient** D193; the measurements in `design.md`, Batching; the UC and Crohns re-pulls and the columns check in the roadmap's **Next: On The VM, 4 October 2026**); **Guessing/smart chunking** and **Dynamic ordering** into the roadmap's **Estimate Size And Packaging By Chunk**; the **HaT control pull** (stopped, pulled again with the barebones intake; its timings in `design.md`, What a batch costs; green tables D198); **Barebones blueprints** into the roadmap's **Choosing A Study's Columns**, study-specific, how still open.
 
-Moved out on 7 October: **Status fixing** is D204 (a packaged table purple), first in the roadmap's Fixes, In Order, with D198.
+Moved out on 7 October: **Status fixing** is D204 (a packaged table purple), first in the roadmap's Fixes, In Order, with D198. **Author's bundle-building code** (option 3) is settled by D205: the Exports tab, the queue and its buttons leave what ships, with "Telescope" and "transfer YAML" (the user, 7 October, highest priority).
 
 ## Settled
 
