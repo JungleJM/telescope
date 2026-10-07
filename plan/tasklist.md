@@ -204,14 +204,106 @@ Then found it, in the manifest: `GERDPtsWithDx/pk/GERDPtsWithDx: batch 1/1 faile
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 7 Oct, the 2015 re-run, on PROJECTD125423) clear_projects_db shows the database at 0.0 GB free, `gicon` at 19,990 MB: GERDPtsWithDx 9,516 MB and 0 rows, DyspepsiaGastritisIndexDiagnosis 5,496 MB and 0 rows, DyspepsiaGastritisPtsWithDx 4,978 MB and 16,608,335 rows, the rest empty. GERD's PK failed with 9002 (the log of ProjectD125423 full, `ACTIVE_TRANSACTION`), after 1½ hours; Dyspepsia's IndexDiagnosis with 1105 (the PRIMARY filegroup full). Nothing pulled, yet the pull holds 10 GB and more.
+
+Do I need to keep going smaller (the last 5 years)? These convert to parquets and get much smaller. Couldn't it go by year, or by 100,000 PK rows, straight to a series of mini-parquets that merge once it's done? And why is this so huge: does PatientsWithDx have lots of nvarchars I could remove? What about IndexDiagnosis?
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: wide rows, PKs that never leave, and space a failed insert keeps; mini-parquets by patient yes, by year no**
+
+**Why 0 rows hold 15 GB.** A failed insert is rolled back, but the pages it filled stay allocated to the table: SQL Server doesn't give a table's empty pages back until it is truncated or dropped. GERDPtsWithDx (9.5 GB) and DyspepsiaGastritisIndexDiagnosis (5.5 GB) are empty and still hold their room. Only that table's own retry can reuse it. That's what filled the database for Dyspepsia: the room GERD's failed PK kept, plus Dyspepsia's real 5 GB PK.
+
+**Why it's so huge: the rows are wide, and the PKs never leave.**
+
+- **DyspepsiaGastritisPtsWithDx:** 16.6 million patients since 2015, in 4,978 MB, so **about 300 bytes a patient**. A declared width (`NVARCHAR(850)`) costs nothing; each value costs 2 bytes a character. The PK's 22 columns spend most of their bytes on text that repeats:
+    - `ICDName` (`dt.NameAndCode`, "Gastro-esophageal reflux disease without esophagitis (K21.9)"): about 120 of the row's ~300 bytes, and it's only `ICDCode` spelled out.
+    - `Country` ("United States of America", about 50 bytes), `StateOrProvince` beside its abbreviation, and `SecondRace` to `FifthRace`, mostly blank.
+    - `DurableKey`, which is `PatientDurableKey` again.
+- **IndexDiagnosis:** one row per patient per code, each about 350 to 400 bytes. `NameAndCode`, `TerminologyName`, `TerminologyConcept` and `BillingCodeType` are the same on every row of a code, so `DiagnosisKey` alone carries them. A small table of each code's names (a few hundred rows) could hold them once. `TypeOfDx` and `Status` are short words; keep them.
+- **28 PKs, none dropped until the end.** A session's PK stays in Projects until the whole pull is packaged (D165), because its runs read it. GI_Conditions makes 28 of them. Even slim, they add up.
+
+**Trimmed, roughly:**
+
+| Table | Now | Keys, dates and codes only |
+|---|---|---|
+| PtsWithDx | ~300 bytes a patient | ~70 (PatientDurableKey, IndexDate, DiagnosisEventKey, IndexEncounter, ICDCode), with the demographics in a table of their own |
+| IndexDiagnosis | ~380 bytes a row | ~150 (the code's names looked up once) |
+
+Demographics in a table of their own (Sex, BirthDate, state, race, SVI, one row per patient) is a run, so it's chunked and packaged like any fact table. The PK keeps what the runs need. Dyspepsia's PK would be about 1.2 GB, not 5.
+
+**Parquet, yes: much smaller.** Parquet stores a column's repeated values once (dictionary encoding), so `Country`, the race columns and the code names cost almost nothing there. Expect several times smaller, likely around ten for these tables. Projects is the bottleneck, not the files.
+
+**Mini-parquets, by patient: yes, and exact. By year: no.** This is the roadmap's **packaging by chunk** (Estimate Size And Packaging By Chunk), the finer form of D177:
+
+- Each chunk of patients (`chunk: 100000` or larger) lands, is written to its own parquet, and its table is emptied. The parts are stacked at the end, one folder per table that arrow reads as one table, or one file.
+- Exact because a patient chunk never splits a patient. IndexDiagnosis's "first of each code" stays inside one chunk.
+- By year it isn't exact. The first diagnosis of each code would come out once per year, which is the silent error D191 rules out.
+- Each chunk lands in its own transaction, so the log needs room for one chunk, not one table. That's the 9002.
+- The one thing chunks can't split is the PK itself: the runs pick their patients from it, in Projects. So the PK must fit whole, which is what trimming it solves.
+
+**Do you need 5 years?** No. The window is the study's definition, not a way to save room. Trimming and the code below do it without changing the study.
+
+**What I'd do.**
+
+1.  **Now, no code:**
+    - In clear_projects_db, drop `gicon_GERDPtsWithDx` and `gicon_DyspepsiaGastritisIndexDiagnosis`: 15 GB back. Their retry builds them again.
+    - Trim both tables in the blueprint, as above. I can write it, with a `Demographics` table if you want one.
+    - Install bundle 4, so each IndexDiagnosis is packaged and emptied as its group finishes (D177).
+2.  **Code, small, next:**
+    - **A session's PK leaves when the session is done.** Its parquet already exists from the PK phase (D87): check its rows, then empty it. Without this, 28 PKs pile up.
+    - **A failed landing gives its room back.** When a table holds nothing but the failed rows, `TRUNCATE` it, so a failure can't strand 10 GB.
+3.  **Code, larger:** packaging by chunk, the mini-parquets. A PK too big for the database even when trimmed would also need the PK kept outside Projects. That's a bigger change, only worth it if trimming isn't enough.
+
+**For you to decide:** whether I write the trimmed GI_Conditions blueprint (and with a separate Demographics table or without). And whether 2 and 3 go on the roadmap, 2 first.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 7 Oct) I tried to put everything necessary from IndexDiagnosis into the PatientWithDx recipe. Is there anything in IndexDiagnosis worth saving, or should I assume everything I need is in PatientWithDx?
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: PatientWithDx has the cohort; IndexDiagnosis adds three things, and the useful one fits in the PK**
+
+**What each table is.**
+
+- **PtsWithDx:** one row per patient, the earliest diagnosis event among any of the condition's codes. It carries `ICDCode` and `IndexDate`, plus `DiagnosisEventKey` and `IndexEncounter`, which point back at that event.
+- **IndexDiagnosis:** for the same patients, the first event of **each** of the condition's codes, with that event's `Type`, `Status`, `IsPrimary`, `EndDateKey`, `EncounterKey` and the code's names.
+
+The PK's index event is always the first of its own code too, so it is already one of IndexDiagnosis's rows.
+
+**What IndexDiagnosis adds.**
+
+1.  **Which of the condition's codes a patient has, and when each first appeared.** For example, K21.0 (with esophagitis) as well as K21.9, or which ulcer site. That's only needed if the study splits a condition into subtypes, or looks at progression from one code to another.
+2.  **The index event's `Type`, `Status` and `IsPrimary`.** This is the useful one. PatientWithDx's filter doesn't look at either today, so a patient's index event can be a problem-list entry, or a diagnosis whose status is ruled out. Three small columns on the PK (`dxf.Type`, `dxf.Status`, `dxf.IsPrimary`, a few bytes each) keep this without IndexDiagnosis. Alternatively, a `where` on them keeps such events out of the PK in the first place. That changes who is in the cohort, so it's your call (PheWAS's D17 drops ruled-out diagnoses).
+3.  **`EndDateKey` and `EncounterKey` per code.** These matter only with item 1.
+
+**Neither table confirms a diagnosis by a second date.** Both keep first events only, so a single, possibly mistaken, coding counts as a case. If the study wants "2 or more dates", a separate small table is needed: per patient and code, the count of distinct dates.
+
+**Recommendation.** For GI_Conditions, if the study doesn't need subtypes:
+- drop IndexDiagnosis;
+- add `Type`, `Status` and `IsPrimary` to PtsWithDx;
+- trim PtsWithDx as above.
+
+Each session is then a PK and nothing else. Checked on the Mac, with GI_Conditions' blueprint minus IndexDiagnosis: it validates (56 sessions) and splits. Each session keeps one run with no tables:
+
+- **On a first Execute** that run costs nothing: the PK's temp is already in Cosmos.
+- **On a retry or resume** it copies the whole PK into Cosmos again for nothing. At the measured 4 seconds per 50,000 rows, that's about 20 minutes for Dyspepsia's 16.6 million patients.
+
+A small fix, for the roadmap: a run with no tables is skipped.
+
+**For you to decide:** whether subtypes or a second-date rule matter to this study, and whether `Status` and `Type` should filter the PK or just be columns on it.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 :::
 
 **Suggested order: what to tackle next**
 
-1.  **GI_Conditions' room**: re-running from 2015 (7 October). If GERD fails again, keep the error text this time (Status, double-click the failed row), and GERD's `_sp` sizes.
-2.  **The Status colours, D198 and D204**: agreed (7 October), small, Run's window only, and first in the roadmap's Fixes, In Order. Then a packaged table is clearly safe to double-click. Being built while GI_Conditions runs.
-3.  **D177, packaging each group as it finishes**: what frees the room mid-pull, SneakPeek's tables included. Already agreed; GI_Conditions is the real pull on the current software it waited for. Built after the colours, in a bundle of its own.
+1.  **GI_Conditions' room** (above): drop the two empty tables, trim the blueprint, install bundle 4, then retry. Nothing else moves the pull forward.
+2.  **A session's PK leaves when its session is done, and a failed landing gives its room back**: small, and what lets 28 sessions share one 20 GB database.
+3.  **Packaging by chunk, the mini-parquets**: what lets any single table be larger than the database.
 4.  **Does the PheWAS need every encounter and every diagnosis?**: the barebones control pull is running, and pulling diagnoses for the matched controls only would cut its largest table to about a tenth. A pheauxWAS decision; no Telescope change.
 5.  **Returning to SP first**: needs a screenshot of where the order looked wrong; the code and both runs say SneakPeek goes first.
 6.  **The code library**: its check and `datascope.json` entry are small, and stop a bad edit before anything reads the file; nothing reads it yet.
