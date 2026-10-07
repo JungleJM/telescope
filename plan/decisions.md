@@ -3889,3 +3889,25 @@ the user copies it into `utils/` by hand.
 **Consequences.** The build's guard is the backstop, not the method. A
 comment that would only be dropped at build time is better not written.
 Reversing D200's viewer removal is no longer planned.
+
+### D204. Status shows a packaged table purple, and says why a double-click opened the manifest
+
+**Context.** In Run's Status a table is coloured only by its run (D198), so
+nothing says whether it has been packaged to parquet. Double-clicking a table
+opens its parquet only once one is in the run folder (D167), and a pull packages
+only when it finishes cleanly (D141), so on a running or failed pull every
+double-click opened Pull Manifest, and the user could not tell why (7 October
+2026). The user wants to see what has been packaged first, so a double-click
+on it is deliberate.
+
+**Decision.** A table row whose parquet is in its run folder (what
+`table_parquets` finds, the same check the double-click makes) is purple. It
+takes precedence over D198's green. Double-clicking a purple row opens the
+viewer, as now. Double-clicking any other table row opens Pull Manifest, as
+now, and the status bar says the table is not packaged yet. Built with D198,
+ahead of D177.
+
+**Consequences.** Each refresh looks for each table's parquet, a few file
+checks per table. Until D177 packages each group as it finishes, a pull's
+tables turn purple only at its end; once D177 is built, group by group. A table
+packaged by hand outside Scope (`saved_parquets\`) is not looked for.
