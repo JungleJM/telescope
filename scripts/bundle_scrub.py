@@ -31,7 +31,7 @@ DELIVERY_WORDS = re.compile(
 )
 SCREENSHOT_WORDS = re.compile(r"transcri|screenshot", re.IGNORECASE)
 # Names the VM must not show anywhere, code included (D205).
-RETIRED_NAMES = re.compile(r"(?i:transfer yaml|telescope)|\bExports\b")
+RETIRED_NAMES = re.compile(r"(?i:transfer yaml|pending transfer|telescope)|\bExports\b")
 # Real names that only look like delivery: an R package in the VM's list.
 ALLOWED_LINES = (re.compile(r'^\s*- name: "bundle v[\d.]+"$'),)
 
@@ -59,8 +59,6 @@ VM_WORDING: dict[str, list[tuple[str, str]]] = {
          '                    "Mac (D49), and a blueprint carries its own written out.")',
          'f"No recipes file here ({self.recipes_path.name}): a blueprint "\n'
          '                    "carries its recipes written out.")'),
-        ('"Pending transfer is for the Mac: here on the VM the file must be "',
-         '"Pending transfer is not offered here: the file must be "'),
         ('f"There is no {recipes_path.name} here: recipes are kept on the Mac (D49), "\n'
          '                         f"so {what} is saved there.")',
          'f"There is no {recipes_path.name} here, "\n'

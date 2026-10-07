@@ -439,7 +439,7 @@ class PkInfo:
     recipe: str = ""
     location: str = ""      # file_loc, or a dbtable's source table
     key_columns: list[str] = field(default_factory=list)
-    pending_transfer: bool = False
+    awaiting_file: bool = False
 
 
 @dataclass
@@ -735,7 +735,7 @@ class Draft:
                     kind=kind, name=str(upload.get("dest_table") or upload.get("name") or ""),
                     where="upload_cohorts", index=i, location=str(location or ""),
                     key_columns=split_list(upload.get("key_columns") or []),
-                    pending_transfer=upload.get("pending_transfer") is True,
+                    awaiting_file=my.awaiting_file(upload),
                 )
         for i, cohort in enumerate(self.doc["cohorts"]):
             if isinstance(cohort, dict) and self.cohort_is_pk(cohort):
@@ -771,7 +771,7 @@ class Draft:
         self._changed()
 
     def set_pk_upload(self, kind: str, name: str, location: str = "", key_columns: Any = (),
-                      pending_transfer: bool = False) -> None:
+                      awaiting_file: bool = False) -> None:
         """The PK from a parquet, a CSV or a Projects table (`dbtable`)."""
         if kind not in UPLOAD_KINDS:
             raise DraftError(f"A PK file is parquet, csv or dbtable, not {kind}.")
@@ -781,7 +781,7 @@ class Draft:
         upload: dict[str, Any] = {"name": name, "dest_table": name, "type": "pk", "file_type": kind}
         self._place_location(upload, kind, location)
         upload["key_columns"] = split_list(key_columns)
-        if pending_transfer and kind in FILE_KINDS:
+        if awaiting_file and kind in FILE_KINDS:
             self._set_pending(upload, True)
         upload["push_this_cycle"] = True
         self._drop_pk()
@@ -800,7 +800,7 @@ class Draft:
             self._changed()
 
     def update_pk(self, **fields: Any) -> None:
-        """Change the PK in place: name, location, key_columns, pending_transfer."""
+        """Change the PK in place: name, location, key_columns, awaiting_file."""
         pk = self.pk()
         if pk is None:
             raise DraftError("There is no PK Table yet; choose one first.")
@@ -817,8 +817,8 @@ class Draft:
                 self._place_location(entry, pk.kind, fields["location"])
             if "key_columns" in fields:
                 entry["key_columns"] = split_list(fields["key_columns"])
-            if "pending_transfer" in fields:
-                self._set_pending(entry, bool(fields["pending_transfer"]))
+            if "awaiting_file" in fields:
+                self._set_pending(entry, bool(fields["awaiting_file"]))
         self._changed()
         if "location" in fields:
             self._prefill_row_key()
@@ -849,7 +849,8 @@ class Draft:
         entry.pop("file_loc", None)
         entry.pop("source_table", None)
         if kind == "dbtable":
-            entry.pop("pending_transfer", None)
+            for key in my.AWAITING_KEYS:
+                entry.pop(key, None)
             if location and location != entry.get("dest_table"):
                 entry["source_table"] = location
         elif location:
@@ -857,26 +858,27 @@ class Draft:
 
     def _set_pending(self, entry: dict[str, Any], pending: bool) -> None:
         if pending and self.ws.vm_side:
-            raise DraftError("Pending transfer is for the Mac: here on the VM the file must be "
+            raise DraftError("A file cannot be marked to come here: it must be "
                              "where the blueprint reads it (D108).")
         if pending:
             if str(entry.get("file_type", "")).lower() not in FILE_KINDS:
-                raise DraftError("Only a parquet or CSV file can be pending transfer (D97).")
-            entry["pending_transfer"] = True
+                raise DraftError("Only a parquet or CSV file can be marked to come (D97).")
+            entry["awaiting_file"] = True
         else:
-            entry.pop("pending_transfer", None)
+            for key in my.AWAITING_KEYS:
+                entry.pop(key, None)
 
     def supporting(self) -> list[tuple[int, dict[str, Any]]]:
         """The uploads that are not the PK, with their place in `upload_cohorts`."""
         return [(i, u) for i, u in enumerate(self.doc["upload_cohorts"]) if isinstance(u, dict) and not is_pk(u)]
 
-    def add_supporting(self, kind: str, name: str, location: str = "", pending_transfer: bool = False) -> int:
+    def add_supporting(self, kind: str, name: str, location: str = "", awaiting_file: bool = False) -> int:
         if kind not in UPLOAD_KINDS:
             raise DraftError(f"A supporting table is parquet, csv or dbtable, not {kind}.")
         name = name.strip() or f"Upload{len(self.doc['upload_cohorts']) + 1}"
         upload: dict[str, Any] = {"name": name, "dest_table": name, "file_type": kind}
         self._place_location(upload, kind, location)
-        if pending_transfer:
+        if awaiting_file:
             self._set_pending(upload, True)
         upload["push_this_cycle"] = True
         self.doc["upload_cohorts"].append(upload)
@@ -910,7 +912,7 @@ class Draft:
         return uploads[index]
 
     def update_supporting(self, index: int, **fields: Any) -> None:
-        """name, dest_table, file_type, location, pending_transfer, push_this_cycle."""
+        """name, dest_table, file_type, location, awaiting_file, push_this_cycle."""
         entry = self._supporting_entry(index)
         if "name" in fields:
             entry["name"] = str(fields["name"]).strip()
@@ -924,8 +926,8 @@ class Draft:
             self._place_location(entry, fields["file_type"], location)
         if "location" in fields:
             self._place_location(entry, str(entry.get("file_type", "")).lower(), fields["location"])
-        if "pending_transfer" in fields:
-            self._set_pending(entry, bool(fields["pending_transfer"]))
+        if "awaiting_file" in fields:
+            self._set_pending(entry, bool(fields["awaiting_file"]))
         if "push_this_cycle" in fields:
             entry["push_this_cycle"] = bool(fields["push_this_cycle"])
         self._changed()
@@ -1840,14 +1842,14 @@ class Draft:
         def status(failed: bool, waiting: bool = False) -> str:
             return "fail" if failed else ("pending" if waiting else "pass")
         upload_failed = any(c.startswith(("missing_upload", "upload_", "bad_upload", "unknown_upload",
-                                          "duplicate_upload", "bad_pending")) for c in codes)
+                                          "duplicate_upload", "bad_awaiting")) for c in codes)
         return [
             ("Load", status(bool(codes & {"invalid_template", "yaml_load_error", "compile_crashed"}))),
             ("Recipes", status(bool(codes & {"missing_recipe", "recipes_not_found"}))),
             ("Variables", status(bool(codes & {"missing_variable", "unbound_table_input"}))),
             ("Uploads", status(upload_failed, pending)),
             ("Columns", status(any("column" in c for c in codes))),
-            ("Ready for the VM", status(bool(codes), pending)),
+            ("Ready to split", status(bool(codes), pending)),
         ]
 
     def _message(self, kind: str, m: my.Message) -> Message:
@@ -2643,10 +2645,10 @@ class PkTests(ModelTest):
     def test_one_pk_whichever_kind_replaces_the_other(self):
         draft = self.draft()
         draft.set_pk_recipe("Patients")
-        draft.set_pk_upload("parquet", "ClientPK", "pks.parquet", "PatientDurableKey", pending_transfer=True)
+        draft.set_pk_upload("parquet", "ClientPK", "pks.parquet", "PatientDurableKey", awaiting_file=True)
         self.assertEqual([c for c in draft.doc["cohorts"]], [])
         pk = draft.pk()
-        self.assertEqual((pk.kind, pk.name, pk.location, pk.key_columns, pk.pending_transfer),
+        self.assertEqual((pk.kind, pk.name, pk.location, pk.key_columns, pk.awaiting_file),
                          ("parquet", "ClientPK", "pks.parquet", ["PatientDurableKey"], True))
         self.assertEqual(draft.doc["upload_cohorts"][0]["type"], "pk")
 
@@ -2664,19 +2666,19 @@ class PkTests(ModelTest):
 
     def test_a_pending_pk_takes_its_typed_columns(self):
         draft = self.draft()
-        draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", pending_transfer=True)
+        draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", awaiting_file=True)
         self.assertIsNone(draft.pk_columns())
         draft.set_listed_columns(0, "PatientDurableKey, Sex")
         self.assertEqual(draft.pk_columns(), ["PatientDurableKey", "Sex"])
 
     def test_a_dbtable_is_never_pending(self):
         draft = self.draft()
-        draft.set_pk_upload("dbtable", "ClientPK", "ListFromClient", "PatientDurableKey", pending_transfer=True)
+        draft.set_pk_upload("dbtable", "ClientPK", "ListFromClient", "PatientDurableKey", awaiting_file=True)
         entry = draft.doc["upload_cohorts"][0]
         self.assertEqual(entry["source_table"], "ListFromClient")
-        self.assertNotIn("pending_transfer", entry)
+        self.assertNotIn("awaiting_file", entry)
         with self.assertRaises(DraftError):
-            draft.update_pk(pending_transfer=True)
+            draft.update_pk(awaiting_file=True)
 
 
 class PastedCsvTests(ModelTest):
@@ -2747,9 +2749,9 @@ class SupportingTests(ModelTest):
         draft.set_var(0, "ICD_Value", "K50%")
         index = draft.add_supporting("csv", "Later", "csv/later.csv")
         self.assertIn("missing_upload_file", [m.code for m in draft.validate().of_kind("warning")])
-        draft.update_supporting(index, pending_transfer=True)
+        draft.update_supporting(index, awaiting_file=True)
         validation = draft.validate()
-        self.assertEqual([m.code for m in validation.of_kind("pending")], ["upload_pending_transfer"])
+        self.assertEqual([m.code for m in validation.of_kind("pending")], ["upload_awaiting_file"])
         self.assertIn(("Uploads", "pending"), validation.steps)
 
 
@@ -3134,7 +3136,7 @@ class RowKeyTests(ModelTest):
 
     def test_typed_columns_on_a_pending_list_prefill_it_too(self):
         draft = self.draft()
-        draft.set_pk_upload("csv", "ClientPK", "later.csv", pending_transfer=True)
+        draft.set_pk_upload("csv", "ClientPK", "later.csv", awaiting_file=True)
         draft.set_listed_columns(0, "PatientDurableKey, Sex")
         self.assertEqual(draft.pk().key_columns, ["PatientDurableKey"])
 
@@ -3172,8 +3174,8 @@ class VmSideTests(ModelTest):
         draft = self.draft()
         draft.set_pk_recipe("Patients")
         draft.set_var(0, "ICD_Value", "K50%")
-        draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
-        self.assertEqual([m.code for m in draft.validate().of_kind("pending")], ["upload_pending_transfer"])
+        draft.add_supporting("csv", "Later", "csv/later.csv", awaiting_file=True)
+        self.assertEqual([m.code for m in draft.validate().of_kind("pending")], ["upload_awaiting_file"])
         self.vm()
         codes = [m.code for m in draft.validate().of_kind("error")]
         self.assertIn("missing_upload_file", codes)
@@ -3182,9 +3184,9 @@ class VmSideTests(ModelTest):
         self.vm()
         draft = self.draft()
         with self.assertRaises(DraftError):
-            draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
+            draft.add_supporting("csv", "Later", "csv/later.csv", awaiting_file=True)
         with self.assertRaises(DraftError):
-            draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", pending_transfer=True)
+            draft.set_pk_upload("csv", "ClientPK", "pks.csv", "PatientDurableKey", awaiting_file=True)
 
     def test_an_installed_runtime_is_the_vm_side(self):
         from unittest import mock

@@ -84,7 +84,7 @@ class CompileResult:
     ok: bool = True
     errors: list[Message] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
-    # Files marked `pending_transfer` that are not here yet (D97): expected,
+    # Files marked `awaiting_file` that are not here yet (D97): expected,
     # so neither an error nor a warning.
     pending: list[Message] = field(default_factory=list)
     # Information, neither a fault nor a doubt: what a choice costs (D196).
@@ -478,7 +478,7 @@ def default_recipes_path() -> Path:
 
 YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
 MISSING_TEMPLATE_FIX = (
-    "Pass `--template` with the file to use: on the VM, the project's blueprint in "
+    "Pass `--template` with the file to use: the project's blueprint in "
     "YAMLs/temp/ (one that stands alone is written by `makeYaml.py --export-blueprint`)."
 )
 
@@ -1389,25 +1389,24 @@ def report_missing_upload(
     uploads_elsewhere: bool,
 ) -> list[str] | None:
     """A missing upload file: an error where the pull is prepared, else a warning,
-    or pending if it is marked `pending_transfer` (D97). Returns the columns it
+    or pending if it is marked `awaiting_file` (D97). Returns the columns it
     declares, which stand in for the file's until it arrives, or None.
 
-    A blueprint (and the UI that builds one) is made on the Mac, where a
-    file may not have arrived yet; it is supplied on the VM beside the blueprint
-    YAML, and the split there, which needs it, checks it again as an error.
+    A blueprint may be made before its file is in place; the split, which
+    needs the file, checks it again as an error.
     """
     check_declared_columns(upload, None, where, result)
     check_column_changes(upload, str(upload.get("file_type", "")).lower(), None, where, result)
     declared = listed_column_names(upload)
-    if uploads_elsewhere and upload.get("pending_transfer") is True:
+    if uploads_elsewhere and awaiting_file(upload):
         result.pend(
-            "upload_pending_transfer",
-            f"Upload file pending transfer to the VM: {upload.get('file_loc')}."
+            "upload_awaiting_file",
+            f"Upload file to come: {upload.get('file_loc')}."
             + (" Its columns are checked against the ones listed under `columns:`." if declared
                else " Its columns cannot be checked until it arrives."),
             f"{where}.file_loc",
-            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the blueprint "
-            "YAML; the split there checks it."
+            fix=f"Supply it at `{upload.get('file_loc')}`, relative to the blueprint; "
+            "the split checks it."
             + ("" if declared else " To check its columns now, list them under `columns:`."),
         )
         return declared
@@ -1416,9 +1415,9 @@ def report_missing_upload(
             "missing_upload_file",
             f"Upload file not here yet: {file_path}. Its columns cannot be checked until it is.",
             f"{where}.file_loc",
-            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the blueprint "
-            "YAML; the split there checks it. Or correct `file_loc` if the path is wrong. "
-            "If it will only exist on the VM, mark it `pending_transfer: true`.",
+            fix=f"Supply it at `{upload.get('file_loc')}`, relative to the blueprint; the split "
+            "checks it. Or correct `file_loc` if the path is wrong. "
+            "If it will be supplied later, mark it `awaiting_file: true`.",
         )
         return declared
     result.error(
@@ -1431,25 +1430,35 @@ def report_missing_upload(
     return declared
 
 
-def check_pending_transfer(upload: dict[str, Any], file_type: str, where: str, result: CompileResult) -> None:
-    """`pending_transfer` is true or false, and only on a table read from a file (D97)."""
-    if "pending_transfer" not in upload:
+# Files written before D205 mark it `pending_transfer`, which is still read.
+AWAITING_KEYS = ("awaiting_file", "pending_transfer")
+
+
+def awaiting_file(upload: dict[str, Any]) -> bool:
+    """Whether an upload's file is marked as supplied later (D97)."""
+    return any(upload.get(key) is True for key in AWAITING_KEYS)
+
+
+def check_awaiting_file(upload: dict[str, Any], file_type: str, where: str, result: CompileResult) -> None:
+    """`awaiting_file` is true or false, and only on a table read from a file (D97)."""
+    key = next((k for k in AWAITING_KEYS if k in upload), None)
+    if key is None:
         return
-    value = upload["pending_transfer"]
+    value = upload[key]
     if not isinstance(value, bool):
         result.error(
-            "bad_pending_transfer",
-            f"`pending_transfer: {value}` is not true or false.",
-            f"{where}.pending_transfer",
-            fix="Write `pending_transfer: true` if the file will only exist on the VM, else remove it.",
+            "bad_awaiting_file",
+            f"`{key}: {value}` is not true or false.",
+            f"{where}.{key}",
+            fix=f"Write `{key}: true` if the file will be supplied later, else remove it.",
         )
     elif file_type not in ("csv", "parquet") or not upload.get("file_loc"):
         result.error(
-            "bad_pending_transfer",
-            "`pending_transfer` marks a file that will only exist on the VM, but this table "
+            "bad_awaiting_file",
+            f"`{key}` marks a file supplied later, but this table "
             "is not read from a file.",
-            f"{where}.pending_transfer",
-            fix="Remove `pending_transfer`; it applies to a csv or parquet with a `file_loc`.",
+            f"{where}.{key}",
+            fix=f"Remove `{key}`; it applies to a csv or parquet with a `file_loc`.",
         )
 
 
@@ -1473,7 +1482,7 @@ def upload_schemas(
         where = f"{upload.get('_source', 'upload_cohorts')} ({upload.get('name')})"
         file_type = str(upload.get("file_type", "")).lower()
         suffix = Path(str(upload.get("file_loc") or "")).suffix.lower()
-        check_pending_transfer(upload, file_type, where, result)
+        check_awaiting_file(upload, file_type, where, result)
         if (file_type, suffix) in (("parquet", ".csv"), ("csv", ".parquet")):
             actual = suffix.lstrip(".")
             result.error(
@@ -3320,7 +3329,7 @@ def build_report(result: CompileResult) -> str:
         lines.append("- None")
     if result.pending:
         lines.append("")
-        lines.append("## Pending Transfer")
+        lines.append("## Awaiting Files")
         for msg in result.pending:
             lines.append(f"- `{msg.code}`: {msg.message} {msg.context}".rstrip())
     if result.notes:
@@ -4237,7 +4246,7 @@ def place_uploads(
                 f"`{file_loc}` is outside the blueprint's folder, so it was not copied "
                 "beside it.",
                 f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
-                fix="Put the file at that path relative to the blueprint on the VM, "
+                fix="Put the file at that path relative to the blueprint, "
                 "or move it under the template's folder and point `file_loc` there.",
             )
             continue
@@ -6997,8 +7006,8 @@ class SqlReferenceTests(MakeYamlTest):
         self.assertHasWarning(res, "pk_join_without_dedup")
 
 
-class PendingTransferTests(MakeYamlTest):
-    """D97: a file that will only exist on the VM, and columns typed in for it."""
+class AwaitingFileTests(MakeYamlTest):
+    """D97: a file supplied later, and columns typed in for it."""
 
     PK_COLUMNS = "    columns: [PatientDurableKey, DiagnosisEventKey, Sex]\n"
 
@@ -7008,13 +7017,19 @@ class PendingTransferTests(MakeYamlTest):
         self.recipes_path = recipes
         return build_blueprint(template, recipes, write=True)
 
-    def test_a_marked_file_is_pending_not_a_warning_and_travels_marked(self):
+    def test_an_older_file_marked_pending_transfer_still_waits(self):
+        # D205: the key's name before; intakes written then still read so.
         res = self.compile_with("    pending_transfer: true\n")
+        self.assertEqual([m.code for m in res.pending], ["upload_awaiting_file"])
+        self.assertFalse(res.errors, [e.to_dict() for e in res.errors])
+
+    def test_a_marked_file_is_pending_not_a_warning_and_travels_marked(self):
+        res = self.compile_with("    awaiting_file: true\n")
         self.assertCompiles(res)
-        self.assertEqual([m.code for m in res.pending], ["upload_pending_transfer"])
+        self.assertEqual([m.code for m in res.pending], ["upload_awaiting_file"])
         self.assertFalse(has_warning(res, "missing_upload_file"))
         doc = load_yaml(res.output_path)
-        self.assertIs(doc["upload_cohorts"][0]["pending_transfer"], True)
+        self.assertIs(doc["upload_cohorts"][0]["awaiting_file"], True)
 
     def test_an_unmarked_missing_file_is_still_a_warning(self):
         res = self.compile_with()
@@ -7022,10 +7037,10 @@ class PendingTransferTests(MakeYamlTest):
         self.assertEqual(res.pending, [])
 
     def test_typed_columns_check_batching_before_the_file_exists(self):
-        res = self.compile_with("    pending_transfer: true\n" + self.PK_COLUMNS)
+        res = self.compile_with("    awaiting_file: true\n" + self.PK_COLUMNS)
         self.assertCompiles(res)
         self.assertFalse(has_warning(res, "batch_columns_unchecked"))
-        wrong = self.compile_with("    pending_transfer: true\n    columns: [PatientDurableKey, DiagnosisEventKey]\n")
+        wrong = self.compile_with("    awaiting_file: true\n    columns: [PatientDurableKey, DiagnosisEventKey]\n")
         self.assertHasError(wrong, "missing_batch_column")
 
     def test_typed_types_are_checked_before_the_file_exists(self):
@@ -7033,17 +7048,17 @@ class PendingTransferTests(MakeYamlTest):
         self.assertHasError(res, "bad_upload_type")
 
     def test_the_split_still_needs_the_file(self):
-        self.compile_with("    pending_transfer: true\n" + self.PK_COLUMNS)
+        self.compile_with("    awaiting_file: true\n" + self.PK_COLUMNS)
         split = write_split_artifacts(self.template, self.recipes_path, output_dir=self.tmp / "split")
         self.assertHasError(split, "missing_upload_file")
 
     def test_only_a_file_can_be_pending_and_only_true_or_false(self):
-        not_bool = self.compile_with("    pending_transfer: yes please\n")
-        self.assertHasError(not_bool, "bad_pending_transfer")
+        not_bool = self.compile_with("    awaiting_file: yes please\n")
+        self.assertHasError(not_bool, "bad_awaiting_file")
         text = uploaded_pk_template().replace("file_type: csv\n    file_loc: pks.csv",
-                                             "file_type: dbtable\n    pending_transfer: true")
+                                             "file_type: dbtable\n    awaiting_file: true")
         dbtable = compile_yaml(*self.write_pair(text))
-        self.assertHasError(dbtable, "bad_pending_transfer")
+        self.assertHasError(dbtable, "bad_awaiting_file")
 
 
 class UploadColumnChangeTests(MakeYamlTest):
@@ -7169,7 +7184,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "description_fields": DescriptionFieldTests,
     "project_db": ProjectDbTests,
     "fixes": FixTests,
-    "pending_transfer": PendingTransferTests,
+    "awaiting_file": AwaitingFileTests,
     "sql_references": SqlReferenceTests,
     "table_not_made": TableNotMadeTests,
     "unread_uploads": UnreadUploadTests,
@@ -7383,7 +7398,7 @@ def main(argv: list[str] | None = None) -> int:
             missing = set(result.analysis.get("blueprint_uploads_missing") or [])
             print(f"Carry these with it, at these paths relative to {folder}:")
             for upload in uploads:
-                note = "  (not here yet: supply it on the VM)" if upload in missing else ""
+                note = "  (not here yet: supply it before the split)" if upload in missing else ""
                 print(f"  {upload}{note}")
         return 0
 

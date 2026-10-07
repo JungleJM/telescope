@@ -672,7 +672,7 @@ def column_editor(view: AuthorView, parent: Any, index: int) -> None:
     why = ("A table in the project database cannot be read from here." if upload.get("file_type") == "dbtable"
            else "The file is not here, so its columns cannot be read.")
     note(parent, f"{why} Type its columns, separated by commas, so splitters and bindings can be checked (D97).",
-         "pending" if upload.get("pending_transfer") else "warning").pack(anchor="w", pady=(6, 2))
+         "pending" if upload.get("awaiting_file") else "warning").pack(anchor="w", pady=(6, 2))
     entry = text_field(view, parent, listed, lambda value: draft.set_listed_columns(index, value), width=90,
                        rerender_on_leave=True)
     entry.pack(anchor="w")
@@ -970,9 +970,9 @@ def build_pk(view: AuthorView, parent: Any) -> None:
             location_row(view, form, 2, pk.kind, pk.location, lambda v: draft.update_pk(location=v))
             grid_row(form, 3, "Row key", row_key_field(view, form), ROW_KEY_HINT)
             if pk.kind in model.FILE_KINDS and not view.ws.vm_side:
-                grid_row(form, 4, "", check_field(view, form, "Pending transfer to the VM", pk.pending_transfer,
-                                                  lambda on: draft.update_pk(pending_transfer=on), rerender=True),
-                         "The file will only exist on the VM (D97).")
+                grid_row(form, 4, "", check_field(view, form, "File to come", pk.awaiting_file,
+                                                  lambda on: draft.update_pk(awaiting_file=on), rerender=True),
+                         "The file will be supplied later (D97).")
             column_editor(view, box, index)
         else:
             grid_row(form, 2, "Row key", row_key_field(view, form), ROW_KEY_HINT)
@@ -1050,7 +1050,7 @@ def choose_pk(view: AuthorView, parent: Any, replacing: bool) -> None:
                  "Blank: PatientDurableKey, if the file has it. " + "The columns that make each row one of its own: checked unique before any batch; chunks, the random sample and controls follow it (D107).")
         row = 3
         if kind in model.FILE_KINDS and not view.ws.vm_side:
-            grid_row(form, row, "", ttk.Checkbutton(form, text="Pending transfer to the VM", variable=pending))
+            grid_row(form, row, "", ttk.Checkbutton(form, text="File to come", variable=pending))
             row += 1
         ttk.Button(form, text="Use as PK", command=lambda: confirm() and view.edit(
             lambda: draft.set_pk_upload(kind, name.get(), location.get(), keys.get(), pending.get()),
@@ -1085,9 +1085,9 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
                      lambda v, i=index: draft.update_supporting(i, location=v))
         if kind in model.FILE_KINDS and not view.ws.vm_side:
             grid_row(form, 4, "", check_field(
-                view, form, "Pending transfer to the VM", upload.get("pending_transfer") is True,
-                lambda on, i=index: draft.update_supporting(i, pending_transfer=on), rerender=True),
-                "The file will only exist on the VM (D97).")
+                view, form, "File to come", model.my.awaiting_file(upload),
+                lambda on, i=index: draft.update_supporting(i, awaiting_file=on), rerender=True),
+                "The file will be supplied later (D97).")
         column_editor(view, box, index)
         ttk.Button(box, text="Remove", command=lambda i=index: view.edit(
             lambda: draft.remove_supporting(i), rerender=True)).pack(anchor="e", pady=(6, 0))
@@ -1105,7 +1105,7 @@ def build_supporting(view: AuthorView, parent: Any) -> None:
     ttk.Button(add, text="Browse", command=lambda: location.set(
         pick_file(view, kind.get()) or location.get())).pack(side="left")
     if not view.ws.vm_side:
-        ttk.Checkbutton(add, text="Pending transfer", variable=pending).pack(side="left", padx=8)
+        ttk.Checkbutton(add, text="File to come", variable=pending).pack(side="left", padx=8)
     ttk.Button(add, text="Add", command=lambda: view.edit(
         lambda: draft.add_supporting(kind.get(), name.get(), location.get(),
                                      pending.get() and kind.get() in model.FILE_KINDS),
@@ -1767,7 +1767,7 @@ def save_as_recipe(view: AuthorView, index: int) -> None:
 # =============================================================================
 
 
-KIND_LABELS = {"error": "Error", "warning": "Warning", "pending": "Pending transfer"}
+KIND_LABELS = {"error": "Error", "warning": "Warning", "pending": "To come"}
 SECTION_LABELS = dict(SECTIONS)
 
 
@@ -2374,7 +2374,7 @@ class ValidateAndExportViewTests(ViewTest):
 
     def test_the_steps_show_pending(self):
         self.open("Celiac_intake.yaml")
-        index = self.view.draft.add_supporting("csv", "Later", "csv/later.csv", pending_transfer=True)
+        index = self.view.draft.add_supporting("csv", "Later", "csv/later.csv", awaiting_file=True)
         self.view.changed()
         self.pump()
         steps = [w.cget("text") for w in self.view.validate_panel.steps.winfo_children()]
@@ -2424,12 +2424,12 @@ class ValidateAndExportViewTests(ViewTest):
         self.open("Celiac_intake.yaml")
         self.view.show_section("supporting")
         texts = lambda: [str(w.cget("text")) for w in widgets(self.view.body.inner) if isinstance(w, ttk.Checkbutton)]
-        self.assertTrue(any("Pending transfer" in t for t in texts()))
+        self.assertTrue(any("File to come" in t for t in texts()))
         self.ws.vm_side = True
         self.view.render()
-        self.assertFalse(any("Pending transfer" in t for t in texts()))
+        self.assertFalse(any("File to come" in t for t in texts()))
         self.view.show_section("pk")
-        self.assertFalse(any("Pending transfer" in t for t in texts()))
+        self.assertFalse(any("File to come" in t for t in texts()))
 
     # mac-only {
     def test_an_unsaved_draft_says_to_save_first(self):

@@ -1116,7 +1116,7 @@ class SessionRunner:
                 raise SessionError(
                     f"{block.dest_table}: Projects refused the sign-in twice ({again}). "
                     "The likely cause is an expired Kerberos ticket (they last 10 hours "
-                    "on the VM): Retry failed pulls it again on a fresh connection."
+                    "here): Retry failed pulls it again on a fresh connection."
                 ) from again
         for row in outcome.rows_of("DestTable", "Side", "RowCount"):
             if row["Side"] == "projects":
