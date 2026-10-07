@@ -41,9 +41,12 @@ When an item here is built, delete it from this file and describe the result in 
 2.  **A packaged table purple**, and a double-click on an unpackaged one saying why it opened Pull Manifest (D204). Built (`c5a6cad`).
 3.  **Scope, blueprints, and no Exports tab in what ships** (D205): highest priority (the user, 7 October 2026).
 
-**Then, alone in its bundle, once a real pull has run on the VM's current software (`11036600…`): D177.**
+**Then D177, D206 to D208: every table leaves Projects once nothing later reads it, a failed landing gives back its room, and an empty run costs nothing.** Agreed 7 October 2026, for GI_Conditions' restart.
 
-4.  **Package each table group as it finishes, then empty its tables** (D177). With D190 every ungrouped table is its own group, so it packages and empties each table as it finishes. Open before it is built: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
+4.  **Package each table group as it finishes, then empty its tables** (D177). Built (`5f2a3cc`).
+5.  **A PK leaves Projects when nothing later reads it** (D206), **a failed landing gives back its room** (D207), **a run with no tables finishes at once** (D208).
+
+Still open after them: a single table can outgrow the database on its own (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
 
 **Later, not in either:** **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 

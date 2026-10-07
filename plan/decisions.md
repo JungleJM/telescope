@@ -3945,3 +3945,58 @@ opened by `scope.py`.
 its first key when Author next saves it; nothing reads the key's name but
 makeYaml. The build's guard (D201) gains `transfer YAML`, `Exports` and
 `Telescope` as words that stop a build, so they cannot come back.
+
+**D205, as built (7 October 2026).** The user asked that the Mac-only code
+leave at the build, so nothing that ships hints at it. So there is no
+optional-module hook: the Exports tab, the queue and its tests are marked
+`# mac-only {` ... `# } mac-only` where they are, and the build cuts those
+blocks (`bundle_scrub.cut`). "Pending transfer" became "awaiting file" by the
+same rule (`awaiting_file`, the older key still read).
+
+### D206. A table leaves Projects as soon as nothing later in the pull reads it
+
+**Context.** GI_Conditions (7 October 2026) is 28 conditions, each a session
+whose PK holds millions of patients. Its runs' tables are packaged and emptied
+as their group finishes (D177), but every PK stayed in Projects until the whole
+pull was packaged (D165), so 28 PKs had to fit at once. The user expected each
+table to go to parquet and leave as soon as it was done, PKs included.
+
+**Decision.** One rule for every table a pull makes: it is written to parquet,
+checked against the rows recorded for it, and emptied (`TRUNCATE`) at the first
+moment nothing later reads it from Projects.
+- **A run's table:** when its table group finishes (D177).
+- **A generated PK:** when its session's runs are all settled, since they pick
+  their patients from it, and when every session sampling a control against it
+  (D59) is settled too. Its parquet, written when it landed (D87), is used if its
+  rows match; else it is written again first.
+- **Kept until the pull is packaged:** an upload's Projects copy, which later
+  sessions load, and which a re-pull would find already there; an uploaded PK,
+  which is such a copy; a PK packaged one file per value (`separate_parquets`).
+Each is recorded as `packaged` on the step that made it, and Artifacts keeps
+its file. A step that runs again forgets it.
+
+**Consequences.** A pull needs room for one session's PK and one group's
+tables at a time, plus its uploads. A control's case PK stays until the
+control has sampled it.
+
+### D207. A failed landing gives back the room of a table it leaves empty
+
+**Context.** GERD's PK failed with the log full (9002) and was rolled back, but
+its table kept the 9.5 GB of pages the insert had filled: SQL Server does not
+return a table's empty pages until it is truncated or dropped. The next
+session's tables then had no room (1105).
+
+**Decision.** When a phase or run fails, each table it lands that now holds no
+rows (`sys.partitions`) is truncated, giving its room back. A table with rows,
+such as one holding other batches, is left as it is.
+
+**Consequences.** One failure no longer takes room from the rest of the pull.
+
+### D208. A run with no tables finishes at once
+
+**Context.** A session of a PK alone (GI_Conditions without IndexDiagnosis)
+still has one run, with no tables. On a resume that run would copy the whole
+PK into Cosmos for nothing: about 20 minutes for 16.6 million patients.
+
+**Decision.** A run whose document lists no tables is marked done without
+touching either database.
