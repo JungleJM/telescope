@@ -117,12 +117,13 @@ Pullmanager turns each phase or run into SQL blocks. Nothing searches SQL text: 
     - `_materialize_batch` refills the PK temp with just this batch's patients, selected from the Projects copy (`batches.select_batch_rows`, `batches.chunk_clause`).
     - Each table is then built and landed in turn (`_execute_unit`, `_land`).
     - Row counts are compared (`_check_counts`), and rows per patient are measured (`_measure_run`).
+5.  `_package_group_if_done` after each run. Once every run of a table group is done, `artifacts.package_group` writes the group's tables to parquet. Each file's rows are checked against what the runs landed, and each table that matches is emptied with `TRUNCATE`, so the Projects database only ever needs room for one group. The manifest records this under the runs' `packaged`.
 
 Every step writes its status into `pullmanifest.yaml` as it starts and ends (`manifest.Node.start`, `finish`, `fail`). The Run window's Status tab reads that file, and a re-run picks up where the last one stopped.
 
 ### 7. Artifacts: package the results
 
-`pullmanager/artifacts.py`: `plan()` chooses the finished tables, and `package()` reads each from Projects in chunks and writes parquet with pyarrow. `contents.py` writes `contents.md`, describing every table and column, beside the parquets.
+`pullmanager/artifacts.py`: `plan()` chooses the finished tables, and `package()` reads each from Projects in chunks and writes parquet with pyarrow. A table its group already packaged and emptied is kept as it is, and its rows are read from its file. `contents.py` writes `contents.md`, describing every table and column, beside the parquets.
 
 ------------------------------------------------------------------------
 

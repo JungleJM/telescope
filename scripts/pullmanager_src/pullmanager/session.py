@@ -48,7 +48,7 @@ from .executor import (
     should_execute,
 )
 from .manifest import Manifest, Phase, Session
-from .models import format_duration, now_iso
+from .models import DONE, SKIPPED, format_duration, now_iso
 from .naming import destination, global_temp, projects_table, table_prefix, temp_prefix
 from .normalize import cosmos_database
 from .uploads import UploadError
@@ -460,7 +460,83 @@ class SessionRunner:
                 counted = f", {rows:,} rows" if rows is not None else ""
             self.say(f"{name} done in {since(started)}{counted}")
             self.manifest.save()
+            if kind == "run":
+                self._package_group_if_done(node)
         return self.report
+
+    def _package_group_if_done(self, node: Any) -> None:
+        """Once every run of a table group is done, its tables go to parquet,
+        each is checked against the rows its runs landed, and each that
+        matches is emptied (D177): the pull needs room for one group at a
+        time, not the whole. Anything short of that is said, and the table
+        stays in Projects for Artifacts to package at the end."""
+        group = getattr(node, "group", None)
+        runs = [run for run in self.session.runs if getattr(run, "group", None) == group]
+        if any(run.status not in (DONE, SKIPPED) for run in runs) or not any(run.status == DONE for run in runs):
+            return
+        if any(run.outputs.get("packaged") for run in runs):
+            return
+        landed: dict[str, int] = {}
+        for run in runs:
+            for dest, rows in (run.outputs.get("table_rows") or {}).items():
+                landed[dest] = landed.get(dest, 0) + int(rows or 0)
+        from .artifacts import package_group
+        from .pulls import run_folder
+
+        named = f"table group {group}" if group else "its tables"
+        self.say(f"{named}: every run done, writing its tables to parquet")
+        started = time.monotonic()
+        try:
+            specs = package_group(self.manifest, self.session, runs, self.projects,
+                                  log=lambda line: self.say(line.strip(), 1))
+        except Exception as exc:  # noqa: BLE001 - the tables stay; Artifacts packages them
+            self.report.warnings.append(
+                f"{named}: not packaged as it finished ({exc}). Its tables stay in Projects, "
+                "and Artifacts packages them at the end.")
+            self.say(f"{named}: not packaged ({exc}); its tables stay in Projects", 1)
+            return
+        folder = run_folder(self.manifest.path)
+        tables: dict[str, dict[str, Any]] = {}
+        for spec in specs:
+            files = [part.path for part in spec.parts if part.path is not None]
+            expected = landed.get(spec.dest)
+            if expected != spec.rows:
+                for path in files:
+                    path.unlink(missing_ok=True)
+                said = f"{expected:,}" if expected is not None else "no count"
+                self.report.warnings.append(
+                    f"{spec.dest}: its parquet held {spec.rows:,} rows where its runs landed {said}, "
+                    "so it stays in Projects, not emptied; Artifacts packages it at the end.")
+                self.say(f"{spec.dest}: {spec.rows:,} rows in parquet, {said} landed: kept in Projects", 1)
+                continue
+            table = destination(self.project_db, projects_table(spec.dest, table_prefix(spec.doc)))
+            emptied = True
+            try:
+                self._execute(self.projects, f"TRUNCATE TABLE {table};", label=f"empty {spec.dest}")
+                self.projects.commit()
+            except Exception as exc:  # noqa: BLE001 - the parquet is safe; say so
+                try:
+                    self.projects.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                emptied = False
+                self.report.warnings.append(
+                    f"{spec.dest}: written to parquet, but not emptied ({exc}). It stays in "
+                    "Projects until the pull's tables are dropped.")
+            tables[spec.dest] = {
+                "files": [path.relative_to(folder).as_posix() for path in files],
+                "rows": spec.rows,
+                "emptied": emptied,
+                "columns": [[name, sql_type] for name, sql_type in spec.columns],
+            }
+            self.say(f"{spec.dest}: {spec.rows:,} rows in parquet"
+                     f"{', and emptied in Projects' if emptied else ', not emptied'}", 1)
+        if tables:
+            record = {"at": now_iso(), "tables": tables}
+            for run in runs:
+                run.outputs["packaged"] = record
+            self.manifest.save()
+        self.say(f"{named}: packaged in {since(started)}")
 
     def _rollback(self) -> None:
         for connection in (self.projects, self.cosmos):

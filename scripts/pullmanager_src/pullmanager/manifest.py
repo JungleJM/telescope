@@ -104,6 +104,8 @@ class Node:
         # A rerun's rows are its own: none carried over from the last attempt.
         self._data.pop("rows", None)
         self.outputs.pop("table_rows", None)
+        # Nor its group's packaging (D177): a rerun's rows are packaged again.
+        self.outputs.pop("packaged", None)
 
     def finish(self, rows: int | None = None, outputs: dict[str, Any] | None = None) -> None:
         self.status = DONE

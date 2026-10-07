@@ -75,7 +75,7 @@ def run_tables(manifest: Manifest, run: Any) -> list[str]:
 def finished_tables(manifest: Manifest) -> set[str]:
     """The tables Artifacts would package: those whose steps are all done."""
     try:
-        return {spec.dest for spec in plan(manifest).tables if spec.kind in ("pk", "run")}
+        return {spec.dest for spec in plan(manifest).tables if spec.kind in ("pk", "run", "kept")}
     except (OSError, ValueError, ManifestError):
         return set()
 
@@ -95,7 +95,7 @@ def compare_parquets(manifest: Manifest, built: dict[str, int], finished: set[st
         problems["not_compared"] = "this Python lacks pyarrow, so the parquets were not read"
         return
     for spec in plan(manifest).tables:
-        if spec.kind not in ("pk", "run") or spec.dest not in built:
+        if spec.kind not in ("pk", "run", "kept") or spec.dest not in built:
             continue
         paths = [folder / spec.folder / file_name(spec.dest, part.label) for part in spec.parts]
         missing = [path.name for path in paths if not path.is_file()]

@@ -10,7 +10,8 @@ a run's table once every run that fills it is. The rest are listed with why.
 Each table is read from Projects in chunks and written with pyarrow, typed
 from its own columns; `_batch` is internal and dropped. A batching dimension
 marked `separate_parquets` gives one file per value. Each packaging replaces
-the last.
+the last, except a table group's files written as the group finished, whose
+tables were then emptied (D177): those are kept, and read for their rows.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ class TableSpec:
     """A destination table the pull made, and what it takes to package it."""
 
     dest: str
-    kind: str  # "pk", "run" or "upload"
+    kind: str  # "pk", "run", "upload", or "kept": packaged as its group finished (D177)
     session: str
     folder: str  # SneakPeek, Cosmos or uploads
     cohort: dict[str, Any] = field(default_factory=dict)
@@ -70,6 +71,7 @@ class TableSpec:
     parts: list[Part] = field(default_factory=list)
     columns: list[tuple[str, str]] = field(default_factory=list)  # name, SQL type, as held
     source_file: Path | None = None  # an upload's parquet in the split
+    record: dict[str, Any] = field(default_factory=dict)  # a kept table's, from the manifest (D177)
 
     @property
     def rows(self) -> int:
@@ -141,6 +143,17 @@ def separate_parts(session: Session, kind: str, runs: list[Any] | None = None) -
     return parts or [Part("")]
 
 
+def packaged_tables(session: Session) -> dict[str, dict[str, Any]]:
+    """The tables packaged as their group finished (D177), by name: their
+    files, rows, and whether the table was then emptied."""
+    found: dict[str, dict[str, Any]] = {}
+    for run in session.runs:
+        record = run.outputs.get("packaged") or {}
+        for dest, info in (record.get("tables") or {}).items():
+            found[str(dest)] = dict(info or {})
+    return found
+
+
 def plan(manifest: Manifest) -> Plan:
     """Which tables to package, from the manifest and the split's documents."""
     result = Plan()
@@ -171,6 +184,7 @@ def plan(manifest: Manifest) -> Plan:
         # Each table group's runs hold its own tables (D134), so each group's
         # first run names them, and a finished group is packaged even while
         # another is not.
+        kept = packaged_tables(session)
         by_group: dict[Any, list[Any]] = {}
         for run in session.runs:
             by_group.setdefault(run.group, []).append(run)
@@ -191,8 +205,9 @@ def plan(manifest: Manifest) -> Plan:
                     )
                     continue
                 result.tables.append(TableSpec(
-                    dest, "run", session.session_id, database_folder(cohort, doc), cohort, doc,
-                    separate_parts(session, "run", runs),
+                    dest, "kept" if dest in kept else "run", session.session_id,
+                    database_folder(cohort, doc), cohort, doc, separate_parts(session, "run", runs),
+                    record=kept.get(dest, {}),
                 ))
         upload_phase = phases.get("upload_cohorts")
         if upload_phase is not None and upload_phase.yaml:
@@ -310,9 +325,10 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
     if not project_db:
         raise ArtifactError("The manifest names no project_db, so there is nothing to read from.")
     result = plan(manifest)
+    keep = {(out_dir / spec.folder / file_name(spec.dest, part.label)).resolve()
+            for spec in result.tables if spec.kind == "kept" for part in spec.parts}
     for name in PARQUET_FOLDERS:
-        if (out_dir / name).exists():
-            shutil.rmtree(out_dir / name)  # each packaging replaces the last (D72)
+        clear_folder(out_dir / name, keep)  # each packaging replaces the last (D72)
     cursor = connection.cursor()
     for spec in result.tables:
         folder = out_dir / spec.folder
@@ -324,7 +340,7 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
             result.failed.append((spec.dest, f"{type(exc).__name__}: {exc}"))
             log(f"  FAILED   {spec.dest}: {type(exc).__name__}: {exc}")
             for part in spec.parts:
-                if part.path is not None and part.path.exists():
+                if spec.kind != "kept" and part.path is not None and part.path.exists():
                     part.path.unlink()  # a table is packaged whole or not at all
             spec.columns = []
             try:  # a failed statement can leave the cursor unusable
@@ -334,6 +350,63 @@ def package(manifest: Manifest, connection: Any, out_dir: Path,
             cursor = connection.cursor()
     result.tables = [spec for spec in result.tables if spec.columns]
     return result
+
+
+def clear_folder(folder: Path, keep: set[Path]) -> None:
+    """Empty a parquet folder but for the files in `keep`."""
+    if not folder.exists():
+        return
+    if not keep:
+        shutil.rmtree(folder)
+        return
+    for path in sorted(folder.rglob("*"), reverse=True):
+        if path.resolve() in keep:
+            continue
+        if path.is_dir():
+            if not any(path.iterdir()):
+                path.rmdir()
+        else:
+            path.unlink()
+
+
+def package_group(manifest: Manifest, session: Session, group_runs: list[Any], connection: Any,
+                  log: Callable[[str], None] = print) -> list[TableSpec]:
+    """A finished table group's tables written to parquet, where Artifacts
+    puts them (D177). Returns each table written, with its rows; one that
+    fails is said and left out, its file removed."""
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise ArtifactError(f"this Python lacks pyarrow ({exc})") from exc
+    project_db = str(manifest.project.get("project_db") or "")
+    doc = load_yaml(manifest.resolve(group_runs[0])) or {}
+    dests = {str(c["dest_table"]) for c in doc.get("cohorts") or [] if isinstance(c, dict) and c.get("dest_table")}
+    result = plan(manifest)
+    out_dir = parquets_folder(manifest.path)
+    cursor = connection.cursor()
+    written: list[TableSpec] = []
+    for spec in result.tables:
+        if spec.kind != "run" or spec.session != session.session_id or spec.dest not in dests:
+            continue
+        folder = out_dir / spec.folder
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            package_table(spec, cursor, pa, pq, project_db, folder, out_dir, result, log)
+        except Exception as exc:  # noqa: BLE001 - the table stays in Projects for Artifacts
+            log(f"  FAILED   {spec.dest}: {type(exc).__name__}: {exc}")
+            for part in spec.parts:
+                if part.path is not None and part.path.exists():
+                    part.path.unlink()
+            try:
+                cursor.close()
+            except Exception:  # noqa: BLE001
+                pass
+            cursor = connection.cursor()
+            continue
+        if spec.columns:
+            written.append(spec)
+    return written
 
 
 def pk_parquet_path(manifest_path: Path, cohort: dict[str, Any], doc: dict[str, Any], dest: str) -> Path:
@@ -362,6 +435,24 @@ def write_whole_table(connection: Any, project_db: str, table: str, path: Path) 
 def package_table(spec: TableSpec, cursor: Any, pa: Any, pq: Any, project_db: str, folder: Path,
                   out_dir: Path, result: Plan, log: Callable[[str], None]) -> None:
     """Write one table's parquet(s), saying when each starts and how it went."""
+    if spec.kind == "kept":
+        # Packaged as its group finished and then emptied (D177): its files
+        # are the table now, so they are read, never written again.
+        for part in spec.parts:
+            part.path = folder / file_name(spec.dest, part.label)
+            if not part.path.is_file():
+                raise ArtifactError(
+                    f"{shown(part.path, out_dir)} is gone, and its table was emptied when its "
+                    "group finished. Re-pull sessions pulls it again.")
+            part.rows = pq.read_metadata(part.path).num_rows
+        # Its columns as Projects held them, recorded when it was written.
+        spec.columns = [(str(name), str(sql_type)) for name, sql_type in spec.record.get("columns") or []]
+        if not spec.columns:
+            schema = pq.read_schema(spec.parts[0].path)
+            spec.columns = [(name, str(schema.field(name).type)) for name in schema.names]
+        log(f"  kept     {', '.join(shown(p.path, out_dir) for p in spec.parts)}  ({spec.rows:,} rows, "
+            "packaged when its group finished)")
+        return
     if spec.kind == "upload":
         part = spec.parts[0]
         part.path = folder / file_name(spec.dest, "")

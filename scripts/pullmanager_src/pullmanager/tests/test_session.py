@@ -15,6 +15,7 @@ import re
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -123,8 +124,11 @@ class FakeConnection:
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
                  widths=None, found_values=None, instance=INSTANCE, per_table=None,
                  fail_late=None, no_landing_count=False, server_messages=(),
-                 cosmos_columns=None, per_key_row=(3, 1.0, 1.0, 1)):
+                 cosmos_columns=None, per_key_row=(3, 1.0, 1.0, 1), reads_back=False):
         self.side = side
+        # A whole table read into a parquet gives back the rows it holds,
+        # rather than `pk_rows` (D177's check of a packaged table).
+        self.reads_back = reads_back
         # What a rows-per-key measurement answers (D157): keys, median, p90, max.
         self.per_key_row = per_key_row
         # `dbo.Table` -> its columns, for the column check (D156); "*" answers
@@ -229,6 +233,8 @@ class FakeConnection:
         if match := re.search(r"INSERT INTO (PROJECTD\S+) \(", statement):
             label = re.search(r", '([^']*)' FROM #", statement)
             tables[match.group(1)][label.group(1) if label else "-"] += self.count(match.group(1))
+        if match := re.search(r"TRUNCATE TABLE (PROJECTD\S+)", statement):
+            tables[match.group(1)] = Counter()
         if match := re.search(r"DELETE FROM (PROJECTD\S+) WHERE \[_batch\] = '([^']*)'", statement):
             tables[match.group(1)].pop(match.group(2), None)
 
@@ -268,7 +274,9 @@ class FakeConnection:
         if whole := re.match(r"SELECT ((?:\[[^\]]+\](?:, )?)+) FROM (PROJECTD\S+);$", sql):
             # A whole table read into a parquet (D87): its described columns.
             names = re.findall(r"\[([^\]]+)\]", whole.group(1))
-            return [(names, [tuple(f"{name}{i}" for name in names) for i in range(self.pk_rows)])]
+            held = self._working().get(whole.group(2))
+            count = sum(held.values()) if self.reads_back and held is not None else self.pk_rows
+            return [(names, [tuple(f"{name}{i}" for name in names) for i in range(count)])]
         sets = []
         for match in re.finditer(r"'([^']+)' AS \[DestTable\]", sql):
             dest = match.group(1)
@@ -622,6 +630,94 @@ class PkParquetTests(SessionTestCase):
         self.assertTrue(report.ok, report.failed)
         self.assertEqual(len(report.completed), 4)
         self.assertTrue(any("PK was not written to parquet" in w for w in report.warnings), report.warnings)
+
+
+class GroupPackagingTests(SessionTestCase):
+    """D177: a table group's tables go to parquet as it finishes, then leave Projects."""
+
+    def run_all(self, **projects):
+        import pyarrow.parquet as pq  # noqa: F401  checked by the base's setUp
+
+        self.make_batched()
+        self.tables: dict[str, Counter] = {}
+        with self.runner(projects={"tables": self.tables, **projects}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        return report
+
+    def test_a_finished_group_is_in_parquet_and_its_table_emptied(self):
+        import pyarrow.parquet as pq
+
+        report = self.run_all(reads_back=True)
+        path = self.root / "cosmos_parquets" / "OtherHospitalizations.parquet"
+        self.assertTrue(path.is_file(), report.warnings)
+        self.assertEqual(pq.read_metadata(path).num_rows, 20)  # 10 a batch, two batches
+        self.assertEqual(sum(self.tables[DEST].values()), 0)  # the room is back
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        for run in manifest.sessions[0].runs:
+            self.assertEqual(run.outputs["packaged"]["tables"]["OtherHospitalizations"]["rows"], 20)
+            self.assertTrue(run.outputs["packaged"]["tables"]["OtherHospitalizations"]["emptied"])
+
+    def test_it_waits_for_the_groups_last_run(self):
+        from .. import artifacts
+
+        calls = []
+        original = artifacts.package_group
+
+        def spy(manifest, session, runs, *args, **kwargs):
+            calls.append([run.status for run in runs])
+            return original(manifest, session, runs, *args, **kwargs)
+
+        artifacts.package_group = spy
+        self.addCleanup(setattr, artifacts, "package_group", original)
+        self.run_all(reads_back=True)
+        self.assertEqual(calls, [["done", "done"]])
+
+    def test_a_count_that_does_not_match_keeps_the_table_and_writes_no_file(self):
+        # The parquet reads 3 rows where 20 landed: nothing is emptied.
+        report = self.run_all()
+        self.assertEqual(sum(self.tables[DEST].values()), 20)
+        self.assertFalse((self.root / "cosmos_parquets" / "OtherHospitalizations.parquet").exists())
+        self.assertFalse(any("TRUNCATE" in sql for sql in self.projects.executed))
+        self.assertTrue(any("OtherHospitalizations" in w and "stays in Projects" in w
+                            for w in report.warnings), report.warnings)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.assertFalse(any(run.outputs.get("packaged") for run in manifest.sessions[0].runs))
+
+    def test_artifacts_keeps_the_groups_file_and_its_rows(self):
+        # The table is empty now: packaging it again from Projects would lose it.
+        import pyarrow.parquet as pq
+
+        from .. import artifacts
+
+        self.run_all(reads_back=True)
+        path = self.root / "cosmos_parquets" / "OtherHospitalizations.parquet"
+        before = path.read_bytes()
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        plan = artifacts.package(manifest, self.projects, self.root, log=lambda line: None)
+        spec = next(s for s in plan.tables if s.dest == "OtherHospitalizations")
+        self.assertEqual((spec.kind, spec.rows), ("kept", 20))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(pq.read_metadata(path).num_rows, 20)
+        self.assertIn(("DiagnosisCode", "NVARCHAR(55)"), [(n, t.upper()) for n, t in spec.columns])
+
+    def test_a_kept_file_that_is_gone_is_a_loud_failure(self):
+        from .. import artifacts
+
+        self.run_all(reads_back=True)
+        (self.root / "cosmos_parquets" / "OtherHospitalizations.parquet").unlink()
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        plan = artifacts.package(manifest, self.projects, self.root, log=lambda line: None)
+        [(dest, why)] = plan.failed
+        self.assertEqual(dest, "OtherHospitalizations")
+        self.assertIn("Re-pull sessions", why)
+
+    def test_a_rerun_forgets_the_packaging(self):
+        self.run_all(reads_back=True)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        run = manifest.sessions[0].runs[0]
+        run.start()
+        self.assertNotIn("packaged", run.outputs)
 
 
 class FailureTests(SessionTestCase):
@@ -1343,7 +1439,9 @@ class ReadoutTests(SessionTestCase):
 
         args = argparse.Namespace(env=None, repull=False, retry_failed=False)
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        # What it checks is the readout, not packaging as a group ends (D177).
+        with mock.patch.object(SessionRunner, "_package_group_if_done"), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = cli.execute(Manifest.load(self.root / "pullmanifest.yaml"), args, connect_fn=connect)
         return code, out.getvalue()
 
