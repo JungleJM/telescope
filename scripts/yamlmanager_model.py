@@ -2095,12 +2095,13 @@ class TableBuilder:
         return columns if isinstance(columns, dict) else {}
 
     def _column_from(self, column: str) -> dict[str, Any]:
+        """A new column, typed from the dictionary and left nullable (D172): a
+        column's nullability in Cosmos is not its nullability in the pull, and
+        `nullable: false` would filter its rows (`IS NOT NULL`), dropping the
+        unmatched rows of a LEFT JOIN."""
         meta = self.dictionary_columns().get(column) or {}
-        out: dict[str, Any] = {"source": f"{self.alias}.{column}", "name": column,
-                               "type": sql_type_for_dictionary(meta.get("type"))}
-        if meta.get("nullable") is not None:
-            out["nullable"] = bool(meta["nullable"])
-        return out
+        return {"source": f"{self.alias}.{column}", "name": column,
+                "type": sql_type_for_dictionary(meta.get("type"))}
 
     def _dictionary_type(self, column: dict[str, Any]) -> str | None:
         """The type the export fills in for a column of the from table, if any."""
@@ -2926,8 +2927,11 @@ class TableBuilderTests(ModelTest):
         builder = self.encounters(self.draft())
         self.assertEqual(builder.alias, "ef")
         self.assertEqual(builder.columns[0], {"source": "ef.EncounterKey", "name": "EncounterKey",
-                                              "type": "BIGINT", "nullable": False})
+                                              "type": "BIGINT"})
         self.assertEqual(builder.columns[3]["type"], "NVARCHAR(900)")
+        # D172: EncounterKey is not nullable in Cosmos, but a column the
+        # builder adds is, or its rows would be filtered (IS NOT NULL).
+        self.assertFalse([c for c in builder.columns if c.get("nullable") is False])
 
     def test_columns_are_removed_restored_renamed_and_ordered_by_number(self):
         builder = self.encounters(self.draft())
