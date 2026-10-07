@@ -58,11 +58,11 @@ STATUS_COLOURS = {
     "packaged": "#8250df",
 }
 
-# What the window remembers: the loaded transfer YAML. A pull's split and SQL
+# What the window remembers: the loaded blueprint. A pull's split and SQL
 # folders are always its run folder's (D57, D142), and the data dictionary is
 # the bundle's (D150), so neither is asked for.
 FIELDS = (
-    ("template", "Transfer YAML"),
+    ("template", "Blueprint"),
 )
 NOT_RUN = "not run yet"
 
@@ -347,7 +347,7 @@ class LauncherApp:
 
     def running_choices(self) -> dict[str, Path]:
         """Every pull executing now, as "<project>: executing since ..." (D126)."""
-        self._running = {f"{pull.name}: {pull.state}": self.transfer_for(pull.name)
+        self._running = {f"{pull.name}: {pull.state}": self.blueprint_for(pull.name)
                          for pull in pulls.find_pulls(self.workdir) if pull.lock is not None}
         return self._running
 
@@ -355,7 +355,7 @@ class LauncherApp:
         """Every pull that has run and is not executing, with how it stands:
         finished, finished with errors, stopped by user or stopped with errors
         (D140)."""
-        self._ended = {f"{pull.name}  ({pull.state})": self.transfer_for(pull.name)
+        self._ended = {f"{pull.name}  ({pull.state})": self.blueprint_for(pull.name)
                        for pull in pulls.find_pulls(self.workdir)
                        if pull.lock is None and pull.outcome}
         return self._ended
@@ -373,7 +373,7 @@ class LauncherApp:
             self._startable[f"{project}  ({pull.state if pull else NOT_RUN})"] = found[project]
         return self._startable
 
-    def transfer_for(self, project: str) -> Path:
+    def blueprint_for(self, project: str) -> Path:
         """A project's working blueprint; else, once packaged, the copy in its
         run folder; else where its working blueprint would be (D162)."""
         for name, path in pulls.working_blueprints(self.workdir).items():
@@ -937,7 +937,7 @@ class LauncherApp:
             view.see(f"{after}.0")  # the whole of it, then its first line
             view.see(f"{first + 1}.0")
 
-    def use_transfer(self, path: Path) -> None:
+    def use_blueprint(self, path: Path) -> None:
         """Take a blueprint the Author half handed over (D94, D162)."""
         self.clear_picks()
         self.load(Path(path), "Validate, Export split, then Execute.")

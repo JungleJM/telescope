@@ -1,4 +1,4 @@
-transfer:
+blueprint:
   from_template: HaT_PheWAS_intake.yaml
 cosmos_vars:
   project_db: PROJECTD93A5E7

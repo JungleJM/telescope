@@ -1,8 +1,8 @@
 """Finding a pull by its project's name, and listing the pulls there are (D66).
 
 A pull lives in `runs/<project>/split/pullmanifest.yaml` (D57), `<project>`
-named from the transfer YAML's file name. So `--execute IBD_Ancestry`,
-`--execute "IBD Ancestry"` and `--execute IBD_Ancestry_transfer.yaml` all mean
+named from the blueprint's file name. So `--execute IBD_Ancestry`,
+`--execute "IBD Ancestry"` and `--execute IBD_Ancestry_blueprint.yaml` all mean
 `runs/IBD_Ancestry/split/pullmanifest.yaml`, and a manifest path still works.
 """
 
@@ -46,7 +46,7 @@ class PullNotFound(RuntimeError):
 
 
 def run_folder_name(template: str | Path) -> str:
-    """`<project>` in `runs/<project>/` (D57): the transfer YAML's file name
+    """`<project>` in `runs/<project>/` (D57): the blueprint's file name
     without `.yaml` and without `_blueprint`, `_transfer`, `_intake` or `_temp`
     (D95, D162).
 
@@ -64,7 +64,7 @@ def run_folder_name(template: str | Path) -> str:
 def project_name(text: str) -> str:
     """A typed name as its run folder: `IBD Ancestry` is `IBD_Ancestry`.
 
-    A transfer file's name loses `.yaml` and `_transfer` as the split's does.
+    A blueprint's name loses `.yaml` and `_transfer` as the split's does.
     Anything else is only cleaned: a dot becomes an underscore rather than
     ending the name.
     """
@@ -77,7 +77,7 @@ def project_name(text: str) -> str:
 
 def working_blueprints(home: Path) -> dict[str, Path]:
     """Each project's working blueprint, by its run folder's name (D162):
-    `YAMLs/temp/<project>_blueprint.yaml`, else a blueprint or transfer YAML
+    `YAMLs/temp/<project>_blueprint.yaml`, else a blueprint, under either name,
     beside scope.py, where bundles placed them before."""
     home = Path(home)
     temp = home / "YAMLs" / "temp"
@@ -148,7 +148,7 @@ def newest_log(manifest: str | Path) -> Path | None:
 
 
 def is_manifest_file(path: Path) -> bool:
-    """A split's manifest, rather than a transfer YAML: it lists sessions."""
+    """A split's manifest, rather than a blueprint: it lists sessions."""
     if path.name.lower() == MANIFEST_FILENAME:
         return True
     try:
@@ -209,7 +209,7 @@ def not_found_message(argument: str, name: str, cwd: Path) -> str:
     if pulls:
         lines.append("The pulls there are: " + ", ".join(p.name for p in pulls) + ".")
     else:
-        lines.append("There are no pulls yet. Export the transfer YAML's split first.")
+        lines.append("There are no pulls yet. Export the blueprint's split first.")
     return "\n".join(lines)
 
 
@@ -353,7 +353,7 @@ def listing(cwd: Path | None = None, heading: str = "Which pull? Name one:",
     pulls = find_pulls(here)
     if not pulls:
         return [
-            f"No pulls under {config.runs_setting(here)}{os.sep} yet. Export a transfer YAML's split "
+            f"No pulls under {config.runs_setting(here)}{os.sep} yet. Export a blueprint's split "
             "first (Export split in the launcher).",
         ]
     width = max(len(p.name) for p in pulls)

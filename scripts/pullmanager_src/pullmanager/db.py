@@ -348,7 +348,7 @@ def connect_failure(connection_string: str, exc: BaseException) -> str:
     if "cannot open database" in text or "login failed" in text:
         hint = (
             f"Check that `{database}` is your project's database (project_db in the "
-            "transfer YAML) and that your login can open it."
+            "blueprint) and that your login can open it."
         )
     elif "server" in text and ("not found" in text or "not accessible" in text or "timeout" in text):
         hint = (

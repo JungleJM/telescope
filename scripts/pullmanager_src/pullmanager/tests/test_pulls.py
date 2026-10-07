@@ -48,24 +48,24 @@ class PullsTestCase(unittest.TestCase):
 class ResolveTests(PullsTestCase):
     def test_every_way_of_naming_a_pull_finds_its_manifest(self):
         manifest = self.make_pull("IBD_Ancestry")
-        (self.work / "IBD_Ancestry_transfer.yaml").write_text("project_folder: IBD Ancestry\n")
+        (self.work / "IBD_Ancestry_blueprint.yaml").write_text("project_folder: IBD Ancestry\n")
         for name in (
             "IBD_Ancestry",
             "IBD Ancestry",
             "ibd_ancestry",
-            "IBD_Ancestry_transfer.yaml",
-            str(self.work / "IBD_Ancestry_transfer.yaml"),
+            "IBD_Ancestry_blueprint.yaml",
+            str(self.work / "IBD_Ancestry_blueprint.yaml"),
             "runs/IBD_Ancestry/pullmanifest.yaml",
             "runs/IBD_Ancestry",
         ):
             with self.subTest(name=name):
                 self.assertEqual(resolve(name, self.work).resolve(), manifest.resolve())
 
-    def test_a_transfer_yaml_is_not_taken_for_a_manifest(self):
+    def test_a_blueprint_yaml_is_not_taken_for_a_manifest(self):
         # It exists and is YAML, but it lists no sessions: its pull is meant.
         manifest = self.make_pull("Test_Run")
-        (self.work / "Test_Run_transfer.yaml").write_text("cohorts: []\n")
-        self.assertEqual(resolve("Test_Run_transfer.yaml", self.work).resolve(), manifest.resolve())
+        (self.work / "Test_Run_blueprint.yaml").write_text("cohorts: []\n")
+        self.assertEqual(resolve("Test_Run_blueprint.yaml", self.work).resolve(), manifest.resolve())
 
     def test_a_manifest_anywhere_still_works_by_its_path(self):
         path = self.work / "elsewhere" / "custom.yaml"
@@ -92,7 +92,7 @@ class ResolveTests(PullsTestCase):
     def test_no_pulls_at_all_says_to_export_a_split(self):
         with self.assertRaises(PullNotFound) as caught:
             resolve("IBD_Ancestry", self.work)
-        self.assertIn("Export the transfer YAML's split first", str(caught.exception))
+        self.assertIn("Export the blueprint's split first", str(caught.exception))
 
     def test_the_folder_beside_the_runtime_is_searched_second(self):
         beside = self.work / "share"
@@ -312,7 +312,7 @@ class WorkingBlueprintTests(PullsTestCase):
         self.assertTrue(working.exists())
         self.assertIn("changed after this pull was split", out.getvalue())
 
-    def test_a_transfer_yaml_beside_scope_py_is_left_alone(self):
+    def test_a_blueprint_yaml_beside_scope_py_is_left_alone(self):
         from ..manifest import Manifest
 
         legacy = self.work / "IBD_Ancestry_transfer.yaml"

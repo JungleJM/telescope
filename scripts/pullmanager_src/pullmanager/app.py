@@ -2,7 +2,7 @@
 
 Author is YAML Manager's tkinter view (scripts/yamlmanager_tk.py, over its
 model); Run is the launcher (gui.py). Author saves an intake and exports its
-transfer YAML, which Run then takes (D94). Both are found from this
+blueprint, which Run then takes (D94). Both are found from this
 package's location, as the launcher finds makeYaml.
 
     python scope.py                # no arguments: this window (D123)
@@ -80,7 +80,7 @@ class App:
             workspace = author_module.model.Workspace.default()
             self.author = author_module.AuthorView(
                 self.author_frame, root, workspace,
-                on_transfer=self.take_transfer, on_title=self.set_title,
+                on_open_in_run=self.take_blueprint, on_title=self.set_title,
             )
         except Exception as exc:  # noqa: BLE001 - Run still works without Author
             ttk.Label(
@@ -109,9 +109,9 @@ class App:
             parts.append(f"Run: {self.run_title}")
         self.root.title(" · ".join(parts))
 
-    def take_transfer(self, path: Path) -> None:
-        """Author exported a transfer YAML: Run takes it, and is shown."""
-        self.run.use_transfer(path)
+    def take_blueprint(self, path: Path) -> None:
+        """Author exported a blueprint: Run takes it, and is shown."""
+        self.run.use_blueprint(path)
         self.halves.select(self.run_frame)
 
     def on_close(self) -> None:

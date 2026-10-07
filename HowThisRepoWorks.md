@@ -76,9 +76,9 @@ It returns a `CompileResult`: the finished YAML, plus errors and warnings. Each 
 
 ### 3. Blueprint: hand the template to Run
 
-**Transfer to Run** (`Draft.export_transfer`) hands the saved blueprint to the Run window. Multipliers and batching in it are still declarations; nothing is expanded until the split.
+**Open in Run** (`Draft.export_blueprint`) hands the saved blueprint to the Run window. Multipliers and batching in it are still declarations; nothing is expanded until the split.
 
-A blueprint can name recipes (`recipe: PatientWithDx`), which are read from `reference/recipes.yaml` at each compile. `makeYaml.build_transfer()` (`--export-transfer`) writes a version that stands alone instead: every recipe is written out in full, so the file needs no `recipes.yaml`. It is written only if the template validates.
+A blueprint can name recipes (`recipe: PatientWithDx`), which are read from `reference/recipes.yaml` at each compile. `makeYaml.build_blueprint()` (`--export-blueprint`) writes a version that stands alone instead: every recipe is written out in full, so the file needs no `recipes.yaml`. It is written only if the template validates.
 
 ### 4. Split: plan the sessions
 

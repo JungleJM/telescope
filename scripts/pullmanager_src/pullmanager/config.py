@@ -66,7 +66,7 @@ def runs_dir(home: Path) -> Path:
 
 def code_home(code_root: Path) -> Path:
     """The working folder for code at `code_root`: its parent in an extracted
-    bundle, else itself (the repository), as makeYaml's transfer_home."""
+    bundle, else itself (the repository), as makeYaml's blueprint_home."""
     code_root = Path(code_root)
     return code_root.parent if (code_root / ".runtime-manifest.json").is_file() else code_root
 

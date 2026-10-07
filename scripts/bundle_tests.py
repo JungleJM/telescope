@@ -275,6 +275,15 @@ class BuildTests(BundleTestCase):
                 for word in ("Exports", "ExportsPanel", "make_bundle", "queue_add", "bundle_queue", "mac-only"):
                     self.assertNotIn(word, section["content"])
 
+    def test_a_retired_name_anywhere_stops_the_build(self):
+        # D205: Telescope, transfer YAML and Exports, in code as well as prose.
+        import bundle_scrub
+
+        for line in ('TITLE = "Telescope"', 'LABEL = "Transfer YAML"', 'tab = "Exports"'):
+            with self.subTest(line=line):
+                self.assertEqual(len(bundle_scrub.mentions("t.py", line + "\n")), 1)
+        self.assertEqual(bundle_scrub.mentions("t.py", 'sql = "-- transfer rows"\n'), [])
+
     def test_wording_that_no_longer_matches_stops_the_build(self):
         import bundle_scrub
 
@@ -838,7 +847,7 @@ class EndToEndTests(BundleTestCase):
             str(REPO_ROOT / "scripts" / "makeYaml.py"),
             "--template", str(work / "01_valid_basic.yaml"),
             "--recipes", str(RECIPES_PATH),
-            "--export-transfer", "--out", str(work / "Basic_transfer.yaml"),
+            "--export-blueprint", "--out", str(work / "Basic_transfer.yaml"),
         )
         self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
         target = work / "pullmanager_runtime"
@@ -851,7 +860,7 @@ class EndToEndTests(BundleTestCase):
             "d = m.Draft.open(ws, ws.home / 'Basic_transfer.yaml')\n"
             "d.project_db = 'PROJECTD777'\n"
             "saved = d.save(); print('saved', saved.ok, saved.path.relative_to(ws.home).as_posix())\n"
-            "ok, message, path = d.export_transfer()\n"
+            "ok, message, path = d.export_blueprint()\n"
             "print('exported', ok, path.relative_to(ws.home).as_posix() if path else message)\n"
         )
         proc = subprocess.run([sys.executable, "-c", script, str(target / "scripts")],
@@ -878,7 +887,7 @@ class EndToEndTests(BundleTestCase):
             str(REPO_ROOT / "scripts" / "makeYaml.py"),
             "--template", str(work / "02_valid_multipliers_batching.yaml"),
             "--recipes", str(RECIPES_PATH),
-            "--export-transfer", "--out", str(work / "IBD_transfer.yaml"),
+            "--export-blueprint", "--out", str(work / "IBD_transfer.yaml"),
         )
         self.assertEqual(export.returncode, 0, export.stdout + export.stderr)
 
@@ -929,7 +938,7 @@ class EndToEndTests(BundleTestCase):
         )
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("recipes_not_found", proc.stdout)
-        self.assertIn("--export-transfer", proc.stdout)
+        self.assertIn("--export-blueprint", proc.stdout)
         self.assertNotIn("Traceback", proc.stdout + proc.stderr)
 
     def test_running_without_a_template_says_what_to_pass(self):
@@ -937,7 +946,7 @@ class EndToEndTests(BundleTestCase):
         extract(self.bundle, target)
         proc = self.run_python(str(target / "scripts" / "makeYaml.py"), "--validate")
         self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("--export-transfer", proc.stdout + proc.stderr)
+        self.assertIn("--export-blueprint", proc.stdout + proc.stderr)
         self.assertNotIn("Traceback", proc.stdout + proc.stderr)
 
     def test_runtime_reads_a_batch_product_manifest(self):

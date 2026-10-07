@@ -1,7 +1,7 @@
 """A pull backed up before Artifacts replaces it (D149).
 
 The pull's run folder, without `pull_files/` (the split and its SQL, rebuilt
-from the transfer YAML), is mirrored to `<backup folder>/<project>/`: a file
+from the blueprint), is mirrored to `<backup folder>/<project>/`: a file
 already there with the same size and time is left, one gone from the run folder
 is removed, so the backup stays an exact copy and a second backup copies only
 what changed. The backup folder is `datascope.json`'s `backup`, set in Run.
@@ -20,7 +20,7 @@ from . import config
 from .yaml_io import replace_patiently
 from .pulls import PULL_FILES_DIR
 
-# Left out of a backup: what the transfer YAML rebuilds, what only an Execute
+# Left out of a backup: what the blueprint rebuilds, what only an Execute
 # in progress holds, and Python's cache.
 SKIPPED_DIRS = {PULL_FILES_DIR, "__pycache__"}
 SKIPPED_SUFFIXES = (".lock", ".pyc", ".tmp")

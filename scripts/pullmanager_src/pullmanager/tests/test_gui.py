@@ -130,10 +130,10 @@ class ConstructionTests(GuiTestCase):
     def test_restores_remembered_choices(self):
         from ..launcher import Paths, save_settings
 
-        save_settings(Paths(template="IBD_transfer.yaml"), self.work)
+        save_settings(Paths(template="IBD_blueprint.yaml"), self.work)
         from ..launcher import locate_tools
         app = self.gui.LauncherApp(mock.MagicMock(), locate_tools(), self.work)
-        self.assertEqual(app.vars["template"].get(), "IBD_transfer.yaml")
+        self.assertEqual(app.vars["template"].get(), "IBD_blueprint.yaml")
 
 
 class ActionTests(GuiTestCase):
@@ -192,14 +192,14 @@ class NameTests(GuiTestCase):
         self.assertIn("Status", tabs)
 
     def test_artifacts_packages_the_loaded_pull_by_name(self):
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         with mock.patch.object(self.app.runner, "start") as start:
             self.app.on_artifacts()
         command = start.call_args.args[0]
         self.assertEqual(command[command.index("--artifacts") + 1], "IBD_Ancestry")
 
     def test_the_preview_runs_the_dry_run(self):
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         with mock.patch.object(self.app.runner, "start") as start:
             self.app.on_dry_run()
         self.assertIn("--dry-run", start.call_args.args[0])
@@ -211,7 +211,7 @@ class RunningPullTests(GuiTestCase):
 
     def setUp(self):
         super().setUp()
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
         # Execute must not open a real window: on Windows it holds the folder open.
@@ -233,7 +233,7 @@ class RunningPullTests(GuiTestCase):
 
     def test_start_run_lists_projects_and_leaves_out_the_running_one(self):
         # D126: two dropdowns; a pull executing is under Running pulls only.
-        for name in ("IBD_Ancestry_transfer.yaml", "Celiac_transfer.yaml"):
+        for name in ("IBD_Ancestry_blueprint.yaml", "Celiac_blueprint.yaml"):
             (self.work / name).write_text("cohorts: []\n", encoding="utf-8")
         self.assertEqual(self.app.running_choices(), {})
         start = self.app.start_choices()
@@ -246,15 +246,15 @@ class RunningPullTests(GuiTestCase):
         self.assertEqual(list(self.app.start_choices()), ["Celiac  (not run yet)"])
         self.app.vars["template"].set("")
         self.app.choose_running(label)
-        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_transfer.yaml")
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_blueprint.yaml")
         self.app.choose_start("Celiac  (not run yet)")
-        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "Celiac_transfer.yaml")
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "Celiac_blueprint.yaml")
 
     def test_a_pull_that_has_run_is_under_finished_and_stopped_only(self):
         # D140: three dropdowns; a pull that has run leaves Start run.
         import copy
 
-        for name in ("IBD_Ancestry_transfer.yaml", "Celiac_transfer.yaml"):
+        for name in ("IBD_Ancestry_blueprint.yaml", "Celiac_blueprint.yaml"):
             (self.work / name).write_text("cohorts: []\n", encoding="utf-8")
         data = copy.deepcopy(SAMPLE_MANIFEST)
         for session in data["sessions"]:
@@ -266,7 +266,7 @@ class RunningPullTests(GuiTestCase):
         self.assertEqual(list(self.app.start_choices()), ["Celiac  (not run yet)"])
         self.app.vars["template"].set("")
         self.app.choose_ended("IBD_Ancestry  (finished)")
-        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_transfer.yaml")
+        self.assertEqual(Path(self.app.vars["template"].get()), self.work / "IBD_Ancestry_blueprint.yaml")
         # Executing, it is under Running pulls instead.
         self.lock()
         self.assertEqual(self.app.ended_choices(), {})
@@ -275,12 +275,12 @@ class RunningPullTests(GuiTestCase):
         # D162: Infant_RSV's change was saved to one file while Run read another.
         temp = self.work / "YAMLs" / "temp"
         temp.mkdir(parents=True)
-        (self.work / "Celiac_transfer.yaml").write_text("old\n", encoding="utf-8")
+        (self.work / "Celiac_blueprint.yaml").write_text("old\n", encoding="utf-8")
         (temp / "Celiac_blueprint.yaml").write_text("new\n", encoding="utf-8")
-        (self.work / "Crohns_transfer.yaml").write_text("only\n", encoding="utf-8")
+        (self.work / "Crohns_blueprint.yaml").write_text("only\n", encoding="utf-8")
         start = self.app.start_choices()
         self.assertEqual(start["Celiac  (not run yet)"], temp / "Celiac_blueprint.yaml")
-        self.assertEqual(start["Crohns  (not run yet)"], self.work / "Crohns_transfer.yaml")
+        self.assertEqual(start["Crohns  (not run yet)"], self.work / "Crohns_blueprint.yaml")
 
     def test_a_packaged_pull_without_a_working_copy_loads_its_run_folder_copy(self):
         import copy
@@ -304,7 +304,7 @@ class RunningPullTests(GuiTestCase):
 
     def test_choosing_from_one_dropdown_clears_the_others_and_heads_the_pull(self):
         # D166: a stale `IBD_Ancestry (not run yet)` showed beside a loaded Infant_RSV.
-        (self.work / "Celiac_transfer.yaml").write_text("cohorts: []\n", encoding="utf-8")
+        (self.work / "Celiac_blueprint.yaml").write_text("cohorts: []\n", encoding="utf-8")
         self.app.start_pick.set("IBD_Ancestry  (not run yet)")
         self.app.ended_pick.set("Old  (finished)")
         self.app.choose_start("Celiac  (not run yet)")
@@ -388,7 +388,7 @@ class UtilityButtonTests(GuiTestCase):
 
     def setUp(self):
         super().setUp()
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(dict(SAMPLE_MANIFEST, database_choice={"database": "PROJECTD52219B"}), self.manifest)
 
@@ -446,7 +446,7 @@ class ConsoleTests(GuiTestCase):
 
     def setUp(self):
         super().setUp()
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
         dump_yaml(SAMPLE_MANIFEST, self.manifest)
         self.logs = self.manifest.parent
@@ -592,7 +592,7 @@ class DefaultTests(GuiTestCase):
 class StatusTests(GuiTestCase):
     def setUp(self):
         super().setUp()
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         self.manifest = self.work / "runs" / "IBD_Ancestry" / "pullmanifest.yaml"
 
     def test_shows_one_row_per_session_phase_and_run(self):
@@ -800,11 +800,11 @@ class StatusTests(GuiTestCase):
         message = self.app.status_message.configure.call_args.kwargs["text"]
         self.assertIn("Export a split", message)
 
-    def test_no_transfer_yaml_yet_says_so_instead_of_failing(self):
+    def test_no_blueprint_yaml_yet_says_so_instead_of_failing(self):
         self.app.vars["template"].set("")
         self.app.refresh_status()
         message = self.app.status_message.configure.call_args.kwargs["text"]
-        self.assertIn("transfer YAML", message)
+        self.assertIn("blueprint", message)
 
 
 class RepullSessionTests(GuiTestCase):
@@ -814,7 +814,7 @@ class RepullSessionTests(GuiTestCase):
         super().setUp()
         import copy
 
-        self.app.vars["template"].set("IBD_Ancestry_transfer.yaml")
+        self.app.vars["template"].set("IBD_Ancestry_blueprint.yaml")
         data = copy.deepcopy(SAMPLE_MANIFEST)
         session = data["sessions"][0]
         for node in [*session["phases"].values(), *session["runs"]]:
@@ -837,7 +837,7 @@ class RepullSessionTests(GuiTestCase):
 
 
 class AppTests(GuiTestCase):
-    """D93: Author and Run in one window; Author's transfer goes to Run (D94)."""
+    """D93: Author and Run in one window; Author's blueprint goes to Run (D94)."""
 
     def setUp(self):
         super().setUp()
@@ -856,12 +856,12 @@ class AppTests(GuiTestCase):
         root.title.assert_not_called()
         root.protocol.assert_not_called()
 
-    def test_a_transfer_from_author_is_loaded_into_run_and_shown(self):
+    def test_a_blueprint_from_author_is_loaded_into_run_and_shown(self):
         with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no author here")):
             app = self.app_module.App(mock.MagicMock(), self.tools, self.work)
-        transfer = self.work / "IBD_Ancestry_transfer.yaml"
-        app.take_transfer(transfer)
-        self.assertEqual(app.run.vars["template"].get(), str(transfer))
+        blueprint = self.work / "IBD_Ancestry_blueprint.yaml"
+        app.take_blueprint(blueprint)
+        self.assertEqual(app.run.vars["template"].get(), str(blueprint))
         app.halves.select.assert_called_with(app.run_frame)
 
     def test_the_title_names_both_halves(self):
@@ -870,7 +870,7 @@ class AppTests(GuiTestCase):
         with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no author here")):
             app = self.app_module.App(root, self.tools, self.work)
         app.set_title("Crohns_VisitsMedsDiagnoses *")
-        app.take_transfer(self.work / "YAMLs" / "temp" / "Infant_RSV_blueprint.yaml")
+        app.take_blueprint(self.work / "YAMLs" / "temp" / "Infant_RSV_blueprint.yaml")
         self.assertEqual(root.title.call_args.args[0],
                          "Scope · Author: Crohns_VisitsMedsDiagnoses * · Run: Infant_RSV")
 

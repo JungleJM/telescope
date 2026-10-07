@@ -95,12 +95,12 @@ COMPANION_FILES: tuple[tuple[Path, str, str], ...] = (
 # configure; shipping an example would only suggest otherwise.
 
 # Transfer YAMLs a bundle can carry (`yaml=`), from the repository root,
-# where `makeYaml --export-transfer` writes them. Each is extracted beside
+# where `makeYaml --export-blueprint` writes them. Each is extracted beside
 # pullmanager.py on the VM, ready to run.
-TRANSFER_SUFFIX = "_transfer.yaml"
+OLDER_SUFFIX = "_transfer.yaml"
 # What makeYaml exports now (D162); placed in YAMLs/temp/ on the VM.
 BLUEPRINT_SUFFIX = "_blueprint.yaml"
-PULL_SUFFIXES = (BLUEPRINT_SUFFIX, TRANSFER_SUFFIX)
+PULL_SUFFIXES = (BLUEPRINT_SUFFIX, OLDER_SUFFIX)
 
 # The bundle queue (D91): temps YAML Manager's Save & Refresh queued, one file
 # name per line. `makebundle.py queue` exports each one's transfer YAML to the
@@ -235,7 +235,7 @@ def find_transfer(name: str, folder: Path = REPO_ROOT) -> Path:
     there = ", ".join(path.name for path in available) or "none"
     raise BundleError(
         f"No {stem}{BLUEPRINT_SUFFIX} in {folder}. Blueprints there: {there}. Export it first: "
-        f"python3 scripts/makeYaml.py --template <template> --export-transfer"
+        f"python3 scripts/makeYaml.py --template <template> --export-blueprint"
     )
 
 
@@ -342,7 +342,7 @@ def export_queue(folder: Path = TEMP_DIR, out_dir: Path | None = None) -> list[t
             problems.append(f"{name}: not in {folder}. Remove it from the queue (Builder > Exports) "
                             "or put the file back.")
             continue
-        result = makeYaml.build_transfer(
+        result = makeYaml.build_blueprint(
             template_path=temp, recipes_path=RECIPES_PATH, write=True, output_dir=out_dir
         )
         if result.errors:

@@ -1,4 +1,4 @@
-transfer:
+blueprint:
   from_template: UC_VisitsMedsDiagnoses_intake.yaml
   recipes_sha256: 6b6704e72e87
   recipes_used:

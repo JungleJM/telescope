@@ -111,12 +111,12 @@ class AuthorView:
     """The Builder, Validate and YAML, over one draft at a time."""
 
     def __init__(self, parent: Any, root: Any, workspace: model.Workspace,
-                 on_transfer: Callable[[Path], None] | None = None,
+                 on_open_in_run: Callable[[Path], None] | None = None,
                  on_title: Callable[[str], None] | None = None):
         self.parent = parent
         self.root = root
         self.ws = workspace
-        self.on_transfer = on_transfer
+        self.on_open_in_run = on_open_in_run
         self.on_title = on_title
         self.draft = model.Draft.new(workspace)
         self._pending_check: Any = None
@@ -166,7 +166,7 @@ class AuthorView:
         ttk.Button(top, text="New", command=self.new).pack(side="left", padx=2)
         ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=8)
         ttk.Button(top, text="Save", command=self.save).pack(side="left", padx=2)
-        ttk.Button(top, text="Transfer to Run", command=self.transfer).pack(side="left", padx=2)
+        ttk.Button(top, text="Open in Run", command=self.open_in_run).pack(side="left", padx=2)
         self.target = note(top, "")
         self.target.pack(side="left", padx=(10, 0))
 
@@ -321,7 +321,7 @@ class AuthorView:
         validation = self.draft.validation()
         counts = {kind: len(validation.of_kind(kind)) for kind in ("error", "warning", "pending")}
         if validation.ok and not counts["warning"] and not counts["pending"]:
-            self.say("Valid: ready to save and transfer.", "pass")
+            self.say("Valid: ready to save and open in Run.", "pass")
         else:
             parts = [f"{n} {kind}{'s' if n != 1 and kind != 'pending' else ''}" for kind, n in counts.items() if n]
             worst = "error" if counts["error"] else ("warning" if counts["warning"] else "pending")
@@ -445,17 +445,17 @@ class AuthorView:
             self.schedule_check()
         return result.ok
 
-    def transfer(self) -> None:
-        """Save, export the transfer YAML, and hand it to Run (D94)."""
+    def open_in_run(self) -> None:
+        """Save, export the blueprint, and hand it to Run (D94)."""
         if self.draft.dirty or self.draft.path is None:
             if not self.save():
                 return
-        ok, message, path = self.draft.export_transfer()
+        ok, message, path = self.draft.export_blueprint()
         self.say(message, "pass" if ok else "error")
         if ok:
             self.refresh_files()
-            if self.on_transfer and path is not None:
-                self.on_transfer(path)
+            if self.on_open_in_run and path is not None:
+                self.on_open_in_run(path)
 
     def on_tab(self) -> None:
         current = self.tabs.select()
@@ -1886,7 +1886,7 @@ class ExportsPanel:
             ttk.Button(make, text="Bundle With Manager", command=self.make_bundle).pack(side="left")
             ttk.Button(make, text="Bundle YAMLs only", command=lambda: self.make_bundle(yamls_only=True)
                        ).pack(side="left", padx=6)
-            note(make, "With Manager: dist/bundle.py, the software and each queued project's transfer YAML. "
+            note(make, "With Manager: dist/bundle.py, the software and each queued project's blueprint. "
                        "YAMLs only: dist/yamls_to_transfer.py, which leaves the VM's software as it is. "
                        "Either empties the queue (D122).").pack(side="left", padx=8)
             if self.last_bundle is not None:
@@ -2067,8 +2067,8 @@ class ViewTest(unittest.TestCase):
                                   self.tmp / "recipes" / "datadictionary.yaml", self.tmp / "recipes" / "template.yaml")
         frame = ttk.Frame(self.root)
         frame.pack()
-        self.transferred: list[Path] = []
-        self.view = AuthorView(frame, self.root, self.ws, on_transfer=self.transferred.append)
+        self.opened_in_run: list[Path] = []
+        self.view = AuthorView(frame, self.root, self.ws, on_open_in_run=self.opened_in_run.append)
         self.addCleanup(self.close_view, frame)
 
     def close_view(self, frame: Any) -> None:
@@ -2201,14 +2201,14 @@ class SectionViewTests(ViewTest):
         self.assertEqual(len(names), before + 1)
         self.assertEqual(names[-1], "Visits")
 
-    def test_transfer_saves_exports_and_hands_the_file_on(self):
+    def test_blueprint_saves_exports_and_hands_the_file_on(self):
         self.open("Celiac_intake.yaml")
         self.view.edit(lambda: setattr(self.view.draft, "project_db", "PROJECTD456"))
-        self.view.transfer()
+        self.view.open_in_run()
         self.assertFalse(self.view.draft.dirty)
-        self.assertEqual(len(self.transferred), 1)
-        self.assertEqual(self.transferred[0].parent, self.tmp)
-        self.assertIn("PROJECTD456", self.transferred[0].read_text(encoding="utf-8"))
+        self.assertEqual(len(self.opened_in_run), 1)
+        self.assertEqual(self.opened_in_run[0].parent, self.tmp)
+        self.assertIn("PROJECTD456", self.opened_in_run[0].read_text(encoding="utf-8"))
 
 
 class SplitAndFactViewTests(ViewTest):
@@ -2387,7 +2387,7 @@ class ValidateAndExportViewTests(ViewTest):
         self.view.exports_panel.refresh()
         boxes = [w for w in widgets(self.view.exports_tab) if isinstance(w, scrolledtext.ScrolledText)]
         self.assertEqual(len(boxes), 3)
-        self.assertIn("transfer:", boxes[1].get("1.0", "end"))
+        self.assertIn("blueprint:", boxes[1].get("1.0", "end"))
         if model.queue_available():
             self.view.exports_panel.queue("add", "Celiac_intake.yaml")
             self.assertEqual(model.queue_state(self.ws)["queue"][0]["name"], "Celiac_intake.yaml")

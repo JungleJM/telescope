@@ -70,18 +70,18 @@ class LocateToolsTests(TempDirTestCase):
 
 class CommandTests(unittest.TestCase):
     def test_validate_passes_every_input(self):
-        paths = Paths(template="T_transfer.yaml")
+        paths = Paths(template="T_blueprint.yaml")
         command = command_validate(TOOLS, paths)
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(command[1], str(TOOLS.make_yaml))
-        self.assertEqual(command[2:], ["--template", "T_transfer.yaml", "--validate"])
+        self.assertEqual(command[2:], ["--template", "T_blueprint.yaml", "--validate"])
 
     def test_blank_optional_inputs_fall_back_to_the_installed_copies(self):
         command = command_validate(TOOLS, Paths(template="T.yaml"))
         self.assertNotIn("--datadictionary", command)
 
     def test_never_passes_recipes(self):
-        # D49: a transfer YAML carries its recipes; none ship to the VM.
+        # D49: a blueprint carries its recipes; none ship to the VM.
         for build in (command_validate, command_export_split):
             with self.subTest(command=build.__name__):
                 self.assertNotIn("--recipes", build(TOOLS, Paths(template="T.yaml")))
@@ -126,11 +126,11 @@ class CommandTests(unittest.TestCase):
 
     def test_execute_passes_a_typed_split_folders_manifest(self):
         # A name finds only runs/<project>/split, so a chosen folder goes by path.
-        command = command_execute(TOOLS, Paths(template="T_transfer.yaml", split_dir="s"), Options())
+        command = command_execute(TOOLS, Paths(template="T_blueprint.yaml", split_dir="s"), Options())
         self.assertEqual(command[command.index("--execute") + 1], str(Path("s") / "pullmanifest.yaml"))
 
     def test_its_console_is_kept_open_until_exit_is_typed(self):
-        paths = Paths(template="T_transfer.yaml")
+        paths = Paths(template="T_blueprint.yaml")
         self.assertIn("--keep-open", command_execute(TOOLS, paths, Options(), keep_open=True))
         self.assertNotIn("--keep-open", command_execute(TOOLS, paths, Options()))
 
@@ -148,7 +148,7 @@ class RunFolderTests(unittest.TestCase):
     SHARE = "Z:\\Project D139081\\"
 
     def test_blank_folders_are_the_projects_own(self):
-        paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+        paths = Paths(template=self.SHARE + "IBD_Ancestry_blueprint.yaml")
         # D142: the manifest at the run folder's top, the SQL under pull_files.
         split = str(Path("runs") / "IBD_Ancestry")
         self.assertEqual(command_export_split(TOOLS, paths)[-1], split)
@@ -162,23 +162,23 @@ class RunFolderTests(unittest.TestCase):
 
     def test_the_share_folder_name_plays_no_part(self):
         # The repo sits in "Project D139081"; the project is named by its file.
-        paths = Paths(template=self.SHARE + "IBD_Ancestry_transfer.yaml")
+        paths = Paths(template=self.SHARE + "IBD_Ancestry_blueprint.yaml")
         self.assertNotIn("139081", str(paths.manifest()))
         out_dir = command_export_split(TOOLS, paths)[-1]
         self.assertEqual(out_dir, str(Path("runs") / "IBD_Ancestry"))
 
     def test_two_projects_never_share_a_manifest(self):
-        first = Paths(template="IBD_Ancestry_transfer.yaml").manifest()
-        second = Paths(template="IBD_Ancestry_v2_transfer.yaml").manifest()
+        first = Paths(template="IBD_Ancestry_blueprint.yaml").manifest()
+        second = Paths(template="IBD_Ancestry_v2_blueprint.yaml").manifest()
         self.assertNotEqual(first, second)
 
     def test_a_typed_folder_still_wins(self):
-        paths = Paths(template="IBD_Ancestry_transfer.yaml", split_dir="elsewhere", sql_dir="q")
+        paths = Paths(template="IBD_Ancestry_blueprint.yaml", split_dir="elsewhere", sql_dir="q")
         self.assertEqual(paths.manifest(), Path("elsewhere") / "pullmanifest.yaml")
         self.assertEqual(paths.sql_folder(), Path("q"))
 
-    def test_no_transfer_yaml_and_no_folder_asks_for_one(self):
-        with self.assertRaisesRegex(LauncherError, "transfer YAML"):
+    def test_no_blueprint_yaml_and_no_folder_asks_for_one(self):
+        with self.assertRaisesRegex(LauncherError, "blueprint"):
             command_dry_run(TOOLS, Paths(), Options())
 
     def test_the_rule_matches_makeyaml(self):
@@ -504,7 +504,7 @@ class StatusRowTests(TempDirTestCase):
 
 class SettingsTests(TempDirTestCase):
     def test_round_trips(self):
-        paths = Paths(template="IBD_transfer.yaml", split_dir="out")
+        paths = Paths(template="IBD_blueprint.yaml", split_dir="out")
         save_settings(paths, self.tmp)
         self.assertEqual(load_settings(self.tmp), paths)
 
@@ -513,7 +513,7 @@ class SettingsTests(TempDirTestCase):
         # even when the bundle's copy was newer.
         (self.tmp / "runs").mkdir(exist_ok=True)
         (self.tmp / "runs" / launcher.SETTINGS_FILENAME).write_text(
-            '{"template": "IBD_transfer.yaml", "datadictionary": "../data/old_dictionary.yaml"}',
+            '{"template": "IBD_blueprint.yaml", "datadictionary": "../data/old_dictionary.yaml"}',
             encoding="utf-8")
         loaded = load_settings(self.tmp)
         for command in (command_validate(TOOLS, loaded), command_export_split(TOOLS, loaded)):
@@ -536,7 +536,7 @@ class SettingsTests(TempDirTestCase):
     def test_an_older_launchers_saved_defaults_become_the_projects_own(self):
         # It saved "split" and "sql" whether or not they were chosen (D57).
         (self.tmp / launcher.SETTINGS_FILENAME).write_text(
-            '{"template": "IBD_Ancestry_transfer.yaml", "split_dir": "split", "sql_dir": "sql"}',
+            '{"template": "IBD_Ancestry_blueprint.yaml", "split_dir": "split", "sql_dir": "sql"}',
             encoding="utf-8",
         )
         loaded = load_settings(self.tmp)
@@ -566,21 +566,21 @@ class SettingsPlaceTests(unittest.TestCase):
         self.work = Path(self._tmp.name)
 
     def test_saved_under_runs(self):
-        launcher.save_settings(launcher.Paths(template="A_transfer.yaml"), self.work)
+        launcher.save_settings(launcher.Paths(template="A_blueprint.yaml"), self.work)
         self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
-        self.assertEqual(launcher.load_settings(self.work).template, "A_transfer.yaml")
+        self.assertEqual(launcher.load_settings(self.work).template, "A_blueprint.yaml")
 
     def test_an_old_file_at_the_top_is_moved_and_still_read(self):
-        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
-        self.assertEqual(launcher.load_settings(self.work).template, "Old_transfer.yaml")
+        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_blueprint.yaml"}', encoding="utf-8")
+        self.assertEqual(launcher.load_settings(self.work).template, "Old_blueprint.yaml")
         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
         self.assertTrue((self.work / "runs" / ".pullmanager-gui.json").is_file())
 
     def test_a_newer_file_in_runs_wins_and_the_old_is_removed(self):
-        launcher.save_settings(launcher.Paths(template="New_transfer.yaml"), self.work)
-        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_transfer.yaml"}', encoding="utf-8")
-        self.assertEqual(launcher.load_settings(self.work).template, "New_transfer.yaml")
+        launcher.save_settings(launcher.Paths(template="New_blueprint.yaml"), self.work)
+        (self.work / ".pullmanager-gui.json").write_text('{"template": "Old_blueprint.yaml"}', encoding="utf-8")
+        self.assertEqual(launcher.load_settings(self.work).template, "New_blueprint.yaml")
         self.assertFalse((self.work / ".pullmanager-gui.json").exists())
 
 
@@ -614,7 +614,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(pulls.resolve("IBD", self.home).resolve(), manifest.resolve())
         command, folder = pulls.execute_command(manifest, self.home)
         self.assertEqual((command, folder), ("python scope.py --execute IBD", self.home.resolve()))
-        self.assertTrue((launcher.save_settings(launcher.Paths(template="IBD_transfer.yaml"), self.home)
+        self.assertTrue((launcher.save_settings(launcher.Paths(template="IBD_blueprint.yaml"), self.home)
                          ).is_relative_to(self.home / "cleanup" / "runs"))
 
     def test_without_it_runs_are_in_the_working_folder(self):

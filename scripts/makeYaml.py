@@ -32,7 +32,7 @@ from typing import Any
 OUTPUT_SUFFIX = "_Full"
 PREYAML_SUFFIX = "_preyaml"
 EXPANDED_PREYAML_SUFFIX = "_preyaml_expanded"
-TRANSFER_SUFFIX = "_transfer"
+OLDER_SUFFIX = "_transfer"
 # The file a split is made from (D162): `<project>_blueprint.yaml`. A
 # `_transfer.yaml`, its name before, is still read.
 BLUEPRINT_SUFFIX = "_blueprint"
@@ -51,7 +51,7 @@ CORE_DEFAULTS = {
 }
 CONFIG_KEYS = (*CORE_DEFAULTS, "runs", "backup")  # backup: Pullmanager's (D149)
 # Dropped from a template's file name to name its run folder (D57).
-RUN_NAME_SUFFIXES = (BLUEPRINT_SUFFIX, TRANSFER_SUFFIX, "_intake", "_temp")
+RUN_NAME_SUFFIXES = (BLUEPRINT_SUFFIX, OLDER_SUFFIX, "_intake", "_temp")
 
 
 # =============================================================================
@@ -394,9 +394,9 @@ def project_root() -> Path:
     return script_root().parent
 
 
-def transfer_home() -> Path:
-    """Where `--export-transfer` writes: the repository root, beside
-    makebundle.py, which carries transfer YAMLs from there (`yaml=`). In an
+def blueprint_home() -> Path:
+    """Where `--export-blueprint` writes: the repository root, beside
+    makebundle.py, which carries blueprints from there (`yaml=`). In an
     extracted bundle, the working folder beside it, never inside it."""
     root = project_root()
     return root.parent if (root / ".runtime-manifest.json").is_file() else root
@@ -407,7 +407,7 @@ class ConfigError(RuntimeError):
 
 
 def config_file() -> Path:
-    return transfer_home() / CONFIG_NAME
+    return blueprint_home() / CONFIG_NAME
 
 
 def read_config() -> dict[str, str]:
@@ -442,14 +442,14 @@ def runs_root() -> Path:
     config = read_config()
     if "runs" in config:
         return config_file().parent / config["runs"]
-    return transfer_home() / RUNS_DIR
+    return blueprint_home() / RUNS_DIR
 
 
 def run_folder_name(template_path: str | Path) -> str:
     """`<project>` in `runs/<project>/` (D57): the template's file name without
     `.yaml` and without `_blueprint`, `_transfer`, `_intake` or `_temp` (D95, D162).
 
-    The file name rather than `project_folder`, so two transfer files never
+    The file name rather than `project_folder`, so two blueprints never
     share a run folder. The launcher keeps a copy of this rule
     (`launcher.run_folder_name`); a runtime test holds the two together.
     """
@@ -479,7 +479,7 @@ def default_recipes_path() -> Path:
 YAML_SYNTAX_FIX = "Correct the YAML syntax at the line and column named above."
 MISSING_TEMPLATE_FIX = (
     "Pass `--template` with the file to use: on the VM, the project's blueprint in "
-    "YAMLs/temp/ (one that stands alone is written by `makeYaml.py --export-transfer`)."
+    "YAMLs/temp/ (one that stands alone is written by `makeYaml.py --export-blueprint`)."
 )
 
 
@@ -552,7 +552,7 @@ def batching_reference(item: Any) -> str | None:
 def recipe_references(template: dict[str, Any]) -> list[str]:
     """Every place a template leans on a recipes file, as field paths.
 
-    A transfer YAML (D49) has none, which is what lets it split with no
+    A blueprint (D49) has none, which is what lets it split with no
     recipes file at all.
     """
     refs = []
@@ -582,7 +582,7 @@ def load_recipes(recipes_path: Path, template: dict[str, Any], result: CompileRe
             f"recipes file at {recipes_path}.",
             refs[0].split(":")[0],
             fix="Recipes are kept on the Mac (D49). There, export this template with "
-            "`makeYaml.py --export-transfer`, which writes every recipe out in full, and "
+            "`makeYaml.py --export-blueprint`, which writes every recipe out in full, and "
             "bring that file across. Or pass `--recipes` with the recipes file.",
         )
         return None
@@ -1392,8 +1392,8 @@ def report_missing_upload(
     or pending if it is marked `pending_transfer` (D97). Returns the columns it
     declares, which stand in for the file's until it arrives, or None.
 
-    A transfer YAML (and the UI that builds one) is made on the Mac, where a
-    file may not have arrived yet; it is supplied on the VM beside the transfer
+    A blueprint (and the UI that builds one) is made on the Mac, where a
+    file may not have arrived yet; it is supplied on the VM beside the blueprint
     YAML, and the split there, which needs it, checks it again as an error.
     """
     check_declared_columns(upload, None, where, result)
@@ -1406,7 +1406,7 @@ def report_missing_upload(
             + (" Its columns are checked against the ones listed under `columns:`." if declared
                else " Its columns cannot be checked until it arrives."),
             f"{where}.file_loc",
-            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the transfer "
+            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the blueprint "
             "YAML; the split there checks it."
             + ("" if declared else " To check its columns now, list them under `columns:`."),
         )
@@ -1416,7 +1416,7 @@ def report_missing_upload(
             "missing_upload_file",
             f"Upload file not here yet: {file_path}. Its columns cannot be checked until it is.",
             f"{where}.file_loc",
-            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the transfer "
+            fix=f"Supply it on the VM at `{upload.get('file_loc')}`, relative to the blueprint "
             "YAML; the split there checks it. Or correct `file_loc` if the path is wrong. "
             "If it will only exist on the VM, mark it `pending_transfer: true`.",
         )
@@ -3358,7 +3358,7 @@ def compile_yaml(
     """Validate and render a template.
 
     `uploads_elsewhere` makes a missing upload file a warning: set where the
-    output is a plan that travels (a transfer YAML, the UI), never for a split.
+    output is a plan that travels (a blueprint, the UI), never for a split.
     `template_data` is a template not yet saved (the app's draft, D92): it is
     compiled as if it were at `template_path`, which need not exist.
     """
@@ -3737,11 +3737,12 @@ def build_split_plan_from_finished(
         )
 
     source: dict[str, Any] = {"template": str(template_path), "recipes": str(recipes_path)}
-    if isinstance(finished_yaml.get("transfer"), dict):
-        # A transfer YAML carries its recipes inline (D49); whatever --recipes
+    provenance = provenance_of(finished_yaml)
+    if provenance is not None:
+        # A blueprint carries its recipes inline (D49); whatever --recipes
         # defaulted to was never read, so naming it would mislead.
         source["recipes"] = None
-        source["transfer"] = copy.deepcopy(finished_yaml["transfer"])
+        source[PROVENANCE_KEY] = copy.deepcopy(provenance)
     return SplitPlan(
         project=project_metadata(finished_yaml),
         source=source,
@@ -3802,7 +3803,8 @@ def split_base_document(finished_yaml: dict[str, Any]) -> dict[str, Any]:
     doc.pop("multipliers", None)
     doc.pop("batching", None)
     doc.pop("example_cohorts", None)
-    doc.pop("transfer", None)
+    for key in PROVENANCE_KEYS:
+        doc.pop(key, None)
     # Applied: each run holds its group's tables and says which (D134).
     doc.pop("table_groups", None)
     return doc
@@ -4001,7 +4003,7 @@ def write_split_artifacts(
             "--export-split",
             fix="Wait for it to finish, or stop it (Ctrl+C in its window, or Stop in the "
             "launcher); it counts as stopped 2 minutes after its last heartbeat. To pull "
-            "a changed version beside it, copy the transfer YAML under a new name: it "
+            "a changed version beside it, copy the blueprint under a new name: it "
             "gets its own run folder.",
         )
         return result
@@ -4173,7 +4175,7 @@ def build_preyaml(
     return result
 
 
-def transfer_output_path(template: dict[str, Any], template_path: Path) -> Path:
+def blueprint_output_path(template: dict[str, Any], template_path: Path) -> Path:
     """`<project>_blueprint.yaml`, beside the template it came from (D162)."""
     name = str(template.get("project_folder") or template_path.stem).strip() or "project"
     clean = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_") or "project"
@@ -4195,13 +4197,13 @@ def repoint_file_loc(file_loc: str, from_dir: Path, to_dir: Path) -> str:
 
 
 def place_uploads(
-    transfer: dict[str, Any],
+    blueprint: dict[str, Any],
     template_dir: Path,
     out_dir: Path,
     result: CompileResult,
     write: bool,
 ) -> list[tuple[str, Path]]:
-    """Keep every upload reachable from the transfer YAML.
+    """Keep every upload reachable from the blueprint.
 
     Written beside the template, the files are already in place. Written
     elsewhere, a `file_loc` inside the template's folder is kept and the file
@@ -4211,11 +4213,11 @@ def place_uploads(
     written, it would point somewhere else. If it still leaves that folder, or
     is absolute, it is not copied, with a warning.
 
-    Returns each upload as (its `file_loc` in the transfer, the file it means).
+    Returns each upload as (its `file_loc` in the blueprint, the file it means).
     """
     listed: list[tuple[str, Path]] = []
     same_place = out_dir.resolve() == template_dir.resolve()
-    for idx, upload in enumerate(transfer.get("upload_cohorts", []) or []):
+    for idx, upload in enumerate(blueprint.get("upload_cohorts", []) or []):
         if not isinstance(upload, dict) or not upload.get("file_loc"):
             continue
         file_loc = str(upload["file_loc"])
@@ -4232,10 +4234,10 @@ def place_uploads(
         if rel.is_absolute() or ".." in rel.parts:
             result.warn(
                 "upload_not_copied",
-                f"`{file_loc}` is outside the transfer YAML's folder, so it was not copied "
+                f"`{file_loc}` is outside the blueprint's folder, so it was not copied "
                 "beside it.",
                 f"upload_cohorts[{idx}] ({upload.get('name')}).file_loc",
-                fix="Put the file at that path relative to the transfer YAML on the VM, "
+                fix="Put the file at that path relative to the blueprint on the VM, "
                 "or move it under the template's folder and point `file_loc` there.",
             )
             continue
@@ -4250,7 +4252,23 @@ def place_uploads(
     return listed
 
 
-def build_transfer(
+# A blueprint's first key, the record of where it came from. Files written
+# before D205 have it as `transfer`, which is still read and never written.
+PROVENANCE_KEY = "blueprint"
+PROVENANCE_KEYS = (PROVENANCE_KEY, "transfer")
+
+
+def provenance_of(doc: Any) -> dict[str, Any] | None:
+    """A blueprint's record of where it came from, under either name."""
+    if not isinstance(doc, dict):
+        return None
+    for key in PROVENANCE_KEYS:
+        if isinstance(doc.get(key), dict):
+            return doc[key]
+    return None
+
+
+def build_blueprint(
     template_path: str | Path | None = None,
     recipes_path: str | Path | None = None,
     output_path: str | Path | None = None,
@@ -4294,7 +4312,8 @@ def build_transfer(
     if body.get("batching"):
         body["batching"] = public_batching(normalize_batching(body["batching"], recipes_doc, quiet))
     body.pop("example_cohorts", None)
-    body.pop("transfer", None)
+    for key in PROVENANCE_KEYS:
+        body.pop(key, None)
 
     refs = recipe_references(template)
     provenance: dict[str, Any] = {"from_template": template_path.name}
@@ -4303,23 +4322,23 @@ def build_transfer(
         provenance["recipes_used"] = sorted(set(used)) + sorted(
             {ref.split(": ", 1)[1] for ref in refs if ref.startswith("batching")}
         )
-    elif isinstance(template.get("transfer"), dict):
-        # Re-exporting a transfer YAML keeps the record of where it came from.
-        provenance = copy.deepcopy(template["transfer"])
-    transfer = {"transfer": provenance, **body}
+    elif provenance_of(template) is not None:
+        # Re-exporting a blueprint keeps the record of where it came from.
+        provenance = copy.deepcopy(provenance_of(template))
+    blueprint = {PROVENANCE_KEY: provenance, **body}
 
-    out_path = Path(output_path) if output_path else transfer_output_path(template, template_path)
+    out_path = Path(output_path) if output_path else blueprint_output_path(template, template_path)
     if not output_path and output_dir:
         out_path = Path(output_dir) / out_path.name
     if write:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-    placed = place_uploads(transfer, template_path.parent, out_path.parent, result, write)
-    result.analysis["transfer_uploads"] = [loc for loc, _ in placed]
-    result.analysis["transfer_uploads_missing"] = [loc for loc, source in placed if not source.is_file()]
-    result.finished_yaml = transfer
+    placed = place_uploads(blueprint, template_path.parent, out_path.parent, result, write)
+    result.analysis["blueprint_uploads"] = [loc for loc, _ in placed]
+    result.analysis["blueprint_uploads_missing"] = [loc for loc, source in placed if not source.is_file()]
+    result.finished_yaml = blueprint
     result.output_path = str(out_path)
     if write:
-        dump_yaml(transfer, out_path)
+        dump_yaml(blueprint, out_path)
     return result
 
 
@@ -5225,7 +5244,7 @@ class DataDictionaryTests(MakeYamlTest):
         check_column_types([cohort], res)
         self.assertEqual([m.code for m in res.errors], ["column_type_missing"])
 
-    def test_the_transfer_carries_the_dictionary_type_not_a_stale_copy(self):
+    def test_the_blueprint_carries_the_dictionary_type_not_a_stale_copy(self):
         # The Infant_RSV pull failed on Cosmos (8114, nvarchar to float): the
         # template held FLOAT for ReferenceValueHigh_X, which is text.
         labs = """  - name: Labs
@@ -5245,8 +5264,8 @@ class DataDictionaryTests(MakeYamlTest):
       join: INNER JOIN {{prefix}}_Patients AS pk ON pk.PatientDurableKey = l.PatientDurableKey
 """
         template, recipes = self.write_pair(extra=labs)
-        out = self.tmp / "out" / "Test_Run_transfer.yaml"
-        res = build_transfer(template, recipes, output_path=out, write=True)
+        out = self.tmp / "out" / "Test_Run_blueprint.yaml"
+        res = build_blueprint(template, recipes, output_path=out, write=True)
         self.assertCompiles(res)
         written = {c["name"]: c for c in load_yaml(out)["cohorts"]}
         types = {c["name"]: c["type"] for c in written["Labs"]["columns"]}
@@ -5323,13 +5342,13 @@ DataDictionary:
             with self.subTest(route=name):
                 self.assertHasError(route(), "unknown_table")
 
-    def test_missing_template_points_at_the_transfer_export(self):
+    def test_missing_template_points_at_the_blueprint_export(self):
         # The bundle ships no template (D49), so the default is absent by
         # design; the error has to say what to pass rather than a bare errno.
         res = compile_yaml(self.tmp / "nope.yaml", tiny_recipes_path(self.tmp))
         self.assertHasError(res, "template_not_found")
         self.assertIn("--template", res.errors[0].fix)
-        self.assertIn("--export-transfer", res.errors[0].fix)
+        self.assertIn("--export-blueprint", res.errors[0].fix)
 
     def test_real_dictionary_accepts_the_shipped_recipes(self):
         # The shipped recipes and dictionary must agree, or every template
@@ -5698,11 +5717,11 @@ class UploadedPkBatchingTests(MakeYamlTest):
         self.assertEqual([r["batch"]["name"] for r in runs], ["b1of3-Female", "b2of3-Male", "b3of3-sex-other"])
         self.assertEqual([d["name"] for d in runs[0]["batch"]["runtime"]], ["chunk"])
 
-    def test_a_pk_file_not_here_yet_still_makes_a_transfer(self):
+    def test_a_pk_file_not_here_yet_still_makes_a_blueprint(self):
         (self.tmp / "pks.csv").write_text("x\n", encoding="utf-8")
         template, recipes = self.write_pair(uploaded_pk_template() + "batching:\n  - sex\n")
         (self.tmp / "pks.csv").unlink()
-        res = build_transfer(template, recipes, write=True)
+        res = build_blueprint(template, recipes, write=True)
         self.assertCompiles(res)
         self.assertHasWarning(res, "batch_columns_unchecked")
         split = write_split_artifacts(template, recipes, output_dir=self.tmp / "split")
@@ -5814,7 +5833,7 @@ class DescriptionFieldTests(MakeYamlTest):
     """D74: granularity and column descriptions reach the split; D72: the
     separate_parquets flag reaches each batch."""
 
-    def test_they_travel_through_the_transfer_and_the_split(self):
+    def test_they_travel_through_the_blueprint_and_the_split(self):
         recipes = tiny_recipes().replace(
             "  - name: PatientWithDx\n    type: PK\n",
             "  - name: PatientWithDx\n    type: PK\n    granularity: One row per patient\n",
@@ -5824,16 +5843,16 @@ class DescriptionFieldTests(MakeYamlTest):
         )
         template = write_temp_yaml(self.tmp, "Desc_temp.yaml", tiny_template())
         recipes_path = write_temp_yaml(self.tmp, "recipes.yaml", recipes)
-        transfer = build_transfer(template, recipes_path, output_path=self.tmp / "Desc_transfer.yaml", write=True)
-        self.assertCompiles(transfer)
+        blueprint = build_blueprint(template, recipes_path, output_path=self.tmp / "Desc_blueprint.yaml", write=True)
+        self.assertCompiles(blueprint)
         out = self.tmp / "split"
-        self.assertCompiles(write_split_artifacts(Path(transfer.output_path), self.tmp / "none.yaml", out))
+        self.assertCompiles(write_split_artifacts(Path(blueprint.output_path), self.tmp / "none.yaml", out))
         manifest = load_yaml(out / "pullmanifest.yaml")
         pk_doc = load_yaml(out / manifest["sessions"][0]["phases"]["pk"]["yaml"])
         pk = pk_doc["cohorts"][0]
         self.assertEqual(pk["granularity"], "One row per patient")
         sex = next(c for c in pk["columns"] if c["name"] == "Sex")
-        # The recipe's text adds to the dictionary's, once, through transfer and split (D121).
+        # The recipe's text adds to the dictionary's, once, through the blueprint and the split (D121).
         dictionary = load_datadictionary(None, CompileResult())
         base = " ".join(dictionary["PatientDim"]["columns"]["Sex"]["description"].split())
         self.assertEqual(sex["description"], f"{base} Sex at registration")
@@ -5897,8 +5916,8 @@ batching:
         self.assertEqual({d["name"]: d.get("separate", False) for d in dims}, {"sex": True, "state": False})
 
 
-class TransferTests(MakeYamlTest):
-    """The transfer YAML (D49): recipes written out, nothing applied."""
+class BlueprintExportTests(MakeYamlTest):
+    """The blueprint (D49): recipes written out, nothing applied."""
 
     EXTRA = """
 upload_cohorts:
@@ -5930,7 +5949,7 @@ batching:
         self.no_recipes = self.tmp / "no_such_recipes.yaml"
 
     def export(self, out: Path | None = None) -> CompileResult:
-        res = build_transfer(self.template, self.recipes, output_path=out, write=True)
+        res = build_blueprint(self.template, self.recipes, output_path=out, write=True)
         self.assertCompiles(res)
         return res
 
@@ -5951,10 +5970,10 @@ batching:
     def test_splits_alone_exactly_as_the_template_does(self):
         # The outcome that matters: with no recipes file at all, the VM gets
         # the same sessions, runs and SQL inputs the Mac would have produced.
-        transfer = Path(self.export().output_path)
+        blueprint = Path(self.export().output_path)
         # Apart: side by side, the second pull's tables would be numbered (D163).
         expected = self.split_tree(self.template, self.recipes, self.tmp / "a" / "from_template")
-        actual = self.split_tree(transfer, self.no_recipes, self.tmp / "b" / "from_transfer")
+        actual = self.split_tree(blueprint, self.no_recipes, self.tmp / "b" / "from_blueprint")
         self.assertEqual(sorted(expected), sorted(actual))
         for rel in expected:
             with self.subTest(file=rel):
@@ -5971,30 +5990,30 @@ batching:
                 work = self.tmp / name
                 shutil.copytree(cases, work)
                 template = work / name
-                res = build_transfer(template, recipes, write=True)
+                res = build_blueprint(template, recipes, write=True)
                 self.assertCompiles(res)
                 expected = self.split_tree(template, recipes, work / "a" / "split")
                 actual = self.split_tree(Path(res.output_path), self.no_recipes, work / "b" / "split")
                 self.assertEqual(expected, actual)
 
     def test_refers_to_no_recipes(self):
-        transfer = load_yaml(self.export().output_path)
-        self.assertEqual(recipe_references(transfer), [])
-        self.assertEqual(transfer["batching"][0]["required_column"], "Sex")
-        self.assertEqual(transfer["batching"][1]["values"], ["LA", "MS"])
-        self.assertNotIn("include_other", transfer["batching"][1])
+        blueprint = load_yaml(self.export().output_path)
+        self.assertEqual(recipe_references(blueprint), [])
+        self.assertEqual(blueprint["batching"][0]["required_column"], "Sex")
+        self.assertEqual(blueprint["batching"][1]["values"], ["LA", "MS"])
+        self.assertNotIn("include_other", blueprint["batching"][1])
 
     def test_applies_neither_multipliers_nor_batching(self):
-        transfer = load_yaml(self.export().output_path)
-        self.assertEqual([c["name"] for c in transfer["cohorts"]], ["Patients", "OtherDx"])
-        self.assertEqual(len(transfer["multipliers"]), 1)
-        self.assertNotIn("batching", transfer["cohorts"][0])
+        blueprint = load_yaml(self.export().output_path)
+        self.assertEqual([c["name"] for c in blueprint["cohorts"]], ["Patients", "OtherDx"])
+        self.assertEqual(len(blueprint["multipliers"]), 1)
+        self.assertNotIn("batching", blueprint["cohorts"][0])
 
     def test_named_for_the_project_beside_the_template(self):
         self.assertEqual(Path(self.export().output_path), self.tmp / "Test_Run_blueprint.yaml")
 
     def test_records_where_it_came_from(self):
-        provenance = load_yaml(self.export().output_path)["transfer"]
+        provenance = load_yaml(self.export().output_path)["blueprint"]
         self.assertEqual(provenance["from_template"], "template.yaml")
         self.assertEqual(
             provenance["recipes_sha256"],
@@ -6002,6 +6021,29 @@ batching:
         )
         self.assertIn("PatientWithDx", provenance["recipes_used"])
         self.assertIn("sex", provenance["recipes_used"])
+
+    def test_the_record_is_written_as_blueprint_only(self):
+        # D205: the first key a blueprint shows says what it is.
+        doc = load_yaml(self.export().output_path)
+        self.assertEqual(next(iter(doc)), "blueprint")
+        self.assertNotIn("transfer", doc)
+
+    def test_an_older_blueprint_keeps_its_record_under_the_new_name(self):
+        # Files written before D205 call the record `transfer`; re-exporting
+        # one keeps where it came from, and writes it as `blueprint`.
+        first = Path(self.export().output_path)
+        doc = load_yaml(first)
+        record = doc.pop("blueprint")
+        older = self.tmp / "Older_blueprint.yaml"
+        dump_yaml({"transfer": record, **doc}, older)
+        again = build_blueprint(older, self.no_recipes, output_path=self.tmp / "again" / "Test_Run_blueprint.yaml",
+                                write=True)
+        self.assertTrue(again.ok, [e.to_dict() for e in again.errors])
+        written = load_yaml(again.output_path)
+        self.assertEqual(written["blueprint"], record)
+        self.assertNotIn("transfer", written)
+        plan = compile_yaml(older, self.no_recipes)
+        self.assertTrue(plan.ok, [e.to_dict() for e in plan.errors])
 
     def test_same_inputs_give_the_same_file(self):
         first = Path(self.export().output_path).read_bytes()
@@ -6011,10 +6053,10 @@ batching:
     def test_written_elsewhere_its_folder_is_self_contained(self):
         # file_loc is what the VM resolves, so it must not become a path that
         # only exists on this machine; the file moves instead.
-        out = self.tmp / "for_vm" / "IBD_transfer.yaml"
+        out = self.tmp / "for_vm" / "IBD_blueprint.yaml"
         res = self.export(out)
         self.assertEqual(load_yaml(out)["upload_cohorts"][0]["file_loc"], "data/codes.csv")
-        self.assertEqual(res.analysis["transfer_uploads"], ["data/codes.csv"])
+        self.assertEqual(res.analysis["blueprint_uploads"], ["data/codes.csv"])
         self.assertEqual((out.parent / "data" / "codes.csv").read_text(encoding="utf-8"), "Code\nK50\n")
         (self.tmp / "data" / "codes.csv").unlink()
         self.assertCompiles(compile_yaml(out, self.no_recipes))
@@ -6028,23 +6070,23 @@ batching:
             self.tmp, "outside.yaml",
             tiny_template(self.EXTRA.replace("data/codes.csv", f"../{shared.name}/codes.csv")),
         )
-        out = self.tmp / "for_vm" / "IBD_transfer.yaml"
-        res = build_transfer(template, self.recipes, output_path=out, write=True)
+        out = self.tmp / "for_vm" / "IBD_blueprint.yaml"
+        res = build_blueprint(template, self.recipes, output_path=out, write=True)
         self.assertCompiles(res)
         self.assertHasWarning(res, "upload_not_copied")
-        # Rewritten to reach the same file from the transfer's folder (D103).
+        # Rewritten to reach the same file from the blueprint's folder (D103).
         written = load_yaml(out)["upload_cohorts"][0]["file_loc"]
         self.assertEqual(written, f"../../{shared.name}/codes.csv")
         self.assertTrue((out.parent / written).resolve().samefile(shared / "codes.csv"))
 
-    def test_a_missing_upload_warns_and_the_transfer_is_still_written(self):
+    def test_a_missing_upload_warns_and_the_blueprint_is_still_written(self):
         # The file arrives on the VM later; the split there checks it.
         (self.tmp / "data" / "codes.csv").unlink()
-        res = build_transfer(self.template, self.recipes, write=True)
+        res = build_blueprint(self.template, self.recipes, write=True)
         self.assertCompiles(res)
         self.assertHasWarning(res, "missing_upload_file")
         self.assertTrue(Path(res.output_path).is_file())
-        self.assertEqual(res.analysis["transfer_uploads_missing"], ["data/codes.csv"])
+        self.assertEqual(res.analysis["blueprint_uploads_missing"], ["data/codes.csv"])
 
     def test_the_command_writes_it_at_the_repository_root(self):
         # Where makebundle.py yaml=<project> looks for it.
@@ -6054,7 +6096,7 @@ batching:
         out = io.StringIO()
         with mock.patch(f"{__name__}.project_root", return_value=root), contextlib.redirect_stdout(out):
             code = main(["--template", str(self.template), "--recipes", str(self.recipes),
-                         "--export-transfer"])
+                         "--export-blueprint"])
         self.assertEqual(code, 0, out.getvalue())
         self.assertTrue((root / "Test_Run_blueprint.yaml").is_file())
         # Its upload travels with it, at the same path relative to it.
@@ -6065,12 +6107,12 @@ batching:
         root.mkdir(parents=True)
         (root / ".runtime-manifest.json").write_text("{}", encoding="utf-8")
         with mock.patch(f"{__name__}.project_root", return_value=root):
-            self.assertEqual(transfer_home(), self.tmp / "work")
+            self.assertEqual(blueprint_home(), self.tmp / "work")
 
     def test_a_missing_upload_is_listed_not_copied_when_written_elsewhere(self):
         (self.tmp / "data" / "codes.csv").unlink()
-        out = self.tmp / "for_vm" / "IBD_transfer.yaml"
-        res = build_transfer(self.template, self.recipes, output_path=out, write=True)
+        out = self.tmp / "for_vm" / "IBD_blueprint.yaml"
+        res = build_blueprint(self.template, self.recipes, output_path=out, write=True)
         self.assertCompiles(res)
         self.assertEqual(load_yaml(out)["upload_cohorts"][0]["file_loc"], "data/codes.csv")
         self.assertFalse((out.parent / "data").exists())
@@ -6088,33 +6130,33 @@ batching:
             "cosmos_vars:\n  project_db: PROJECTD1\n  cosmos_db: COSMOS",
         )
         template = write_temp_yaml(self.tmp, "grouped.yaml", text)
-        transfer = Path(build_transfer(template, self.recipes, write=True).output_path)
-        doc = load_yaml(transfer)
+        blueprint = Path(build_blueprint(template, self.recipes, write=True).output_path)
+        doc = load_yaml(blueprint)
         self.assertEqual(doc["cosmos_vars"]["project_db"], "PROJECTD1")
         self.assertNotIn("project_db", doc)
-        edited = transfer.read_text(encoding="utf-8").replace("PROJECTD1", "PROJECTD139081")
-        transfer.write_text(edited, encoding="utf-8")
-        self.assertEqual(compile_yaml(transfer, self.no_recipes).finished_yaml["project_db"], "PROJECTD139081")
+        edited = blueprint.read_text(encoding="utf-8").replace("PROJECTD1", "PROJECTD139081")
+        blueprint.write_text(edited, encoding="utf-8")
+        self.assertEqual(compile_yaml(blueprint, self.no_recipes).finished_yaml["project_db"], "PROJECTD139081")
 
     def test_an_invalid_template_writes_nothing(self):
         broken = write_temp_yaml(
             self.tmp, "broken.yaml", tiny_template().replace("cosmos_db: COSMOS", "cosmos_db: Nowhere")
         )
-        res = build_transfer(broken, self.recipes, write=True)
+        res = build_blueprint(broken, self.recipes, write=True)
         self.assertHasError(res, "bad_cosmos_db")
         self.assertFalse((self.tmp / "Test_Run_blueprint.yaml").exists())
 
     def test_a_template_without_its_recipes_points_at_the_export(self):
         res = compile_yaml(self.template, self.no_recipes)
         self.assertHasError(res, "recipes_not_found")
-        self.assertIn("--export-transfer", res.errors[0].fix)
+        self.assertIn("--export-blueprint", res.errors[0].fix)
         self.assertIn("cohorts[0].recipe: PatientWithDx", res.errors[0].message)
         self.assertEqual(len(res.errors), 1)
 
     def test_an_unreadable_recipes_file_is_ignored_when_nothing_refers_to_it(self):
-        transfer = Path(self.export().output_path)
+        blueprint = Path(self.export().output_path)
         garbage = write_temp_yaml(self.tmp, "garbage.yaml", "recipes: [unclosed")
-        self.assertCompiles(compile_yaml(transfer, garbage))
+        self.assertCompiles(compile_yaml(blueprint, garbage))
 
 
 class BatchingDefinitionTests(MakeYamlTest):
@@ -6254,7 +6296,7 @@ class RunFolderTests(MakeYamlTest):
 
     def test_a_split_being_executed_is_not_replaced(self):
         # D67: exporting again replaced the manifest a running Execute writes to.
-        template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        template = write_temp_yaml(self.tmp, "IBD_Ancestry_blueprint.yaml", tiny_template())
         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
         split = self.tmp / "runs" / "IBD_Ancestry" / "split"
         split.mkdir(parents=True)
@@ -6270,7 +6312,7 @@ class RunFolderTests(MakeYamlTest):
 
     def test_a_stale_lock_does_not_stop_the_export(self):
         # Its Execute stopped without cleaning up: 2 minutes without a heartbeat.
-        template = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        template = write_temp_yaml(self.tmp, "IBD_Ancestry_blueprint.yaml", tiny_template())
         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
         split = self.tmp / "runs" / "IBD_Ancestry" / "split"
         split.mkdir(parents=True)
@@ -6282,9 +6324,9 @@ class RunFolderTests(MakeYamlTest):
         self.assertIn("sessions", load_yaml(split / "pullmanifest.yaml"))
 
     def test_two_projects_split_without_out_dir_do_not_overwrite_each_other(self):
-        first = write_temp_yaml(self.tmp, "IBD_Ancestry_transfer.yaml", tiny_template())
+        first = write_temp_yaml(self.tmp, "IBD_Ancestry_blueprint.yaml", tiny_template())
         second = write_temp_yaml(
-            self.tmp, "Celiac_transfer.yaml", tiny_template().replace("Test Run", "Celiac")
+            self.tmp, "Celiac_blueprint.yaml", tiny_template().replace("Test Run", "Celiac")
         )
         recipes = write_temp_yaml(self.tmp, "recipes.yaml", tiny_recipes())
         give_dictionary(self.tmp / "repo")
@@ -6540,21 +6582,21 @@ class ConfigTests(MakeYamlTest):
 
     def test_without_it_the_core_files_are_beside_the_code_and_runs_in_the_home(self):
         home = self.home(None)
-        with mock.patch(f"{__name__}.transfer_home", return_value=home), \
+        with mock.patch(f"{__name__}.blueprint_home", return_value=home), \
                 mock.patch(f"{__name__}.project_root", return_value=self.tmp / "code"):
             self.assertEqual(default_datadictionary_path(), self.tmp / "code" / "reference" / "datadictionary.yaml")
             self.assertEqual(runs_root(), home / "runs")
 
     def test_a_moved_file_is_found_through_it(self):
         home = self.home({"recipes": "elsewhere/my_recipes.yaml", "runs": "cleanup/runs"})
-        with mock.patch(f"{__name__}.transfer_home", return_value=home):
+        with mock.patch(f"{__name__}.blueprint_home", return_value=home):
             self.assertEqual(default_recipes_path(), home / "elsewhere" / "my_recipes.yaml")
-            self.assertEqual(default_split_dir("IBD_transfer.yaml"), home / "cleanup" / "runs" / "IBD")
+            self.assertEqual(default_split_dir("IBD_blueprint.yaml"), home / "cleanup" / "runs" / "IBD")
             self.assertEqual(default_template_path(), project_root() / CORE_DEFAULTS["template"])
 
     def test_a_name_nothing_reads_is_refused(self):
         home = self.home({"recipe": "x.yaml"})
-        with mock.patch(f"{__name__}.transfer_home", return_value=home):
+        with mock.patch(f"{__name__}.blueprint_home", return_value=home):
             with self.assertRaises(ConfigError) as caught:
                 default_recipes_path()
         self.assertIn("recipes", str(caught.exception))
@@ -6594,9 +6636,9 @@ class AddedLinesTests(MakeYamlTest):
         self.assertEqual(len(filt["join"]), 2)
         self.assertNotIn("add_where", filt)
 
-    def test_the_transfer_writes_the_recipe_out_with_them(self):
+    def test_the_blueprint_writes_the_recipe_out_with_them(self):
         template, recipes = self.template()
-        res = build_transfer(template, recipes, write=True)
+        res = build_blueprint(template, recipes, write=True)
         cohort = next(c for c in load_yaml(res.output_path)["cohorts"] if c["name"] == "OtherDx")
         self.assertIn(self.ADDED_WHERE, cohort["filter"]["where"])
         self.assertNotIn("add_where", cohort["filter"])
@@ -6663,10 +6705,10 @@ class TableNotMadeTests(MakeYamlTest):
         self.assertIn("This pull makes: `Patients`", found[0].message)
         self.assertIn("{{prefix}}_{{PKTable}}", found[0].fix)
 
-    def test_no_transfer_is_written_for_it(self):
+    def test_no_blueprint_is_written_for_it(self):
         template, recipes = self.template(
             "INNER JOIN {{prefix}}_CrohnsPatientInfo AS c ON c.PatientDurableKey = def.PatientDurableKey")
-        res = build_transfer(template, recipes, write=True)
+        res = build_blueprint(template, recipes, write=True)
         self.assertFalse(res.ok)
         self.assertFalse(res.output_path and Path(res.output_path).exists())
 
@@ -6875,13 +6917,13 @@ class TableGroupTests(MakeYamlTest):
         self.assertCompiles(res)
         self.assertEqual(self.cohorts_by_name(res)["Orders"]["table_group"], "Orders")
 
-    def test_the_transfer_carries_its_groups_and_splits_the_same(self):
+    def test_the_blueprint_carries_its_groups_and_splits_the_same(self):
         template, recipes = self.write_pair(extra=self.tables() + self.GROUPS)
-        transfer = build_transfer(template, recipes, output_path=self.tmp / "t_transfer.yaml", write=True)
-        self.assertCompiles(transfer)
-        self.assertEqual(load_yaml(self.tmp / "t_transfer.yaml")["table_groups"][0]["tables"], ["Orders", "Admins"])
+        blueprint = build_blueprint(template, recipes, output_path=self.tmp / "t_blueprint.yaml", write=True)
+        self.assertCompiles(blueprint)
+        self.assertEqual(load_yaml(self.tmp / "t_blueprint.yaml")["table_groups"][0]["tables"], ["Orders", "Admins"])
         direct = write_split_artifacts(template, recipes, output_dir=self.tmp / "a")
-        moved = write_split_artifacts(self.tmp / "t_transfer.yaml", self.tmp / "none.yaml", output_dir=self.tmp / "b")
+        moved = write_split_artifacts(self.tmp / "t_blueprint.yaml", self.tmp / "none.yaml", output_dir=self.tmp / "b")
         self.assertCompiles(direct)
         self.assertCompiles(moved)
         self.assertEqual(self.run_tables(self.tmp / "a"), self.run_tables(self.tmp / "b"))
@@ -6960,14 +7002,14 @@ class PendingTransferTests(MakeYamlTest):
 
     PK_COLUMNS = "    columns: [PatientDurableKey, DiagnosisEventKey, Sex]\n"
 
-    def transfer(self, extra_upload: str = "", extra: str = "batching:\n  - sex\n") -> CompileResult:
+    def compile_with(self, extra_upload: str = "", extra: str = "batching:\n  - sex\n") -> CompileResult:
         template, recipes = self.write_pair(uploaded_pk_template(extra_upload) + extra)
         self.template = template
         self.recipes_path = recipes
-        return build_transfer(template, recipes, write=True)
+        return build_blueprint(template, recipes, write=True)
 
     def test_a_marked_file_is_pending_not_a_warning_and_travels_marked(self):
-        res = self.transfer("    pending_transfer: true\n")
+        res = self.compile_with("    pending_transfer: true\n")
         self.assertCompiles(res)
         self.assertEqual([m.code for m in res.pending], ["upload_pending_transfer"])
         self.assertFalse(has_warning(res, "missing_upload_file"))
@@ -6975,28 +7017,28 @@ class PendingTransferTests(MakeYamlTest):
         self.assertIs(doc["upload_cohorts"][0]["pending_transfer"], True)
 
     def test_an_unmarked_missing_file_is_still_a_warning(self):
-        res = self.transfer()
+        res = self.compile_with()
         self.assertHasWarning(res, "missing_upload_file")
         self.assertEqual(res.pending, [])
 
     def test_typed_columns_check_batching_before_the_file_exists(self):
-        res = self.transfer("    pending_transfer: true\n" + self.PK_COLUMNS)
+        res = self.compile_with("    pending_transfer: true\n" + self.PK_COLUMNS)
         self.assertCompiles(res)
         self.assertFalse(has_warning(res, "batch_columns_unchecked"))
-        wrong = self.transfer("    pending_transfer: true\n    columns: [PatientDurableKey, DiagnosisEventKey]\n")
+        wrong = self.compile_with("    pending_transfer: true\n    columns: [PatientDurableKey, DiagnosisEventKey]\n")
         self.assertHasError(wrong, "missing_batch_column")
 
     def test_typed_types_are_checked_before_the_file_exists(self):
-        res = self.transfer("    columns:\n      - {name: PatientDurableKey, type: HUGEINT}\n")
+        res = self.compile_with("    columns:\n      - {name: PatientDurableKey, type: HUGEINT}\n")
         self.assertHasError(res, "bad_upload_type")
 
     def test_the_split_still_needs_the_file(self):
-        self.transfer("    pending_transfer: true\n" + self.PK_COLUMNS)
+        self.compile_with("    pending_transfer: true\n" + self.PK_COLUMNS)
         split = write_split_artifacts(self.template, self.recipes_path, output_dir=self.tmp / "split")
         self.assertHasError(split, "missing_upload_file")
 
     def test_only_a_file_can_be_pending_and_only_true_or_false(self):
-        not_bool = self.transfer("    pending_transfer: yes please\n")
+        not_bool = self.compile_with("    pending_transfer: yes please\n")
         self.assertHasError(not_bool, "bad_pending_transfer")
         text = uploaded_pk_template().replace("file_type: csv\n    file_loc: pks.csv",
                                              "file_type: dbtable\n    pending_transfer: true")
@@ -7118,7 +7160,7 @@ TEST_GROUPS: dict[str, type[unittest.TestCase]] = {
     "uploaded_pk_batching": UploadedPkBatchingTests,
     "chunk_passes": ChunkPassesTests,
     "output_columns": OutputColumnTests,
-    "transfer": TransferTests,
+    "blueprint": BlueprintExportTests,
     "batching_definitions": BatchingDefinitionTests,
     "one_copy": OneCopyTests,
     "dedup": DedupTests,
@@ -7238,7 +7280,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--inspect-recipes", action="store_true")
     parser.add_argument("--export-preyaml", choices=("symbolic", "expanded-recipes"), default=None)
     parser.add_argument(
-        "--export-transfer",
+        "--export-blueprint",
         action="store_true",
         help="Write <project>_blueprint.yaml for the VM: recipes written out in full, "
         "multipliers and batching left for the split (D49). --out chooses the file.",
@@ -7320,25 +7362,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Wrote {target} ({rows:,} rows)")
         return 0
 
-    if args.export_transfer:
-        result = build_transfer(
+    if args.export_blueprint:
+        result = build_blueprint(
             template_path=args.template,
             recipes_path=args.recipes,
             output_path=args.out,
             write=not args.validate,
             datadictionary_path=args.datadictionary,
             # At the root, where makebundle.py yaml=<project> finds it.
-            output_dir=transfer_home(),
+            output_dir=blueprint_home(),
         )
         print_messages(result)
         if not result.ok:
-            print("FAILED: errors block the transfer YAML")
+            print("FAILED: errors block the blueprint")
             return 1
-        print(f"{'OK: transfer YAML ready at' if args.validate else 'Wrote'} {result.output_path}")
-        uploads = result.analysis.get("transfer_uploads") or []
+        print(f"{'OK: blueprint ready at' if args.validate else 'Wrote'} {result.output_path}")
+        uploads = result.analysis.get("blueprint_uploads") or []
         if uploads:
             folder = Path(result.output_path).parent
-            missing = set(result.analysis.get("transfer_uploads_missing") or [])
+            missing = set(result.analysis.get("blueprint_uploads_missing") or [])
             print(f"Carry these with it, at these paths relative to {folder}:")
             for upload in uploads:
                 note = "  (not here yet: supply it on the VM)" if upload in missing else ""

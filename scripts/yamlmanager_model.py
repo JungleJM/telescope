@@ -40,7 +40,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import makeYaml as my  # noqa: E402
 
 INTAKE_SUFFIX = "_intake.yaml"
-TRANSFER_SUFFIX = "_transfer.yaml"
+OLDER_SUFFIX = "_transfer.yaml"
 # The file a split is made from (D162). On the VM, a project's one working
 # copy is YAMLs/temp/<project>_blueprint.yaml; older copies go to replaced/.
 BLUEPRINT_SUFFIX = "_blueprint.yaml"
@@ -89,8 +89,8 @@ class Workspace:
     """The folders the app works in, the same shape on the Mac and the VM.
 
     `home` is the working folder: the repository root on the Mac, the folder
-    beside the extracted bundle on the VM (makeYaml.transfer_home). Intakes
-    live in `home/YAMLs/temp/`, transfer YAMLs in `home` (D94, D95).
+    beside the extracted bundle on the VM (makeYaml.blueprint_home). Intakes
+    live in `home/YAMLs/temp/`, blueprints in `home` (D94, D95).
     """
 
     home: Path
@@ -107,7 +107,7 @@ class Workspace:
     @classmethod
     def default(cls) -> "Workspace":
         return cls(
-            home=my.transfer_home(),
+            home=my.blueprint_home(),
             recipes_path=my.default_recipes_path(),
             dictionary_path=my.default_datadictionary_path(),
             defaults_path=my.default_template_path(),
@@ -134,7 +134,7 @@ class Workspace:
     def _read_recipes(self) -> tuple[float, dict[str, Any], str]:
         if not self.has_recipes:
             return (0.0, {}, f"No recipes file here ({self.recipes_path.name}): recipes stay on the "
-                    "Mac (D49), and a transfer YAML carries its own written out.")
+                    "Mac (D49), and a blueprint carries its own written out.")
         mtime = self.recipes_path.stat().st_mtime
         if self._recipes_cache and self._recipes_cache[0] == mtime:
             return self._recipes_cache
@@ -186,11 +186,11 @@ class Workspace:
     def intakes(self) -> list[Path]:
         return sorted(self.temp_dir.glob(f"*{INTAKE_SUFFIX}")) if self.temp_dir.is_dir() else []
 
-    def transfers(self) -> list[Path]:
-        """Blueprints and transfer YAMLs beside the working folder's top."""
+    def older_copies(self) -> list[Path]:
+        """Blueprints beside the working folder's top, under either name."""
         if not self.home.is_dir():
             return []
-        return sorted([*self.home.glob(f"*{BLUEPRINT_SUFFIX}"), *self.home.glob(f"*{TRANSFER_SUFFIX}")])
+        return sorted([*self.home.glob(f"*{BLUEPRINT_SUFFIX}"), *self.home.glob(f"*{OLDER_SUFFIX}")])
 
     def blueprints(self) -> list[Path]:
         """The working blueprints in YAMLs/temp (D162)."""
@@ -214,10 +214,10 @@ class Workspace:
     def projects(self) -> dict[str, Path]:
         """Author's dropdown: each project once, with the one file it opens
         (D162). On the Mac its intake. On the VM its working blueprint; else an
-        older copy (a transfer YAML beside scope.py, an intake in YAMLs/temp);
+        older copy (a blueprint beside scope.py, an intake in YAMLs/temp);
         else the copy in its run folder."""
         if self.vm_side:
-            order = [*self.blueprints(), *self.transfers(), *self.intakes(), *self.run_records()]
+            order = [*self.blueprints(), *self.older_copies(), *self.intakes(), *self.run_records()]
         else:
             order = self.intakes()
         found: dict[str, Path] = {}
@@ -231,12 +231,12 @@ class Workspace:
 
     def is_older_copy(self, path: Path | None) -> bool:
         """A VM file Save replaces with the working blueprint, and moves to
-        replaced/ (D162): a transfer YAML or blueprint beside scope.py, or an
+        replaced/ (D162): a blueprint, under either name, beside scope.py, or an
         intake in YAMLs/temp. Never a run folder's record."""
         if path is None or not self.vm_side:
             return False
         path = Path(path).resolve()
-        return path in {p.resolve() for p in [*self.transfers(), *self.intakes()]}
+        return path in {p.resolve() for p in [*self.older_copies(), *self.intakes()]}
 
     def dictionary(self) -> dict[str, Any]:
         """The data dictionary's tables, or {} where it cannot be read."""
@@ -858,7 +858,7 @@ class Draft:
     def _set_pending(self, entry: dict[str, Any], pending: bool) -> None:
         if pending and self.ws.vm_side:
             raise DraftError("Pending transfer is for the Mac: here on the VM the file must be "
-                             "where the transfer YAML reads it (D108).")
+                             "where the blueprint reads it (D108).")
         if pending:
             if str(entry.get("file_type", "")).lower() not in FILE_KINDS:
                 raise DraftError("Only a parquet or CSV file can be pending transfer (D97).")
@@ -1237,7 +1237,7 @@ class Draft:
 
     def set_pieces(self, index: int, **fields: Any) -> None:
         """column, values, separate_parquets, name; or rows for a chunk. The item
-        is written out in full afterwards, as a transfer YAML writes it."""
+        is written out in full afterwards, as a blueprint writes it."""
         current = next((s for s in self.splitters() if s.where == "batching" and s.index == index), None)
         if current is None or current.problem:
             raise DraftError(f"Splitter {index + 1} cannot be read: {current.problem if current else 'none there'}")
@@ -1803,7 +1803,7 @@ class Draft:
         return self._validation
 
     def validate(self) -> Validation:
-        """The draft checked as makeYaml checks a transfer: a file that is not
+        """The draft checked as makeYaml checks a blueprint: a file that is not
         here yet is a warning, or pending if marked so (D97)."""
         try:
             result = my.compile_yaml(
@@ -1950,7 +1950,7 @@ class Draft:
     @staticmethod
     def _repoint_uploads(doc: dict[str, Any], source_dir: Path, target_dir: Path) -> list[str]:
         """Keep each relative `file_loc` reaching the same file from the new
-        folder, with `..` where it must: a transfer YAML opened at the root and
+        folder, with `..` where it must: a blueprint opened at the root and
         saved as an intake in YAMLs/temp/ keeps its uploads (D103)."""
         notes: list[str] = []
         if source_dir.resolve() == target_dir.resolve():
@@ -1973,7 +1973,7 @@ class Draft:
                 upload["file_loc"] = Path(moved).as_posix()
         return notes
 
-    def export_transfer(self) -> tuple[bool, str, Path | None]:
+    def export_blueprint(self) -> tuple[bool, str, Path | None]:
         """The saved intake's blueprint, written to the working folder, where
         Run takes it (D94). The draft must be saved first. On the VM the saved
         file is the blueprint, and Run takes it as it is (D162)."""
@@ -1981,14 +1981,14 @@ class Draft:
             return False, "Save first: the blueprint is made from the saved file.", None
         if self.ws.vm_side:
             return True, f"Run has {self.path.name}.", self.path
-        result = my.build_transfer(self.path, self.ws.recipes_path, write=True,
+        result = my.build_blueprint(self.path, self.ws.recipes_path, write=True,
                                    datadictionary_path=self.ws.dictionary_path,
                                    output_dir=self.ws.home)
         if not result.ok:
             first = result.errors[0]
             return False, f"Not exported: {len(result.errors)} error(s). First: {first.message}", None
         out = Path(result.output_path)
-        missing = result.analysis.get("transfer_uploads_missing") or []
+        missing = result.analysis.get("blueprint_uploads_missing") or []
         note = f" Not here yet, to copy to the VM: {', '.join(missing)}." if missing else ""
         return True, f"Wrote {out.name}.{note}", out
 
@@ -2424,11 +2424,11 @@ def save_recipe_set(recipes_path: Path, draft: "Draft", group: int) -> tuple[boo
 
 
 def exports(workspace: Workspace, path: Path) -> list[tuple[str, str, bool]]:
-    """A saved intake's pre-YAML, transfer YAML and manifest, as
+    """A saved intake's pre-YAML, blueprint and manifest, as
     (title, text, ok); a failed one shows its errors."""
     builds = (
         ("pre-YAML", lambda: my.build_preyaml(path, workspace.recipes_path, mode="symbolic")),
-        ("Transfer YAML (to be bundled with bundle.py)", lambda: my.build_transfer(
+        ("Blueprint (to be bundled with bundle.py)", lambda: my.build_blueprint(
             path, workspace.recipes_path, datadictionary_path=workspace.dictionary_path)),
         ("pullmanifest.yaml", lambda: my.build_pullmanifest(
             path, workspace.recipes_path, datadictionary_path=workspace.dictionary_path)),
@@ -2890,15 +2890,15 @@ class SaveTests(ModelTest):
         self.assertTrue(draft.save().ok)
         self.assertEqual(Draft.open(self.ws, path).project_db, "PROJECTD2")
 
-    def test_the_transfer_needs_a_saved_draft_and_lands_in_the_working_folder(self):
+    def test_the_blueprint_needs_a_saved_draft_and_lands_in_the_working_folder(self):
         draft = self.codes_draft()
         draft.bind(1, "CodesTable", "Codes")
-        self.assertFalse(draft.export_transfer()[0])
+        self.assertFalse(draft.export_blueprint()[0])
         self.assertTrue(draft.save().ok)
-        ok, message, path = draft.export_transfer()
+        ok, message, path = draft.export_blueprint()
         self.assertTrue(ok, message)
         self.assertEqual(path.parent, self.home)
-        # On the VM the same step: open the transfer, adjust, save, export (D94).
+        # On the VM the same step: open the blueprint, adjust, save, export (D94).
         vm = Draft.open(Workspace(self.home, self.home / "none.yaml", self.ws.dictionary_path,
                                   self.ws.defaults_path), path)
         self.assertEqual(vm.ws.pk_recipes(), [])
@@ -3142,7 +3142,7 @@ class RowKeyTests(ModelTest):
 class LocationTests(ModelTest):
     """D104: Browse writes a path relative to the draft, never the machine's."""
 
-    def test_a_file_beside_the_transfer_is_written_relative_from_the_intake(self):
+    def test_a_file_beside_the_blueprint_is_written_relative_from_the_intake(self):
         draft = self.draft()
         chosen = self.home / "IBD_meds.parquet"
         self.assertEqual(draft.location_for(chosen), "../../IBD_meds.parquet")
@@ -3195,28 +3195,28 @@ class VmSideTests(ModelTest):
 
 
 class VmFlowTests(ModelTest):
-    """D103: on the VM a transfer YAML at the root, whose uploads sit beside it,
+    """D103: on the VM a blueprint at the root, whose uploads sit beside it,
     is opened, saved as an intake in YAMLs/temp/ and exported again."""
 
-    def test_uploads_beside_a_transfer_still_resolve_after_save_and_export(self):
+    def test_uploads_beside_a_blueprint_still_resolve_after_save_and_export(self):
         draft = self.codes_draft()
         draft.bind(1, "CodesTable", "Codes")
         self.assertTrue(draft.save().ok)
-        ok, message, transfer = draft.export_transfer()
+        ok, message, blueprint = draft.export_blueprint()
         self.assertTrue(ok, message)
-        # The file sits beside the transfer, as on the VM.
+        # The file sits beside the blueprint, as on the VM.
         (self.home / "csv").mkdir(exist_ok=True)
         (self.home / "csv" / "codes.csv").write_text("Code,Label\nK50,x\n", encoding="utf-8")
         (self.home / "YAMLs" / "temp" / "csv" / "codes.csv").unlink()
         (self.home / "YAMLs" / "temp" / "Test_Run_intake.yaml").unlink()
         vm = Draft.open(Workspace(self.home, self.home / "none.yaml", self.ws.dictionary_path,
-                                  self.ws.defaults_path), transfer)
+                                  self.ws.defaults_path), blueprint)
         self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "csv/codes.csv")
         vm.project_db = "PROJECTD2"
         self.assertTrue(vm.save().ok)
         self.assertEqual(vm.doc["upload_cohorts"][0]["file_loc"], "../../csv/codes.csv")
         self.assertNotIn("missing_upload_file", [m.code for m in vm.validate().messages])
-        ok, message, again = vm.export_transfer()
+        ok, message, again = vm.export_blueprint()
         self.assertTrue(ok, message)
         written = my.load_yaml(again)["upload_cohorts"][0]["file_loc"]
         self.assertEqual(written, "csv/codes.csv")
@@ -3260,12 +3260,12 @@ class BlueprintTests(ModelTest):
     """D162: on the VM a project has one working copy, the blueprint in
     YAMLs/temp, which Author saves and Run reads."""
 
-    def legacy_transfer(self) -> Path:
-        """A transfer YAML beside scope.py, as bundles placed them before."""
+    def legacy_copy(self) -> Path:
+        """A blueprint beside scope.py, as bundles placed them before."""
         draft = self.codes_draft()
         draft.bind(1, "CodesTable", "Codes")
         self.assertTrue(draft.save().ok)
-        ok, message, blueprint = draft.export_transfer()
+        ok, message, blueprint = draft.export_blueprint()
         self.assertTrue(ok, message)
         self.assertEqual(blueprint.name, "Test_Run_blueprint.yaml")
         legacy = blueprint.with_name("Test_Run_transfer.yaml")
@@ -3278,8 +3278,8 @@ class BlueprintTests(ModelTest):
 
     def test_a_change_saved_on_the_vm_is_the_file_run_reads(self):
         # Infant_RSV's codes were saved into an intake while Run read the
-        # transfer YAML, so the old one was pulled.
-        legacy = self.legacy_transfer()
+        # blueprint, so the old one was pulled.
+        legacy = self.legacy_copy()
         self.assertEqual(self.ws.projects(), {"Test_Run": legacy})
         draft = Draft.open(self.ws, legacy)
         draft.project_db = "PROJECTD2"
@@ -3287,7 +3287,7 @@ class BlueprintTests(ModelTest):
         self.assertTrue(saved.ok, saved.message)
         working = self.home / "YAMLs" / "temp" / "Test_Run_blueprint.yaml"
         self.assertEqual(saved.path, working)
-        ok, message, for_run = draft.export_transfer()
+        ok, message, for_run = draft.export_blueprint()
         self.assertTrue(ok, message)
         self.assertEqual(for_run, working)
         self.assertEqual(my.load_yaml(for_run)["cosmos_vars"]["project_db"], "PROJECTD2")
@@ -3303,7 +3303,7 @@ class BlueprintTests(ModelTest):
         self.assertTrue((working.parent / loc).is_file())
 
     def test_a_finished_pull_opens_from_its_run_folder_and_saves_a_working_copy(self):
-        legacy = self.legacy_transfer()
+        legacy = self.legacy_copy()
         run = self.home / "runs" / "Test_Run"
         run.mkdir(parents=True)
         (run / "pullmanifest.yaml").write_text("sessions: []\n", encoding="utf-8")
@@ -3321,7 +3321,7 @@ class BlueprintTests(ModelTest):
         draft = self.codes_draft()
         draft.bind(1, "CodesTable", "Codes")
         self.assertTrue(draft.save().ok)
-        self.assertTrue(draft.export_transfer()[0])
+        self.assertTrue(draft.export_blueprint()[0])
         self.assertEqual(self.ws.projects(), {"Test_Run": self.home / "YAMLs" / "temp" / "Test_Run_intake.yaml"})
 
 
@@ -3357,7 +3357,7 @@ class FilterLineTests(ModelTest):
         with self.assertRaises(DraftError):
             where_line("m.Key", "in_table", table="MedCodes")
 
-    def test_a_prefabricated_tables_lines_reach_the_transfer_after_its_own(self):
+    def test_a_prefabricated_tables_lines_reach_the_blueprint_after_its_own(self):
         draft = self.codes_draft()
         draft.bind(1, "CodesTable", "Codes")
         sources = dict((name, source) for name, source, _ in draft.filter_sources(1))
@@ -3367,9 +3367,9 @@ class FilterLineTests(ModelTest):
         self.assertEqual(draft.doc["cohorts"][1]["filter"],
                          {"add_where": ["e.EncounterKey IN (SELECT [Code] FROM {{prefix}}_Codes)"]})
         self.assertTrue(draft.save().ok)
-        ok, message, transfer = draft.export_transfer()
+        ok, message, blueprint = draft.export_blueprint()
         self.assertTrue(ok, message)
-        cohort = next(c for c in my.load_yaml(transfer)["cohorts"] if c["name"] == "Codes")
+        cohort = next(c for c in my.load_yaml(blueprint)["cohorts"] if c["name"] == "Codes")
         self.assertEqual(cohort["filter"]["where"][-1], "e.EncounterKey IN (SELECT [Code] FROM {{prefix}}_Codes)")
         self.assertEqual(len(cohort["filter"]["where"]), 2)  # the recipe's own is kept
 

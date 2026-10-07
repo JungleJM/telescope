@@ -1,4 +1,4 @@
-transfer:
+blueprint:
   from_template: GI_Conditions_intake.yaml
   recipes_sha256: 6b1358e7cf97
   recipes_used:

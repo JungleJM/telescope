@@ -30,6 +30,8 @@ DELIVERY_WORDS = re.compile(
     re.IGNORECASE,
 )
 SCREENSHOT_WORDS = re.compile(r"transcri|screenshot", re.IGNORECASE)
+# Names the VM must not show anywhere, code included (D205).
+RETIRED_NAMES = re.compile(r"(?i:transfer yaml|telescope)|\bExports\b")
 # Real names that only look like delivery: an R package in the VM's list.
 ALLOWED_LINES = (re.compile(r'^\s*- name: "bundle v[\d.]+"$'),)
 
@@ -45,17 +47,17 @@ VM_WORDING: dict[str, list[tuple[str, str]]] = {
     "pullmanager/launcher.py": [('"Run it from an extracted bundle."', '"Run it from the folder that holds them."')],
     "scripts/makeYaml.py": [
         ('fix="Recipes are kept on the Mac (D49). There, export this template with "\n'
-         '            "`makeYaml.py --export-transfer`, which writes every recipe out in full, and "\n'
+         '            "`makeYaml.py --export-blueprint`, which writes every recipe out in full, and "\n'
          '            "bring that file across. Or pass `--recipes` with the recipes file.",',
          'fix="Pass `--recipes` with the recipes file, or use a template with every recipe "\n'
-         '            "written out in full (`makeYaml.py --export-transfer` writes one).",'),
+         '            "written out in full (`makeYaml.py --export-blueprint` writes one).",'),
         ("(`sex`, Mac only), ", "(`sex`), "),
         ('"YAMLs/datadictionary.yaml on the Mac and rebuild the bundle."', '"the data dictionary."'),
     ],
     "scripts/yamlmanager_model.py": [
         ('f"No recipes file here ({self.recipes_path.name}): recipes stay on the "\n'
-         '                    "Mac (D49), and a transfer YAML carries its own written out.")',
-         'f"No recipes file here ({self.recipes_path.name}): a transfer YAML "\n'
+         '                    "Mac (D49), and a blueprint carries its own written out.")',
+         'f"No recipes file here ({self.recipes_path.name}): a blueprint "\n'
          '                    "carries its recipes written out.")'),
         ('"Pending transfer is for the Mac: here on the VM the file must be "',
          '"Pending transfer is not offered here: the file must be "'),
@@ -258,7 +260,8 @@ def mentions(published: str, text: str) -> list[str]:
     code and strings are left to the wording table; its comments and
     docstrings, and every other file's lines, are checked here."""
     found = [f"{published}:{n}: {line.strip()[:100]}"
-             for n, line in enumerate(text.splitlines(), 1) if SCREENSHOT_WORDS.search(line)]
+             for n, line in enumerate(text.splitlines(), 1)
+             if SCREENSHOT_WORDS.search(line) or RETIRED_NAMES.search(line)]
     if published.endswith(".py"):
         prose = [(n, comment) for n, _column, comment in _comment_lines(text)]
         lines = text.splitlines()

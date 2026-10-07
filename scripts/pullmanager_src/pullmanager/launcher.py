@@ -84,7 +84,7 @@ def locate_tools(package_dir: Path | None = None) -> Tools:
 class Paths:
     """What the user has chosen. Blank optional fields fall back to defaults.
 
-    `template` is a transfer YAML (D49): recipes already written out, so there
+    `template` is a blueprint (D49): recipes already written out, so there
     is no recipes file to choose. Settings saved by an older launcher may still
     name one; unknown keys are ignored on load.
 
@@ -102,7 +102,7 @@ class Paths:
     runs: str = config.RUNS_DEFAULT
 
     def run_dir(self) -> Path:
-        return Path(self.runs or config.RUNS_DEFAULT) / run_folder_name(_require(self.template, "transfer YAML"))
+        return Path(self.runs or config.RUNS_DEFAULT) / run_folder_name(_require(self.template, "blueprint"))
 
     def split_folder(self) -> Path:
         """Where Export split writes: the folder that holds the manifest."""
@@ -133,7 +133,7 @@ def _require(value: str, what: str) -> str:
 def _yaml_inputs(paths: Paths) -> list[str]:
     # The bundle's dictionary, always: a chosen one, once saved, went on being
     # passed after the bundle's was newer (D150).
-    return ["--template", _require(paths.template, "transfer YAML")]
+    return ["--template", _require(paths.template, "blueprint")]
 
 
 def _resume_flags(options: Options) -> list[str]:
