@@ -247,6 +247,9 @@ class FakeConnection:
                 return [(["name"], [(name,) for name in sorted(fixture_columns())])]
             names = self.cosmos_columns.get(table, self.cosmos_columns.get("*", []))
             return [(["name"], [(name,) for name in names])]
+        if "FROM sys.partitions" in sql:
+            held = self._working().get(str((params or [""])[0]))
+            return [(["rows"], [(None if held is None else sum(held.values()),)])]
         if "@@SERVERNAME" in sql:
             return [(["CosmosServerName"], [(self.instance,)])]
         if match := re.search(r"SELECT OBJECT_ID\(N'(PROJECTD[^']+)', N'U'\)", sql):
@@ -718,6 +721,89 @@ class GroupPackagingTests(SessionTestCase):
         run = manifest.sessions[0].runs[0]
         run.start()
         self.assertNotIn("packaged", run.outputs)
+
+
+class ReleaseTests(SessionTestCase):
+    """D206 to D208: a table leaves Projects once nothing later reads it; a
+    failure gives back the room it left empty; an empty run costs nothing."""
+
+    PK = "PROJECTD33A929.dbo.Patients"
+
+    def run_all(self, batched=True, seed=None, **projects):
+        if batched:
+            self.make_batched()
+        self.tables: dict[str, Counter] = dict(seed or {})
+        with self.runner(projects={"tables": self.tables, "reads_back": True, **projects}) as runner:
+            return runner.execute()
+
+    def test_a_sessions_pk_leaves_projects_once_its_runs_are_done(self):
+        import pyarrow.parquet as pq
+
+        from .. import artifacts
+
+        report = self.run_all()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(sum(self.tables[self.PK].values()), 0)  # the room is back
+        path = self.root / "cosmos_parquets" / "Patients.parquet"
+        self.assertEqual(pq.read_metadata(path).num_rows, 10)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        pk = manifest.sessions[0].phases[2]
+        self.assertEqual(pk.outputs["packaged"]["tables"]["Patients"]["rows"], 10)
+        # Packaging the pull afterwards keeps that file, read for its rows.
+        plan = artifacts.package(manifest, self.projects, self.root, log=lambda line: None)
+        spec = next(s for s in plan.tables if s.dest == "Patients")
+        self.assertEqual((spec.kind, spec.rows, artifacts.is_pk(spec)), ("kept", 10, True))
+        self.assertEqual(pq.read_metadata(path).num_rows, 10)
+
+    def test_a_pk_stays_while_a_session_sampling_against_it_is_unfinished(self):
+        from .. import session as session_module
+
+        with mock.patch.object(session_module, "control_readers", lambda m: {"Patients": ["WhiteControls"]}):
+            report = self.run_all()
+        self.assertTrue(report.ok, report.failed)
+        self.assertEqual(sum(self.tables[self.PK].values()), 10)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.assertNotIn("packaged", manifest.sessions[0].phases[2].outputs)
+
+    def test_a_pk_stays_while_a_run_has_failed(self):
+        report = self.run_all(failures={r"INSERT INTO PROJECTD33A929\.dbo\.OtherHospitalizations": "boom"})
+        self.assertFalse(report.ok)
+        self.assertEqual(sum(self.tables[self.PK].values()), 10)  # a retry still reads it
+
+    def test_a_failed_pk_landing_gives_back_its_room(self):
+        # GERD: a rolled-back PK insert kept 9.5 GB in an empty table.
+        report = self.run_all(failures={r"INSERT INTO PROJECTD33A929\.dbo\.Patients": "log full (9002)"})
+        self.assertFalse(report.ok)
+        self.assertIn(f"TRUNCATE TABLE {self.PK};", "\n".join(self.projects.executed))
+
+    def test_a_failed_run_leaves_a_table_holding_other_batches_alone(self):
+        # Female lands its 10 rows; Male's insert fails: the table is not empty.
+        report = self.run_all(fail_nth={r"INSERT INTO PROJECTD33A929\.dbo\.OtherHospitalizations": [2, "full (1105)"]})
+        self.assertFalse(report.ok)
+        self.assertEqual(sum(self.tables[DEST].values()), 10)
+        self.assertNotIn(f"TRUNCATE TABLE {DEST};", "\n".join(self.projects.executed))
+
+    def test_a_run_with_no_tables_finishes_without_touching_either_database(self):
+        # A PK alone (GI_Conditions): on a resume its empty run would copy the
+        # whole PK into Cosmos again, for nothing.
+        path = self.root / "sessions" / "Patients" / "runs" / "run.yaml"
+        doc = load_yaml(path)
+        doc["cohorts"] = []
+        dump_yaml(doc, path)
+        data = load_yaml(self.root / "pullmanifest.yaml")
+        phases = data["sessions"][0]["phases"]
+        for phase in (phases.values() if isinstance(phases, dict) else phases):
+            phase["status"] = "done"
+        dump_yaml(data, self.root / "pullmanifest.yaml")
+        self.manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        held = {self.PK: Counter({"-": 10}),
+                "PROJECTD33A929.dbo.upload_HospitalICDCodes": Counter({"-": 2})}
+        report = self.run_all(batched=False, seed=held)
+        self.assertTrue(report.ok, report.failed)
+        manifest = Manifest.load(self.root / "pullmanifest.yaml")
+        self.assertEqual(manifest.sessions[0].runs[0].status, "done")
+        refills = [sql for sql, _ in self.cosmos.inserted if "Patients" in sql]
+        self.assertEqual(refills, [])
 
 
 class FailureTests(SessionTestCase):
@@ -1320,6 +1406,18 @@ class ControlSampleTests(SessionTestCase):
         return [(sql, params) for sql, params in self.projects.executed_params
                 if sql.startswith("WITH [_ranked]")]
 
+    def test_a_case_that_left_projects_stops_the_control_loudly(self):
+        # D206: its case PK is in parquet now, and empty in Projects; sampling
+        # against it would keep no controls, silently.
+        from .. import session as session_module
+
+        self.make_control()
+        with mock.patch.object(session_module, "released_pk", lambda m, table: table == "CasePatients"):
+            report = self.execute({self.CASE: Counter()})
+        self.assertFalse(report.ok)
+        self.assertTrue(any("left Projects" in why and "Re-pull CasePatients" in why
+                            for _, why in report.failed), report.failed)
+
     def test_each_batch_keeps_row_mult_times_its_case(self):
         self.make_batched()
         self.make_control()
@@ -1441,6 +1539,7 @@ class ReadoutTests(SessionTestCase):
         out = io.StringIO()
         # What it checks is the readout, not packaging as a group ends (D177).
         with mock.patch.object(SessionRunner, "_package_group_if_done"), \
+                mock.patch.object(SessionRunner, "_release_pks"), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = cli.execute(Manifest.load(self.root / "pullmanifest.yaml"), args, connect_fn=connect)
         return code, out.getvalue()

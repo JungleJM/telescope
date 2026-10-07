@@ -25,7 +25,7 @@ class ScanTests(SessionTestCase):
         from ..artifacts import file_name, parquets_folder, plan
 
         for spec in plan(manifest).tables:
-            if spec.kind not in ("pk", "run"):
+            if spec.kind not in ("pk", "run", "kept"):  # kept: released as the pull ran (D177, D206)
                 continue
             for part in spec.parts:
                 path = parquets_folder(manifest.path) / spec.folder / file_name(spec.dest, part.label)

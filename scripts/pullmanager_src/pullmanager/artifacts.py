@@ -85,6 +85,11 @@ class Plan:
     failed: list[tuple[str, str]] = field(default_factory=list)  # table, the error (D88)
 
 
+def is_pk(spec: TableSpec) -> bool:
+    """A session's PK, packaged now or when nothing later read it (D206)."""
+    return spec.kind == "pk" or spec.record.get("was") == "pk"
+
+
 def is_settled(node: Any) -> bool:
     return node.status in (DONE, SKIPPED)
 
@@ -144,10 +149,10 @@ def separate_parts(session: Session, kind: str, runs: list[Any] | None = None) -
 
 
 def packaged_tables(session: Session) -> dict[str, dict[str, Any]]:
-    """The tables packaged as their group finished (D177), by name: their
-    files, rows, and whether the table was then emptied."""
+    """The tables packaged as soon as nothing later read them (D177, D206), by
+    name: their files, rows, and whether the table was then emptied."""
     found: dict[str, dict[str, Any]] = {}
-    for run in session.runs:
+    for run in [*session.phases, *session.runs]:  # a PK on its phase (D206)
         record = run.outputs.get("packaged") or {}
         for dest, info in (record.get("tables") or {}).items():
             found[str(dest)] = dict(info or {})
@@ -161,6 +166,7 @@ def plan(manifest: Manifest) -> Plan:
     uploads_seen: set[str] = set()
     for session in manifest.sessions:
         phases = {phase.name: phase for phase in session.phases}
+        kept = packaged_tables(session)
         pk_phase = phases.get("pk")
         if pk_phase is not None and pk_phase.yaml:
             doc = load_yaml(manifest.resolve(pk_phase)) or {}
@@ -178,13 +184,13 @@ def plan(manifest: Manifest) -> Plan:
                     result.left_out.append((dest, f"its PK phase is {pk_phase.status}"))
                     continue
                 result.tables.append(TableSpec(
-                    dest, "pk", session.session_id, database_folder(cohort, doc), cohort, doc,
-                    separate_parts(session, "pk"),
+                    dest, "kept" if dest in kept else "pk", session.session_id,
+                    database_folder(cohort, doc), cohort, doc, separate_parts(session, "pk"),
+                    record=dict(kept[dest], was="pk") if dest in kept else {},
                 ))
         # Each table group's runs hold its own tables (D134), so each group's
         # first run names them, and a finished group is packaged even while
         # another is not.
-        kept = packaged_tables(session)
         by_group: dict[Any, list[Any]] = {}
         for run in session.runs:
             by_group.setdefault(run.group, []).append(run)

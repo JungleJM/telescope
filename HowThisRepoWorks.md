@@ -113,11 +113,13 @@ Pullmanager turns each phase or run into SQL blocks. Nothing searches SQL text: 
 1.  `_choose_prefix`, then `_run_setup`. `_check_columns` confirms every column exists in Cosmos, and the destination tables are created.
 2.  `_run_uploads`. Upload files go into Projects, then into a Cosmos temp (`pullmanager/uploads.py`).
 3.  `_run_pk`. This builds the PK, copies it to Projects, runs `_verify_pk_uniqueness`, takes a control sample if there is one (`_sample_control`), and writes the PK to parquet (`_write_pk_parquet`).
-4.  `_run_run` for each run:
+4.  `_run_run` for each run; a run with no tables is done at once:
     - `_materialize_batch` refills the PK temp with just this batch's patients, selected from the Projects copy (`batches.select_batch_rows`, `batches.chunk_clause`).
     - Each table is then built and landed in turn (`_execute_unit`, `_land`).
     - Row counts are compared (`_check_counts`), and rows per patient are measured (`_measure_run`).
-5.  `_package_group_if_done` after each run. Once every run of a table group is done, `artifacts.package_group` writes the group's tables to parquet. Each file's rows are checked against what the runs landed, and each table that matches is emptied with `TRUNCATE`, so the Projects database only ever needs room for one group. The manifest records this under the runs' `packaged`.
+5.  `_package_group_if_done` after each run. Once every run of a table group is done, `artifacts.package_group` writes the group's tables to parquet. Each file's rows are checked against what the runs landed, and each table that matches is emptied with `TRUNCATE`. The manifest records this under the runs' `packaged`.
+6.  `_release_pks` at the end of the session. A generated PK is emptied the same way once nothing later reads it: its session's runs are settled, and so is every session that samples a control against it (`control_readers`). Its parquet is the one `_write_pk_parquet` wrote when it landed. A table leaves Projects as soon as it can, so the database only ever needs room for one session's PK and one group's tables.
+7.  `_give_back_room` when a step fails. A table the failed step left with no rows is truncated, since a rolled-back insert keeps its pages until then.
 
 Every step writes its status into `pullmanifest.yaml` as it starts and ends (`manifest.Node.start`, `finish`, `fail`). The Run window's Status tab reads that file, and a re-run picks up where the last one stopped.
 

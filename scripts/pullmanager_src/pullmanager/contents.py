@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .artifacts import BATCH_COLUMN, COSMOS_DIR, SNEAKPEEK_DIR, Plan, TableSpec
+from .artifacts import BATCH_COLUMN, COSMOS_DIR, SNEAKPEEK_DIR, Plan, TableSpec, is_pk
 from .manifest import Manifest
 from .normalize import normalize_bool, normalize_dedup_keys
 from .server_sql import test_option
@@ -166,7 +166,7 @@ def pull_summary(manifest: Manifest, plan: Plan) -> list[str]:
         str(node.data.get("finished_at")) for _, node in manifest.iter_nodes()
         if node.data.get("finished_at")
     ]
-    pk_doc = next((spec.doc for spec in plan.tables if spec.kind == "pk"), {})
+    pk_doc = next((spec.doc for spec in plan.tables if is_pk(spec)), {})
     smallset = normalize_bool(test_option(pk_doc, "smallset")) if pk_doc else False
     if smallset:
         limit = test_option(pk_doc, "stop_at_for_pk_table")
@@ -249,11 +249,11 @@ def column_lines(spec: TableSpec, dictionary: dict[str, Any]) -> list[str]:
 
 def render(manifest: Manifest, plan: Plan, dictionary: dict[str, Any] | None = None) -> str:
     dictionary = dictionary if dictionary is not None else load_dictionary(dictionary_path())
-    pks = {spec.session: spec.cohort for spec in plan.tables if spec.kind == "pk"}
+    pks = {spec.session: spec.cohort for spec in plan.tables if is_pk(spec)}
     lines = pull_summary(manifest, plan)
     lines += ["", "---", "", "Each column: its name, its SQL type in Projects, its type once "
               "loaded in Python (py) and R (r), and what it holds."]
     for spec in plan.tables:
-        lines += table_section(spec, pks.get(spec.session, spec.cohort if spec.kind == "pk" else {}),
+        lines += table_section(spec, pks.get(spec.session, spec.cohort if is_pk(spec) else {}),
                                dictionary)
     return "\n".join(lines).rstrip() + "\n"

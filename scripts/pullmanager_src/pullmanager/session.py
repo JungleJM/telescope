@@ -73,6 +73,66 @@ class SessionError(RuntimeError):
     """Raised when a session cannot proceed."""
 
 
+# A table's rows, from the catalogue: no scan of its pages (D207).
+PARTITION_ROWS_SQL = (
+    "SELECT SUM(p.rows) FROM sys.partitions AS p "
+    "WHERE p.object_id = OBJECT_ID(?) AND p.index_id IN (0, 1);"
+)
+
+
+def session_settled(session: Session) -> bool:
+    """Every phase and run done or skipped."""
+    return all(node.status in (DONE, SKIPPED) for node in [*session.phases, *session.runs])
+
+
+def control_readers(manifest: Manifest) -> dict[str, list[str]]:
+    """Each case PK, and the sessions that sample a control against it (D59)."""
+    readers: dict[str, list[str]] = {}
+    for session in manifest.sessions:
+        pk = next((phase for phase in session.phases if phase.name == "pk"), None)
+        if pk is None or not pk.yaml:
+            continue
+        try:
+            doc = load_yaml(manifest.resolve(pk)) or {}
+        except (OSError, ValueError):
+            continue
+        for cohort in doc.get("cohorts") or []:
+            for item in control_samples(cohort):
+                case = str(item.get("matched_to") or "")
+                if case:
+                    readers.setdefault(case, []).append(session.session_id)
+    return readers
+
+
+def released_pk(manifest: Manifest, table: str) -> bool:
+    """Whether a session's PK has left Projects (D206)."""
+    for session in manifest.sessions:
+        if session.pk_table != table:
+            continue
+        for phase in session.phases:
+            if phase.name == "pk" and table in ((phase.outputs.get("packaged") or {}).get("tables") or {}):
+                return True
+    return False
+
+
+def run_tables_of(path: Path) -> list[str]:
+    """The tables a run's document lands."""
+    doc = load_yaml(path) or {}
+    return [str(c["dest_table"]) for c in doc.get("cohorts") or []
+            if isinstance(c, dict) and c.get("dest_table")]
+
+
+def parquet_rows(path: Path) -> int | None:
+    """A parquet's rows from its footer, or None if it is not there."""
+    if not path.is_file():
+        return None
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return None
+    return pq.read_metadata(path).num_rows
+
+
 def say_now(line: str) -> None:
     """Print a progress line at once, so the log shows it while the step runs."""
     print(line, flush=True)
@@ -440,6 +500,7 @@ class SessionRunner:
                 self._rollback()
                 node.outputs.pop("in_flight", None)
                 node.fail(str(exc), detail=type(exc).__name__)
+                self._give_back_room(kind, node, path)
                 self.report.failed.append((label, str(exc)))
                 if node.outputs.get("table_rows"):
                     self.report.tables[label] = dict(node.outputs["table_rows"])
@@ -462,7 +523,105 @@ class SessionRunner:
             self.manifest.save()
             if kind == "run":
                 self._package_group_if_done(node)
+        self._release_pks()
         return self.report
+
+    # ------------------------------------------------- leaving Projects (D206)
+
+    def _release_pks(self) -> None:
+        """Each generated PK goes to parquet and leaves Projects once nothing
+        later reads it (D206): its session's runs are all settled, and so is
+        every session that samples a control against it (D59). This session's
+        own PK, and a case PK whose last control has just finished."""
+        settled = {s.session_id: session_settled(s) for s in self.manifest.sessions}
+        readers = control_readers(self.manifest)
+        for session in self.manifest.sessions:
+            pk = next((phase for phase in session.phases if phase.name == "pk"), None)
+            table = session.pk_table or ""
+            if pk is None or pk.status != DONE or not table or pk.outputs.get("packaged"):
+                continue
+            if (pk.pk_source or {}).get("kind") != "generated" or not settled[session.session_id]:
+                continue
+            waiting = [s for s in readers.get(table, []) if not settled.get(s, False)]
+            if waiting:
+                continue
+            try:
+                self._release_pk(session, pk, table)
+            except Exception as exc:  # noqa: BLE001 - the PK stays; Artifacts packages it
+                try:
+                    self.projects.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                self.report.warnings.append(
+                    f"{table}: not released from Projects ({exc}). It stays, and Artifacts "
+                    "packages it at the end.")
+
+    def _release_pk(self, session: Session, pk: Phase, table: str) -> None:
+        from .artifacts import (describe, file_name, database_folder, parquets_folder,
+                                separate_parts, write_whole_table)
+
+        if [part.label for part in separate_parts(session, "pk")] != [""]:
+            return  # packaged one file per value, at the end (D72)
+        doc = load_yaml(self.manifest.resolve(pk)) or {}
+        cohort = next((c for c in doc.get("cohorts") or []
+                       if isinstance(c, dict) and c.get("dest_table") == table), {})
+        expected = (pk.outputs.get("table_rows") or {}).get(table)
+        if expected is None:
+            return
+        held = projects_table(table, table_prefix(doc) or self.table_prefix)
+        folder = parquets_folder(self.manifest.path)
+        path = folder / database_folder(cohort, doc) / file_name(table, "")
+        rows = parquet_rows(path)
+        if rows != int(expected):
+            self.say(f"{table}: writing parquet before it leaves Projects", 1)
+            rows = write_whole_table(self.projects, self.project_db, held, path)
+        if rows != int(expected):
+            self.report.warnings.append(
+                f"{table}: its parquet held {rows:,} rows where {int(expected):,} landed, so it "
+                "stays in Projects; Artifacts packages it at the end.")
+            return
+        columns = [(name, sql_type) for name, sql_type in describe(self.projects.cursor(), self.project_db, held)
+                   if name != "_batch"]
+        self._execute(self.projects, f"TRUNCATE TABLE {destination(self.project_db, held)};",
+                      label=f"empty {table}")
+        self.projects.commit()
+        pk.outputs["packaged"] = {"at": now_iso(), "tables": {table: {
+            "files": [path.relative_to(folder).as_posix()],
+            "rows": rows,
+            "emptied": True,
+            "columns": [[name, sql_type] for name, sql_type in columns],
+        }}}
+        self.manifest.save()
+        self.say(f"{table}: {rows:,} rows in parquet, and emptied in Projects: nothing later reads it")
+
+    def _give_back_room(self, kind: str, node: Any, path: Path) -> None:
+        """A failed step's tables that hold no rows now are truncated (D207):
+        a rolled-back insert leaves its pages with the table, which nothing
+        else can use until they are given back."""
+        tables: list[str] = []
+        if kind == "pk" and self._pk_is_generated() and self.session.pk_table:
+            tables.append(self.session.pk_table)
+        elif kind == "run":
+            doc = load_yaml(path) or {}
+            tables += [str(c["dest_table"]) for c in doc.get("cohorts") or []
+                       if isinstance(c, dict) and c.get("dest_table")]
+        for dest in tables:
+            table = destination(self.project_db, projects_table(dest, self.table_prefix))
+            try:
+                cursor = self.projects.cursor()
+                cursor.execute(PARTITION_ROWS_SQL, [table])
+                row = cursor.fetchone()
+                if row is None or row[0] is None or int(row[0]) != 0:
+                    continue
+                self._execute(self.projects, f"TRUNCATE TABLE {table};", label=f"give back {dest}")
+                self.projects.commit()
+                self.say(f"room given back: {dest} was left empty by the failure", 1)
+            except Exception as exc:  # noqa: BLE001 - the failure is what matters; say this too
+                try:
+                    self.projects.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                self.report.warnings.append(f"{dest}: its room after the failure was not given back ({exc}).")
 
     def _package_group_if_done(self, node: Any) -> None:
         """Once every run of a table group is done, its tables go to parquet,
@@ -474,6 +633,8 @@ class SessionRunner:
         runs = [run for run in self.session.runs if getattr(run, "group", None) == group]
         if any(run.status not in (DONE, SKIPPED) for run in runs) or not any(run.status == DONE for run in runs):
             return
+        if not run_tables_of(self.manifest.resolve(runs[0])):
+            return  # nothing in it to package (D208)
         if any(run.outputs.get("packaged") for run in runs):
             return
         landed: dict[str, int] = {}
@@ -553,6 +714,8 @@ class SessionRunner:
             return self._run_uploads(node, path)
         if kind == "pk":
             return self._run_pk(node, path)
+        if not run_tables_of(path):
+            return None  # a run with no tables has nothing to pull (D208)
         rows = self._run_run(node, path)
         self._measure_run(node, path)
         return rows
@@ -814,6 +977,10 @@ class SessionRunner:
                 f"{node.label}: {pk_table} is a control but names no case. Export the split again."
             )
         case_table = projects_table(case, self.table_prefix)
+        if released_pk(self.manifest, case):
+            raise SessionError(
+                f"{node.label}: {pk_table} is sampled against {case}, which left Projects once "
+                f"its controls were done (D206). Re-pull {case}'s session together with this one.")
         if not self._projects_table_exists(destination(self.project_db, case_table)):
             raise SessionError(
                 f"{node.label}: {pk_table} is sampled against {case}, whose PK is not in "
