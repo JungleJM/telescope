@@ -54,6 +54,8 @@ STATUS_COLOURS = {
     "blocked": "#6e7781",
     "skipped": "#6e7781",
     "pending": "#24292f",
+    # A table whose parquet is in the run folder (D204).
+    "packaged": "#8250df",
 }
 
 # What the window remembers: the loaded transfer YAML. A pull's split and SQL
@@ -796,7 +798,7 @@ class LauncherApp:
             manifest, rows, message = None, [], str(exc)
             self._status_seen = None
         else:
-            seen = (manifest, file_signature(manifest))
+            seen = (manifest, file_signature(manifest), launcher.parquet_folders_signature(manifest))
             if not force and seen[1] is not None and seen == self._status_seen:
                 self.show_status_message(manifest, "")
                 return
@@ -810,7 +812,7 @@ class LauncherApp:
         self.tree.delete(*self.tree.get_children())
         self._status_rows = {}
         parents: dict[str, str] = {}
-        step = ""
+        step, step_status = "", ""
         for row in rows:
             values = (row.kind, row.name, row.status, row.rows, row.duration,
                       row.median, row.p90, row.max, row.detail)
@@ -819,14 +821,24 @@ class LauncherApp:
                     "", "end", text=row.session, values=values, open=True, tags=(row.status,)
                 )
             elif row.kind == "table":
-                # Under the phase or run that landed it (D137).
+                # Under the phase or run that landed it (D137): purple once its
+                # parquet is in the run folder (D204), else green once that step
+                # is done (D198); while it runs or after it fails, uncoloured,
+                # since its rows are only what has landed so far.
+                tags: tuple[str, ...] = ()
+                if launcher.table_parquets(manifest, row.name):
+                    tags = ("packaged",)
+                    values = (row.kind, row.name, "packaged", *values[3:])
+                elif step_status == DONE:
+                    tags = (DONE,)
                 item = self.tree.insert(step or parents.get(row.session, ""), "end", text="",
-                                        values=values)
+                                        values=values, tags=tags)
             else:
                 item = step = self.tree.insert(
                     parents.get(row.session, ""), "end", text="",
                     values=values, tags=(row.status,), open=True,
                 )
+                step_status = row.status
             self._status_rows[str(item)] = row
         self.show_status_message(manifest, message)
         self.refresh_manifest_view(manifest, text)
@@ -867,14 +879,23 @@ class LauncherApp:
 
     def on_status_double_click(self, event=None) -> None:
         """A packaged table opens in the parquet viewer (D167); any other row,
-        or a table with no parquet yet, in Pull Manifest (D144)."""
+        or a table with no parquet yet, in Pull Manifest (D144), saying why
+        for the table (D204)."""
         item = self.tree.focus()
         row = self._status_rows.get(str(item))
         if row is None:
             return
-        if row.kind == "table" and self.open_parquets(row.name):
+        if row.kind != "table":
+            self.show_in_manifest(row)
+            return
+        manifest = self._manifest()
+        packaged = bool(manifest is not None and launcher.table_parquets(manifest, row.name))
+        if packaged and self.open_parquets(row.name):
             return
         self.show_in_manifest(row)
+        if not packaged:
+            self.bar.configure(text=f"{row.name} is not packaged yet, so its lines in Pull Manifest "
+                                    "are shown instead. A packaged table is purple.")
 
     def open_parquets(self, table: str) -> bool:
         """Open a table's parquet in a viewer window of its own; False if it has none."""

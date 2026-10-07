@@ -33,6 +33,7 @@ from . import config
 from .pulls import MANIFEST_FILENAME, RUNS_DIR, newest_log, run_folder_name
 from .pulls import sql_folder as pulls_sql_folder
 from .perkey import shown as per_key_shown
+from .yaml_io import file_signature
 
 # Windows can give Execute a console window of its own; elsewhere it runs
 # unseen and its output is read from its log.
@@ -208,6 +209,14 @@ def table_parquets(manifest_path: Path, name: str) -> list[Path]:
         if parts:
             return parts[:2]
     return []
+
+
+def parquet_folders_signature(manifest_path: Path) -> tuple:
+    """When the run folder's parquet folders last changed, so Status sees a
+    table packaged while the manifest stays as it was (D204)."""
+    run_dir = Path(manifest_path).parent
+    return tuple(file_signature(run_dir / name)
+                 for name in ("cosmos_parquets", "sneakpeek_parquets", "uploads_parquets"))
 
 
 def command_view_parquets(tools: Tools, files: list[Path]) -> list[str]:

@@ -691,6 +691,59 @@ class StatusTests(GuiTestCase):
         self.app.on_status_double_click()
         self.assertEqual(self.spawned, [])
         self.app.notebook.select.assert_called_with(self.app.manifest_tab)
+        # D204: and says why, since nothing else does.
+        said = self.app.bar.configure.call_args.kwargs["text"]
+        self.assertIn("OtherHospitalizations is not packaged yet", said)
+
+    def table_shown(self) -> tuple:
+        """The table row's tags and Status column, as last drawn."""
+        [call] = [c for c in self.app.tree.insert.call_args_list if c.kwargs["values"][0] == "table"]
+        return tuple(call.kwargs.get("tags") or ()), call.kwargs["values"][2]
+
+    def table_under_run(self, status: str, parquet: bool = False) -> None:
+        import copy
+
+        data = copy.deepcopy(SAMPLE_MANIFEST)
+        run = data["sessions"][0]["runs"][0]
+        run["status"] = status
+        run.setdefault("outputs", {})["table_rows"] = {"OtherHospitalizations": 7}
+        dump_yaml(data, self.manifest)
+        if parquet:
+            folder = self.manifest.parent / "cosmos_parquets"
+            folder.mkdir()
+            (folder / "OtherHospitalizations.parquet").write_bytes(b"PAR1")
+        self.app.tree.insert.reset_mock()
+        self.app.refresh_status(force=True)
+
+    def test_a_table_is_green_once_its_run_is_done(self):
+        # D198: a finished SneakPeek session's tables read as unfinished in black.
+        self.table_under_run("done")
+        self.assertEqual(self.table_shown(), (("done",), ""))
+
+    def test_a_table_of_a_run_still_running_or_failed_stays_uncoloured(self):
+        for status in ("running", "failed"):
+            with self.subTest(status=status):
+                self.table_under_run(status)
+                self.assertEqual(self.table_shown(), ((), ""))
+
+    def test_a_packaged_table_is_purple_and_says_packaged(self):
+        # D204: what can be double-clicked into the viewer, seen before clicking.
+        self.table_under_run("done", parquet=True)
+        self.assertEqual(self.table_shown(), (("packaged",), "packaged"))
+
+    def test_a_table_packaged_later_turns_purple_though_the_manifest_is_unchanged(self):
+        # Artifacts run by hand writes parquets and leaves the manifest alone.
+        import os
+
+        self.table_under_run("done")
+        folder = self.manifest.parent / "cosmos_parquets"
+        folder.mkdir()
+        (folder / "OtherHospitalizations.parquet").write_bytes(b"PAR1")
+        info = os.stat(folder)
+        os.utime(folder, ns=(info.st_atime_ns, info.st_mtime_ns + 5_000_000))
+        self.app.tree.insert.reset_mock()
+        self.app.refresh_status()
+        self.assertEqual(self.table_shown(), (("packaged",), "packaged"))
 
     def count_reads(self):
         """How often Status opens the manifest (D154)."""
