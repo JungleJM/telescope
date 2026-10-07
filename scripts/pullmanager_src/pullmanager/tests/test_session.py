@@ -124,8 +124,12 @@ class FakeConnection:
                  pk_rows=3, existing_temps=(), transactional=False, upload_columns=None,
                  widths=None, found_values=None, instance=INSTANCE, per_table=None,
                  fail_late=None, no_landing_count=False, server_messages=(),
-                 cosmos_columns=None, per_key_row=(3, 1.0, 1.0, 1), reads_back=False):
+                 cosmos_columns=None, per_key_row=(3, 1.0, 1.0, 1), reads_back=False,
+                 files=None, log_wait=None):
         self.side = side
+        # The database's files, (kind, used MB, cap MB), and its log's wait.
+        self.files = files
+        self.log_wait = log_wait
         # A whole table read into a parquet gives back the rows it holds,
         # rather than `pk_rows` (D177's check of a packaged table).
         self.reads_back = reads_back
@@ -247,6 +251,10 @@ class FakeConnection:
                 return [(["name"], [(name,) for name in sorted(fixture_columns())])]
             names = self.cosmos_columns.get(table, self.cosmos_columns.get("*", []))
             return [(["name"], [(name,) for name in names])]
+        if "FROM sys.database_files" in sql and self.files is not None:
+            return [(["type_desc", "used", "cap"], list(self.files))]
+        if "log_reuse_wait_desc" in sql and self.log_wait is not None:
+            return [(["log_reuse_wait_desc"], [(self.log_wait,)])]
         if "FROM sys.partitions" in sql:
             held = self._working().get(str((params or [""])[0]))
             return [(["rows"], [(None if held is None else sum(held.values()),)])]
@@ -804,6 +812,32 @@ class ReleaseTests(SessionTestCase):
         self.assertEqual(manifest.sessions[0].runs[0].status, "done")
         refills = [sql for sql, _ in self.cosmos.inserted if "Patients" in sql]
         self.assertEqual(refills, [])
+
+
+class RoomTests(SessionTestCase):
+    """Each session says its database's room, and warns of a held log."""
+
+    FILES = [("ROWS", 11_000, 20_000), ("LOG", 5_000, 20_000)]
+
+    def test_the_room_is_said_as_the_session_starts(self):
+        with self.runner(projects={"files": self.FILES, "log_wait": "NOTHING"}) as runner:
+            report = runner.execute()
+        self.assertTrue([line for line in self.said
+                         if line.endswith("PROJECTD33A929: data files 8.8 GB free, log 14.6 GB free")], self.said)
+        self.assertFalse([w for w in report.warnings if "holds its log" in w])
+
+    def test_a_log_held_by_an_open_transaction_is_a_warning(self):
+        # GI_Conditions' 9002: the log full, held by ACTIVE_TRANSACTION.
+        with self.runner(projects={"files": self.FILES, "log_wait": "ACTIVE_TRANSACTION"}) as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertTrue([w for w in report.warnings if "open transaction holds its log" in w], report.warnings)
+
+    def test_a_reading_that_fails_says_nothing_and_the_pull_goes_on(self):
+        with self.runner() as runner:
+            report = runner.execute()
+        self.assertTrue(report.ok, report.failed)
+        self.assertFalse([line for line in self.said if "data files" in line])
 
 
 class FailureTests(SessionTestCase):

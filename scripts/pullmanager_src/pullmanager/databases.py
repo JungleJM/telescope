@@ -65,6 +65,25 @@ def needs_choice(manifest: Manifest) -> bool:
     return all(node.status == PENDING for session in manifest.sessions for node in session.children)
 
 
+LOG_WAIT_SQL = "SELECT log_reuse_wait_desc FROM sys.databases WHERE name = DB_NAME()"
+
+
+def room_and_log(connection: Any) -> tuple[float | None, float | None, str]:
+    """The data files' and the log's room to their caps (MB; None, no cap),
+    and what, if anything, keeps the log from reusing its space."""
+    cursor = connection.cursor()
+    cursor.execute(FILES_SQL)
+    room: dict[str, float | None] = {"ROWS": 0.0, "LOG": 0.0}
+    for kind, used, cap in cursor.fetchall():
+        kind = str(kind).upper()
+        if kind not in room or room[kind] is None:
+            continue
+        room[kind] = None if cap is None else room[kind] + float(cap) - float(used or 0)
+    cursor.execute(LOG_WAIT_SQL)
+    row = cursor.fetchone()
+    return room["ROWS"], room["LOG"], str(row[0]) if row and row[0] else ""
+
+
 def free_space(connection: Any) -> float | None:
     """The data files' room to their caps, in MB; None if one has no cap."""
     cursor = connection.cursor()

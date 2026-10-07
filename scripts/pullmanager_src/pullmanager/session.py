@@ -264,7 +264,26 @@ class SessionRunner:
         self.project_db = str(project_db)
         self._open_projects()
         self.say(f"connected: Cosmos on {linked_server}, Projects {self.project_db}")
+        self._say_room()
         self.manifest.save()
+
+    def _say_room(self) -> None:
+        """The project database's room, as the session starts, and a warning
+        when an open transaction holds its log: a large landing then fails
+        with 9002 however much the data files have."""
+        from .databases import room_and_log
+
+        try:
+            data, log, wait = room_and_log(self.projects)
+        except Exception:  # noqa: BLE001 - only a reading; the pull goes on
+            return
+        shown = lambda mb: "no cap" if mb is None else f"{mb / 1024:,.1f} GB free"  # noqa: E731
+        self.say(f"{self.project_db}: data files {shown(data)}, log {shown(log)}", 1)
+        if wait.upper() == "ACTIVE_TRANSACTION":
+            self.report.warnings.append(
+                f"{self.project_db}: an open transaction holds its log, so the log cannot reuse "
+                "its space and a large landing may fail with 9002. If no other pull is landing "
+                "there now, find it in clear_projects_db (Open transactions), end it, then Free log.")
 
     def _open_projects(self) -> None:
         """A fresh Projects connection, closing the old one (D176).
@@ -697,7 +716,9 @@ class SessionRunner:
             for run in runs:
                 run.outputs["packaged"] = record
             self.manifest.save()
-        self.say(f"{named}: packaged in {since(started)}")
+            self.say(f"{named}: {len(tables)} of its {len(specs)} table(s) packaged in {since(started)}")
+        else:
+            self.say(f"{named}: nothing packaged; its tables stay in Projects for Artifacts")
 
     def _rollback(self) -> None:
         for connection in (self.projects, self.cosmos):
