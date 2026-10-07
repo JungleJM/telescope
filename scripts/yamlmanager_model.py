@@ -1941,8 +1941,10 @@ class Draft:
             if opened is not None and opened.resolve() != target.resolve() and self.ws.is_older_copy(opened):
                 aside = set_aside(opened, self.ws.temp_dir / REPLACED_DIR)
                 notes.append(f"{opened.name} is moved to {self.ws.temp_dir.name}/{REPLACED_DIR}/{aside.name}.")
+        # mac-only {
         elif queue_add(target.name, target.parent):
             notes.append("Added to the bundle queue.")
+        # } mac-only
         return SaveResult(True, " ".join([f"Saved {target.parent.name}/{target.name}."] + notes), target)
 
     @staticmethod
@@ -2415,6 +2417,7 @@ def save_recipe_set(recipes_path: Path, draft: "Draft", group: int) -> tuple[boo
     return True, f"Saved recipe set {name} to {recipes_path.name}{also}."
 
 
+# mac-only {
 # =============================================================================
 # Exports and the bundle queue (D91)
 # =============================================================================
@@ -2499,6 +2502,7 @@ def queue_state(workspace: Workspace) -> dict[str, Any]:
                   for n in queued],
         "addable": [n for n in names if n not in queued],
     }
+# } mac-only
 
 
 # =============================================================================
@@ -3291,8 +3295,10 @@ class BlueprintTests(ModelTest):
         self.assertFalse(legacy.exists())
         self.assertTrue((self.home / "YAMLs" / "temp" / "replaced" / "Test_Run_transfer.yaml").is_file())
         self.assertEqual(self.ws.projects(), {"Test_Run": working})
+        # mac-only {
         self.assertNotIn("Test_Run_blueprint.yaml",
                          (self.home / "YAMLs" / "temp" / "bundle_queue.txt").read_text(encoding="utf-8"))
+        # } mac-only
         loc = my.load_yaml(working)["upload_cohorts"][0]["file_loc"]
         self.assertTrue((working.parent / loc).is_file())
 

@@ -2,7 +2,7 @@
 
 A view over yamlmanager_model (D92): every value shown is read from the
 model, every edit is a call to it, and it holds no rules of its own. The
-Builder's sections follow D96; Validate, Exports and YAML sit beside it.
+Builder's sections follow D96; Validate and YAML sit beside it.
 
 It is opened as one half of the app, beside Run (pullmanager/app.py):
 
@@ -108,7 +108,7 @@ def heading(parent: Any, text: str, explain: str = "") -> None:
 
 
 class AuthorView:
-    """The Builder, Validate, Exports and YAML, over one draft at a time."""
+    """The Builder, Validate and YAML, over one draft at a time."""
 
     def __init__(self, parent: Any, root: Any, workspace: model.Workspace,
                  on_transfer: Callable[[Path], None] | None = None,
@@ -141,8 +141,10 @@ class AuthorView:
             self.register(key, lambda parent, build=build: build(self, parent))
         self.validate_panel = ValidatePanel(self)
         self.refresh_validate = self.validate_panel.refresh
+        # mac-only {
         self.exports_panel = ExportsPanel(self)
         self.refresh_exports = self.exports_panel.refresh
+        # } mac-only
         self.show_section("project")
         self.refresh_files()
         self.loaded()
@@ -191,8 +193,10 @@ class AuthorView:
 
         self.validate_tab = ttk.Frame(self.tabs)
         self.tabs.add(self.validate_tab, text="Validate")
+        # mac-only {
         self.exports_tab = ttk.Frame(self.tabs)
         self.tabs.add(self.exports_tab, text="Exports")
+        # } mac-only
         self.yaml_tab = ttk.Frame(self.tabs)
         self.tabs.add(self.yaml_tab, text="YAML")
         self.yaml_text = scrolledtext.ScrolledText(self.yaml_tab, wrap="none", font=("Courier", 11))
@@ -370,8 +374,10 @@ class AuthorView:
 
     def loaded(self) -> None:
         """A draft was opened or started: show it everywhere."""
+        # mac-only {
         if getattr(self, "exports_panel", None) is not None:
             self.exports_panel.chosen = None
+        # } mac-only
         self.highlight = None
         self.inline_builder = None
         self.open_columns = set()
@@ -456,9 +462,11 @@ class AuthorView:
         if current == str(self.yaml_tab):
             self.yaml_text.delete("1.0", "end")
             self.yaml_text.insert("1.0", self.draft.yaml_text())
+        # mac-only {
         refresh = getattr(self, "refresh_exports", None)
         if refresh and current == str(self.exports_tab):
             refresh()
+        # } mac-only
 
     def close(self) -> bool:
         return self.confirm_discard()
@@ -1837,6 +1845,7 @@ class ValidatePanel:
             self.view.goto(message.field)
 
 
+# mac-only {
 # =============================================================================
 # Exports
 # =============================================================================
@@ -1930,6 +1939,7 @@ class ExportsPanel:
         done = model.queue_add(name, folder) if action == "add" else model.queue_remove(name, folder)
         self.view.say(f"{'Queued' if action == 'add' else 'Removed'} {name}." if done else f"{name}: nothing to change.")
         self.refresh()
+# } mac-only
 
 
 # =============================================================================
@@ -2371,6 +2381,7 @@ class ValidateAndExportViewTests(ViewTest):
         self.assertIn("… Uploads", steps)
         self.assertIn(index, [i for i, _ in self.view.draft.supporting()])
 
+    # mac-only {
     def test_exports_show_a_saved_intakes_three_files_and_the_queue(self):
         self.open("Celiac_intake.yaml")
         self.view.exports_panel.refresh()
@@ -2380,7 +2391,9 @@ class ValidateAndExportViewTests(ViewTest):
         if model.queue_available():
             self.view.exports_panel.queue("add", "Celiac_intake.yaml")
             self.assertEqual(model.queue_state(self.ws)["queue"][0]["name"], "Celiac_intake.yaml")
+    # } mac-only
 
+    # mac-only {
     def test_make_bundle_shows_its_content_id_and_keeps_it(self):
         if not model.queue_available():
             self.skipTest("the bundle builder is not here")
@@ -2405,6 +2418,7 @@ class ValidateAndExportViewTests(ViewTest):
         self.assertEqual(model.queue_state(self.ws)["queue"], [])
         shown = [str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label)]
         self.assertIn(f"content_id: {content_id}", shown)
+    # } mac-only
 
     def test_on_the_vm_side_no_pending_checkbox_is_offered(self):
         self.open("Celiac_intake.yaml")
@@ -2417,13 +2431,14 @@ class ValidateAndExportViewTests(ViewTest):
         self.view.show_section("pk")
         self.assertFalse(any("Pending transfer" in t for t in texts()))
 
+    # mac-only {
     def test_an_unsaved_draft_says_to_save_first(self):
         self.open("Celiac_intake.yaml")
         self.view.edit(lambda: setattr(self.view.draft, "project_db", "PROJECTD9"))
         self.view.exports_panel.refresh()
         text = " ".join(str(w.cget("text")) for w in widgets(self.view.exports_tab) if isinstance(w, ttk.Label))
         self.assertIn("Save the draft", text)
-
+    # } mac-only
 
 class InlineBuilderTests(ViewTest):
     """D110: a fact table is added in place, at the top of Fact Tables."""

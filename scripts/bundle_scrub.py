@@ -5,6 +5,10 @@ extraction, the Mac. The VM is shown as if the system were built and run
 there, so the bundle's copy of each file drops that prose, and a few messages
 a VM user sees are reworded. The Mac's files are not touched.
 
+- `cut`: drops every block of lines between `# mac-only {` and `# } mac-only`
+  (D205): code that exists only on the Mac, such as Author's Exports tab and
+  the bundle queue, leaves no trace in the bundle. A block left open, or
+  closed without opening, stops the build.
 - `reword`: exact replacements, file by file (VM_WORDING). One that no longer
   matches stops the build, so the table cannot drift from the code silently.
 - `scrub`: drops every comment block and docstring paragraph in Python, every
@@ -35,8 +39,7 @@ class ScrubError(ValueError):
 
 
 # Messages a VM user can see, and what the bundle says instead. Code names are
-# renamed in the source (D202); the Mac-only bundle-building code in Author
-# is left.
+# renamed in the source (D202); the Mac-only code is cut (D205).
 VM_WORDING: dict[str, list[tuple[str, str]]] = {
     "pullmanager/databases.py": [('"pullmanager/config.py and bundle again, "', '"pullmanager/config.py, "')],
     "pullmanager/launcher.py": [('"Run it from an extracted bundle."', '"Run it from the folder that holds them."')],
@@ -60,15 +63,35 @@ VM_WORDING: dict[str, list[tuple[str, str]]] = {
          '                         f"so {what} is saved there.")',
          'f"There is no {recipes_path.name} here, "\n'
          '                         f"so {what} cannot be saved.")'),
-        ('"Transfer YAML (to be bundled with bundle.py)"', '"Transfer YAML"'),
         ('f" Not here yet, to copy to the VM: {', 'f" Not here yet: {'),
-        ('["Bundles are made on the Mac, beside makebundle.py."]', '["Not available here."]'),
         ('self.assertIn("Mac", message)', 'self.assertIn("cannot be saved", message)'),
     ],
-    "scripts/yamlmanager_tk.py": [
-        ('note(top, "The bundle queue is kept on the Mac, beside makebundle.py.").pack(anchor="w")', "pass"),
-    ],
 }
+
+
+CUT_OPEN = re.compile(r"^\s*# mac-only \{\s*$")
+CUT_CLOSE = re.compile(r"^\s*# \} mac-only\s*$")
+
+
+def cut(published: str, text: str) -> str:
+    """The file without its mac-only blocks, markers included (D205)."""
+    out: list[str] = []
+    opened = 0
+    for number, line in enumerate(text.splitlines(keepends=True), 1):
+        if CUT_OPEN.match(line):
+            if opened:
+                raise ScrubError(f"{published}:{number}: a mac-only block opens inside the one "
+                                 f"opened at line {opened}; close that one first.")
+            opened = number
+        elif CUT_CLOSE.match(line):
+            if not opened:
+                raise ScrubError(f"{published}:{number}: `# }} mac-only` closes a block that never opened.")
+            opened = 0
+        elif not opened:
+            out.append(line)
+    if opened:
+        raise ScrubError(f"{published}:{opened}: this mac-only block is never closed with `# }} mac-only`.")
+    return "".join(out)
 
 
 def reword(published: str, text: str) -> str:
@@ -220,7 +243,7 @@ def scrub_yaml(text: str) -> str:
 
 
 def scrub(published: str, text: str) -> str:
-    text = reword(published, text)
+    text = reword(published, cut(published, text))
     if published.endswith(".py"):
         return scrub_python(published, text)
     if published.endswith(".md"):

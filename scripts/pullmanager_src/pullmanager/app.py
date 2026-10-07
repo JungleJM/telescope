@@ -22,7 +22,7 @@ from . import launcher
 from .gui import LauncherApp, add_credit
 from .launcher import LauncherError
 
-TITLE = "Telescope"
+TITLE = "Scope"
 
 
 def load_utilities() -> Any:
@@ -101,7 +101,7 @@ class App:
         self.show_title()
 
     def show_title(self) -> None:
-        """`Telescope · Author: <project> · Run: <pull>` (D166)."""
+        """`Scope · Author: <project> · Run: <pull>` (D166)."""
         parts = [TITLE]
         if self.author_title:
             parts.append(f"Author: {self.author_title}")

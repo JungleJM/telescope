@@ -872,7 +872,7 @@ class AppTests(GuiTestCase):
         app.set_title("Crohns_VisitsMedsDiagnoses *")
         app.take_transfer(self.work / "YAMLs" / "temp" / "Infant_RSV_blueprint.yaml")
         self.assertEqual(root.title.call_args.args[0],
-                         "Telescope · Author: Crohns_VisitsMedsDiagnoses * · Run: Infant_RSV")
+                         "Scope · Author: Crohns_VisitsMedsDiagnoses * · Run: Infant_RSV")
 
     def test_run_still_opens_when_author_cannot(self):
         with mock.patch.object(self.app_module, "load_author", side_effect=ImportError("no yamlmanager_tk")):

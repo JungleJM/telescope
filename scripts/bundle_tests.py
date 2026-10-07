@@ -240,6 +240,41 @@ class BuildTests(BundleTestCase):
             render_bundle(root)
         self.assertIn("stock/notes.md:1", str(caught.exception))
 
+    def test_mac_only_blocks_leave_no_trace(self):
+        # D205: the Mac's own code is cut at the build, markers and all.
+        import bundle_scrub
+
+        text = (
+            "def save(vm):\n"
+            "    if vm:\n"
+            "        return 1\n"
+            "    # mac-only {\n"
+            "    elif queue_it():\n"
+            "        return 2\n"
+            "    # } mac-only\n"
+            "    return 3\n"
+        )
+        out = bundle_scrub.scrub("t.py", text)
+        compile(out, "t.py", "exec")
+        self.assertNotIn("queue_it", out)
+        self.assertNotIn("mac-only", out)
+        self.assertIn("return 3", out)
+
+    def test_a_mac_only_block_left_open_or_closed_twice_stops_the_build(self):
+        import bundle_scrub
+
+        for text in ("# mac-only {\nX = 1\n", "X = 1\n# } mac-only\n", "# mac-only {\n# mac-only {\n"):
+            with self.subTest(text=text), self.assertRaises(bundle_scrub.ScrubError):
+                bundle_scrub.cut("t.py", text)
+
+    def test_author_ships_without_its_mac_only_exports(self):
+        # D205: no Exports tab, no bundle queue, nothing that hints they exist.
+        sections, _ = read_bundle(self.bundle)
+        for section in sections:
+            with self.subTest(path=section["path"]):
+                for word in ("Exports", "ExportsPanel", "make_bundle", "queue_add", "bundle_queue", "mac-only"):
+                    self.assertNotIn(word, section["content"])
+
     def test_wording_that_no_longer_matches_stops_the_build(self):
         import bundle_scrub
 
