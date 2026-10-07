@@ -296,6 +296,22 @@ A small fix, for the roadmap: a run with no tables is skipped.
 :::
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** (in the chat, 7 Oct) PatientWithDx gets Type, Status, IsPrimary, EndDateKey and EncounterKey; keep StateOrProvince, drop Country; keep race 1 and 2; drop ICDName and DurableKey. GI_Conditions drops IndexDiagnosis. Then: a PK should leave Projects after its session, as every table should once nothing later needs it; it's supposed to go to parquet after every table. Why doesn't it already? Make it general, not an exception for this cohort. Then any other features that can safely be made; I restart GI_Conditions in the morning.
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: built overnight; why PKs stayed; the one risk left for GERD**
+
+**Why PKs stayed.** Until D177 nothing left Projects before the end of the pull (D165). D177 (bundle 4) made a run's tables leave when their group finished, because nothing after the group reads them. A PK is read by its session's runs, which pick their patients from it, and by any control session sampled against it. So it was kept to the end. D206 makes one rule for every table: it leaves at the first moment nothing later reads it. Only an upload's Projects copy stays, since later sessions load it and a re-pull would find it there already.
+
+**Built** (D206 to D208, D172, and the room readout; recorded in `decisions.md`, not yet in `design.md`).
+
+**The risk left for GERD: its PK still lands in one transaction.** The log must hold the whole PK insert until it commits, and the driver runs with autocommit off, so the staging copy and the insert share one transaction until Python commits. Landing in slices, each committed, would bound the log to one slice. But it changes how every landing commits, and only the VM can show it works, so it waits. With the slimmer PK and 2015 on, GERD should need far less than the 9.5 GB it reached. If it fails again with 9002, this is next.
+
+**For you to decide:** after the restart, whether landing in slices goes on the roadmap.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
 :::
 
