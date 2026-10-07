@@ -613,7 +613,7 @@ def unpack(bundle_path: Path, target: Path, force: bool = False, quiet: bool = F
     print(f"Wrote {launcher.parent / UTILS_LAUNCHER_NAME}  (rewritten, pointing at the new version)")
     print(f"Every window now says `version {manifest['content_id'][:8]}` at its foot.")
     print(f"Next, from {launcher.parent}: `python {LAUNCHER_NAME}` opens the app "
-          f"(`python {LAUNCHER_NAME} --tdd` tests the delivery); `python {UTILS_LAUNCHER_NAME}` "
+          f"(`python {LAUNCHER_NAME} --tdd` runs its tests); `python {UTILS_LAUNCHER_NAME}` "
           "the utilities.")
 
 
