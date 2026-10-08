@@ -5,16 +5,17 @@ YAML Manager authors and plans data pulls; Pullmanager executes them on an air-g
 Read before working:
 
 - `plan/design.md`: what the system is, as built, including environments, delivery to the VM, and testing.
-- `plan/roadmap.md`: status, known bugs, open problems. Check it first.
+- `plan/roadmap.md`: the future only: known bugs, what to build next, open problems. Check it first.
+- `plan/status.md`: what is built, and the checks still to be seen working on the VM, newest software first.
 - `plan/decisions.md`: why things are the way they are (D1 onward). Read the relevant entry before reversing anything; append a new entry rather than editing an old one's reasoning.
 
 ## Keeping The Docs True
 
-- A fact lives in one of those three documents only. Status lives only in the roadmap.
-- When code changes behaviour, update `design.md` in the same commit, except during a planned run of fixes (below), where the docs catch up after the user has discussed the results. When an item is built, delete it from the roadmap. When something is decided, add a numbered decision.
+- A fact lives in one of those documents only. What is to be built lives only in the roadmap; whether something built works on the VM, only in `status.md`.
+- When code changes behaviour, update `design.md` in the same commit, except during a planned run of fixes (below), where the docs catch up after the user has discussed the results. When an item is built, delete it from the roadmap, and add what the user must see on the VM to `status.md`; when they say a check passed, delete it there. When something is decided, add a numbered decision.
 - `HowThisRepoWorks.md` (root; in every bundle, D199) walks a developer on the VM from template to SQL to parquet, naming the functions. When a step or a function it names changes, update it in the same commit. It is written as if everything runs on the VM: no Mac, no copying over, no history.
 - Do not add new design documents. A temporary brief for the VM (questions to put to its AI) is the exception; delete it once its answers are folded in. `plan/tasklist.md` is not a design document: it holds only what is still under discussion (D128).
-- **"Update docs"** means all four: bring `design.md`, `decisions.md` and `roadmap.md` up to date with the code by the rules above, then extend `plan/commemorating/thoroughhistory.qmd` from its stated cut-off to the latest commit (timeline, numbers, defects, decision index, open questions) and move the cut-off. Last, run `python3 scope.py images`, which deletes every pasted image (`paste-*`) in an `images/` folder under `plan/` that no document mentions (D132). The history is a record, not a design document: it may repeat facts, and it keeps what the other three have since deleted.
+- **"Update docs"** means all four: bring `design.md`, `decisions.md`, `roadmap.md` and `status.md` up to date with the code by the rules above, then extend `plan/commemorating/thoroughhistory.qmd` from its stated cut-off to the latest commit (timeline, numbers, defects, decision index, open questions) and move the cut-off. Last, run `python3 scope.py images`, which deletes every pasted image (`paste-*`) in an `images/` folder under `plan/` that no document mentions (D132). The history is a record, not a design document: it may repeat facts, and it keeps what the other three have since deleted.
 
 ## Planning And Doing Work
 
@@ -23,7 +24,7 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 0.  **A new chat** is usually started with a task-list section's heading: read that section, the plan documents above, and the code behind it, then answer under it. Before a chat ends, write anything it settled or learned that lives only in the chat into the task list (or, if agreed, the plan documents).
 1.  **Respond topic by topic, in `plan/tasklist.md`.** When the user brings research, notes or ideas, read the code behind each topic first. Under each, in a blue-bordered box headed `**🟦 Claude: <topic>**`, say what the code does today, give a recommendation, and end with "For you to decide" where the choice is theirs; follow it with an empty orange-bordered box headed `**🟧 Your response:**`, with a blank line inside for them to type on. Close with a numbered **Suggested order**: one line per item, most urgent first, saying why it sits where it does. Agreed items move to the `# Settled` section at the bottom; new notes go above it.
     **Reply style (D174, option 5 in `plan/tasklist format tests/format_test.md`).** Each box opens with `::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}` (orange `#e2904a` for theirs) and closes with `:::` on its own line. Coloured text labels (option 6, D173) are retired: the colour was lost when the user typed beside a label. Do not use Quarto callouts, GitHub alerts, `<details>`, tables or headings to mark replies.
-2.  **Document before code.** Once the user agrees, write the numbered decisions, put the order in `roadmap.md` as "Next: Fixes, In Order", and move each settled item out of the task list into the three documents, then delete it there: Settled should not become a graveyard. Commit and push, so there is a clean slate to revert to.
+2.  **Document before code.** Once the user agrees, write the numbered decisions, put the order under `roadmap.md`'s **Next**, and move each settled item out of the task list into the three documents, then delete it there: Settled should not become a graveyard. Commit and push, so there is a clean slate to revert to.
 3.  **Build in that order.** One commit per item (small ones may share), each with its outcome tests and a rebuilt bundle if a bundled file changed. Push at the end.
 4.  **Report, discuss, then document.** Report what was built, what was chosen along the way, and what the user needs to do or decide. Do not edit the plan documents with the results until the user has discussed them.
 

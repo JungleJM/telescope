@@ -8,7 +8,8 @@ What the system is and the contracts each part keeps. Three documents, one job e
 |------------------------------------|------------------------------------|
 | `design.md` | What it is, and how it behaves. Describes the code as it stands. |
 | `decisions.md` | Why, what was rejected, and what it cost. Append-only, numbered. |
-| `roadmap.md` | What is unbuilt, unverified, or undecided. The only place status lives. |
+| `roadmap.md` | What is unbuilt or undecided: the future only. |
+| `status.md` | What is built, and what is still to be seen working on the VM. |
 
 When code and this document disagree, one of them is a bug. Fix whichever is wrong in the same commit. Working conventions for this repo are in `.claude/CLAUDE.md`. What is still being discussed, before it becomes a decision, is in `plan/tasklist.md` (D128, D173, D174).
 
@@ -90,7 +91,7 @@ reference/          the core files: datadictionary.yaml, recipes.yaml, template.
                     DSVM Plugins.yaml, requirements-vm.txt; DDict image refs/, the
                     dictionary pages' screenshots, one folder per table (D117)
 YAMLs/              the pulls: temp/ (intakes, their csv/, their exported blueprints), manager_test_cases/
-plan/               design, decisions, roadmap, tasklist.md; commemorating/ (the history);
+plan/               design, decisions, roadmap, status, tasklist.md; commemorating/ (the history);
                     a pasted image in images/ beside its document (D132)
 scripts/            makeYaml, the app's model and view, the bundler, dictionary_fix.py (D155), pullmanager_src/
 cleanup/            disposable: the Python cache, runs/ (D113)
