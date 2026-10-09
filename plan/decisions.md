@@ -2153,3 +2153,18 @@ The extractor still recognises a folder extracted with the old record name, read
 **Decision.** A rule in CLAUDE.md: nothing is assumed about what a column holds; only what a query on the VM has shown is used, and what is not yet shown is written as a check, marked `# unverified` and said to be. `python rsv verify` runs 34 read-only checks on a month's sample of infant ED visits (settings `verify`), each naming its assumption and judged OK, NO or LOOK (values to read and decide on), with ERR for a query that failed and the rest still run. It writes `assumption-verify.txt`, one page, and `assumption-verify-detail.txt` with each assumption in full and the values seen, small counts hidden. It connects as Scope does, through the `pullmanager` beside it and `.env`. `rsv/settings.yaml` marks each value assumed of Cosmos with the check that will settle it, and each choice (bands, seasons, plausible ranges) as a choice. `rsv/sql/check_icu.sql` tests the ICU rule in more depth in SSMS.
 
 **Consequences.** Until the checks come back, the values marked unverified stay as they are, flagged; each is then replaced by what Cosmos shows, and the synthetic copy's invented vocabularies by the values seen.
+
+### D217. Splitting is assessed on every pull, and done only when the user says yes (future)
+
+**Context.** GI_Conditions' GERD PK, over 19 GB, filled a 20 GB log in one insert (9 October 2026). The user wants pulls to find such a table themselves and split only it (the roadmap, Splitting Set To Auto). The task list's five questions were answered the same day.
+
+**Decision.** For when it is built:
+
+- **Assess always, slice on a yes.** Every table is measured in its Cosmos temp (rows and bytes) before it lands, against the room the project database has then. A table that won't fit is not landed. Execute's window says what it measured and asks: `GERDPtsWithDx: 19.4 GB, 9.6 GB free. Land it in 3 slices? [y/N]`. It waits, with the temp held in Cosmos. Anything but y fails the step loudly, with the numbers, before any room is used. Once this has proved itself, a setting makes the yes automatic. A split or `chunk:` the user writes takes precedence.
+- **At most 5 slices without a second check.** The database stops at 20 GB, so more than 5 means a table of about 100 GB or more. Then Execute stops, says the size, and asks for the number of slices to be typed, so a mistake can't run up a huge pull.
+- **Slices, not chunks.** The table is built once in Cosmos and landed in pieces by key, each in its own transaction, written to parquet, checked and emptied.
+  - **Cosmos may have a limit,** perhaps about 30 GB, though none has been seen. A Cosmos-side space error says so and suggests a `chunk:` for that table, which rebuilds it per piece.
+- **The pieces become one file.** While the pull runs, a sliced table's parts are `<table>_1of3.parquet` and on. When it is packaged they are streamed into one `<table>.parquet`, its rows checked against the parts, and the parts deleted. The VM's disk briefly needs room for both.
+- **The recovery model is read, not changed.** A slice's log is reused after its commit and a checkpoint only under SIMPLE. Each session reads the database's model. Under FULL it warns that slicing will not free the log, and names `ALTER DATABASE ... SET RECOVERY SIMPLE`, which the user prefers, for whoever may set it. Pullmanager never sets it.
+
+**Consequences.** Nothing here is built. The roadmap's order holds: landing in slices, measuring, the prompt, the narrow PK copy, then the estimate, to warn before a pull starts.

@@ -502,16 +502,21 @@ Built with pandas 2.2.3 and pyarrow 22 (both on the VM), and tested on the Mac a
 **Built (D214), in bundle `ae095e1f…` and RSV bundle `8bef2f7c`.**
 
 - **Both pulls ship; you choose one.**
-    - **Redo everything:** `Infant_RSV_blueprint.yaml`, the same EDVisits PK with every table rebuilt. Births have no date floor, ED medications come with names, admissions carry their departments' specialties, and the lab tables carry their components' names.
-    - **The follow-up:** `Infant_RSV_Followup_blueprint.yaml`, the missing tables only, on the visits you have. It needs `python rsv keys` first.
+
+  - **Redo everything:** `Infant_RSV_blueprint.yaml`, the same EDVisits PK with every table rebuilt. Births have no date floor, ED medications come with names, admissions carry their departments' specialties, and the lab tables carry their components' names.
+  - **The follow-up:** `Infant_RSV_Followup_blueprint.yaml`, the missing tables only, on the visits you have. It needs `python rsv keys` first.
 
   Both come from one script, `studies/infant_rsv/make_intakes.py`, so they match. The redo previews with 22 units and no errors, one run per ungrouped table.
+
 - **The dictionary** has the three medication dimensions, and their screenshots are in `reference/DDict image refs/`. `MedicationEpicId` is SlicerDicer only, so it's left out (D116).
+
 - **The two test failures** came from paths written with `/`, which Windows doesn't use. They pass now.
+
 - **From your build page:**
-    - The page called VBG "known" for every visit. That was wrong: only the inpatient labs came through, so it is now left empty until ED labs exist.
-    - `*Not Applicable` and any other value starting with `*` now reads as Unknown.
-    - `2021-4` (venous pCO2) appears 7,039 times and `2746-4` (venous pH) never. Once lab names arrive, the build page will list the venous pH's real code.
+
+  - The page called VBG "known" for every visit. That was wrong: only the inpatient labs came through, so it is now left empty until ED labs exist.
+  - `*Not Applicable` and any other value starting with `*` now reads as Unknown.
+  - `2021-4` (venous pCO2) appears 7,039 times and `2746-4` (venous pH) never. Once lab names arrive, the build page will list the venous pH's real code.
 
 **Why the four tables were empty:** before D190, the tables in no group ran together as one run named `run`. Their tables were created but nothing landed in them. On today's runtime each runs alone. If they come back empty again, the Status tab will show which one.
 
@@ -524,7 +529,6 @@ Built with pandas 2.2.3 and pyarrow 22 (both on the VM), and tested on the Mac a
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
-
 :::
 
 ## Synthetic Parquet ideas
@@ -575,37 +579,6 @@ The made-up children behave plausibly: younger, more premature and (slightly) hi
 
 ::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
 **🟧 Your response:**
-
-:::
-
-## Splitting set to auto
-
-(in the chat, 9 Oct, after GERD's PK filled the log) An "auto" option for splitting. When it does its first look at the data, it estimates each table's size and whether anything will hit the free space in the project database it's pulling into. If so, it splits that table alone into 3 to 5 runs. Then I can leave every pull on auto, and users only specify a split when they want one. The analysis works out whether a split is needed, or would take too long, without bothering the user. Each table is still pulled to parquet, each split too, and the parquets are merged at the end. A future issue: analyse whether it's feasible.
-
-::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: feasible; the analysis is in the roadmap, with five questions first**
-
-The analysis is in `roadmap.md`, **Splitting Set To Auto**, under Open Problems. In short:
-
-- **Measure, don't estimate.** Every table is built whole in Cosmos before it lands, so its rows and bytes can be measured there, exactly, before any room is used. That measurement decides.
-- **Slices, not chunks.** An oversized table is built once and landed in n pieces by key, each in its own transaction, then packaged and emptied. Projects needs room for one piece. Cosmos is read once, so there are no extra passes. n is the fewest pieces that fit, so most tables stay whole.
-- **The PK needs one more step:** a narrow copy in Projects (key and batching columns only, under 100 MB for GERD), with the wide PK sliced like any other table.
-- **The merge is exact,** since each piece holds other patients.
-
-**Questions:**
-
-1.  **Recovery model.** In clear_projects_db, open PROJECTD93A5E7. Its log line starts with `Recovery SIMPLE` or `Recovery FULL`. Which is it, for that one and the others? Under SIMPLE, slicing frees the log between pieces. Under FULL it doesn't, unless someone takes log backups, and then only the data file is helped.
-2.  **Cosmos's own room.** Has a Cosmos-side space error ever happened, or does Epic say there's a limit on temp tables? Slices assume Cosmos can hold the whole table once. If it can't, auto would have to fall back to chunks, which rebuild the table per piece.
-3.  **The merged result.** For a sliced table: one parquet file, or a folder of parts that arrow and R read as one table? The folder costs nothing extra. One file takes another write of the whole table on the VM, and the disk room for it.
-4.  **When auto would need many pieces** (say more than 20, which means the table is many times the database): go ahead, or stop loudly with the numbers so you can choose (D28, D45)?
-5.  **The default.** Auto on for every pull, with a written `chunk:` or split taking over where present? Or off unless a pull asks for it?
-
-**For you to decide:** the five above. With answers to 1 and 2, the roadmap's order (landing in slices, then measuring, then auto, then the narrow PK) can go under **Next** whenever you want it built.
-:::
-
-::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
 :::
 
 ## Settled
