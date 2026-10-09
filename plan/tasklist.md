@@ -549,7 +549,7 @@ What a report shows depends on the question. For each section, it can give each 
 
 **How hard:** not very, because nothing real is needed. The Infant_RSV blueprint already gives every table, column and SQL type. The generator invents the values and writes each parquet with the types the real Artifacts writes. Code that runs on these files runs on the real ones.
 
-**Built:** `python3 studies/synthetic/make_synthetic_repo.py` writes the whole repository to `dist/synthetic_rsv_repo/`: 5,000 visits, 13 tables, 5.2 MB (`--visits 20000` for more). It holds:
+**Built:** `python3 studies/synthetic/make_synthetic_repo.py` writes the whole repository to `dist/synthetic_rsv_repo/`: 20,000 children, 22,800 visits, 13 tables, about 34 MB (`--patients` to change; 9 Oct, it was 5,000 visits at first). Published to `github.com/JungleJM/synthetic_rsv_visits` (`9c20236`), with a STATS.md of 24 questions and their answers in Python and R. It holds:
 
 - **`README.md`.** It says the data is synthetic and explains the 7007 keys. It also has quick starts in Python and R, how the tables link, the analysis, and ideas to try.
 - **`Contents.md`.** Each table's grain, rows, links, columns and SQL types, and how each type reads in a parquet.

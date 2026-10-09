@@ -1,0 +1,254 @@
+# The questions in STATS.md, each answered in Python and in R.
+# They run in order in one session: later ones reuse `visits` and the rest.
+# kind: count (1,234), pct (12.3%), num (12.3) or int (12).
+
+- section: Counting the basics
+  id: visits
+  question: How many ED visits are there?
+  kind: count
+  python: |
+    answer = len(tables["EDVisits"])
+  r: |
+    answer <- nrow(tables$EDVisits)
+
+- id: children
+  question: How many children made them? (A child is a `PatientDurableKey`.)
+  kind: count
+  python: |
+    answer = tables["EDVisits"]["PatientDurableKey"].nunique()
+  r: |
+    answer <- n_distinct(tables$EDVisits$PatientDurableKey)
+
+- id: repeat_children
+  question: How many children came to the ED with RSV more than once?
+  kind: count
+  python: |
+    per_child = tables["EDVisits"].groupby("PatientDurableKey").size()
+    answer = int((per_child > 1).sum())
+  r: |
+    per_child <- tables$EDVisits %>% count(PatientDurableKey)
+    answer <- sum(per_child$n > 1)
+
+- id: admitted_pct
+  question: What share of visits led to an admission? (`HospitalAdmissionKey` above 0; -1 means none.)
+  kind: pct
+  python: |
+    visits = tables["EDVisits"].copy()
+    visits["admitted"] = visits["HospitalAdmissionKey"] > 0
+    answer = visits["admitted"].mean()
+  r: |
+    visits <- tables$EDVisits %>% mutate(admitted = HospitalAdmissionKey > 0)
+    answer <- mean(visits$admitted)
+
+- id: admissions
+  question: How many admissions are in `HospitalAdmissionFact`? (It should match the admitted visits.)
+  kind: count
+  python: |
+    answer = len(tables["HospitalAdmissionFact"])
+  r: |
+    answer <- nrow(tables$HospitalAdmissionFact)
+
+- section: Age and birth
+  id: median_age_days
+  question: What is the median age at arrival, in days? (Join `Patients` on `DurableKey`.)
+  kind: num
+  python: |
+    patients = tables["Patients"].rename(columns={"DurableKey": "PatientDurableKey"})
+    visits = visits.merge(patients[["PatientDurableKey", "BirthDate"]], on="PatientDurableKey", how="left")
+    visits["age_days"] = (visits["ArrivalInstant"].dt.normalize() - pd.to_datetime(visits["BirthDate"])).dt.days
+    answer = visits["age_days"].median()
+  r: |
+    patients <- tables$Patients %>% rename(PatientDurableKey = DurableKey)
+    visits <- visits %>%
+      left_join(select(patients, PatientDurableKey, BirthDate), by = "PatientDurableKey") %>%
+      mutate(age_days = as.numeric(as.Date(ArrivalInstant, tz = "UTC") - BirthDate))
+    answer <- median(visits$age_days, na.rm = TRUE)
+
+- id: under_3_months_pct
+  question: What share of visits were by babies under 3 months (under 91 days)?
+  kind: pct
+  python: |
+    answer = (visits["age_days"] < 91).mean()
+  r: |
+    answer <- mean(visits$age_days < 91)
+
+- id: birth_row_pct
+  question: What share of the children have a birth row (born in a Cosmos health system)?
+  kind: pct
+  python: |
+    answer = tables["Patients"]["DurableKey"].isin(tables["Births"]["BabyPatientDurableKey"]).mean()
+  r: |
+    answer <- mean(tables$Patients$DurableKey %in% tables$Births$BabyPatientDurableKey)
+
+- id: premature_pct
+  question: Of the children with a birth row, what share were born premature (before 37 weeks, under 259 days)?
+  kind: pct
+  python: |
+    answer = (tables["Births"]["GestationalAgeDays"] < 259).mean()
+  r: |
+    answer <- mean(tables$Births$GestationalAgeDays < 259)
+
+- id: very_preterm
+  question: How many were born before 32 weeks (under 224 days)?
+  kind: count
+  python: |
+    answer = int((tables["Births"]["GestationalAgeDays"] < 224).sum())
+  r: |
+    answer <- sum(tables$Births$GestationalAgeDays < 224)
+
+- section: Seasons
+  id: outside_season_pct
+  question: What share of visits came outside the usual RSV season (taken here as October to March)?
+  kind: pct
+  python: |
+    visits["month"] = visits["ArrivalInstant"].dt.month
+    visits["outside_season"] = ~visits["month"].isin([10, 11, 12, 1, 2, 3])
+    answer = visits["outside_season"].mean()
+  r: |
+    visits <- visits %>%
+      mutate(month = as.integer(format(ArrivalInstant, "%m", tz = "UTC")),
+             outside_season = !(month %in% c(10:12, 1:3)))
+    answer <- mean(visits$outside_season)
+
+- id: outside_season_admissions_pct
+  question: What share of admissions came outside it?
+  kind: pct
+  python: |
+    answer = visits.loc[visits["admitted"], "outside_season"].mean()
+  r: |
+    answer <- mean(visits$outside_season[visits$admitted])
+
+- id: covid_season_visits
+  question: How many visits were in the 2020–21 season (July 2020 to June 2021), when COVID measures held RSV back?
+  kind: count
+  python: |
+    answer = int(visits["ArrivalInstant"].between("2020-07-01", "2021-07-01", inclusive="left").sum())
+  r: |
+    answer <- sum(visits$ArrivalInstant >= as.POSIXct("2020-07-01", tz = "UTC") &
+                  visits$ArrivalInstant < as.POSIXct("2021-07-01", tz = "UTC"))
+
+- id: busiest_month
+  question: Which month of the year (1 to 12) has the most visits?
+  kind: int
+  python: |
+    answer = visits["month"].value_counts().idxmax()
+  r: |
+    answer <- as.integer(names(which.max(table(visits$month))))
+
+- section: Vitals and labs
+  id: fahrenheit_pct
+  question: What share of ED temperature readings are in °F? (Cosmos mixes units; above 45 is °F.)
+  kind: pct
+  python: |
+    temperature = tables["EDVitals"]["Temperature"].astype(float).dropna()
+    answer = (temperature > 45).mean()
+  r: |
+    temperature <- na.omit(as.numeric(tables$EDVitals$Temperature))
+    answer <- mean(temperature > 45)
+
+- id: implausible_rr
+  question: How many ED respiratory rates are implausible (outside 5 to 150)?
+  kind: count
+  python: |
+    rr = tables["EDVitals"]["RespirationRate"]
+    answer = int((rr.notna() & ~rr.between(5, 150)).sum())
+  r: |
+    rr <- tables$EDVitals$RespirationRate
+    answer <- sum(!is.na(rr) & (rr < 5 | rr > 150))
+
+- id: spo2_admitted
+  question: "The lowest SpO2 in the ED (from arrival to departure; with no departure, 6 hours): its median for admitted visits?"
+  kind: num
+  python: |
+    ed = tables["EDVitals"].merge(
+        visits[["EncounterKey", "EdVisitKey", "ArrivalInstant", "DepartureInstant", "admitted"]], on="EncounterKey")
+    end = ed["DepartureInstant"].fillna(ed["ArrivalInstant"] + pd.Timedelta(hours=6))
+    ed = ed[(ed["TakenInstant"] >= ed["ArrivalInstant"]) & (ed["TakenInstant"] <= end)]
+    lowest = ed.groupby(["EdVisitKey", "admitted"])["SpO2"].min().reset_index()
+    answer = lowest.loc[lowest["admitted"], "SpO2"].median()
+  r: |
+    ed <- tables$EDVitals %>%
+      inner_join(select(visits, EncounterKey, EdVisitKey, ArrivalInstant, DepartureInstant, admitted),
+                 by = "EncounterKey") %>%
+      mutate(end = coalesce(DepartureInstant, ArrivalInstant + 6 * 3600)) %>%
+      filter(TakenInstant >= ArrivalInstant, TakenInstant <= end)
+    lowest <- ed %>%
+      group_by(EdVisitKey, admitted) %>%
+      summarise(SpO2 = if (all(is.na(SpO2))) NA_real_ else min(as.numeric(SpO2), na.rm = TRUE), .groups = "drop")
+    answer <- median(lowest$SpO2[lowest$admitted], na.rm = TRUE)
+
+- id: spo2_not_admitted
+  question: And for visits not admitted?
+  kind: num
+  python: |
+    answer = lowest.loc[~lowest["admitted"], "SpO2"].median()
+  r: |
+    answer <- median(lowest$SpO2[!lowest$admitted], na.rm = TRUE)
+
+- id: vbg_pct
+  question: What share of visits had a venous blood gas in the ED (LOINC 2746-4 or 2021-4)?
+  kind: pct
+  python: |
+    labs = tables["EDLabs"]
+    vbg = labs.loc[labs["ComponentLoincCode"].isin(["2746-4", "2021-4"]), "EncounterKey"]
+    answer = visits["EncounterKey"].isin(vbg).mean()
+  r: |
+    labs <- tables$EDLabs
+    vbg <- labs$EncounterKey[labs$ComponentLoincCode %in% c("2746-4", "2021-4")]
+    answer <- mean(visits$EncounterKey %in% vbg)
+
+- id: iv_fluids_pct
+  question: What share of visits had IV fluids in the ED (route Intravenous; normal saline or dextrose)?
+  kind: pct
+  python: |
+    meds = tables["EDMeds"]
+    fluid = meds["AdministrationRoute"].eq("Intravenous") & \
+        meds["MedicationName"].str.contains("SODIUM CHLORIDE 0.9|DEXTROSE", na=False)
+    answer = visits["EncounterKey"].isin(meds.loc[fluid, "EncounterKey"]).mean()
+  r: |
+    meds <- tables$EDMeds
+    fluid <- meds$AdministrationRoute %in% "Intravenous" &
+      grepl("SODIUM CHLORIDE 0.9|DEXTROSE", meds$MedicationName)
+    answer <- mean(visits$EncounterKey %in% meds$EncounterKey[fluid])
+
+- section: Admissions and the ICU
+  id: icu_pct_of_admissions
+  question: What share of admissions included the ICU (a Pediatric Critical Care Medicine department in `StayDepartments`)?
+  kind: pct
+  python: |
+    departments = tables["StayDepartments"]
+    icu = departments.loc[departments["DepartmentSpecialty"] == "Pediatric Critical Care Medicine", "HospitalAdmissionKey"]
+    answer = tables["HospitalAdmissionFact"]["HospitalAdmissionKey"].isin(icu).mean()
+  r: |
+    departments <- tables$StayDepartments
+    icu <- departments$HospitalAdmissionKey[departments$DepartmentSpecialty %in% "Pediatric Critical Care Medicine"]
+    answer <- mean(tables$HospitalAdmissionFact$HospitalAdmissionKey %in% icu)
+
+- id: median_los
+  question: What is the median length of stay, in days?
+  kind: num
+  python: |
+    answer = tables["HospitalAdmissionFact"]["LengthOfStayInDays"].median()
+  r: |
+    answer <- median(tables$HospitalAdmissionFact$LengthOfStayInDays, na.rm = TRUE)
+
+- id: medicaid_admitted_pct
+  question: What share of Medicaid visits led to an admission?
+  kind: pct
+  python: |
+    answer = visits.loc[visits["FinancialClass"] == "Medicaid", "admitted"].mean()
+  r: |
+    answer <- mean(visits$admitted[visits$FinancialClass %in% "Medicaid"])
+
+- section: Diagnoses
+  id: bronchiolitis_pct
+  question: What share of visits had RSV bronchiolitis (J21.0) as the primary diagnosis?
+  kind: pct
+  python: |
+    dx = tables["EDDiagnoses"]
+    primary = dx[dx["IsPrimary"] == 1]
+    answer = (primary["BillingCodeValue"] == "J21.0").mean()
+  r: |
+    dx <- tables$EDDiagnoses
+    primary <- dx[dx$IsPrimary == 1, ]
+    answer <- mean(primary$BillingCodeValue == "J21.0")

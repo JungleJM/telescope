@@ -1,6 +1,6 @@
 # Contents
 
-**SYNTHETIC DATA.** Every value was generated; nothing comes from a patient or from Cosmos. Every key begins with 7007. This copy holds {{visits}} ED visits (generator seed {{seed}}).
+**SYNTHETIC DATA.** Every value was generated; nothing comes from a patient or from Cosmos. Every key begins with 7007. This copy holds {{visits}} ED visits by {{patients}} children (generator seed {{seed}}).
 
 Each table below is one parquet in `data/cosmos_parquets/`, with the columns and SQL types the real pull has. A parquet keeps those types:
 

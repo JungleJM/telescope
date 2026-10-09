@@ -2,7 +2,7 @@
 """Build a synthetic copy of the Infant RSV pull, as a repository colleagues can explore (D215).
 
     python3 studies/synthetic/make_synthetic_repo.py               # dist/synthetic_rsv_repo/
-    python3 studies/synthetic/make_synthetic_repo.py --visits 20000 --out DIR
+    python3 studies/synthetic/make_synthetic_repo.py --patients 5000 --out DIR
     python3 studies/synthetic/make_synthetic_repo.py --tdd
 
 Nothing here reads real data. Each table's columns and SQL types come from the
@@ -12,10 +12,13 @@ Every value is invented by a seeded random generator; every key begins 7007.
 
 What it writes:
 
-    README.md, Contents.md, DataDictionary.yaml
+    README.md, STATS.md, Contents.md, DataDictionary.yaml
     data/cosmos_parquets/<Table>.parquet
-    python/load_parquets.py, python/examples.py
-    R/load_parquets.R, R/examples.R
+    python/load_parquets.py, python/examples.py, python/stats.py
+    R/load_parquets.R, R/examples.R, R/stats.R
+
+STATS.md's answers are what python/stats.py prints on the data written; the
+tests check that R/stats.R prints the same.
     rsv/                     the Infant RSV analysis, set to read data/
 """
 
@@ -48,6 +51,7 @@ DEFAULT_OUT = REPO / "dist" / "synthetic_rsv_repo"
 sys.path.insert(0, str(REPO / "scripts" / "pullmanager_src"))
 from pullmanager.artifacts import arrow_type  # noqa: E402  (the real parquets' typing)
 
+VISITS_PER_CHILD = 1.14     # about one child in eight comes back
 KEY_PREFIX = 7007            # every synthetic key begins with these digits
 FIRST_DAY, LAST_DAY = date(2019, 1, 1), date(2026, 5, 31)
 
@@ -106,8 +110,8 @@ MEDS = [  # name, generic, simple generic, pharm class, route, dose unit, share 
     ("ACETAMINOPHEN 160 MG/5 ML ORAL SUSP", "acetaminophen", "Acetaminophen", "ANALGESICS", "Oral", "mg", .45, False),
     ("IBUPROFEN 100 MG/5 ML ORAL SUSP", "ibuprofen", "Ibuprofen", "NSAIDS", "Oral", "mg", .2, False),
     ("ALBUTEROL 2.5 MG/3 ML NEB SOLN", "albuterol sulfate", "Albuterol", "BETA-ADRENERGIC AGENTS", "Inhalation", "mg", .2, False),
-    ("SODIUM CHLORIDE 0.9 % IV BOLUS", "sodium chloride 0.9 %", "Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/kg", .12, True),
-    ("DEXTROSE 5 %-SODIUM CHLORIDE 0.45 % IV SOLP", "dextrose 5 %-sodium chloride 0.45 %", "Dextrose-Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/hr", .08, True),
+    ("SODIUM CHLORIDE 0.9 % IV BOLUS", "sodium chloride 0.9 %", "Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/kg", .045, True),
+    ("DEXTROSE 5 %-SODIUM CHLORIDE 0.45 % IV SOLP", "dextrose 5 %-sodium chloride 0.45 %", "Dextrose-Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/hr", .03, True),
     ("CEFTRIAXONE 50 MG/KG IV", "ceftriaxone", "Ceftriaxone", "CEPHALOSPORINS", "Intravenous", "mg/kg", .04, False),
     ("SODIUM CHLORIDE 3 % INHALATION", "sodium chloride 3 %", "Sodium Chloride", "RESPIRATORY THERAPY", "Inhalation", "mL", .05, False),
 ]
@@ -157,16 +161,17 @@ def table_specs(blueprint: Path = BLUEPRINT) -> dict[str, dict]:
 class World:
     """Patients, their visits, and everything that happens on them."""
 
-    def __init__(self, visits: int, seed: int = 7) -> None:
+    def __init__(self, patients: int, seed: int = 7) -> None:
         self.rng = np.random.default_rng(seed)
-        self.n_visits = visits
+        self.n_patients = patients
+        self.n_visits = int(round(patients * VISITS_PER_CHILD))
         self.make_patients()
         self.make_visits()
 
     # Patients first: a birth date, demographics, and a gestational age.
     def make_patients(self) -> None:
         rng = self.rng
-        n = int(self.n_visits / 1.14) + 1
+        n = self.n_patients
         span = (LAST_DAY - date(2017, 1, 1)).days
         births = pd.to_datetime(date(2017, 1, 1)) + pd.to_timedelta(rng.integers(0, span, n), unit="D")
         preterm = rng.random(n) < 0.11
@@ -546,6 +551,124 @@ def arrow_table(frame: pd.DataFrame, columns: list[tuple[str, str]]):
     return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
 
 
+# ---------------------------------------------------------------- STATS.md: questions with answers, in Python and R
+
+HEADLINE = [("visits", "ED visits"), ("children", "Children"), ("admitted_pct", "Visits admitted"),
+            ("icu_pct_of_admissions", "Admissions that included the ICU"),
+            ("median_age_days", "Median age at arrival, days"), ("under_3_months_pct", "Visits under 3 months old"),
+            ("premature_pct", "Born premature (of those with a birth row)"),
+            ("outside_season_pct", "Visits outside October to March"),
+            ("outside_season_admissions_pct", "Admissions outside October to March"),
+            ("iv_fluids_pct", "Visits with IV fluids in the ED"), ("vbg_pct", "Visits with a VBG in the ED"),
+            ("median_los", "Median length of stay, days")]
+
+PY_HEAD = '''"""Every answer in STATS.md, computed. Run from the repository's top folder:
+
+    python python/stats.py
+
+Each block answers one question; they run in order, and later ones reuse
+`visits` and the rest.
+"""
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from load_parquets import load  # noqa: E402
+
+tables = load()
+
+
+def show(name, answer, kind):
+    value = {"count": lambda v: f"{int(v):,}", "pct": lambda v: f"{100 * float(v):.1f}%",
+             "num": lambda v: f"{float(v):.1f}", "int": lambda v: str(int(v))}[kind](answer)
+    print(f"{name:<30} {value}")
+'''
+
+R_HEAD = '''# Every answer in STATS.md, computed. Run from the repository's top folder:
+#
+#   Rscript R/stats.R      (or source("R/stats.R") in R or RStudio)
+#
+# Each block answers one question; they run in order, and later ones reuse
+# `visits` and the rest.
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(arrow)
+  library(bit64)
+})
+source(file.path("R", "load_parquets.R"))
+
+tables <- load_parquets()
+
+show <- function(name, answer, kind) {
+  answer <- as.numeric(answer)
+  value <- switch(kind,
+    count = formatC(answer, format = "d", big.mark = ","),
+    pct = sprintf("%.1f%%", 100 * answer),
+    num = sprintf("%.1f", answer),
+    int = as.character(as.integer(answer)))
+  cat(sprintf("%-30s %s\\n", name, value))
+}
+'''
+
+
+def load_questions() -> list[dict]:
+    questions = yaml.safe_load((TEMPLATES / "stats_questions.yaml").read_text(encoding="utf-8"))
+    section = None
+    for q in questions:
+        section = q.get("section", section)
+        q["section"] = section
+    return questions
+
+
+def stats_python(questions: list[dict]) -> str:
+    parts = [PY_HEAD]
+    for q in questions:
+        parts.append(f"\n# {q['id']}: {q['question']}\n{q['python'].rstrip()}\nshow({q['id']!r}, answer, {q['kind']!r})\n")
+    return "".join(parts)
+
+
+def stats_r(questions: list[dict]) -> str:
+    parts = [R_HEAD]
+    for q in questions:
+        parts.append(f"\n# {q['id']}: {q['question']}\n{q['r'].rstrip()}\nshow(\"{q['id']}\", answer, \"{q['kind']}\")\n")
+    return "".join(parts)
+
+
+def run_stats(out: Path, command: list[str]) -> dict[str, str]:
+    """What a stats script prints, as {id: value}."""
+    result = subprocess.run(command, cwd=out, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"{' '.join(command)} failed:\n{result.stdout}\n{result.stderr}")
+    answers = {}
+    for line in result.stdout.splitlines():
+        name, _, value = line.partition(" ")
+        answers[name] = value.strip()
+    return answers
+
+
+def stats_md(questions: list[dict], answers: dict[str, str]) -> str:
+    out = [render_template("stats_head.md"), ""]
+    section = None
+    for number, q in enumerate(questions, 1):
+        if q["section"] != section:
+            section = q["section"]
+            out += [f"## {section}", ""]
+        out += [f"### {number}. {q['question']}", "", f"**Answer: {answers[q['id']]}**", "",
+                "<details><summary>Python</summary>", "", "```python", q["python"].rstrip(), "```", "", "</details>", "",
+                "<details><summary>R</summary>", "", "```r", q["r"].rstrip(), "```", "", "</details>", ""]
+    return "\n".join(out)
+
+
+def headline(questions: list[dict], answers: dict[str, str]) -> str:
+    rows = ["| | |", "|---|---:|"]
+    rows += [f"| {label} | {answers[i]} |" for i, label in HEADLINE]
+    return "\n".join(rows)
+
+
 # ---------------------------------------------------------------- the repository
 
 def strip_comments(text: str) -> str:
@@ -553,8 +676,9 @@ def strip_comments(text: str) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
-def contents_md(specs: dict[str, dict], rows: dict[str, int], visits: int, seed: int) -> str:
-    out = [render_template("contents_head.md", visits=f"{visits:,}", seed=seed), "", "## Tables", "",
+def contents_md(specs: dict[str, dict], rows: dict[str, int], patients: int, seed: int) -> str:
+    out = [render_template("contents_head.md", visits=f"{rows['EDVisits']:,}", patients=f"{patients:,}", seed=seed),
+           "", "## Tables", "",
            "| Table | Rows | One row per |", "|---|---:|---|"]
     for name, spec in specs.items():
         out.append(f"| [{name}](#{name.lower()}) | {rows[name]:,} | {spec['granularity'] or '-'} |")
@@ -579,10 +703,10 @@ def render_template(name: str, **values) -> str:
     return text
 
 
-def build(out: Path = DEFAULT_OUT, visits: int = 5000, seed: int = 7) -> dict[str, int]:
+def build(out: Path = DEFAULT_OUT, patients: int = 20000, seed: int = 7) -> dict[str, int]:
     import pyarrow.parquet as pq
     specs = table_specs()
-    world = World(visits, seed)
+    world = World(patients, seed)
     tables = world.tables()
     missing = set(specs) - set(tables)
     if missing:
@@ -596,14 +720,21 @@ def build(out: Path = DEFAULT_OUT, visits: int = 5000, seed: int = 7) -> dict[st
         frame = complete(tables[name], spec["columns"], world.rng)
         pq.write_table(arrow_table(frame, spec["columns"]), data / f"{name}.parquet")
         rows[name] = len(frame)
-    (out / "Contents.md").write_text(contents_md(specs, rows, visits, seed), encoding="utf-8")
+    (out / "Contents.md").write_text(contents_md(specs, rows, patients, seed), encoding="utf-8")
     (out / "DataDictionary.yaml").write_text(strip_comments(DICTIONARY.read_text(encoding="utf-8")), encoding="utf-8")
-    for name in ("README.md", ".gitignore"):
-        (out / name).write_text(render_template(name.lstrip("."), visits=f"{visits:,}"), encoding="utf-8")
+    (out / ".gitignore").write_text(render_template("gitignore"), encoding="utf-8")
     for folder in ("python", "R"):
         (out / folder).mkdir()
         for path in (TEMPLATES / folder).iterdir():
             shutil.copy(path, out / folder / path.name)
+    questions = load_questions()
+    (out / "python" / "stats.py").write_text(stats_python(questions), encoding="utf-8")
+    (out / "R" / "stats.R").write_text(stats_r(questions), encoding="utf-8")
+    answers = run_stats(out, [sys.executable, "python/stats.py"])
+    (out / "STATS.md").write_text(stats_md(questions, answers), encoding="utf-8")
+    (out / "README.md").write_text(render_template(
+        "README.md", visits=f"{rows['EDVisits']:,}", patients=f"{patients:,}",
+        headline=headline(questions, answers), questions=len(questions)), encoding="utf-8")
     shutil.copytree(RSV_SOURCE, out / "rsv", ignore=shutil.ignore_patterns("__pycache__"))
     settings = (out / "rsv" / "settings.yaml").read_text(encoding="utf-8")
     for old, new in (("pull_folder: runs/Infant_RSV ", "pull_folder: data "),
@@ -614,7 +745,7 @@ def build(out: Path = DEFAULT_OUT, visits: int = 5000, seed: int = 7) -> dict[st
             raise SystemExit(f"rsv/settings.yaml no longer has `{old.strip()}`; update make_synthetic_repo.py")
         settings = settings.replace(old, new)
     (out / "rsv" / "settings.yaml").write_text(settings, encoding="utf-8")
-    (out / "manifest.json").write_text(json.dumps({"visits": visits, "seed": seed, "rows": rows,
+    (out / "manifest.json").write_text(json.dumps({"patients": patients, "seed": seed, "rows": rows, "answers": answers,
                                                     "key_prefix": KEY_PREFIX}, indent=1), encoding="utf-8")
     return rows
 
@@ -625,7 +756,7 @@ class SyntheticTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.out = Path(tempfile.mkdtemp(prefix="synthetic_rsv_"))
-        cls.rows = build(cls.out, visits=600, seed=3)
+        cls.rows = build(cls.out, patients=500, seed=3)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -690,10 +821,28 @@ class SyntheticTests(unittest.TestCase):
         self.assertFalse(any(line.lstrip().startswith("#") for line in text.splitlines()))
         self.assertIn("MedicationDim", yaml.safe_load(text)["DataDictionary"])
 
+    def test_stats_md_answers_are_what_python_prints(self):
+        answers = run_stats(self.out, [sys.executable, "python/stats.py"])
+        text = (self.out / "STATS.md").read_text()
+        self.assertEqual(len(answers), len(load_questions()))
+        for value in answers.values():
+            self.assertIn(f"**Answer: {value}**", text)
+
+    @unittest.skipUnless(shutil.which("Rscript"), "R is not installed")
+    def test_r_prints_the_same_answers(self):
+        python = run_stats(self.out, [sys.executable, "python/stats.py"])
+        r = run_stats(self.out, ["Rscript", "R/stats.R"])
+        self.assertEqual(r, python)
+
+    @unittest.skipUnless(shutil.which("Rscript"), "R is not installed")
+    def test_r_examples_run(self):
+        result = subprocess.run(["Rscript", "R/examples.R"], cwd=self.out, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_same_seed_same_data(self):
         other = Path(tempfile.mkdtemp(prefix="synthetic_rsv_again_"))
         try:
-            build(other, visits=600, seed=3)
+            build(other, patients=500, seed=3)
             for name in ("EDVisits", "EDVitals"):
                 pd.testing.assert_frame_equal(self.read(name), pd.read_parquet(other / "data" / "cosmos_parquets" / f"{name}.parquet"))
         finally:
@@ -703,14 +852,14 @@ class SyntheticTests(unittest.TestCase):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--visits", type=int, default=5000)
+    parser.add_argument("--patients", type=int, default=20000)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--tdd", action="store_true")
     args = parser.parse_args(argv)
     if args.tdd:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(SyntheticTests)
         return 0 if unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful() else 1
-    rows = build(args.out, args.visits, args.seed)
+    rows = build(args.out, args.patients, args.seed)
     print(f"Wrote {args.out}")
     for name, n in rows.items():
         print(f"  {name:<28}{n:>10,} rows")

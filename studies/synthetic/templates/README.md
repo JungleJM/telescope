@@ -6,15 +6,24 @@
 
 ## What it is
 
-The Infant RSV pull's tables: every ED visit for RSV (ICD-10 J21.0, B97.4, J12.1, J20.5) by a child under 2, from 2019 to May 2026. Beside them are the visit's patient, vitals, labs, medications and diagnoses; the admission it led to, with its vitals, labs and departments; and the child's birth, mother and pregnancy. This copy holds {{visits}} visits.
+The Infant RSV pull's tables: every ED visit for RSV (ICD-10 J21.0, B97.4, J12.1, J20.5) by a child under 2, from 2019 to May 2026. Beside them are the visit's patient, vitals, labs, medications and diagnoses; the admission it led to, with its vitals, labs and departments; and the child's birth, mother and pregnancy. This copy holds {{visits}} visits by {{patients}} children.
 
 ```
 data/cosmos_parquets/   one parquet per table, as the real pull writes them
+STATS.md                questions about this data, with their answers and the code that finds them
 Contents.md             each table: what a row is, how it links, its columns and types
 DataDictionary.yaml     the Cosmos tables these come from, column by column
 python/  R/             loading the tables, and worked examples
 rsv/                    the analysis we run on the real data (below)
 ```
+
+## What you should find
+
+These are this synthetic data's answers to a few questions. [STATS.md](STATS.md) has all {{questions}}, each with the Python and R code that finds it. Write your own query first, then check it against the answer. `python python/stats.py` or `Rscript R/stats.R` prints every one.
+
+{{headline}}
+
+The RSV season is taken here as October to March.
 
 ## Start here
 
@@ -75,6 +84,38 @@ print(rsv.compare(settings, "age_band").render())
 ```
 
 A page reports each metric's n, median (IQR) and % missing, and n (%) for the yes/no ones. **Compare** tests sections side by side (Mann–Whitney, Kruskal–Wallis or chi-square). **Admission** adds a logistic regression with errors clustered by patient.
+
+## The real data: what is in, what is coming, what is not pulled
+
+This synthetic copy has every table filled. The real pull is not there yet:
+
+**In hand:**
+- the ED visits;
+- the admissions they led to, with inpatient vitals;
+- inpatient lab results, by LOINC code only;
+- births since 2019, with their mothers and pregnancies.
+
+**Being pulled now** (a fresh pull of everything, which also replaces the tables above):
+- each child's demographics: birth date, sex, race, ethnicity, language, state and SVI;
+- ED vitals;
+- ED lab results, with each component's name as well as its LOINC code (how a venous blood gas is found);
+- every diagnosis on the visit;
+- ED medications, with names (how IV fluids are found);
+- the department specialties of each admission and of each medication during the stay (how the ICU is found);
+- births before 2019, so every child's gestational age is there, not only the younger ones';
+- inpatient lab names.
+
+The first pull's demographics, ED vitals, ED labs and ED diagnoses came back empty. Until the new pull lands, race, ethnicity, SVI, age, the ED vitals, VBG, IV fluids and the ICU can be practised here but not answered on the real data.
+
+**Not pulled, and not in this copy either:**
+- RSV immunisation: nirsevimab, palivizumab and the maternal RSV vaccine;
+- respiratory support: high-flow oxygen, CPAP and ventilation;
+- what happened after discharge: follow-up visits and readmissions;
+- medication orders, as against administrations;
+- providers;
+- anything outside the ED visit and the admission it led to.
+
+If your question needs one of these, say so: it can go into a later pull.
 
 ## Ideas to try
 
