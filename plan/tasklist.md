@@ -217,18 +217,18 @@ Do I need to keep going smaller (the last 5 years)? These convert to parquets an
 **Why it's so huge: the rows are wide, and the PKs never leave.**
 
 - **DyspepsiaGastritisPtsWithDx:** 16.6 million patients since 2015, in 4,978 MB, so **about 300 bytes a patient**. A declared width (`NVARCHAR(850)`) costs nothing; each value costs 2 bytes a character. The PK's 22 columns spend most of their bytes on text that repeats:
-    - `ICDName` (`dt.NameAndCode`, "Gastro-esophageal reflux disease without esophagitis (K21.9)"): about 120 of the row's ~300 bytes, and it's only `ICDCode` spelled out.
-    - `Country` ("United States of America", about 50 bytes), `StateOrProvince` beside its abbreviation, and `SecondRace` to `FifthRace`, mostly blank.
-    - `DurableKey`, which is `PatientDurableKey` again.
+  - `ICDName` (`dt.NameAndCode`, "Gastro-esophageal reflux disease without esophagitis (K21.9)"): about 120 of the row's \~300 bytes, and it's only `ICDCode` spelled out.
+  - `Country` ("United States of America", about 50 bytes), `StateOrProvince` beside its abbreviation, and `SecondRace` to `FifthRace`, mostly blank.
+  - `DurableKey`, which is `PatientDurableKey` again.
 - **IndexDiagnosis:** one row per patient per code, each about 350 to 400 bytes. `NameAndCode`, `TerminologyName`, `TerminologyConcept` and `BillingCodeType` are the same on every row of a code, so `DiagnosisKey` alone carries them. A small table of each code's names (a few hundred rows) could hold them once. `TypeOfDx` and `Status` are short words; keep them.
 - **28 PKs, none dropped until the end.** A session's PK stays in Projects until the whole pull is packaged (D165), because its runs read it. GI_Conditions makes 28 of them. Even slim, they add up.
 
 **Trimmed, roughly:**
 
 | Table | Now | Keys, dates and codes only |
-|---|---|---|
-| PtsWithDx | ~300 bytes a patient | ~70 (PatientDurableKey, IndexDate, DiagnosisEventKey, IndexEncounter, ICDCode), with the demographics in a table of their own |
-| IndexDiagnosis | ~380 bytes a row | ~150 (the code's names looked up once) |
+|------------------------|------------------------|------------------------|
+| PtsWithDx | \~300 bytes a patient | \~70 (PatientDurableKey, IndexDate, DiagnosisEventKey, IndexEncounter, ICDCode), with the demographics in a table of their own |
+| IndexDiagnosis | \~380 bytes a row | \~150 (the code's names looked up once) |
 
 Demographics in a table of their own (Sex, BirthDate, state, race, SVI, one row per patient) is a run, so it's chunked and packaged like any fact table. The PK keeps what the runs need. Dyspepsia's PK would be about 1.2 GB, not 5.
 
@@ -280,10 +280,7 @@ The PK's index event is always the first of its own code too, so it is already o
 
 **Neither table confirms a diagnosis by a second date.** Both keep first events only, so a single, possibly mistaken, coding counts as a case. If the study wants "2 or more dates", a separate small table is needed: per patient and code, the count of distinct dates.
 
-**Recommendation.** For GI_Conditions, if the study doesn't need subtypes:
-- drop IndexDiagnosis;
-- add `Type`, `Status` and `IsPrimary` to PtsWithDx;
-- trim PtsWithDx as above.
+**Recommendation.** For GI_Conditions, if the study doesn't need subtypes: - drop IndexDiagnosis; - add `Type`, `Status` and `IsPrimary` to PtsWithDx; - trim PtsWithDx as above.
 
 Each session is then a PK and nothing else. Checked on the Mac, with GI_Conditions' blueprint minus IndexDiagnosis: it validates (56 sessions) and splits. Each session keeps one run with no tables:
 
@@ -327,6 +324,175 @@ A small fix, for the roadmap: a run with no tables is skipped.
 Moved out on 6 October: the batching thread (**one table per group** D190, **no date windows** D191, **the Meds filter** D192, **SneakPeek per patient** D193; the measurements in `design.md`, Batching; the UC and Crohns re-pulls and the columns check in the roadmap's **Next: On The VM, 4 October 2026**); **Guessing/smart chunking** and **Dynamic ordering** into the roadmap's **Estimate Size And Packaging By Chunk**; the **HaT control pull** (stopped, pulled again with the barebones intake; its timings in `design.md`, What a batch costs; green tables D198); **Barebones blueprints** into the roadmap's **Choosing A Study's Columns**, study-specific, how still open.
 
 Moved out on 7 October: **Status fixing** is D204 (a packaged table purple), first in the roadmap's Fixes, In Order, with D198. **Author's bundle-building code** (option 3) is settled by D205: the Exports tab, the queue and its buttons leave what ships, with "Telescope" and "transfer YAML" (the user, 7 October, highest priority).
+
+## Infant RSV: analysis parquets and one-page reports
+
+(In the chat, 8 Oct) The Infant_RSV pull is done. Using `plan/RSVstats/RSVmetrics.md`, make a minimal set of parquets that line up everything the metrics need. Add functions I can run again and again on sections of the population. It runs on the VM from a copyable bundle with short commands (`python rsv makeparquets`), and produces one-page outputs I can copy over by transcription. Questions first, then build.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: what the pull can and cannot give each metric**
+
+What `Infant_RSV_blueprint.yaml` pulled: **EDVisits** (the PK, one row per ED visit with an ED diagnosis of J12.1, B97.4, J21.0 or J20.5, age under 2, 2019 to June 2026), with **RSVPatients**, **EDVitals**, **EDLabTestComponents**, **IndexDiagnosis**, the **Hospitalizations** group (HospitalAdmissionFact, InpatientVitals, InpatientLabTestComponents) and the **Birth** group (PatientBirthEvent, MotherPatientInfo, PregnancyFact). `cosmos_db: Dual`, so there are `_sp` files beside the Cosmos ones.
+
+- **Respiratory rate (first and highest), SpO2 (lowest), temperature (first and highest):** available. EDVitals takes every reading on the visit's encounter from a day before arrival to a day after departure.
+- **Gestational age:** partly available. `PatientBirthEvent.GestationalAgeDays` exists only for babies born in the system. Its filter is `BirthDateKey BETWEEN 20190101 AND …`, so **babies born in 2017–2018 have no birth row**, even when their RSV visit was in 2019 or 2020. Visits from 2021 on are fully covered; earlier ones lose some of their gestational ages.
+- **VBG present:** only partly identifiable. The lab tables carry `ComponentLoincCode` (from `LabComponentDim.LoincCode`), but not the component's name. Local components often have no LOINC code, so a VBG drawn under a local code would be missed. `LabComponentDim` is already joined in both lab queries, so adding `lcd.Name` and `lcd.CommonName` costs nothing in SQL, but it needs those two tables pulled again.
+- **IV fluids:** **not pulled.** Nothing in the blueprint reads medications. `MedicationAdministrationFact` has `AdministrationRoute`, `Dose`, `DoseUnit` and `Rate`, but there is no `MedicationDim` in the dictionary, so a fluid can't be identified by name. Route IV plus mL units would be a guess: it also catches IV antibiotics given in mL.
+- **Not asked for, but missing:** ICU admission. `HospitalAdmissionFact.DepartmentKey` is there, but `DepartmentDim` has no name column in the dictionary. Admission, length of stay and ED disposition are available.
+
+**Recommendation:** build now with what is there. Leave IV fluids as a column that reads "not pulled", and define VBG by a list of LOINC codes in a settings file. Then make a small follow-up pull: the two lab tables with `lcd.Name`, PatientBirthEvent with the birth date floor removed, and, if you want IV fluids, medication administrations once `MedicationDim` is added to the dictionary.
+
+**For you to decide:** build without IV fluids and add them later, or wait for a medication pull. And whether the follow-up pull is worth doing at all.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+\*\*🟧 Your response: Sure we can build for what's there now, and then we can absolutely do a follow-up pull. I like this as a test anyways for doing follow-ups. Specifically, we should defeinitely get the information for every baby that presented as far as birth, even if they were born before the RSV visit. Let's\
+It sounds like I should add medicationdim into the dictionary? Also the ICU admission. I think this is fantastic, let's set up a pull specifically to add to this group and get this data. \*\*
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the parquets: one row per what?**
+
+Proposed: three files, written by `python rsv build` into `runs\Infant_RSV\analysis\`.
+
+- **`visits.parquet`**: one row per ED visit, with everything the reports use already computed:
+  - keys and dates;
+  - age at arrival in days and months (from `BirthDate`, since `AgeKey` was not resolved);
+  - sex, race, ethnicity, SVI, financial class;
+  - gestational age in weeks, with where it came from, and birth weight;
+  - the RSV code(s);
+  - admitted or not, length of stay, disposition;
+  - the six metrics;
+  - season and year;
+  - whether this is the patient's first RSV visit.
+- **`vitals.parquet`**: every reading, long, tagged ED or inpatient, with minutes since arrival. This lets a definition be changed and rebuilt without going back to the raw tables.
+- **`labs.parquet`**: the same for lab components.
+
+The Cosmos and `_sp` files are joined and de-duplicated on each table's own key (`EdVisitKey`, `VitalsKey`, `LabComponentResultKey`), with Cosmos winning a tie. Inpatient vitals reach their visit through `HospitalAdmissionKey`. Where an admission shares the ED's encounter, the same reading appears in both vitals tables; `VitalsKey` keeps one copy.
+
+**Recommendation:** visit-level, as above. Analyses default to **each patient's first RSV visit** (one row per patient), and a switch includes repeat visits.
+
+**For you to decide:** visit or patient as the default unit, and whether anything else must be on the visit row.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: Visit level. I am only using \_sp for proving that the whole pull works for now - i dont' want to use its data as part of a decision-making or analysis system.**
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: defining each metric**
+
+Proposed defaults, all kept in one settings file (`rsv\settings.yaml`) so they can be changed without code:
+
+- **Initial** is the first reading at or after arrival, within the ED stay. A reading taken before arrival is ignored.
+- **Highest and lowest** cover the ED stay only (arrival to departure). A second set, **whole stay**, runs to discharge for admitted children.
+- **Implausible values are dropped and counted:**
+  - RR outside 5–150;
+  - SpO2 outside 40–100;
+  - temperature outside 30–43 °C. The build page says how many readings were dropped.
+- **Temperature units:** Cosmos usually stores °F. Values over 45 are read as °F and converted, and the build page says how many were converted.
+- **Gestational age:** weeks = `GestationalAgeDays // 7`, grouped as \<28, 28–31, 32–36, ≥37 and unknown.
+
+**For you to decide:** ED stay only, or the whole stay, for "highest" and "lowest"; and whether these cut-offs suit you.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: For now I think these settings are fine- i'll have to discuss with the team for changes, I like the idea that they're set in settings.**
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: sections of the population, and the question behind them**
+
+Each section has a name in `settings.yaml`, a filter on `visits.parquet`, for example `under_3_months: age_days < 91`. Candidates:
+
+- age bands (0–28 days, 1–2, 3–5, 6–11 and 12–23 months);
+- prematurity bands;
+- RSV season (July–June) and era: before 2023–24 against the nirsevimab/maternal-vaccine seasons, with 2020–21 marked as the COVID off-season;
+- sex; race and ethnicity; SVI quartile; financial class;
+- admitted against discharged;
+- bronchiolitis (J21.0) against pneumonia (J12.1).
+
+What a report shows depends on the question. For each section, it can give each metric's n, median (IQR) and % missing, and n (%) for yes/no ones. **Compare** puts sections side by side with a test (Mann–Whitney or Kruskal–Wallis, chi-square), using scipy, which the VM has. If the question is "do these ED findings predict admission?", a logistic regression (statsmodels) belongs on the page too.
+
+**For you to decide:** which sections you want first, and the question: describing the groups, comparing them, or predicting an outcome (which outcome).
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: These are fascinating ideas, let's put them in but they're not the core questions. For the current purpose the question is if race, ethnicity, SVI, financial class have any bearing on admission rates and ICU admissions. These are also fantastic things though, so we should have all these ready to go, and a first run of analysis.**
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: pages built for transcription**
+
+Proposed: plain-text pages (`.txt`, opened in Notepad++), fixed width, at most about 60 lines by 100 characters, so one screenshot holds a page.
+
+- **Header:** the command that made the page, the date, the section's filter and its N.
+- **Data version:** a short hash of the input parquets, so two pages are known to come from the same data.
+- **Check total at the foot:** the sum of every N on the page, so a misread digit shows up.
+
+There are no charts: text survives transcription, and a chart would have to be read by eye.
+
+**Small counts:** a page leaves the VM, so cells under a threshold could print as `<11`.
+
+**For you to decide:** whether text pages suit how you transcribe, and what small-cell rule your data agreement sets (none, `<11`, or another number).
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: You should look at my transcription viewer - it's** /trasncription_vewer.py. I'd actually like to standardize 3 columns on start, and for it to have a min size that is readable for trasncription (I find 16 to be good to my eyes but I'm not sure how well readable that is for a machine)
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: commands, and how it reaches the VM**
+
+Python runs a folder that holds a `__main__.py`, so a folder `rsv\` beside `scope.py` gives exactly `python rsv <command>`:
+
+- `python rsv build`: makes the three parquets and the **build page**, which holds:
+
+  - row counts at each join;
+  - \% of visits with vitals, labs and gestational age;
+  - readings dropped or converted;
+  - the top LOINC codes with their counts, for choosing the VBG codes.
+
+  It is the first page to send back, to check the definitions against the real data.
+
+- `python rsv report [section]`: one page for everyone, or for a named section.
+
+- `python rsv compare <grouping>`: sections side by side, for example `compare age_band`.
+
+- `python rsv sections`: lists the names in `settings.yaml`.
+
+- **In Python or a notebook:** `import rsv; v = rsv.load()`, then `rsv.summarize(v[v.age_months < 3])`. These are the same functions the commands use.
+
+Built with pandas 2.2.3 and pyarrow 22 (both on the VM), and tested on the Mac against made-up parquets shaped like the real ones.
+
+**How it reaches the VM:** a separate single-file bundle (`dist/rsv_bundle.py`, made by the same extractor machinery), kept out of the Telescope bundle. It is study code, and each study's code would otherwise make the Telescope bundle grow. The code would live under `studies/infant_rsv/` here.
+
+**For you to decide:** a separate bundle, or riding inside the Telescope one under `utils/`; and whether `build`, `report` and `compare` are the names you want.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response: i'm ok with this as a separate thing - this is a single task i'm trying to run but telescope is used for a lot of this.**
+:::
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: what I need from the VM before building**
+
+- **The `cosmos_parquets` and `sneakpeek_parquets` file names.** The top of the pull's `contents.md` (table, file, rows) is enough. The build must match them exactly; note the destination is spelled `InpatientVItals`, with a capital I.
+- **Whether this is the re-pull** that `status.md` lists as still to do (Infant_RSV again, with Re-pull everything), and which run folder holds it.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:** ![](images/paste-1.png)![](images/paste-2.png)
+:::
+
+**Suggested order: Infant RSV**
+
+1.  **The question behind the sections**: it decides what a page shows, and so most of the code.
+2.  **What the pull can give**: IV fluids and VBG decide whether a second pull starts now, in parallel with the build.
+3.  **The parquets and the metric definitions**: the base everything else reads; easy to change later through `settings.yaml`.
+4.  **Page format and small-cell rule**: needed before any page leaves the VM.
+5.  **Commands and the bundle**: naming only; the defaults are fine if you have no preference.
+6.  **The file names from the VM**: needed before the first build runs on the VM, not before the code is written.
 
 ## Settled
 

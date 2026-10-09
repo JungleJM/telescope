@@ -10,11 +10,22 @@ When an item is agreed, put it under Next, in order. When it is built, delete it
 
 - **Execute sometimes ends mid-pull with exit code 1** (the IBD template, September 2026: `CrohnsPatients`, its first Cosmos session, during `upload_cohorts`, after the SneakPeek sessions finished). No summary, and the step left `running`. Every step catches Python errors, so it was either killed (Stop, or anything else on the VM: Windows gives 1) or an error outside the steps, whose traceback reached only the closing window. The log now keeps the traceback, or where a native crash happened; the next occurrence says which. The next Execute resumes it.
 
+- **Four of Infant_RSV's tables came back empty from Cosmos** (pulled 2 October 2026, before D190): RSVPatients, EDVitals, EDLabTestComponents and IndexDiagnosis have 0 rows in `cosmos_parquets`, while their SneakPeek copies have rows and the grouped tables beside them (Hospitalizations, Birth) are full. They are the four tables in no named group. Why is not known; the pull's manifest (each of those runs' `table_rows` and `status`) will say whether they landed nothing or were packaged empty. The follow-up pull (D213) pulls them again on today's runtime.
+
 ------------------------------------------------------------------------
 
 ## Next
 
-Nothing agreed and unbuilt (8 October 2026). Waiting to be ordered:
+**Infant RSV analysis (D209–D213), in order:**
+
+1.  **The transcription viewer** opens at three columns and 16 point (D211).
+2.  **`rsv build`**, its settings and the build page (D209, D210), with `keys` and `sections`; tested on made-up parquets shaped like the pull's.
+3.  **`rsv report` and `rsv compare`** (D210, D211).
+4.  **`rsv admission`** (D212).
+5.  **The RSV bundle** (D209).
+6.  **The follow-up pull's intake** (D213), less medication names until `MedicationDim` is in the dictionary.
+
+Waiting to be ordered:
 
 - **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 - **A single table can outgrow the database on its own** (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
