@@ -135,7 +135,8 @@ class BuildOutcomes(Fixture):
         self.assertEqual(self.v.loc[1, "rr_max_ed"], 70)
 
     def test_followup_table_read_in_place_of_empty_one(self):
-        self.assertTrue(str(self.built.sources["patients"].path).endswith("Infant_RSV_Followup/cosmos_parquets/Patients.parquet"))
+        self.assertEqual(self.built.sources["patients"].path.parts[-3:],
+                         ("Infant_RSV_Followup", "cosmos_parquets", "Patients.parquet"))
         self.assertEqual(self.built.sources["patients"].tried, ["followup:Patients: 2 rows"])
         self.assertEqual(self.v.loc[1, "race"], "White")
         self.assertEqual(self.v.loc[1, "age_days"], 92)
@@ -236,7 +237,7 @@ class SneakPeekAndKeys(Fixture):
         make_pull(self.root, suffix="_sp", folder="sneakpeek_parquets")
         settings = self.settings(sp=True)
         built = build(settings)
-        self.assertTrue(str(built.sources["visits"].path).endswith("sneakpeek_parquets/EDVisits_sp.parquet"))
+        self.assertEqual(built.sources["visits"].path.parts[-2:], ("sneakpeek_parquets", "EDVisits_sp.parquet"))
         self.assertEqual(settings.analysis_folder.name, "analysis_sneakpeek")
         page = analysis.report(settings)
         self.assertIn("SNEAKPEEK ONLY", page.render())
@@ -270,6 +271,65 @@ class SneakPeekAndKeys(Fixture):
         self.assertEqual(keys["EdVisitKey"].tolist(), [1, 2, 3])
         self.assertEqual(str(keys["EdVisitKey"].dtype), "int64")
         self.assertFalse(keys["DepartureInstant"].isna().any())
+
+
+class LaterFixes(Fixture):
+    def test_without_ed_labs_vbg_is_not_known(self):
+        make_pull(self.root)
+        pull = self.root / "runs" / "Infant_RSV" / "cosmos_parquets"
+        write(pull, "EDLabTestComponents", [], LAB_COLUMNS)
+        write(pull, "InpatientLabTestComponents", [
+            {"LabComponentResultKey": 9, "EncounterKey": 5001, "PatientDurableKey": 100, "LabComponentKey": 7,
+             "ComponentLoincCode": "2746-4", "CollectionInstant": T("2023-11-01 10:20"), "NumericValue": 7.3,
+             "Value": "7.3", "Unit": ""}], LAB_COLUMNS)
+        built = build(self.settings())
+        self.assertTrue(built.visits["vbg_ed"].isna().all())
+        self.assertEqual(built.notes["vbg_by"], "no ED labs")
+
+    def test_redo_names_read_before_the_first_pulls(self):
+        make_pull(self.root)
+        pull = self.root / "runs" / "Infant_RSV" / "cosmos_parquets"
+        write(pull, "Patients", [{"DurableKey": 100, "BirthDate": T("2023-08-01"), "Sex": "Female",
+                                  "FirstRace": "Asian", "SecondRace": None, "MultiRacial": 0,
+                                  "Ethnicity": "Hispanic or Latino", "SviOverallPctlRankByZip2020_X": 0.3}])
+        built = build(self.settings())
+        self.assertEqual(built.sources["patients"].path.name, "Patients.parquet")
+        self.assertEqual(built.visits.set_index("EdVisitKey").loc[1, "race"], "Asian")
+
+    def test_star_placeholder_is_unknown(self):
+        make_pull(self.root)
+        pull = self.root / "runs" / "Infant_RSV" / "cosmos_parquets"
+        rows = pd.read_parquet(pull / "EDVisits.parquet")
+        rows.loc[rows["EdVisitKey"] == 2, "FinancialClass"] = "*Not Applicable"
+        write(pull, "EDVisits", rows)
+        v = build(self.settings()).visits.set_index("EdVisitKey")
+        self.assertEqual(v.loc[2, "financial_class"], "Unknown")
+        self.assertEqual(v.loc[1, "financial_class"], "Medicaid")
+
+    def test_iv_fluids_by_route_and_name_in_the_ed(self):
+        make_pull(self.root)
+        follow = self.root / "runs" / "Infant_RSV_Followup" / "cosmos_parquets"
+        base = {"PatientDurableKey": 100, "AdministrationAction": "Given", "ActionIsMedAdministration": 1,
+                "MedicationKey": 1, "Dose": 20, "DoseUnit": "mL/kg", "Rate": None}
+        write(follow, "EDMeds", [
+            dict(base, MedicationAdministrationKey=1, EncounterKey=1001, AdministrationInstant=T("2023-11-01 11:00"),
+                 AdministrationRoute="Intravenous", MedicationName="SODIUM CHLORIDE 0.9 % IV BOLUS",
+                 MedicationGenericName="sodium chloride 0.9 %", MedicationSimpleGenericName="Sodium Chloride"),
+            dict(base, MedicationAdministrationKey=2, EncounterKey=2001, AdministrationInstant=T("2020-12-10 12:30"),
+                 AdministrationRoute="Oral", MedicationName="ACETAMINOPHEN 160 MG/5 ML",
+                 MedicationGenericName="acetaminophen", MedicationSimpleGenericName="Acetaminophen"),
+            dict(base, MedicationAdministrationKey=3, EncounterKey=2001, AdministrationInstant=T("2020-12-10 12:40"),
+                 AdministrationRoute="Intravenous", MedicationName="AMPICILLIN IV",
+                 MedicationGenericName="ampicillin", MedicationSimpleGenericName="Ampicillin")])
+        settings = self.settings(min_cell=0)
+        built = build(settings)
+        v = built.visits.set_index("EdVisitKey")
+        self.assertTrue(v.loc[1, "iv_fluids_ed"])
+        self.assertFalse(v.loc[3, "iv_fluids_ed"])
+        self.assertEqual(built.notes["iv_by"], "route and name")
+        text = build_page(settings, built, "test").render()
+        self.assertIn("IV medications in the ED:", text)
+        self.assertIn("AMPICILLIN IV", text)
 
 
 class AdmissionModel(Fixture):

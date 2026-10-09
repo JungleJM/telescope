@@ -11,19 +11,20 @@ analysis_folder: runs/Infant_RSV/analysis   # what `build` writes, and the pages
 keys_file: rsv_visit_keys.parquet           # what `keys` writes: the follow-up pull's PK
 
 # Each table, read from the first of its files that exists and has rows.
-# `followup:` reads the follow-up pull, `pull:` the first one.
+# `followup:` reads the follow-up pull, `pull:` the Infant_RSV pull: its
+# redo's names first, then the first pull's.
 sources:
   visits: [pull:EDVisits]
-  patients: [followup:Patients, pull:RSVPatients]
-  births: [followup:Births, pull:PatientBirthEvent]
+  patients: [followup:Patients, pull:Patients, pull:RSVPatients]
+  births: [followup:Births, pull:Births, pull:PatientBirthEvent]
   admissions: [followup:AdmissionDepartments, pull:HospitalAdmissionFact]
-  stay_departments: [followup:StayDepartments]
+  stay_departments: [followup:StayDepartments, pull:StayDepartments]
   ed_vitals: [followup:EDVitals, pull:EDVitals]
-  stay_vitals: [pull:InpatientVItals]
-  ed_labs: [followup:EDLabs, pull:EDLabTestComponents]
-  stay_labs: [pull:InpatientLabTestComponents]
-  ed_meds: [followup:EDMeds]
-  diagnoses: [followup:EDDiagnoses, pull:IndexDiagnosis]
+  stay_vitals: [pull:InpatientVitals, pull:InpatientVItals]
+  ed_labs: [followup:EDLabs, pull:EDLabs, pull:EDLabTestComponents]
+  stay_labs: [pull:InpatientLabs, pull:InpatientLabTestComponents]
+  ed_meds: [followup:EDMeds, pull:EDMeds]
+  diagnoses: [followup:EDDiagnoses, pull:EDDiagnoses, pull:IndexDiagnosis]
 
 # Pages.
 page_width: 48        # characters a line may take
@@ -70,8 +71,9 @@ dx_groups:
   - {name: bronchitis, codes: [J20.5]}
   - {name: RSV other, codes: [B97.4]}
 
-# Groupings. A value not mapped keeps its own name; one in `unknown` is Unknown.
-unknown: ["", "unknown", "*unknown", "*unspecified", "patient declined", "patient refused", "declined", "not reported"]
+# Groupings. A value not mapped keeps its own name; one in `unknown`, or one
+# beginning with `*` (Cosmos's *Unspecified, *Not Applicable), is Unknown.
+unknown: ["", "unknown", "patient declined", "patient refused", "declined", "not reported"]
 race_map: {}
 ethnicity_map: {}
 financial_class_map: {}
@@ -83,7 +85,8 @@ vbg_loinc: [2746-4, 2021-4]
 vbg_name_patterns: ["\\bvbg\\b", "venous.*\\b(ph|pco2)\\b", "\\b(ph|pco2)\\b.*venous"]
 
 # IV fluids: an ED administration by one of these routes, of a medication whose
-# name matches. Without medication names, IV fluids stay empty.
+# name, generic name or simple generic name matches. Without medication names,
+# IV fluids stay empty. The build page lists the ED's IV medications.
 iv_routes: ["^iv\\b", "intravenous"]
 iv_fluid_patterns: ["sodium chloride 0\\.9", "normal saline", "lactated ringer", "plasma-?lyte", "dextrose.*sodium chloride"]
 iv_given_actions: []   # e.g. [Given, New Bag]; empty takes every administration

@@ -31,7 +31,8 @@ WANT: dict[str, list[str]] = {
                 "ComponentCommonName", "CollectionInstant", "NumericValue", "Value", "Unit"],
     "ed_meds": ["MedicationAdministrationKey", "EncounterKey", "AdministrationInstant", "AdministrationRoute",
                 "AdministrationAction", "ActionIsMedAdministration", "MedicationKey", "MedicationName",
-                "MedicationGenericName", "Dose", "DoseUnit", "Rate"],
+                "MedicationGenericName", "MedicationSimpleGenericName", "MedicationPharmaceuticalClass",
+                "MedicationTherapeuticClass", "Dose", "DoseUnit", "Rate"],
     "diagnoses": ["EncounterKey", "BillingCodeValue"],
 }
 WANT["stay_labs"] = WANT["ed_labs"]
@@ -94,7 +95,7 @@ def text(series: pd.Series) -> pd.Series:
 
 def grouped(series: pd.Series, mapping: dict[str, str], unknown: set[str]) -> pd.Series:
     values = text(series).fillna("")
-    out = values.map(lambda v: "Unknown" if v.lower() in unknown else mapping.get(v, v))
+    out = values.map(lambda v: "Unknown" if v.lower() in unknown or v.startswith("*") else mapping.get(v, v))
     return out.astype("string")
 
 
@@ -412,6 +413,10 @@ def build(settings: Settings, write: bool = True) -> Built:
         notes["vbg_by"] = "LOINC and name" if names_known else "LOINC only"
         vbg_visits = set(labs.loc[labs["vbg"] & (labs["phase"] == "ED"), "EdVisitKey"])
         visits["vbg_ed"] = visits["EdVisitKey"].isin(vbg_visits).astype("boolean")
+        if ed_labs is None:
+            # The stay's labs alone do not cover the ED: a visit with none is not known to have had none.
+            visits["vbg_ed"] = pd.Series(pd.NA, index=visits.index, dtype="boolean")
+            notes["vbg_by"] = "no ED labs"
         ed_rows = labs[labs["phase"] == "ED"]
         visits["n_labs_ed"] = visits["EdVisitKey"].map(ed_rows.groupby("EdVisitKey").size()).fillna(0)
     else:
@@ -426,7 +431,8 @@ def build(settings: Settings, write: bool = True) -> Built:
     notes["iv_by"] = "no medications pulled"
     if ed_meds is not None:
         meds = attach(ed_meds, links, "EncounterKey", "AdministrationInstant")
-        name_columns = [c for c in ("MedicationName", "MedicationGenericName") if c in meds and meds[c].notna().any()]
+        name_columns = [c for c in ("MedicationName", "MedicationGenericName", "MedicationSimpleGenericName")
+                        if c in meds and meds[c].notna().any()]
         route = matches(meds.get("AdministrationRoute", pd.Series(pd.NA, index=meds.index)), settings["iv_routes"])
         given = pd.Series(True, index=meds.index)
         if "ActionIsMedAdministration" in meds:
@@ -565,6 +571,11 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
     page.line("ICU department specialties:")
     top_values(page, notes.get("specialties"), 12)
     if len(built.meds):
+        meds = built.meds
+        if "iv_fluid" in meds and "MedicationName" in meds and meds["MedicationName"].notna().any():
+            routed = matches(meds.get("AdministrationRoute", pd.Series(pd.NA, index=meds.index)), settings["iv_routes"])
+            page.line("IV medications in the ED:")
+            top_values(page, meds.loc[routed & (meds["phase"] == "ED"), "MedicationName"], 15)
         page.line("medication routes:")
         top_values(page, built.meds.get("AdministrationRoute"), 6)
         page.line("medication actions:")

@@ -43,7 +43,7 @@ cohorts:
   dest_table: Patients
   type: fact
   pull_this_cycle: true
-  description: 'Each visit''s patient: birth date, sex, race, ethnicity, SVI. Pulled again: the first pull''s came back empty from Cosmos'
+  description: 'Each visit''s patient: birth date, sex, race, ethnicity, SVI'
   granularity: One row per patient
   columns:
   - source: pd.DurableKey
@@ -96,7 +96,7 @@ cohorts:
   dest_table: EDVitals
   type: fact
   pull_this_cycle: true
-  description: 'Vitals on the visit''s encounter, a day either side of the ED stay. Pulled again: the first pull''s came back empty from Cosmos'
+  description: Vitals on the visit's encounter, a day either side of the ED stay
   granularity: One row per vitals reading
   columns:
   - source: vf.VitalsKey
@@ -130,7 +130,7 @@ cohorts:
   dest_table: EDLabs
   type: fact
   pull_this_cycle: true
-  description: Lab components on the visit's encounter, a day either side of the ED stay, with the component's names (for the VBG)
+  description: Lab components on the visit's encounter, a day either side of the ED stay, with the component's names
   granularity: One row per lab component result
   columns:
   - source: lcrf.LabComponentResultKey
@@ -216,7 +216,7 @@ cohorts:
   dest_table: Births
   type: fact
   pull_this_cycle: true
-  description: 'Each child''s birth, whenever it was: gestational age, birth weight. The first pull kept only births since 2019'
+  description: 'Each child''s birth, whenever it was: gestational age, birth weight'
   granularity: One row per baby
   columns:
   - source: bf.BabyPatientDurableKey
@@ -264,7 +264,7 @@ cohorts:
   dest_table: EDMeds
   type: fact
   pull_this_cycle: true
-  description: Medication administrations on the visit's encounter, a day either side of the ED stay (IV fluids). Names to follow once MedicationDim is in the dictionary
+  description: Medication administrations on the visit's encounter, a day either side of the ED stay, with the medication's names (IV fluids)
   granularity: One row per administration
   columns:
   - source: maf.MedicationAdministrationKey
@@ -293,15 +293,66 @@ cohorts:
     name: Rate
   - source: maf.AdministrationDepartmentKey
     name: AdministrationDepartmentKey
+  - source: md.Name
+    name: MedicationName
+  - source: md.GenericName
+    name: MedicationGenericName
+  - source: md.SimpleGenericName
+    name: MedicationSimpleGenericName
+  - source: md.PharmaceuticalClass
+    name: MedicationPharmaceuticalClass
+  - source: md.PharmaceuticalSubclass
+    name: MedicationPharmaceuticalSubclass
+  - source: md.TherapeuticClass
+    name: MedicationTherapeuticClass
+  - source: md.Form
+    name: MedicationForm
+  - source: md.Route
+    name: MedicationRoute
   filter:
     from:
     - MedicationAdministrationFact AS maf
     join:
     - INNER JOIN {{prefix}}_RSVVisitKeys AS pk ON pk.EncounterKey = maf.EncounterKey AND pk.PatientDurableKey = maf.PatientDurableKey
+    - LEFT JOIN MedicationDim AS md ON md.MedicationKey = maf.MedicationKey
     where:
     - maf._IsDeleted = 0
     - maf.AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
     - maf.AdministrationInstant BETWEEN DATEADD(DAY, -1, pk.ArrivalInstant) AND DATEADD(DAY, 1, pk.DepartureInstant)
+- name: StayDepartments
+  dest_table: StayDepartments
+  type: fact
+  pull_this_cycle: true
+  description: Each department a medication was given in during the admission, with its specialty and the first time (ICU transfers mid-stay)
+  granularity: One row per admission and department
+  columns:
+  - source: haf.HospitalAdmissionKey
+    name: HospitalAdmissionKey
+  - source: maf.AdministrationDepartmentKey
+    name: AdministrationDepartmentKey
+  - source: dept.DepartmentSpecialty
+    name: DepartmentSpecialty
+  - source: maf.AdministrationInstant
+    name: AdministrationInstant
+  filter:
+    from:
+    - MedicationAdministrationFact AS maf
+    join:
+    - INNER JOIN HospitalAdmissionFact AS haf ON haf.EncounterKey = maf.EncounterKey
+    - INNER JOIN {{prefix}}_RSVVisitKeys AS pk ON pk.HospitalAdmissionKey = haf.HospitalAdmissionKey
+    - INNER JOIN DepartmentDim AS dept ON dept.DepartmentKey = maf.AdministrationDepartmentKey
+    where:
+    - maf._IsDeleted = 0
+    - haf._IsDeleted = 0
+    - pk.HospitalAdmissionKey > 0
+    - maf.AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - maf.AdministrationInstant BETWEEN haf.InpatientAdmissionInstant AND haf.DischargeInstant
+  dedup_keys:
+  - - HospitalAdmissionKey
+    - AdministrationDepartmentKey
+  dedup_order_by:
+  - AdministrationInstant
 - name: AdmissionDepartments
   dest_table: AdmissionDepartments
   type: fact
@@ -342,37 +393,3 @@ cohorts:
     - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
   dedup_keys:
   - - HospitalAdmissionKey
-- name: StayDepartments
-  dest_table: StayDepartments
-  type: fact
-  pull_this_cycle: true
-  description: Each department a medication was given in during the admission, with its specialty and the first time (ICU transfers mid-stay)
-  granularity: One row per admission and department
-  columns:
-  - source: haf.HospitalAdmissionKey
-    name: HospitalAdmissionKey
-  - source: maf.AdministrationDepartmentKey
-    name: AdministrationDepartmentKey
-  - source: dept.DepartmentSpecialty
-    name: DepartmentSpecialty
-  - source: maf.AdministrationInstant
-    name: AdministrationInstant
-  filter:
-    from:
-    - MedicationAdministrationFact AS maf
-    join:
-    - INNER JOIN HospitalAdmissionFact AS haf ON haf.EncounterKey = maf.EncounterKey
-    - INNER JOIN {{prefix}}_RSVVisitKeys AS pk ON pk.HospitalAdmissionKey = haf.HospitalAdmissionKey
-    - INNER JOIN DepartmentDim AS dept ON dept.DepartmentKey = maf.AdministrationDepartmentKey
-    where:
-    - maf._IsDeleted = 0
-    - haf._IsDeleted = 0
-    - pk.HospitalAdmissionKey > 0
-    - maf.AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
-    - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
-    - maf.AdministrationInstant BETWEEN haf.InpatientAdmissionInstant AND haf.DischargeInstant
-  dedup_keys:
-  - - HospitalAdmissionKey
-    - AdministrationDepartmentKey
-  dedup_order_by:
-  - AdministrationInstant

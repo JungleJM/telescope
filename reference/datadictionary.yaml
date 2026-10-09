@@ -3929,8 +3929,270 @@ DataDictionary:
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-10-09; screenshot in
+  # reference/DDict image refs/MedicationDim/): Overview and Columns, keys from the
+  # Columns tab's links (no ER diagram screenshotted).
+  # MedicationEpicId is SD only, so left out.
+  # Nullability not checked: no row is expanded in the screenshot.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  MedicationDim:
+    description: >
+      The medication dimension contains information about medications. Each row
+      represents a medication (ERX) record from the First DataBank (FDB) medication
+      load. Join on MedicationKey from the medication facts for names and classes.
+    granularity: >
+      A medication record from the First DataBank (FDB) medication load
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      Controlled:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the medication is a controlled substance.
+      DeaClass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Drug Enforcement Administration (DEA) Controlled Substance Code for the medication
+      Form:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Form of the medication
+      GenericName:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Generic, non-proprietary name of the medication. For Epic data, if the
+          medication has multiple generic names, this is the first name listed.
+      Gpi:
+        type: nvarchar(200)
+        nullable: true
+        description: >
+          Generic Product Identifier (GPI) for the medication. For Epic data, if there
+          are multiple GPIs for the medication, this is the first GPI listed.
+      MedicationKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      Name:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Name of the medication
+      Opioid:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the medication is an opioid.
+      OpioidAntagonist:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the medication is an opioid antagonist.
+      PharmaceuticalClass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Pharmaceutical class that indicates the chemical family the medication belongs to
+      PharmaceuticalSubclass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Pharmaceutical subclass that indicates the chemical family the medication
+          belongs to. For Epic data, if there are multiple subclasses for the
+          medication, this is the first subclass listed.
+      Route:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Administration route of the medication
+      SimpleGenericName:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Simple generic, non-proprietary name of the medication. For Epic data, if the
+          medication has multiple simple generic names, this is the first name listed.
+      Strength:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Strength of the medication
+      TherapeuticClass:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Therapeutic class that indicates the accepted purpose of the medication
+    standard_where:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-10-09; screenshot in
+  # reference/DDict image refs/MedicationSetDim/): Overview and Columns, keys from the
+  # Columns tab's links (no ER diagram screenshotted).
+  # Nullability not checked: no row is expanded in the screenshot.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  MedicationSetDim:
+    description: >
+      The medication set dimension contains information about medication value sets.
+      Each row represents a medication in a value set. The value sets are from the
+      First DataBank (FDB) medication load.
+    granularity: >
+      A medication in a value set
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      DisplayName:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Display name for the value set
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: true
+        description: >
+          Medication in the value set
+      MedicationSetKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      Name:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Name of the value set
+      Trusted:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the medication grouper should be used in reporting
+      Type:
+        type: nvarchar(100)
+        nullable: true
+        description: >
+          Type of the value set
+      ValueSetEpicId:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Epic ID of the value set
+    standard_where:
+      - "_IsDeleted = 0"
+
+  # Checked against its Cosmos dictionary page (2026-10-09; screenshot in
+  # reference/DDict image refs/MedicationCodeDim/): Overview and Columns, keys from the
+  # Columns tab's links (no ER diagram screenshotted).
+  # Descriptions of HasGenericAlternative, IsBrand and IsNdcSafeExternalMatch
+  # are cut off at the right of the screenshot.
+  # Nullability not checked: no row is expanded in the screenshot.
+  # Only columns with the database icon; SD-only columns left out (D116).
+  MedicationCodeDim:
+    description: >
+      The medication code dimension contains information about codes for medications.
+      Each row represents a code for a medication. The dimension includes NDC codes
+      and RxNorm codes.
+    granularity: >
+      A code for a medication
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      Classification:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          ATC code name
+      Code:
+        type: nvarchar(300)
+        nullable: true
+        description: >
+          Medication code
+      HasGenericAlternative:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the National Drug Code (NDC) has a
+          suitable generic alternative. (The rest is cut off.)
+      IsBrand:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the National Drug Code (NDC) links to a
+          brand medication. (The rest is cut off.)
+      IsNdcDeleted:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the National Drug Code (NDC) is deleted:
+          1 if deleted, 0 if not, and NULL if the code is not an NDC code.
+      IsNdcSafeExternalMatch:
+        type: tinyint (flag)
+        nullable: true
+        description: >
+          1/0 column that indicates whether the National Drug Code (NDC) can safely be
+          used to match on if it's coming from external data. (The rest is cut off.)
+      MedicationCodeKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      MedicationKey:
+        type: bigint (foreign key to MedicationDim)
+        nullable: true
+        description: >
+          Medication associated with the medication code
+      PackageSize:
+        type: numeric(12,3)
+        nullable: true
+        description: >
+          Number of medication products in each NDC-labeled container or unit. NULL if
+          the code is not an NDC code.
+      RawNumericCode:
+        type: numeric(18,0)
+        nullable: true
+        description: >
+          Raw numeric medication code. For National Drug Codes (NDC), the raw 11-digit
+          form of the code converted to a numeric value. NULL if not an NDC code.
+      TerminologyConceptKey:
+        type: bigint (foreign key to TerminologyConceptDim)
+        nullable: true
+        description: >
+          Standard concept in TerminologyConceptDim associated with the medication
+      Type:
+        type: nvarchar(50)
+        nullable: true
+        description: >
+          Type of the medication code
+    standard_where:
+      - "_IsDeleted = 0"
+
 # ---------------------------------------------------------------------------
-# Still to check (as of 2026-10-02)
+# Still to check (as of 2026-10-09)
 #
 # Every table in this dictionary has been checked against a screenshot of its
 # page.
@@ -3939,7 +4201,8 @@ DataDictionary:
 #   - No ER diagram on the page, so the column each foreign key lands on is not
 #     seen: PatientDim, DiagnosisTerminologyDim, LabComponentDim,
 #     LabComponentSetDim, TerminologyConceptDim, DurationDim, CoverageDim,
-#     DiagnosisDim, ProcedureDim, SourceDim, EncounterSourceBridge, DepartmentDim.
+#     DiagnosisDim, ProcedureDim, SourceDim, EncounterSourceBridge, DepartmentDim,
+#     MedicationDim, MedicationSetDim, MedicationCodeDim.
 #   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
 #     (description, granularity) not screenshotted.
 #   - MedicationDispenseFact: the page says Partitioned, but no column carries
@@ -3955,7 +4218,7 @@ DataDictionary:
 # Not in this dictionary, but a checked table's foreign key points at them.
 # Screenshot one before a pull joins it:
 #   - DateDim, TimeOfDayDim
-#   - ProviderDim, MedicationDim, LabDim
+#   - ProviderDim, LabDim
 #   - CoverageBridgeX (RSV_full.yaml joins it to CoverageDim)
 #   - MedicationComponentBridge (MedicationAdministrationFact's
 #     MedicationComponentComboKey), which links to MedicationDim
