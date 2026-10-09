@@ -93,7 +93,7 @@ def make_followup(root: Path) -> None:
     write(follow, "AdmissionDepartments", [
         {"HospitalAdmissionKey": 900, "EncounterKey": 5001, "DischargeInstant": T("2023-11-04 10:00"),
          "LengthOfStayInDays": 3, "AdmitSpecialty": "Pediatrics",
-         "DischargeSpecialty": "Pediatric Critical Care Medicine"}])
+         "DischargeSpecialty": "Pediatric Intensive Care"}])
 
 
 class Fixture(unittest.TestCase):
@@ -157,6 +157,13 @@ class BuildOutcomes(Fixture):
     def test_vbg_by_loinc_in_the_ed(self):
         self.assertTrue(self.v.loc[1, "vbg_ed"])
         self.assertFalse(self.v.loc[3, "vbg_ed"])
+
+    def test_admitted_to_specialty_on_the_visit(self):
+        self.assertEqual(self.v.loc[1, "admit_specialty"], "Pediatrics")
+        self.assertEqual(self.v.loc[1, "discharge_specialty"], "Pediatric Intensive Care")
+        self.assertTrue(pd.isna(self.v.loc[2, "admit_specialty"]))           # not admitted
+        page = build_page(self.settings(min_cell=0), self.built, "test").render()
+        self.assertIn("admitted to (specialty), every one:", page)
 
     def test_icu_from_department_specialty(self):
         self.assertTrue(self.v.loc[1, "icu"])

@@ -36,9 +36,10 @@ visits %>%
   summarise(n = sum(is.finite(spo2_min_ed)), median_spo2 = median(spo2_min_ed[is.finite(spo2_min_ed)])) %>%
   print()
 
-# 4. ICU stays: an admission with a Pediatric Critical Care department.
-icu <- tables$StayDepartments %>%
-  filter(DepartmentSpecialty == "Pediatric Critical Care Medicine") %>%
+# 4. Where admissions were admitted to, and ICU stays among them.
+print(count(tables$HospitalAdmissionFact, AdmitSpecialty, sort = TRUE))
+icu <- tables$HospitalAdmissionFact %>%
+  filter(AdmitSpecialty %in% c("Pediatric Intensive Care", "Critical Care Medicine")) %>%
   distinct(HospitalAdmissionKey)
 cat("ICU visits:", sum(visits$HospitalAdmissionKey %in% icu$HospitalAdmissionKey), "\n")
 

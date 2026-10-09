@@ -213,16 +213,22 @@
 
 - section: Admissions and the ICU
   id: icu_pct_of_admissions
-  question: What share of admissions included the ICU (a Pediatric Critical Care Medicine department in `StayDepartments`)?
+  question: What share of admissions were to an ICU (`AdmitSpecialty` Pediatric Intensive Care or Critical Care Medicine)?
   kind: pct
   python: |
-    departments = tables["StayDepartments"]
-    icu = departments.loc[departments["DepartmentSpecialty"] == "Pediatric Critical Care Medicine", "HospitalAdmissionKey"]
-    answer = tables["HospitalAdmissionFact"]["HospitalAdmissionKey"].isin(icu).mean()
+    haf = tables["HospitalAdmissionFact"]
+    answer = haf["AdmitSpecialty"].isin(["Pediatric Intensive Care", "Critical Care Medicine"]).mean()
   r: |
-    departments <- tables$StayDepartments
-    icu <- departments$HospitalAdmissionKey[departments$DepartmentSpecialty %in% "Pediatric Critical Care Medicine"]
-    answer <- mean(tables$HospitalAdmissionFact$HospitalAdmissionKey %in% icu)
+    haf <- tables$HospitalAdmissionFact
+    answer <- mean(haf$AdmitSpecialty %in% c("Pediatric Intensive Care", "Critical Care Medicine"))
+
+- id: picu_pct_of_admissions
+  question: And to Pediatric Intensive Care alone?
+  kind: pct
+  python: |
+    answer = (haf["AdmitSpecialty"] == "Pediatric Intensive Care").mean()
+  r: |
+    answer <- mean(haf$AdmitSpecialty %in% "Pediatric Intensive Care")
 
 - id: median_los
   question: What is the median length of stay, in days?

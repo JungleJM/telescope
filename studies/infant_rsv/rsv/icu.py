@@ -1,4 +1,4 @@
-"""`python rsv icu`: run sql/check_icu.sql against Cosmos and put its ten results on one page.
+"""`python rsv icu`: run sql/check_icu.sql against Cosmos and write its ten results, every row, to a page.
 
 The month is settings `verify`'s, and the specialties tested as ICU are
 `icu_specialties`, so the page tests what the analysis uses. It only reads.
@@ -18,8 +18,6 @@ from .page import Page, fit
 
 SCRIPT = PACKAGE_DIR / "sql" / "check_icu.sql"
 TITLE = re.compile(r"/\*\s*(\d+)\.\s*(.*?)\s*\*/", re.DOTALL)
-ROWS_SHOWN = 8     # rows of a wider table
-PAIRS_SHOWN = 10   # names of a name-and-count list
 
 
 def script_for(settings: Settings, path: Path = SCRIPT) -> str:
@@ -89,20 +87,23 @@ def icu_page(settings: Settings, results: list[tuple[list[str], list[tuple]]], n
         if not rows:
             page.line("   (no rows)")
             continue
-        if len(columns) == 2:                    # a name and its count: one wrapped line
-            pairs = "; ".join(f"{cell(r[0]) or '(blank)'} {cell(r[1])}" for r in rows[:PAIRS_SHOWN])
-            lines = textwrap.wrap(pairs, page.width - 3)
-            if len(rows) > PAIRS_SHOWN:
-                lines.append(f"(+{len(rows) - PAIRS_SHOWN} more)")
+        if len(columns) == 2:                    # a name and its count: wrapped lines, every one
+            lines = textwrap.wrap("; ".join(f"{cell(r[0]) or '(blank)'} {cell(r[1])}" for r in rows), page.width - 3)
         elif len(rows) == 1:                     # one row of totals: name=value
             lines = textwrap.wrap("; ".join(f"{c}={cell(v)}" for c, v in zip(columns, rows[0])), page.width - 3)
+        elif len({r[0] for r in rows}) < len(rows):   # rows sharing their first value: one entry per value
+            lines = textwrap.wrap(" | ".join(columns), page.width - 3)
+            groups: dict[Any, list[str]] = {}
+            for r in rows:
+                groups.setdefault(r[0], []).append(" ".join(cell(c) for c in r[1:]))
+            for first, rest in groups.items():
+                lines += textwrap.wrap(f"- {cell(first)}: " + "; ".join(rest), page.width - 3,
+                                       subsequent_indent="  ")
         else:
             lines = textwrap.wrap(" | ".join(columns), page.width - 3)
-            for row in rows[:ROWS_SHOWN]:
+            for row in rows:
                 lines += textwrap.wrap("- " + " | ".join(cell(c) for c in row), page.width - 3,
                                        subsequent_indent="  ")
-            if len(rows) > ROWS_SHOWN:
-                lines.append(f"... {len(rows) - ROWS_SHOWN} more")
         for text in lines:
             page.line("   " + text)
     return page

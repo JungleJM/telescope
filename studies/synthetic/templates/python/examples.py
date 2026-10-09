@@ -42,9 +42,11 @@ t = pd.to_numeric(tables["EDVitals"]["Temperature"].astype(float))
 celsius = t.where(t <= 45, (t - 32) * 5 / 9)
 print(f"Temperatures read as °F: {(t > 45).mean():.0%}; median in °C {celsius.median():.1f}\n")
 
-# 5. ICU stays: an admission with a Pediatric Critical Care department.
-departments = tables["StayDepartments"]
-icu = set(departments.loc[departments["DepartmentSpecialty"] == "Pediatric Critical Care Medicine", "HospitalAdmissionKey"])
+# 5. Where admissions were admitted to, and ICU stays among them.
+haf = tables["HospitalAdmissionFact"]
+print("Admitted to")
+print(haf["AdmitSpecialty"].value_counts().to_string(), "\n")
+icu = set(haf.loc[haf["AdmitSpecialty"].isin(["Pediatric Intensive Care", "Critical Care Medicine"]), "HospitalAdmissionKey"])
 v["icu"] = v["HospitalAdmissionKey"].isin(icu)
 print(f"ICU: {v['icu'].sum():,} visits, {v['icu'].sum() / max(v['admitted'].sum(), 1):.1%} of admissions\n")
 

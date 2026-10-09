@@ -20,7 +20,7 @@ DECLARE @meds_to BIGINT = 20250331;   -- medications up to this day (stays run p
 DECLARE @icu TABLE (Specialty NVARCHAR(300) PRIMARY KEY);
 INSERT INTO @icu (Specialty) VALUES
     (N'Critical Care Medicine'),
-    (N'Pediatric Critical Care Medicine');
+    (N'Pediatric Intensive Care');
 
 /* 1. Is there a table or column that names an ICU or a transfer outright? */
 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
@@ -67,15 +67,15 @@ SELECT COUNT(*) AS InfantAdmissions,
        SUM(CASE WHEN DischargeDepartmentKey_X IS NULL OR DischargeDepartmentKey_X < 0 THEN 1 ELSE 0 END) AS NoDischargeDepartment
 FROM #adm;
 
-/* 5. The specialty of the department they were admitted to (top 25). */
-SELECT TOP 25 COALESCE(d.DepartmentSpecialty, N'(none)') AS AdmittedToSpecialty, COUNT(*) AS Admissions
+/* 5. The specialty of the department they were admitted to, every one. */
+SELECT COALESCE(d.DepartmentSpecialty, N'(none)') AS AdmittedToSpecialty, COUNT(*) AS Admissions
 FROM #adm AS a
 LEFT JOIN dbo.DepartmentDim AS d ON d.DepartmentKey = a.DepartmentKey
 GROUP BY COALESCE(d.DepartmentSpecialty, N'(none)')
 ORDER BY Admissions DESC;
 
-/* 6. The specialty of the department they were discharged from (top 25). */
-SELECT TOP 25 COALESCE(d.DepartmentSpecialty, N'(none)') AS DischargedFromSpecialty, COUNT(*) AS Admissions
+/* 6. The specialty of the department they were discharged from, every one. */
+SELECT COALESCE(d.DepartmentSpecialty, N'(none)') AS DischargedFromSpecialty, COUNT(*) AS Admissions
 FROM #adm AS a
 LEFT JOIN dbo.DepartmentDim AS d ON d.DepartmentKey = a.DischargeDepartmentKey_X
 GROUP BY COALESCE(d.DepartmentSpecialty, N'(none)')
@@ -98,8 +98,8 @@ SELECT COUNT(*) AS Administrations,
        (SELECT COUNT(*) FROM #adm) AS InfantAdmissions
 FROM #stay;
 
-/* 8. The specialties medications were given in during the stays: admissions with any in each (top 25). */
-SELECT TOP 25 COALESCE(d.DepartmentSpecialty, N'(none)') AS GivenInSpecialty,
+/* 8. The specialties medications were given in during the stays: admissions with any in each, every one. */
+SELECT COALESCE(d.DepartmentSpecialty, N'(none)') AS GivenInSpecialty,
        COUNT(DISTINCT s.HospitalAdmissionKey) AS Admissions
 FROM #stay AS s
 LEFT JOIN dbo.DepartmentDim AS d ON d.DepartmentKey = s.AdministrationDepartmentKey

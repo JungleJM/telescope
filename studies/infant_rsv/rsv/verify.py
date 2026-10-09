@@ -156,7 +156,9 @@ def pct(k: float, n: float) -> str:
 
 
 def values(rows: Rows, limit: int = 8) -> str:
-    return "; ".join(f"{r[0]} {fmt(r[1])}" for r in rows[:limit]) or "none"
+    """The first few for the one-line evidence; the detail page lists every one."""
+    shown = "; ".join(f"{r[0]} {fmt(r[1])}" for r in rows[:limit]) or "none"
+    return shown + (f"; +{len(rows) - limit} in detail" if len(rows) > limit else "")
 
 
 def j_admission_key(rows, s):
@@ -414,7 +416,7 @@ INNER JOIN #pat AS p ON p.DurableKey = v.PatientDurableKey AND p.IsCurrent = 1
 INNER JOIN dbo.DurationDim AS age ON age.DurationKey = v.AgeKey;""", j_age),
     Check("race_values", "race values",
           "FirstRace's values: which are real races and which placeholders (settings race_map, unknown).", "build: race", """
-SELECT TOP 15 COALESCE(FirstRace, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
+SELECT COALESCE(FirstRace, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
 GROUP BY COALESCE(FirstRace, '(null)') ORDER BY COUNT(*) DESC;""", j_listing),
     Check("multiracial", "MultiRacial is 1/0",
           "PatientDim.MultiRacial holds 1 or 0 (the build reads 1, true, Y or Yes as more than one race).", "build: race", """
@@ -422,10 +424,10 @@ SELECT COALESCE(CAST(MultiRacial AS NVARCHAR(50)), '(null)'), COUNT(*) FROM #pat
 GROUP BY COALESCE(CAST(MultiRacial AS NVARCHAR(50)), '(null)') ORDER BY COUNT(*) DESC;""", j_multiracial),
     Check("ethnicity_values", "ethnicity values",
           "Ethnicity's values (settings ethnicity_map, unknown).", "build: ethnicity", """
-SELECT TOP 10 COALESCE(Ethnicity, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
+SELECT COALESCE(Ethnicity, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
 GROUP BY COALESCE(Ethnicity, '(null)') ORDER BY COUNT(*) DESC;""", j_listing),
     Check("sex_values", "sex values", "Sex's values.", "build: sex", """
-SELECT TOP 10 COALESCE(Sex, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
+SELECT COALESCE(Sex, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1
 GROUP BY COALESCE(Sex, '(null)') ORDER BY COUNT(*) DESC;""", j_listing),
     Check("svi_scale", "SVI is a 0-1 or 0-100 rank",
           "SviOverallPctlRankByZip2020_X is a percentile rank, 0-1 or 0-100 (the build reads its scale from the largest value).",
@@ -434,12 +436,12 @@ SELECT COUNT(SviOverallPctlRankByZip2020_X), MIN(SviOverallPctlRankByZip2020_X),
 FROM #pat WHERE IsCurrent = 1;""", j_svi),
     Check("financial_values", "financial class values",
           "EdVisitFact.FinancialClass's values (settings financial_class_map).", "build: financial_class", """
-SELECT TOP 12 COALESCE(FinancialClass, '(null)'), COUNT(*) FROM #v
+SELECT COALESCE(FinancialClass, '(null)'), COUNT(*) FROM #v
 GROUP BY COALESCE(FinancialClass, '(null)') ORDER BY COUNT(*) DESC;""", j_listing),
     Check("visit_text_values", "visit text values",
           "AcuityLevel, ArrivalMethod, DischargeDisposition and EdGenericDispo's values (the synthetic copy invents them until these are known).",
           "synthetic data", """
-SELECT TOP 24 col, val, n FROM (
+SELECT col, val, n FROM (
     SELECT 'acuity' AS col, COALESCE(AcuityLevel, '(null)') AS val, COUNT(*) AS n FROM #v GROUP BY AcuityLevel
     UNION ALL SELECT 'arrival', COALESCE(ArrivalMethod, '(null)'), COUNT(*) FROM #v GROUP BY ArrivalMethod
     UNION ALL SELECT 'dispo', COALESCE(DischargeDisposition, '(null)'), COUNT(*) FROM #v GROUP BY DischargeDisposition
@@ -447,7 +449,7 @@ SELECT TOP 24 col, val, n FROM (
 ) AS s ORDER BY col, n DESC;""", j_star),
     Check("star_values", "'*' values are placeholders",
           "A value beginning with * (*Unspecified, *Not Applicable) is a placeholder, read as Unknown.", "build: groupings", """
-SELECT TOP 12 col, val, n FROM (
+SELECT col, val, n FROM (
     SELECT 'race' AS col, FirstRace AS val, COUNT(*) AS n FROM #pat WHERE FirstRace LIKE '*%' GROUP BY FirstRace
     UNION ALL SELECT 'ethnicity', Ethnicity, COUNT(*) FROM #pat WHERE Ethnicity LIKE '*%' GROUP BY Ethnicity
     UNION ALL SELECT 'sex', Sex, COUNT(*) FROM #pat WHERE Sex LIKE '*%' GROUP BY Sex
@@ -455,7 +457,7 @@ SELECT TOP 12 col, val, n FROM (
 ) AS s ORDER BY n DESC;""", j_star),
     Check("unknown_list", "the `unknown` words occur",
           "The words in settings `unknown` (Patient Declined, Not Reported...) are values Cosmos uses.", "build: groupings", """
-SELECT TOP 20 col, val, n FROM (
+SELECT col, val, n FROM (
     SELECT 'race' AS col, FirstRace AS val, COUNT(*) AS n FROM #pat GROUP BY FirstRace
     UNION ALL SELECT 'ethnicity', Ethnicity, COUNT(*) FROM #pat GROUP BY Ethnicity
     UNION ALL SELECT 'sex', Sex, COUNT(*) FROM #pat GROUP BY Sex
@@ -472,7 +474,7 @@ SELECT (SELECT COUNT(DISTINCT PatientDurableKey) FROM #v), COUNT(DISTINCT BabyPa
           j_birth_link),
     Check("dx_code_format", "ICD codes written J21.0",
           "DiagnosisTerminologyDim.Value writes ICD-10 codes with the dot (J21.0) under Type ICD-10-CM.", "pulls: EDVisits, EDDiagnoses; build: dx_group", """
-SELECT TOP 12 dt.Type, dt.Value, COUNT(*) FROM dbo.DiagnosisTerminologyDim AS dt
+SELECT dt.Type, dt.Value, COUNT(*) FROM dbo.DiagnosisTerminologyDim AS dt
 WHERE dt._IsDeleted = 0 AND dt.Value IN ('J21.0', 'J210', 'B97.4', 'B974', 'J12.1', 'J121', 'J20.5', 'J205')
 GROUP BY dt.Type, dt.Value ORDER BY COUNT(*) DESC;""", j_dx_format),
     Check("ed_diagnoses", "ED dx flag and primary",
@@ -487,7 +489,7 @@ SELECT Value, COUNT(DISTINCT EncounterKey) FROM #dx WHERE Value IN ('J21.0', 'J1
 GROUP BY Value ORDER BY COUNT(DISTINCT EncounterKey) DESC;""", j_rsv_codes),
     Check("vbg_codes", "VBG LOINC codes are right",
           "The vbg_loinc codes are the venous blood gas's; the components named venous or VBG show what is used.", "build: vbg_ed", """
-SELECT TOP 12 COALESCE(LoincCode, '(null)'), COALESCE(Name, ''), COALESCE(LoincName, ''), COUNT(*)
+SELECT COALESCE(LoincCode, '(null)'), COALESCE(Name, ''), COALESCE(LoincName, ''), COUNT(*)
 FROM #lab
 WHERE Name LIKE '%venous%' OR LoincName LIKE '%venous%' OR CommonName LIKE '%venous%' OR Name LIKE '%VBG%'
    OR LoincCode IN ('2746-4', '2021-4')
@@ -499,18 +501,18 @@ SELECT COUNT(*), SUM(CASE WHEN LoincCode IS NULL OR LoincCode = '' THEN 1 ELSE 0
 FROM #lab;""", j_lab_codes),
     Check("routes", "IV route values",
           "AdministrationRoute names IV as settings iv_routes match (IV..., Intravenous).", "build: iv_fluids_ed", """
-SELECT TOP 15 COALESCE(AdministrationRoute, '(null)'), COUNT(*) FROM #med
+SELECT COALESCE(AdministrationRoute, '(null)'), COUNT(*) FROM #med
 GROUP BY COALESCE(AdministrationRoute, '(null)') ORDER BY COUNT(*) DESC;""", j_routes),
     Check("actions", "administration actions",
           "AdministrationAction and ActionIsMedAdministration say which doses were given (settings iv_given_actions).",
           "build: iv_fluids_ed", """
-SELECT TOP 12 COALESCE(AdministrationAction, '(null)') + ' / ' + COALESCE(CAST(ActionIsMedAdministration AS NVARCHAR(10)), '(null)'),
+SELECT COALESCE(AdministrationAction, '(null)') + ' / ' + COALESCE(CAST(ActionIsMedAdministration AS NVARCHAR(10)), '(null)'),
        COUNT(*)
 FROM #med GROUP BY COALESCE(AdministrationAction, '(null)') + ' / ' + COALESCE(CAST(ActionIsMedAdministration AS NVARCHAR(10)), '(null)')
 ORDER BY COUNT(*) DESC;""", j_listing),
     Check("iv_fluid_names", "IV fluid names match",
           "The IV doses' MedicationDim names; how many the iv_fluid_patterns catch.", "build: iv_fluids_ed", """
-SELECT TOP 25 COALESCE(Name, '(null)'), COUNT(*) FROM #med
+SELECT COALESCE(Name, '(null)'), COUNT(*) FROM #med
 WHERE AdministrationRoute LIKE 'IV%' OR AdministrationRoute LIKE '%intraven%'
 GROUP BY COALESCE(Name, '(null)') ORDER BY COUNT(*) DESC;""", j_fluids),
     Check("stay_departments", "stay doses have a department",
@@ -600,7 +602,7 @@ def detail_page(settings: Settings, results: list[Result]) -> Page:
         for text in textwrap.wrap(result.check.assumption, page.width - 3):
             page.line("   " + text)
         page.line(f"   used by: {result.check.used_in}"[: page.width])
-        for row in result.rows[:25]:
+        for row in result.rows:
             cells = " | ".join("" if c is None else fmt(c) if isinstance(c, int) and not isinstance(c, bool)
                                else str(c) for c in row)
             for i, text in enumerate(textwrap.wrap(cells, page.width - 5) or [""]):

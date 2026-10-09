@@ -581,6 +581,40 @@ The made-up children behave plausibly: younger, more premature and (slightly) hi
 **🟧 Your response:**
 :::
 
+## ICU: what Cosmos showed (9 Oct)
+
+(In the chat, 9 Oct) `python rsv icu` ran: 175,340 infant admissions in December 2024. "Pediatric Intensive Care" looks like the one. Add the admitted-to specialty to what the RSV pull brings, so we see how each hospital categorises its admissions and can later search by admission location. Table 1 and the others were cut off: give every row.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: what the ICU check showed, and what changed**
+
+**What Cosmos showed:**
+
+- **There is no "Pediatric Critical Care Medicine" specialty.** It was my guess. The real names include Pediatric Intensive Care (307 departments, 1,797 infant admissions in the month), Critical Care Medicine, Cardiac Intensive Care, Medical Critical Care, Surgical Cardiothoracic Critical Care and Neonatology. Neonatology took 61,676 admissions, which must include newborn nurseries.
+- **An admission's admitted-to and discharged-from departments were nearly identical** (Neonatology 61,676 and 61,673). So a move into the ICU mid-stay shows in neither.
+- **Medications rarely say where they were given:** 6,743,883 of 7,755,458 doses (87%) have no department. When a dose does have one, it added no ICU admission the other two sources hadn't already found ("OnlyByMedications" was 0).
+- **`AdtEventFact` exists**, with a `DepartmentKey`, an `EncounterKey` and `EffectiveInstantUTC`. Admission, discharge and transfer events are what would show each unit a child passed through. Its name ending in UTC suggests the other Instants are local; `rsv verify`'s `same_clock` check will say.
+- **The rule as it stood** (Critical Care Medicine only, as nothing else matched) found ICU in 1,919 admissions (1.1%), with a median stay of 5.0 days against 2.0.
+
+**Changed (not yet in a bundle you have):**
+
+- **The pull already brings the admitted-to specialty.** The redo you are running has `AdmitSpecialty` and `DischargeSpecialty` on HospitalAdmissionFact.
+- **The visits now carry it:** `rsv build` puts `admit_specialty` and `discharge_specialty` on each visit. The build page lists every admitted-to and discharged-from specialty with its count, none cut. `python rsv compare admit_specialty` works, and so does the section `picu_admissions` (`admit_specialty == 'Pediatric Intensive Care'`).
+- **`icu_specialties`** is now Pediatric Intensive Care and Critical Care Medicine, both seen in Cosmos. Which ones count as ICU is a choice.
+- **Nothing is cut off any more.** `rsv icu` prints every row; table 1 groups its columns by table. `rsv verify` no longer caps its lists, and its detail page shows every value. The only limit left is the sample size, by design.
+- **The synthetic copy** uses Cosmos's specialty names, and STATS.md asks where admissions were admitted to (pushed, `cda76c8`).
+
+**For you to decide:**
+
+- **Which specialties count as ICU.** Cardiac Intensive Care, Medical Critical Care and Surgical Cardiothoracic Critical Care are also there. Neonatology mixes NICUs with nurseries.
+- **ADT events for transfers.** Screenshot `AdtEventFact`'s Cosmos dictionary page and I'll add it to the dictionary and write a check of what its event types and departments hold. Then a pull of the RSV admissions' ADT events would show every unit each stay passed through.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
 ## Settled
 
 Nothing waiting.

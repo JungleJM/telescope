@@ -147,14 +147,17 @@ def link_admissions(visits: pd.DataFrame, admissions: pd.DataFrame | None) -> pd
         return visits
     adm = admissions.drop_duplicates("HospitalAdmissionKey").copy()
     adm["DischargeInstant"] = times(adm.get("DischargeInstant", pd.Series(pd.NaT, index=adm.index)))
-    keep = ["HospitalAdmissionKey"] + [c for c in ("DischargeInstant", "LengthOfStayInDays", "InpatientAdmissionInstant")
-                                       if c in adm]
+    keep = ["HospitalAdmissionKey"] + [c for c in ("DischargeInstant", "LengthOfStayInDays", "InpatientAdmissionInstant",
+                                                   "AdmitSpecialty", "DischargeSpecialty") if c in adm]
     merged = visits.merge(adm[keep], on="HospitalAdmissionKey", how="left", indicator=True)
     merged["admission_found"] = (merged.pop("_merge") == "both") & merged["admitted"]
     later = merged["admitted"] & merged["DischargeInstant"].notna() & (merged["DischargeInstant"] > merged["DepartureInstant"])
     merged.loc[later, "stay_end"] = merged.loc[later, "DischargeInstant"]
-    if "LengthOfStayInDays" in merged:
-        merged = merged.rename(columns={"LengthOfStayInDays": "los_days"})
+    merged = merged.rename(columns={"LengthOfStayInDays": "los_days", "AdmitSpecialty": "admit_specialty",
+                                    "DischargeSpecialty": "discharge_specialty"})
+    for column in ("admit_specialty", "discharge_specialty"):     # where the admitted were admitted to, and left from
+        if column in merged:
+            merged[column] = text(merged[column]).where(merged["admitted"])
     return merged
 
 
@@ -458,6 +461,7 @@ def build(settings: Settings, write: bool = True) -> Built:
             "DepartureInstant", "stay_end", "year", "season", "era", "first_visit", "age_days", "age_months",
             "age_band", "birth_date_source", "ga_weeks", "ga_band", "birth_weight_g", "sex", "race", "ethnicity",
             "svi", "svi_quartile", "financial_class", "dx_group", "admitted", "admission_found", "los_days", "icu",
+            "admit_specialty", "discharge_specialty",
             "rr_initial", "rr_max_ed", "rr_max_stay", "spo2_min_ed", "spo2_min_stay", "temp_initial",
             "temp_max_ed", "temp_max_stay", "n_vitals_ed", "n_labs_ed", "vbg_ed", "iv_fluids_ed",
             "DischargeDisposition", "EdGenericDispo", "AcuityLevel", "ArrivalMethod", "patient_found"]
@@ -483,11 +487,13 @@ def write_parquets(settings: Settings, built: Built) -> Path:
 
 # ---------------------------------------------------------------- the build page
 
-def top_values(page: Page, series: pd.Series | None, limit: int = 10, label_width: int = 30) -> None:
+def top_values(page: Page, series: pd.Series | None, limit: int | None = 10, label_width: int = 30) -> None:
+    """Each value and its count, most common first; `limit` None lists every one."""
     if series is None or series.dropna().empty:
         page.line("  (none)")
         return
-    counts = text(series).fillna("(blank)").value_counts().head(limit)
+    counts = text(series).fillna("(blank)").value_counts()
+    counts = counts if limit is None else counts.head(limit)
     for value, n in counts.items():
         page.line(f"  {fit(value, label_width):<{label_width}} {page.count(n):>10}")
 
@@ -568,8 +574,12 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
                           ("sex", "sex"), ("svi quartile", "svi_quartile"), ("dx group", "dx_group")):
         page.line(f"{title}:")
         top_values(page, v[column] if v[column].notna().any() else None, 10)
-    page.line("ICU department specialties:")
-    top_values(page, notes.get("specialties"), 12)
+    page.line("admitted to (specialty), every one:")
+    top_values(page, v["admit_specialty"] if v["admit_specialty"].notna().any() else None, None)
+    page.line("discharged from (specialty), every one:")
+    top_values(page, v["discharge_specialty"] if v["discharge_specialty"].notna().any() else None, None)
+    page.line("any stay specialty (ICU is from these):")
+    top_values(page, notes.get("specialties"), None)
     if len(built.meds):
         meds = built.meds
         if "iv_fluid" in meds and "MedicationName" in meds and meds["MedicationName"].notna().any():

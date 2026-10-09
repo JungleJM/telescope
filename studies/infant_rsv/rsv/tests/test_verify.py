@@ -56,7 +56,7 @@ ANSWERS = {
                   ("2747-2", "PH, VENOUS", "pH of Venous blood", 880)],
     "routes": [("Oral", 5000), ("Intravenous", 3000), ("IV Push", 400), ("Intraveneous", 4)],
     "iv_fluid_names": [("SODIUM CHLORIDE 0.9 % IV BOLUS", 800), ("CEFTRIAXONE IV", 300), ("(null)", 50)],
-    "icu_specialties": [("Pediatric Critical Care Medicine", 300), ("Neonatology", 500)],
+    "icu_specialties": [("Pediatric Intensive Care", 300), ("Neonatology", 500)],
     "stay_times": [(0, None, None)],
 }
 

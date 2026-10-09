@@ -115,6 +115,11 @@ MEDS = [  # name, generic, simple generic, pharm class, route, dose unit, share 
     ("CEFTRIAXONE 50 MG/KG IV", "ceftriaxone", "Ceftriaxone", "CEPHALOSPORINS", "Intravenous", "mg/kg", .04, False),
     ("SODIUM CHLORIDE 3 % INHALATION", "sodium chloride 3 %", "Sodium Chloride", "RESPIRATORY THERAPY", "Inhalation", "mL", .05, False),
 ]
+# Department specialties, as Cosmos names them (`rsv icu`, 9 October 2026).
+WARD_SPECIALTIES = ["Pediatrics", "Hospital Medicine", "Neonatology", "Pediatric Medical Ward"]
+WARD_SHARES = [.7, .12, .12, .06]
+ICU_SPECIALTIES = ["Pediatric Intensive Care", "Critical Care Medicine"]
+ICU_SHARES = [.75, .25]
 TEXT_DEFAULTS = {
     "AcuityLevel": ["1 - Immediate", "2 - Emergent", "3 - Urgent", "4 - Less Urgent", "5 - Non-Urgent"],
     "ArrivalMethod": ["Car", "Ambulance", "Walk-in", "*Unspecified"],
@@ -412,10 +417,15 @@ class World:
         return pd.DataFrame(rows)
 
     def admissions(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Admitted-to specialties are names Cosmos has (`rsv icu`, 9 October 2026). There, an admission's
+        admitted-to and discharged-from departments were nearly always the same, so they are here too."""
         v, rng = self.visits[self.visits["admitted"]], self.rng
-        admitted_icu = v["icu"] & (rng.random(len(v)) < .5)
-        admit = np.where(admitted_icu, "Pediatric Critical Care Medicine", "Pediatrics")
-        discharge = np.where(v["icu"] & ~admitted_icu & (rng.random(len(v)) < .3), "Pediatric Critical Care Medicine", "Pediatrics")
+        n = len(v)
+        ward = rng.choice(WARD_SPECIALTIES, n, p=WARD_SHARES)
+        unit = rng.choice(ICU_SPECIALTIES, n, p=ICU_SHARES)
+        admit = np.where(v["icu"], unit, ward)
+        discharge = admit.copy()
+        department = {name: key("department", i + 1) for i, name in enumerate(WARD_SPECIALTIES + ICU_SPECIALTIES)}
         haf = pd.DataFrame({
             "HospitalAdmissionKey": v["HospitalAdmissionKey"], "EncounterKey": v["AdmissionEncounterKey"],
             "PatientDurableKey": v["PatientDurableKey"], "AdmissionDateKey": v["InpatientAdmissionInstant"].map(date_key),
@@ -423,19 +433,15 @@ class World:
             "InpatientAdmissionDateKey": v["InpatientAdmissionInstant"].map(date_key),
             "DischargeInstant": v["DischargeInstant"].dt.round("min"), "DischargeDateKey": v["DischargeInstant"].map(date_key),
             "LengthOfStayInDays": v["los_days"].astype(int), "InpatientLengthOfStayInDays": v["los_days"].astype(int),
-            "DepartmentKey": np.where(admit == "Pediatrics", key("department", 2), key("department", 3)),
-            "DischargeDepartmentKey_X": np.where(discharge == "Pediatrics", key("department", 2), key("department", 3)),
+            "DepartmentKey": [department[s] for s in admit], "DischargeDepartmentKey_X": [department[s] for s in discharge],
             "AdmitSpecialty": admit, "DischargeSpecialty": discharge, "FinancialClass": v["financial"],
             "EncounterType": "Hospital Encounter", "DischargeDisposition": "Home or Self Care", "StartedInED_X": 1, "Count": 1,
         })
         rows = []
-        for (_, row), icu in zip(v.iterrows(), v["icu"]):
-            rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": key("department", 2),
-                         "DepartmentSpecialty": "Pediatrics", "AdministrationInstant": row["InpatientAdmissionInstant"].round("min")})
-            if icu:
-                rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": key("department", 3),
-                             "DepartmentSpecialty": "Pediatric Critical Care Medicine",
-                             "AdministrationInstant": (row["InpatientAdmissionInstant"] + pd.Timedelta(hours=int(rng.integers(1, 30)))).round("min")})
+        for (_, row), specialty in zip(v.iterrows(), admit):
+            rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": department[specialty],
+                         "DepartmentSpecialty": specialty,
+                         "AdministrationInstant": row["InpatientAdmissionInstant"].round("min")})
         return haf, pd.DataFrame(rows)
 
     def births(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -554,7 +560,8 @@ def arrow_table(frame: pd.DataFrame, columns: list[tuple[str, str]]):
 # ---------------------------------------------------------------- STATS.md: questions with answers, in Python and R
 
 HEADLINE = [("visits", "ED visits"), ("children", "Children"), ("admitted_pct", "Visits admitted"),
-            ("icu_pct_of_admissions", "Admissions that included the ICU"),
+            ("icu_pct_of_admissions", "Admissions to an ICU"),
+            ("picu_pct_of_admissions", "Admissions to Pediatric Intensive Care"),
             ("median_age_days", "Median age at arrival, days"), ("under_3_months_pct", "Visits under 3 months old"),
             ("premature_pct", "Born premature (of those with a birth row)"),
             ("outside_season_pct", "Visits outside October to March"),

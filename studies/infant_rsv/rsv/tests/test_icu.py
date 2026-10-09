@@ -42,15 +42,16 @@ class FakeConnection:
 
 RESULTS = [
     ([], []),                                                       # a statement with no result set
-    (["TABLE_NAME", "COLUMN_NAME", "DATA_TYPE"], [("HospitalAdmissionFact", "IcuDays_X", "int")]),
+    (["TABLE_NAME", "COLUMN_NAME", "DATA_TYPE"], [("HospitalAdmissionFact", "IcuDays_X", "int")]
+     + [("AdtEventFact", f"Column{i}", "bigint") for i in range(30)]),
     (["COLUMN_NAME", "DATA_TYPE"], [("DepartmentKey", "bigint"), ("DepartmentSpecialty", "nvarchar")]),
-    (["DepartmentSpecialty", "Departments"], [("Pediatric Critical Care Medicine", 812), ("Neonatology", 4)]),
+    (["DepartmentSpecialty", "Departments"], [("Pediatric Intensive Care", 812), ("Neonatology", 4)]),
     (["InfantAdmissions", "NoInpatientAdmissionInstant", "NoDischargeInstant", "NoAdmitDepartment", "NoDischargeDepartment"],
      [(5321, 12, 0, 40, 41)]),
     (["AdmittedToSpecialty", "Admissions"], [(f"Specialty {i}", 500 - i) for i in range(20)]),
     (["DischargedFromSpecialty", "Admissions"], [("Pediatrics", 4000)]),
     (["Administrations", "NoDepartment", "AdmissionsWithMedications", "InfantAdmissions"], [(90000, 120, 5100, 5321)]),
-    (["GivenInSpecialty", "Admissions"], [("Pediatrics", 4800), ("Pediatric Critical Care Medicine", 700)]),
+    (["GivenInSpecialty", "Admissions"], [("Pediatrics", 4800), ("Pediatric Intensive Care", 700)]),
     (["Admissions", "IcuAtAdmission", "IcuAtDischarge", "IcuByMedications", "OnlyByMedications", "IcuAny"],
      [(5321, 300, 200, 700, 350, 760)]),
     (["Stay", "Admissions", "MedianLengthOfStay"], [("ICU", 760, Decimal("6.5")), ("not ICU", 4561, Decimal("2"))]),
@@ -63,14 +64,14 @@ class IcuTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.settings = load_settings(root=self.root)
         self.settings.values["verify"] = {"from": 20250101, "to": 20250131, "visits": 100}
-        self.settings.values["icu_specialties"] = ["Pediatric Critical Care Medicine", "O'Brien Unit"]
+        self.settings.values["icu_specialties"] = ["Pediatric Intensive Care", "O'Brien Unit"]
 
     def test_script_takes_the_month_and_specialties_from_settings(self):
         script = icu.script_for(self.settings)
         self.assertIn("DECLARE @from BIGINT = 20250101;", script)
         self.assertIn("DECLARE @to BIGINT = 20250131;", script)
         self.assertIn("DECLARE @meds_to BIGINT = 20250501;", script)
-        self.assertIn("(N'Pediatric Critical Care Medicine'),\n    (N'O''Brien Unit');", script)
+        self.assertIn("(N'Pediatric Intensive Care'),\n    (N'O''Brien Unit');", script)
         self.assertNotIn("N'Critical Care Medicine'", script)
         self.assertEqual(len(icu.titles(script)), 10)
 
@@ -78,14 +79,19 @@ class IcuTests(unittest.TestCase):
         cursor = FakeCursor(RESULTS)
         path = icu.check_icu(self.settings, FakeConnection(cursor))
         text = path.read_text(encoding="utf-8")
+        flat = " ".join(text.split())                       # the page with its wrapping undone
         self.assertEqual(path.name, "icu-check.txt")
         for line in text.splitlines():
             self.assertLessEqual(len(line), self.settings["page_width"], line)
         for number in range(1, 11):
             self.assertRegex(text, rf"\n{number}\. ")
-        self.assertIn("IcuDays_X", text)
+        self.assertIn("- HospitalAdmissionFact: IcuDays_X int", text)
         self.assertIn("Neonatology <11", text)              # small counts hidden
-        self.assertIn("+10 more", text)                     # 20 names, 10 shown
+        self.assertIn("Specialty 19 481", text)            # every name, none cut
+        self.assertIn("- AdtEventFact: Column0 bigint; Column1 bigint;", flat)
+        for i in range(30):
+            self.assertIn(f"Column{i} bigint", flat)        # every row of table 1
+        self.assertNotIn("more", text)
         self.assertIn("- ICU | 760 | 6.5", text)
         self.assertIn("- not ICU | 4,561 | 2.0", text)     # a median is never hidden as a count
         self.assertIn("InfantAdmissions=5,321", text)       # one row of totals, as pairs
