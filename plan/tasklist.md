@@ -485,6 +485,34 @@ Built with pandas 2.2.3 and pyarrow 22 (both on the VM), and tested on the Mac a
 **🟧 Your response:** ![](images/paste-1.png)![](images/paste-2.png)
 :::
 
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: built (9 Oct), and what is left to you**
+
+Decided as D209–D213. Built and pushed: the `rsv` package (`studies/infant_rsv/rsv/`), its bundle `dist/rsv_bundle.py`, the follow-up intake `YAMLs/temp/Infant_RSV_Followup_intake.yaml`, and the viewer opening at three columns and 16 point. All nine suites pass.
+
+**The first pull alone cannot answer the question yet.** RSVPatients, EDVitals, EDLabTestComponents and IndexDiagnosis came back with 0 rows from Cosmos (`contents.md`, above). Without RSVPatients there is no race, ethnicity, SVI or age; financial class, admission and the inpatient vitals are there. The four are the tables in no named group, and the pull ran on 2 October, before D190. A Known Bug in the roadmap now records this. The pull's manifest entries for those four runs would say why.
+
+**On the VM, in order:**
+
+1.  Copy `rsv_bundle.py` beside `scope.py`, then run `python rsv_bundle.py`, then `python rsv test`.
+2.  Run `python rsv build`, then send the build page (`runs\Infant_RSV\analysis\pages\build.txt`). Its source list shows which tables were empty. Its value lists are what `settings.yaml`'s maps (race, ethnicity, financial class) and its ICU specialties are chosen from.
+3.  Run `python rsv all --sp` to see every page work end to end on SneakPeek. Each of those pages is stamped as SneakPeek, and they go to `analysis_sneakpeek\`.
+4.  Run `python rsv keys`. It writes `rsv_visit_keys.parquet` beside `scope.py`, the follow-up pull's PK. Then carry the follow-up blueprint over and run the pull.
+5.  Once the follow-up is packaged, run `python rsv all` again: its tables are read in place of the first pull's.
+
+**For you to decide:**
+
+- **Small counts.** Pages hide counts under 11 by default (`min_cell`). Does your data agreement ask for that, another number, or nothing?
+- **MedicationDim.** Screenshot its Cosmos dictionary page, and I'll add it and the names to EDMeds. Until then IV fluids stay empty.
+- **Neonatology.** Should a NICU stay count as ICU?
+- **The empty tables.** Can you send their manifest entries (Status tab, or `pullmanifest.yaml`)?
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
 **Suggested order: Infant RSV**
 
 1.  **The question behind the sections**: it decides what a page shows, and so most of the code.
