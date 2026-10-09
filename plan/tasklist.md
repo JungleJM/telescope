@@ -590,7 +590,13 @@ The made-up children behave plausibly: younger, more premature and (slightly) hi
 
 **What Cosmos showed:**
 
-- **There is no "Pediatric Critical Care Medicine" specialty.** It was my guess. The real names include Pediatric Intensive Care (307 departments, 1,797 infant admissions in the month), Critical Care Medicine, Cardiac Intensive Care, Medical Critical Care, Surgical Cardiothoracic Critical Care and Neonatology. Neonatology took 61,676 admissions, which must include newborn nurseries.
+- **Many specialties are ICUs, and pediatric ones have several names.** The first, cut-off page hid that "Pediatric Critical Care Medicine" exists (111 departments, 244 infant admissions); the full list (second run, 9 Oct) shows it. Infant admissions by admitted-to specialty, December 2024:
+    - Pediatric Intensive Care 1,797; Critical Care Medicine 1,675; Pediatric Critical Care Medicine 244; Pediatric Medical Critical Care 142; Neonatal Critical Care (Level II/III) 59;
+    - Pediatric Cardiothoracic Critical Care, Surgical Cardiothoracic Critical Care 725, Medical-Surgical Critical Care, Neurosurgical Critical Care 155, and more;
+    - Neonatology 61,676 and Well Baby Nursery (Level I) 1,049. Neonatology mixes NICUs with nurseries; the nursery levels are named separately in places.
+- **Cosmos has an ICU stay registry: `IcuStayRegistryDataMart`.** It has `EncounterKey`, `DepartmentKey`, `IcuStayStartInstant`, `IcuStayEndInstant`, `IcuLengthOfStay` and `AgeAtIcuStayStart`. That is ICU stays as Cosmos defines them, so the specialty list need not be guessed at all.
+- **`AdtEventFact`'s full columns** include `HospitalAdmissionKey`, `DepartmentKey`, `LevelOfCare`, `LevelOfCareChanged`, `EventType`, `PatientClass`, `TransferInEventKey`, `TransferOutEventKey` and `EffectiveInstantUTC`: every move within a stay, with its level of care.
+- With Pediatric Intensive Care and Critical Care Medicine, 3,472 infant admissions (2.0%) count as ICU, with a median stay of 4.0 days against 2.0.
 - **An admission's admitted-to and discharged-from departments were nearly identical** (Neonatology 61,676 and 61,673). So a move into the ICU mid-stay shows in neither.
 - **Medications rarely say where they were given:** 6,743,883 of 7,755,458 doses (87%) have no department. When a dose does have one, it added no ICU admission the other two sources hadn't already found ("OnlyByMedications" was 0).
 - **`AdtEventFact` exists**, with a `DepartmentKey`, an `EncounterKey` and `EffectiveInstantUTC`. Admission, discharge and transfer events are what would show each unit a child passed through. Its name ending in UTC suggests the other Instants are local; `rsv verify`'s `same_clock` check will say.
