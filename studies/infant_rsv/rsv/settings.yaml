@@ -2,6 +2,10 @@
 #
 # Every definition the analysis uses is here. Change a value, then run
 # `python rsv build` again: the parquets and every page follow it.
+#
+# `# unverified (check)`: a value assumed of Cosmos and not yet seen there;
+# `python rsv verify` runs the named check. Once it passes, the comment says so.
+# `# a choice`: a definition picked for the study, not a fact about the data.
 # Paths are relative to the folder that holds `rsv`.
 
 # Where the pulls are.
@@ -31,17 +35,17 @@ page_width: 48        # characters a line may take
 min_cell: 11          # counts from 1 to min_cell - 1 print as <11; 0 prints every count
 
 # A visit with no departure time: its ED stay ends this many hours after arrival.
-no_departure_hours: 6
+no_departure_hours: 6   # a choice
 
 # Vitals. A reading outside its range is dropped and counted.
-temperature_fahrenheit_above: 45   # a temperature above this is read as °F and converted
-plausible:
+temperature_fahrenheit_above: 45   # a temperature above this is read as °F; unverified (temperature_units)
+plausible:              # a choice; the units are unverified (spo2_scale, rr_range)
   rr: [5, 150]
   spo2: [40, 100]
   temp_c: [30, 43]
 
 # Age at arrival, in days: each band runs from its number up to the next.
-age_bands:
+age_bands:              # a choice
   0-28d: 0
   1-2m: 29
   3-5m: 91
@@ -50,22 +54,22 @@ age_bands:
 age_max_days: 731
 
 # Gestational age, in completed weeks.
-ga_bands:
+ga_bands:               # a choice; GA in days is unverified (gestational_age)
   <28w: 0
   28-31w: 28
   32-36w: 32
   ">=37w": 37
 
 # RSV seasons run from this month to the month before it, a year later.
-season_start_month: 7
-eras:
+season_start_month: 7   # a choice
+eras:                   # a choice
   - {name: pre-COVID, from: 2018-19, to: 2019-20}
   - {name: COVID, from: 2020-21, to: 2020-21}
   - {name: post-COVID, from: 2021-22, to: 2022-23}
   - {name: nirsevimab, from: 2023-24, to: 2099-00}
 
 # Diagnoses: a visit's group is the first here whose code it has.
-dx_groups:
+dx_groups:              # unverified (dx_code_format, rsv_codes)
   - {name: bronchiolitis, codes: [J21.0]}
   - {name: pneumonia, codes: [J12.1]}
   - {name: bronchitis, codes: [J20.5]}
@@ -73,27 +77,27 @@ dx_groups:
 
 # Groupings. A value not mapped keeps its own name; one in `unknown`, or one
 # beginning with `*` (Cosmos's *Unspecified, *Not Applicable), is Unknown.
-unknown: ["", "unknown", "patient declined", "patient refused", "declined", "not reported"]
+unknown: ["", "unknown", "patient declined", "patient refused", "declined", "not reported"]   # unverified (unknown_list, star_values)
 race_map: {}
 ethnicity_map: {}
 financial_class_map: {}
-svi_column: SviOverallPctlRankByZip2020_X
+svi_column: SviOverallPctlRankByZip2020_X   # its scale is unverified (svi_scale)
 
 # VBG: a lab in the ED stay whose LOINC code is listed, or whose name matches a pattern.
 # Check the codes against the build page's list before relying on them.
-vbg_loinc: [2746-4, 2021-4]
-vbg_name_patterns: ["\\bvbg\\b", "venous.*\\b(ph|pco2)\\b", "\\b(ph|pco2)\\b.*venous"]
+vbg_loinc: [2746-4, 2021-4]   # unverified (vbg_codes); 2746-4 never seen on the first build
+vbg_name_patterns: ["\\bvbg\\b", "venous.*\\b(ph|pco2)\\b", "\\b(ph|pco2)\\b.*venous"]   # unverified (vbg_codes)
 
 # IV fluids: an ED administration by one of these routes, of a medication whose
 # name, generic name or simple generic name matches. Without medication names,
 # IV fluids stay empty. The build page lists the ED's IV medications.
-iv_routes: ["^iv\\b", "intravenous"]
-iv_fluid_patterns: ["sodium chloride 0\\.9", "normal saline", "lactated ringer", "plasma-?lyte", "dextrose.*sodium chloride"]
-iv_given_actions: []   # e.g. [Given, New Bag]; empty takes every administration
+iv_routes: ["^iv\\b", "intravenous"]   # unverified (routes)
+iv_fluid_patterns: ["sodium chloride 0\\.9", "normal saline", "lactated ringer", "plasma-?lyte", "dextrose.*sodium chloride"]   # unverified (iv_fluid_names)
+iv_given_actions: []   # empty takes every administration; which actions mean given is unverified (actions)
 
 # ICU: an admission with any of these department specialties (case ignored).
 # The build page lists the specialties seen. Neonatology is left out until decided.
-icu_specialties: [Critical Care Medicine, Pediatric Critical Care Medicine]
+icu_specialties: [Critical Care Medicine, Pediatric Critical Care Medicine]   # unverified (icu_specialties; sql/check_icu.sql)
 
 # Named sections: a filter on visits.parquet, written as pandas' DataFrame.query.
 sections:
@@ -111,6 +115,12 @@ groupings: [age_band, ga_band, season, era, sex, race, ethnicity, svi_quartile, 
 admission_factors: [race, ethnicity, svi_quartile, financial_class]
 adjust_for: [age_band, season]
 model_min_level: 50    # levels with fewer visits are pooled as Other in the models
+
+# `python rsv verify`: the sample its checks run on, against Cosmos.
+verify:
+  from: 20241201      # infants' ED arrivals from this day
+  to: 20241231        # to this day
+  visits: 20000       # at most this many of them
 
 # `python rsv all`: the pages of a first run.
 first_run_compare: [age_band, ga_band, era, admitted]

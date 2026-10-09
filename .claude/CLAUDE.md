@@ -41,6 +41,19 @@ The user works in this cycle; follow it for any change bigger than a small fix.
 - Standard library only, unless the package appears in `reference/DSVM Plugins.yaml` (the VM's installed list). The VM runs Python 3.13.9.
 - A test that needs a package this machine lacks: look it up in `reference/DSVM Plugins.yaml` and install exactly that version, with no need to ask: `python3.13 -m pip install --user <package>==<version>` (an R package at its listed version the same way). Not listed means the VM does not have it: do not install it, and do not depend on it.
 - Nothing here can reach a database. Database code is tested against fakes, and the user runs it on the VM and reports back, often with screenshots.
+- **No assumptions about what a column holds** (the user, 9 October 2026; D216). This covers values, codes, units, scales, placeholders, how tables link, and which rows a filter keeps. Use only what a query on the VM has shown. That evidence can be:
+  - a build page;
+  - `python rsv verify`'s `assumption-verify.txt`;
+  - a check script such as `rsv/sql/check_icu.sql`;
+  - a screenshot of a result;
+  - the Cosmos dictionary page, for what a column is (its name and type), never for what it holds.
+
+  When something is not yet verified:
+  - do not guess a value or put one in code, settings, a pull or synthetic data;
+  - write the query that would verify it, add it as a check (in `rsv verify` for the RSV study), and tell the user it is unverified;
+  - mark the setting `# unverified` until the check has passed, and note which check verified it once it has.
+
+  A choice (a plausible range, a season's months, a band) is not an assumption about the data, but say it is a choice.
 
 ## Working Conventions
 

@@ -20,6 +20,8 @@ USAGE = """python rsv <command>
   all                   build, then a first run of every page
   sections              the sections and groupings in settings.yaml
   keys                  write the follow-up pull's PK file
+  verify                check, against Cosmos, what each column
+                        is assumed to hold (only reads)
   test                  run the tests
 
   --sp                  read SneakPeek only (to prove the pull works)
@@ -133,6 +135,11 @@ def main(argv: list[str] | None = None) -> int:
             cmd_sections(settings)
         elif command == "keys":
             cmd_keys(settings)
+        elif command == "verify":
+            from .verify import verify
+            summary, detail = verify(settings)
+            print(summary.read_text(encoding="utf-8"))
+            print(f"Pages written to {summary} and {detail}")
         else:
             print(f"No command `{command}`.\n")
             print(USAGE)
