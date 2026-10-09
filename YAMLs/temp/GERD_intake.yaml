@@ -1,0 +1,44 @@
+cosmos_vars:
+  project_db: PROJECTD93A5E7
+  cosmos_db: Cosmos
+run_vars:
+  min_date_key: 20150101
+  max_date_key: 20260601
+test_options:
+  smallset: false
+  stop_at_for_pk_table: 10
+  random_pk_sample: false
+project_vars:
+  project_folder: GERD
+vars: {}
+upload_cohorts: []
+# GI_Conditions' GERD, whose PK (over 19 GB) filled the log in one insert.
+# Part splits the PK by patient into five sessions, each landing about a fifth.
+# PatientDurableKey % 5 keeps every patient whole, so each patient's first
+# GERD diagnosis is the same as in one PK. The five parquets read as one table.
+multipliers:
+  - name: Disease
+    stage: during_build
+    levels:
+      - strat: GERD
+        vars:
+          ICD_Value: ["530.81", "530.11", "K21%"]
+  - name: Part
+    stage: split_after_build
+    applies_to: PKTable
+    levels:
+      - strat: p0of5
+        where: "dxf.PatientDurableKey % 5 = 0"
+      - strat: p1of5
+        where: "dxf.PatientDurableKey % 5 = 1"
+      - strat: p2of5
+        where: "dxf.PatientDurableKey % 5 = 2"
+      - strat: p3of5
+        where: "dxf.PatientDurableKey % 5 = 3"
+      - strat: p4of5
+        where: "dxf.PatientDurableKey % 5 = 4"
+batching: []
+cohorts:
+  - recipe: PatientWithDx
+    name: PtsWithDx
+    dest_table: PtsWithDx
