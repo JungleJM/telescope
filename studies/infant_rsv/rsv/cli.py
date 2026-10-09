@@ -22,6 +22,8 @@ USAGE = """python rsv <command>
   keys                  write the follow-up pull's PK file
   verify                check, against Cosmos, what each column
                         is assumed to hold (only reads)
+  icu                   run sql/check_icu.sql against Cosmos;
+                        its results on one page (only reads)
   test                  run the tests
 
   --sp                  read SneakPeek only (to prove the pull works)
@@ -135,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
             cmd_sections(settings)
         elif command == "keys":
             cmd_keys(settings)
+        elif command == "icu":
+            from .icu import check_icu
+            path = check_icu(settings)
+            show(path, path.read_text(encoding="utf-8"))
         elif command == "verify":
             from .verify import verify
             summary, detail = verify(settings)
