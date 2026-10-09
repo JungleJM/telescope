@@ -52,7 +52,7 @@ source("R/examples.R")
 - **A visit and its encounter.** `EDVisits` holds one row per ED visit. Its `EncounterKey` is the visit's encounter, which `EDVitals`, `EDLabs`, `EDMeds` and `EDDiagnoses` share.
 - **The patient.** `PatientDurableKey` is the patient. In `Patients` it is called `DurableKey`.
 - **The admission.** An admitted visit has a `HospitalAdmissionKey` above 0; one not admitted has -1. `HospitalAdmissionFact` holds the admission. Its `EncounterKey` is the admission's encounter: `InpatientVitals` calls it `InpatientEncounterKey`, and `InpatientLabs` calls it `EncounterKey`.
-- **The ICU.** `StayDepartments` gives the department specialties of each admission. `HospitalAdmissionFact` has `AdmitSpecialty` and `DischargeSpecialty`. A stay in Pediatric Critical Care Medicine is an ICU stay.
+- **The ICU.** `StayDepartments` gives the department specialties of each admission, and `HospitalAdmissionFact` has `AdmitSpecialty` and `DischargeSpecialty`. In this copy, a stay in Pediatric Critical Care Medicine is an ICU stay. Whether Cosmos names its ICUs that way, and whether these columns catch every ICU stay, is still being checked on the real data.
 - **The birth.** `Births.BabyPatientDurableKey` is the patient, and `MotherPatientDurableKey` and `PregnancyKey` lead to `MotherPatientInfo` and `PregnancyFact`.
 - **Temperatures** are mostly in °F, as in Cosmos. Some readings are implausible, also as in Cosmos.
 

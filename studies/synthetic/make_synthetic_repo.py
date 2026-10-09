@@ -735,7 +735,7 @@ def build(out: Path = DEFAULT_OUT, patients: int = 20000, seed: int = 7) -> dict
     (out / "README.md").write_text(render_template(
         "README.md", visits=f"{rows['EDVisits']:,}", patients=f"{patients:,}",
         headline=headline(questions, answers), questions=len(questions)), encoding="utf-8")
-    shutil.copytree(RSV_SOURCE, out / "rsv", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(RSV_SOURCE, out / "rsv", ignore=shutil.ignore_patterns("__pycache__", "sql"))
     settings = (out / "rsv" / "settings.yaml").read_text(encoding="utf-8")
     for old, new in (("pull_folder: runs/Infant_RSV ", "pull_folder: data "),
                      ("followup_folder: runs/Infant_RSV_Followup", "followup_folder: data/followup"),

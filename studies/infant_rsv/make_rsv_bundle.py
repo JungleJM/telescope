@@ -149,7 +149,7 @@ class BundleError(Exception):
 
 def source_files(root: Path = SOURCE) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts
-                  and p.suffix in (".py", ".yaml"))
+                  and p.suffix in (".py", ".yaml", ".sql"))
 
 
 def render(root: Path = SOURCE) -> str:
