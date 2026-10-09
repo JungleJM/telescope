@@ -11,6 +11,7 @@
 # Where the pulls are.
 pull_folder: runs/Infant_RSV                # the first pull
 followup_folder: runs/Infant_RSV_Followup   # the follow-up pull, once it is packaged
+icu_folder: runs/Infant_RSV_ICU             # the ICU Stay Registry pull, once it is packaged
 analysis_folder: runs/Infant_RSV/analysis   # what `build` writes, and the pages
 keys_file: rsv_visit_keys.parquet           # what `keys` writes: the follow-up pull's PK
 
@@ -29,6 +30,7 @@ sources:
   stay_labs: [pull:InpatientLabs, pull:InpatientLabTestComponents]
   ed_meds: [followup:EDMeds, pull:EDMeds]
   diagnoses: [followup:EDDiagnoses, pull:EDDiagnoses, pull:IndexDiagnosis]
+  icu_stays: [icu:IcuStays]
 
 # Pages.
 page_width: 48        # characters a line may take
@@ -103,6 +105,11 @@ iv_given_actions: []   # empty takes every administration; which actions mean gi
 # Cardiac Intensive Care, Medical Critical Care, Surgical Cardiothoracic
 # Critical Care, Neonatology (which also holds newborn nurseries).
 icu_specialties: [Pediatric Intensive Care, Critical Care Medicine]
+
+# Where `icu` comes from (a choice): `registry`, Cosmos's ICU Stay Registry, when
+# its pull is there, else the specialties above; or `specialty`, always them.
+# Either way the build keeps both: icu_registry and icu_by_specialty.
+icu_source: registry
 
 # Named sections: a filter on visits.parquet, written as pandas' DataFrame.query.
 sections:

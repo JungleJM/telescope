@@ -1,4 +1,4 @@
-"""`python rsv icu`: run sql/check_icu.sql against Cosmos and write its ten results, every row, to a page.
+"""`python rsv icu`: run sql/check_icu.sql against Cosmos and write its results, every row, to a page.
 
 The month is settings `verify`'s, and the specialties tested as ICU are
 `icu_specialties`, so the page tests what the analysis uses. It only reads.

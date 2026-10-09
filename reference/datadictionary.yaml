@@ -4191,6 +4191,78 @@ DataDictionary:
     standard_where:
       - "_IsDeleted = 0"
 
+  # Checked against its Cosmos dictionary page (2026-10-09; screenshots in
+  # reference/DDict image refs/IcuStayRegistryDataMart/): Overview, Columns and
+  # ER diagram. Every column has the database icon.
+  # The page says Partitioned, but no column carries the Partition key badge,
+  # so it has no date window.
+  # Nullability not checked: no row is expanded in the screenshots.
+  IcuStayRegistryDataMart:
+    description: >
+      The ICU Stay Registry data mart stores information related to ICU stays. Each
+      row represents an ICU stay: when it began and ended, its length, the department
+      the patient was in when it began, and the hospital admission it belongs to.
+    granularity: >
+      An ICU stay
+    columns:
+      _IsDeleted:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is deleted
+      _IsInferred:
+        type: tinyint (flag)
+        nullable: false
+        description: >
+          1/0 column that indicates whether the record is inferred
+      AgeAtIcuStayStart:
+        type: numeric(18,2)
+        nullable: true
+        description: >
+          Patient's age, in years, at the start of the ICU stay
+      DepartmentKey:
+        type: bigint (foreign key to DepartmentDim)
+        nullable: true
+        description: >
+          Department the patient was in when the ICU stay began
+      EncounterKey:
+        type: bigint (foreign key to EncounterFact)
+        nullable: true
+        description: >
+          Hospital admission associated with the ICU stay
+      EncounterSourceComboKey_X:
+        type: bigint (foreign key to EncounterSourceBridge)
+        nullable: true
+        description: >
+          All data sources associated with the ICU stay
+      IcuLengthOfStay:
+        type: numeric(18,2)
+        nullable: true
+        description: >
+          Length of stay, in days, for the patient's ICU stay
+      IcuStayEndInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Date and time the patient exited the ICU ending their ICU stay
+      IcuStayRegistryKey:
+        type: bigint (primary key)
+        nullable: false
+        description: >
+          Surrogate key used to uniquely identify the record
+      IcuStayStartInstant:
+        type: datetime
+        nullable: true
+        description: >
+          Date and time the patient entered the ICU beginning their ICU stay
+      PatientDurableKey:
+        type: bigint (foreign key to PatientDim.DurableKey)
+        nullable: true
+        description: >
+          Patient associated with the ICU stay
+    standard_where:
+      - "_IsDeleted = 0"
+
 # ---------------------------------------------------------------------------
 # Still to check (as of 2026-10-09)
 #
@@ -4205,6 +4277,9 @@ DataDictionary:
 #     MedicationDim, MedicationSetDim, MedicationCodeDim.
 #   - MedicationOrderComponentFact: Columns and ER diagram only; its Overview
 #     (description, granularity) not screenshotted.
+#   - IcuStayRegistryDataMart: Partitioned, with no partition key column, so no
+#     date window; its EncounterKey's match to HospitalAdmissionFact.EncounterKey
+#     is unverified (`rsv icu` checks it).
 #   - MedicationDispenseFact: the page says Partitioned, but no column carries
 #     the Partition key badge (looked for again 2026-09-30), so it has no date
 #     window. Its Indexes tab may say which column partitions it.

@@ -55,6 +55,11 @@ RESULTS = [
     (["Admissions", "IcuAtAdmission", "IcuAtDischarge", "IcuByMedications", "OnlyByMedications", "IcuAny"],
      [(5321, 300, 200, 700, 350, 760)]),
     (["Stay", "Admissions", "MedianLengthOfStay"], [("ICU", 760, Decimal("6.5")), ("not ICU", 4561, Decimal("2"))]),
+    (["InfantAdmissions", "AdmissionsWithRegistryStay", "RegistryStays", "StaysOnAdmissionEncounter", "StaysWithNoLength"],
+     [(5321, 690, 720, 715, 0)]),
+    (["RegistryStaySpecialty", "Admissions"], [("Pediatric Intensive Care", 400), ("Pediatric Critical Care Medicine", 120)]),
+    (["Registry", "SpecialtyRule", "Admissions"], [("no registry stay", "rule ICU", 150), ("no registry stay", "rule not ICU", 4481),
+                                                  ("registry ICU", "rule ICU", 610), ("registry ICU", "rule not ICU", 80)]),
 ]
 
 
@@ -73,7 +78,7 @@ class IcuTests(unittest.TestCase):
         self.assertIn("DECLARE @meds_to BIGINT = 20250501;", script)
         self.assertIn("(N'Pediatric Intensive Care'),\n    (N'O''Brien Unit');", script)
         self.assertNotIn("N'Critical Care Medicine'", script)
-        self.assertEqual(len(icu.titles(script)), 10)
+        self.assertEqual(len(icu.titles(script)), 13)
 
     def test_page_fits_and_numbers_every_result(self):
         cursor = FakeCursor(RESULTS)
@@ -83,7 +88,9 @@ class IcuTests(unittest.TestCase):
         self.assertEqual(path.name, "icu-check.txt")
         for line in text.splitlines():
             self.assertLessEqual(len(line), self.settings["page_width"], line)
-        for number in range(1, 11):
+        self.assertIn("AdmissionsWithRegistryStay=690", flat)
+        self.assertIn("- registry ICU: rule ICU 610; rule not ICU 80", flat)
+        for number in range(1, 14):
             self.assertRegex(text, rf"\n{number}\. ")
         self.assertIn("- HospitalAdmissionFact: IcuDays_X int", text)
         self.assertIn("Neonatology <11", text)              # small counts hidden

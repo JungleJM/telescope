@@ -34,6 +34,8 @@ WANT: dict[str, list[str]] = {
                 "MedicationGenericName", "MedicationSimpleGenericName", "MedicationPharmaceuticalClass",
                 "MedicationTherapeuticClass", "Dose", "DoseUnit", "Rate"],
     "diagnoses": ["EncounterKey", "BillingCodeValue"],
+    "icu_stays": ["IcuStayRegistryKey", "HospitalAdmissionKey", "IcuSpecialty", "IcuStayStartInstant",
+                  "IcuStayEndInstant", "IcuLengthOfStay"],
 }
 WANT["stay_labs"] = WANT["ed_labs"]
 REQUIRED: dict[str, list[str]] = {
@@ -49,6 +51,7 @@ REQUIRED: dict[str, list[str]] = {
     "stay_labs": ["EncounterKey", "CollectionInstant"],
     "ed_meds": ["EncounterKey", "AdministrationInstant"],
     "diagnoses": ["EncounterKey", "BillingCodeValue"],
+    "icu_stays": ["IcuStayRegistryKey", "HospitalAdmissionKey"],
 }
 VITALS = {"RespirationRate": "rr", "SpO2": "spo2", "Temperature": "temp_c"}
 PHASES = ("before", "ED", "stay", "after")
@@ -336,8 +339,28 @@ def build(settings: Settings, write: bool = True) -> Built:
     admissions = read("admissions")
     visits = link_admissions(visits, admissions)
     departments = read("stay_departments")
-    visits["icu"], specialties = icu_flags(visits, admissions, departments, settings["icu_specialties"])
+    visits["icu_by_specialty"], specialties = icu_flags(visits, admissions, departments, settings["icu_specialties"])
     notes["specialties"] = specialties
+    stays = read("icu_stays")
+    visits["icu_registry"] = pd.Series(pd.NA, index=visits.index, dtype="boolean")
+    visits["icu_days"] = np.nan
+    visits["icu_unit"] = pd.Series(pd.NA, index=visits.index, dtype="string")
+    notes["icu_units"] = None
+    if stays is not None:
+        stays = stays.drop_duplicates(["IcuStayRegistryKey", "HospitalAdmissionKey"]).copy()
+        stays["IcuStayStartInstant"] = times(stays.get("IcuStayStartInstant", pd.Series(pd.NaT, index=stays.index)))
+        stays["days"] = pd.to_numeric(stays["IcuLengthOfStay"], errors="coerce") if "IcuLengthOfStay" in stays else np.nan
+        per = stays.sort_values("IcuStayStartInstant").groupby("HospitalAdmissionKey")
+        key = visits["HospitalAdmissionKey"]
+        visits["icu_registry"] = (visits["admitted"] & key.isin(stays["HospitalAdmissionKey"])).astype("boolean")
+        in_icu = visits["icu_registry"].astype(bool)
+        visits["icu_days"] = key.map(per["days"].sum(min_count=1)).where(in_icu)
+        if "IcuSpecialty" in stays:
+            visits["icu_unit"] = key.map(per["IcuSpecialty"].first()).astype("string").where(in_icu)
+            notes["icu_units"] = stays.drop_duplicates(["HospitalAdmissionKey", "IcuSpecialty"])["IcuSpecialty"]
+    use_registry = settings.get("icu_source", "registry") == "registry" and stays is not None
+    visits["icu"] = visits["icu_registry"] if use_registry else visits["icu_by_specialty"]
+    notes["icu_by"] = "ICU Stay Registry" if use_registry else "department specialty"
 
     # Diagnoses on the visit's encounter.
     diagnoses = read("diagnoses")
@@ -461,7 +484,7 @@ def build(settings: Settings, write: bool = True) -> Built:
             "DepartureInstant", "stay_end", "year", "season", "era", "first_visit", "age_days", "age_months",
             "age_band", "birth_date_source", "ga_weeks", "ga_band", "birth_weight_g", "sex", "race", "ethnicity",
             "svi", "svi_quartile", "financial_class", "dx_group", "admitted", "admission_found", "los_days", "icu",
-            "admit_specialty", "discharge_specialty",
+            "admit_specialty", "discharge_specialty", "icu_registry", "icu_by_specialty", "icu_days", "icu_unit",
             "rr_initial", "rr_max_ed", "rr_max_stay", "spo2_min_ed", "spo2_min_stay", "temp_initial",
             "temp_max_ed", "temp_max_stay", "n_vitals_ed", "n_labs_ed", "vbg_ed", "iv_fluids_ed",
             "DischargeDisposition", "EdGenericDispo", "AcuityLevel", "ArrivalMethod", "patient_found"]
@@ -539,6 +562,8 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
     row("admitted", int(v["admitted"].sum()))
     row("admission row found", int(v["admission_found"].sum()))
     row("ICU", int(v["icu"].sum()) if v["icu"].notna().any() else None)
+    row("ICU by registry", int(v["icu_registry"].sum()) if v["icu_registry"].notna().any() else None)
+    row("ICU by specialty", int(v["icu_by_specialty"].sum()) if v["icu_by_specialty"].notna().any() else None)
     row("dx group known", int((v["dx_group"].notna() & (v["dx_group"] != "Unknown")).sum()))
 
     page.heading("Vitals", columns, at)
@@ -554,6 +579,7 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
     for column in ("rr_initial", "rr_max_ed", "rr_max_stay", "spo2_min_ed", "spo2_min_stay", "temp_initial",
                    "temp_max_ed", "temp_max_stay", "vbg_ed", "iv_fluids_ed"):
         row(column, int(v[column].notna().sum()))
+    page.line(fit(f"  ICU from: {notes['icu_by']}", page.width))
     page.line(fit(f"  VBG found by: {notes['vbg_by']}", page.width))
     page.line(fit(f"  IV fluids by: {notes['iv_by']}", page.width))
 
@@ -578,8 +604,10 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
     top_values(page, v["admit_specialty"] if v["admit_specialty"].notna().any() else None, None)
     page.line("discharged from (specialty), every one:")
     top_values(page, v["discharge_specialty"] if v["discharge_specialty"].notna().any() else None, None)
-    page.line("any stay specialty (ICU is from these):")
+    page.line("any stay specialty (the specialty rule's):")
     top_values(page, notes.get("specialties"), None)
+    page.line("ICU registry stays' units, every one:")
+    top_values(page, notes.get("icu_units"), None)
     if len(built.meds):
         meds = built.meds
         if "iv_fluid" in meds and "MedicationName" in meds and meds["MedicationName"].notna().any():

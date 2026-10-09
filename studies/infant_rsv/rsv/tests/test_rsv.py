@@ -339,6 +339,45 @@ class LaterFixes(Fixture):
         self.assertIn("AMPICILLIN IV", text)
 
 
+class IcuRegistry(Fixture):
+    def test_icu_comes_from_the_registry_when_it_is_pulled(self):
+        make_pull(self.root)
+        make_followup(self.root)
+        icu = self.root / "runs" / "Infant_RSV_ICU" / "cosmos_parquets"
+        write(icu, "IcuStays", [{"IcuStayRegistryKey": 1, "HospitalAdmissionKey": 900, "EdVisitKey": 1,
+                                 "IcuSpecialty": "Pediatric Critical Care Medicine",
+                                 "IcuStayStartInstant": T("2023-11-02 01:00"), "IcuStayEndInstant": T("2023-11-03 13:00"),
+                                 "IcuLengthOfStay": 1.5}])
+        settings = self.settings(min_cell=0)
+        built = build(settings)
+        v = built.visits.set_index("EdVisitKey")
+        self.assertTrue(v.loc[1, "icu_registry"])
+        self.assertEqual(v.loc[1, "icu_days"], 1.5)
+        self.assertEqual(v.loc[1, "icu_unit"], "Pediatric Critical Care Medicine")
+        self.assertTrue(v.loc[1, "icu"])
+        self.assertFalse(v.loc[2, "icu"])
+        self.assertEqual(built.notes["icu_by"], "ICU Stay Registry")
+        page = build_page(settings, built, "test").render()
+        self.assertIn("ICU registry stays' units, every one:", page)
+
+    def test_without_the_registry_the_specialty_rule_stands(self):
+        make_pull(self.root)
+        make_followup(self.root)
+        built = build(self.settings())
+        self.assertEqual(built.notes["icu_by"], "department specialty")
+        self.assertTrue(built.visits["icu_registry"].isna().all())
+        self.assertTrue(built.visits.set_index("EdVisitKey").loc[1, "icu"])
+
+    def test_a_registry_stay_the_rule_misses_is_still_icu(self):
+        make_pull(self.root)
+        icu = self.root / "runs" / "Infant_RSV_ICU" / "cosmos_parquets"
+        write(icu, "IcuStays", [{"IcuStayRegistryKey": 1, "HospitalAdmissionKey": 900, "IcuSpecialty": "Pediatric Medical Critical Care",
+                                 "IcuStayStartInstant": T("2023-11-02 01:00"), "IcuLengthOfStay": 2.0}])
+        v = build(self.settings()).visits.set_index("EdVisitKey")
+        self.assertTrue(v.loc[1, "icu"])
+        self.assertTrue(pd.isna(v.loc[1, "icu_by_specialty"]))       # no specialties pulled: the rule cannot say
+
+
 class AdmissionModel(Fixture):
     def test_model_finds_a_real_difference(self):
         rng = np.random.default_rng(7)

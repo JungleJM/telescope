@@ -77,9 +77,9 @@ def candidate_path(settings: Settings, spec: str) -> Path:
     if ":" not in spec:
         raise RsvError(f"Source `{spec}` in {settings.path} must read `pull:Name` or `followup:Name`.")
     which, name = spec.split(":", 1)
-    folder_key = {"pull": "pull_folder", "followup": "followup_folder"}.get(which.strip())
+    folder_key = {"pull": "pull_folder", "followup": "followup_folder", "icu": "icu_folder"}.get(which.strip())
     if folder_key is None:
-        raise RsvError(f"Source `{spec}` in {settings.path}: use `pull:` or `followup:`.")
+        raise RsvError(f"Source `{spec}` in {settings.path}: use `pull:`, `followup:` or `icu:`.")
     name = name.strip()
     if settings.sp:
         return settings.folder(folder_key) / "sneakpeek_parquets" / f"{name}{SP_SUFFIX}.parquet"

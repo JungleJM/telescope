@@ -50,7 +50,7 @@ ORDER BY Departments DESC;
 
 /* The month's admissions of children under 2. */
 DROP TABLE IF EXISTS #adm;
-SELECT haf.HospitalAdmissionKey, haf.EncounterKey, haf.DepartmentKey, haf.DischargeDepartmentKey_X,
+SELECT haf.HospitalAdmissionKey, haf.EncounterKey, haf.PatientDurableKey, haf.DepartmentKey, haf.DischargeDepartmentKey_X,
        haf.InpatientAdmissionInstant, haf.DischargeInstant, haf.LengthOfStayInDays
 INTO #adm
 FROM dbo.HospitalAdmissionFact AS haf
@@ -136,3 +136,41 @@ SELECT DISTINCT
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY LengthOfStayInDays)
            OVER (PARTITION BY CASE WHEN AtAdmission + AtDischarge + ByMedications > 0 THEN 1 ELSE 0 END) AS MedianLengthOfStay
 FROM #flags;
+
+/* The ICU Stay Registry's stays for the same children that began within each admission
+   (a day's leeway before it): matched by patient and time, so the EncounterKey link is tested, not assumed. */
+DROP TABLE IF EXISTS #reg;
+SELECT a.HospitalAdmissionKey, r.IcuStayRegistryKey, r.DepartmentKey, r.IcuLengthOfStay,
+       CASE WHEN r.EncounterKey = a.EncounterKey THEN 1 ELSE 0 END AS SameEncounter
+INTO #reg
+FROM #adm AS a
+INNER JOIN dbo.IcuStayRegistryDataMart AS r
+    ON r.PatientDurableKey = a.PatientDurableKey
+   AND r.IcuStayStartInstant BETWEEN DATEADD(DAY, -1, a.InpatientAdmissionInstant) AND a.DischargeInstant
+WHERE r._IsDeleted = 0;
+
+/* 11. How many admissions have a registry ICU stay, and is the stay on the admission's own EncounterKey? */
+SELECT (SELECT COUNT(*) FROM #adm) AS InfantAdmissions,
+       COUNT(DISTINCT HospitalAdmissionKey) AS AdmissionsWithRegistryStay,
+       COUNT(*) AS RegistryStays,
+       SUM(SameEncounter) AS StaysOnAdmissionEncounter,
+       SUM(CASE WHEN IcuLengthOfStay IS NULL THEN 1 ELSE 0 END) AS StaysWithNoLength
+FROM #reg;
+
+/* 12. The specialty of the department each registry stay began in: admissions with any, every one. */
+SELECT COALESCE(d.DepartmentSpecialty, N'(none)') AS RegistryStaySpecialty,
+       COUNT(DISTINCT r.HospitalAdmissionKey) AS Admissions
+FROM #reg AS r
+LEFT JOIN dbo.DepartmentDim AS d ON d.DepartmentKey = r.DepartmentKey
+GROUP BY COALESCE(d.DepartmentSpecialty, N'(none)')
+ORDER BY Admissions DESC;
+
+/* 13. The registry against the specialty rule (@icu): admissions in each pairing. */
+SELECT CASE WHEN g.HospitalAdmissionKey IS NULL THEN 'no registry stay' ELSE 'registry ICU' END AS Registry,
+       CASE WHEN f.AtAdmission + f.AtDischarge + f.ByMedications > 0 THEN 'rule ICU' ELSE 'rule not ICU' END AS SpecialtyRule,
+       COUNT(*) AS Admissions
+FROM #flags AS f
+LEFT JOIN (SELECT DISTINCT HospitalAdmissionKey FROM #reg) AS g ON g.HospitalAdmissionKey = f.HospitalAdmissionKey
+GROUP BY CASE WHEN g.HospitalAdmissionKey IS NULL THEN 'no registry stay' ELSE 'registry ICU' END,
+         CASE WHEN f.AtAdmission + f.AtDischarge + f.ByMedications > 0 THEN 'rule ICU' ELSE 'rule not ICU' END
+ORDER BY Registry, SpecialtyRule;
