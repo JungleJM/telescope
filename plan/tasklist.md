@@ -485,34 +485,6 @@ Built with pandas 2.2.3 and pyarrow 22 (both on the VM), and tested on the Mac a
 **🟧 Your response:** ![](images/paste-1.png)![](images/paste-2.png)
 :::
 
-::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟦 Claude: built (9 Oct), and what is left to you**
-
-Decided as D209–D213. Built and pushed: the `rsv` package (`studies/infant_rsv/rsv/`), its bundle `dist/rsv_bundle.py`, the follow-up intake `YAMLs/temp/Infant_RSV_Followup_intake.yaml`, and the viewer opening at three columns and 16 point. All nine suites pass.
-
-**The first pull alone cannot answer the question yet.** RSVPatients, EDVitals, EDLabTestComponents and IndexDiagnosis came back with 0 rows from Cosmos (`contents.md`, above). Without RSVPatients there is no race, ethnicity, SVI or age; financial class, admission and the inpatient vitals are there. The four are the tables in no named group, and the pull ran on 2 October, before D190. A Known Bug in the roadmap now records this. The pull's manifest entries for those four runs would say why.
-
-**On the VM, in order:**
-
-1.  Copy `rsv_bundle.py` beside `scope.py`, then run `python rsv_bundle.py`, then `python rsv test`.
-2.  Run `python rsv build`, then send the build page (`runs\Infant_RSV\analysis\pages\build.txt`). Its source list shows which tables were empty. Its value lists are what `settings.yaml`'s maps (race, ethnicity, financial class) and its ICU specialties are chosen from.
-3.  Run `python rsv all --sp` to see every page work end to end on SneakPeek. Each of those pages is stamped as SneakPeek, and they go to `analysis_sneakpeek\`.
-4.  Run `python rsv keys`. It writes `rsv_visit_keys.parquet` beside `scope.py`, the follow-up pull's PK. Then carry the follow-up blueprint over and run the pull.
-5.  Once the follow-up is packaged, run `python rsv all` again: its tables are read in place of the first pull's.
-
-**For you to decide:**
-
-- **Small counts.** Pages hide counts under 11 by default (`min_cell`). Does your data agreement ask for that, another number, or nothing?
-- **MedicationDim.** Screenshot its Cosmos dictionary page, and I'll add it and the names to EDMeds. Until then IV fluids stay empty.
-- **Neonatology.** Should a NICU stay count as ICU?
-- **The empty tables.** Can you send their manifest entries (Status tab, or `pullmanifest.yaml`)?
-:::
-
-::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
-**🟧 Your response:**
-
-:::
-
 **Suggested order: Infant RSV**
 
 1.  **The question behind the sections**: it decides what a page shows, and so most of the code.
@@ -521,6 +493,90 @@ Decided as D209–D213. Built and pushed: the `rsv` package (`studies/infant_rsv
 4.  **Page format and small-cell rule**: needed before any page leaves the VM.
 5.  **Commands and the bundle**: naming only; the defaults are fine if you have no preference.
 6.  **The file names from the VM**: needed before the first build runs on the VM, not before the code is written.
+
+(In the chat, 9 Oct) The first `rsv build` confirmed the four empty tables. Test on SneakPeek for now; re-pull the missing data properly, maybe "redo everything". MedicationDim, MedicationSetDim and MedicationCodeDim screenshotted: into the reference images and the dictionary, which the next bundle carries. Two tests failed on the VM.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the re-pull, the dictionary, and what the build page showed**
+
+**Built (D214), in bundle `ae095e1f…` and RSV bundle `8bef2f7c`.**
+
+- **Both pulls ship; you choose one.**
+    - **Redo everything:** `Infant_RSV_blueprint.yaml`, the same EDVisits PK with every table rebuilt. Births have no date floor, ED medications come with names, admissions carry their departments' specialties, and the lab tables carry their components' names.
+    - **The follow-up:** `Infant_RSV_Followup_blueprint.yaml`, the missing tables only, on the visits you have. It needs `python rsv keys` first.
+
+  Both come from one script, `studies/infant_rsv/make_intakes.py`, so they match. The redo previews with 22 units and no errors, one run per ungrouped table.
+- **The dictionary** has the three medication dimensions, and their screenshots are in `reference/DDict image refs/`. `MedicationEpicId` is SlicerDicer only, so it's left out (D116).
+- **The two test failures** came from paths written with `/`, which Windows doesn't use. They pass now.
+- **From your build page:**
+    - The page called VBG "known" for every visit. That was wrong: only the inpatient labs came through, so it is now left empty until ED labs exist.
+    - `*Not Applicable` and any other value starting with `*` now reads as Unknown.
+    - `2021-4` (venous pCO2) appears 7,039 times and `2746-4` (venous pH) never. Once lab names arrive, the build page will list the venous pH's real code.
+
+**Why the four tables were empty:** before D190, the tables in no group ran together as one run named `run`. Their tables were created but nothing landed in them. On today's runtime each runs alone. If they come back empty again, the Status tab will show which one.
+
+**For you to decide:**
+
+- **Which pull to run.** The redo replaces `runs\Infant_RSV`, so back it up first. The follow-up adds `runs\Infant_RSV_Followup` beside it. Either way `rsv build` reads the new tables first.
+- **Small counts.** Hide counts under 11 (the default), use another number, or show everything?
+- **Neonatology.** Should a NICU stay count as ICU?
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
+## Synthetic Parquet ideas
+
+I'd like to make a separate collaborative github repo for my colleagues to make R, Python queries against synthetic versions of teh parquets I'm pulling. I'm giving what I am writing in the email below, so you can tell me how doable this is:
+
+While I’m building this, I’m thinking of giving synthetic Parquet files for you all to explore, in a private Github repo. Until we can pull data from Cosmos, we can practice our queries with this data.  ([I want to emphasize that these are synthetic]{.underline} – I’m planning on having all the event keys start with “007” so that there’s an easy way to see that this is not the true Cosmos data.) I will also include a Contents.MD and DataDictionary.YAML, which has all the different columns for each of these parquets, and all the ‘standard’ tables that exist in cosmos. My hope is that your team can look at this and start experimenting with whatever else you want to look at within this data. Claude actually had some great ideas, which I’ve built into our system already (See the “Claude” section below).
+
+Each section has a name in `settings.yaml`, a filter on `visits.parquet`, for example `under_3_months: age_days < 91`. Candidates:
+
+- age bands (0–28 days, 1–2, 3–5, 6–11 and 12–23 months);
+- prematurity bands;
+- RSV season (July–June) and era: before 2023–24 against the nirsevimab/maternal-vaccine seasons, with 2020–21 marked as the COVID off-season;
+- sex; race and ethnicity; SVI quartile; financial class;
+- admitted against discharged;
+- bronchiolitis (J21.0) against pneumonia (J12.1).
+
+What a report shows depends on the question. For each section, it can give each metric's n, median (IQR) and % missing, and n (%) for yes/no ones. **Compare** puts sections side by side with a test (Mann–Whitney or Kruskal–Wallis, chi-square), using scipy, which the VM has. If the question is "do these ED findings predict admission?", a logistic regression (statsmodels) belongs on the page too.
+
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: synthetic parquets — doable, and built (D215)**
+
+**How hard:** not very, because nothing real is needed. The Infant_RSV blueprint already gives every table, column and SQL type. The generator invents the values and writes each parquet with the types the real Artifacts writes. Code that runs on these files runs on the real ones.
+
+**Built:** `python3 studies/synthetic/make_synthetic_repo.py` writes the whole repository to `dist/synthetic_rsv_repo/`: 5,000 visits, 13 tables, 5.2 MB (`--visits 20000` for more). It holds:
+
+- **`README.md`.** It says the data is synthetic and explains the 7007 keys. It also has quick starts in Python and R, how the tables link, the analysis, and ideas to try.
+- **`Contents.md`.** Each table's grain, rows, links, columns and SQL types, and how each type reads in a parquet.
+- **`DataDictionary.yaml`.** Our dictionary, without its internal comments.
+- **`data/cosmos_parquets/*.parquet`.** The redo's 13 tables.
+- **`python/` and `R/`.** Loaders and worked examples: admission by race, the lowest ED SpO2, °F against °C, ICU, IV fluids, and a first logistic regression in R.
+- **`rsv/`.** The real analysis, set to read `data/`. `python rsv all` runs there as on the VM, with small counts shown.
+
+The made-up children behave plausibly: younger, more premature and (slightly) higher-SVI children are sicker, so they have lower SpO2, are admitted more often (18.6% overall) and more often go to the ICU (about 1 in 5 admissions). The README says this pattern was put there by the generator. The other columns are filled with plausible but meaningless values.
+
+**Three things in the email to change:**
+
+- **"007":** a BIGINT can't start with 0, so the keys start **7007** (`7007 TT NNNNNNN`, two digits per kind of key). Keeping "007" would mean storing keys as text, and then queries wouldn't carry over to the real files.
+- **"All the standard tables in Cosmos":** the dictionary has the 30 tables we have checked, not all of Cosmos. Perhaps say "the Cosmos tables these come from, and the others we have documented".
+- **The ideas:** the README's analysis section covers them, so the email can just point there.
+
+**For you to decide:**
+
+- **The repository.** I can `git init` the folder and make the first commit. Creating the private GitHub repository and adding colleagues has to be done under your account.
+- **Size.** 5,000 visits is small enough to clone quickly. Do you want more?
+- **Regenerating.** Should the generator rerun whenever the blueprint changes, so the copy keeps the real schema?
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
 
 ## Settled
 
