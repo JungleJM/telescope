@@ -35,6 +35,9 @@ PAGE_PRESETS = {
     "PDF portrait": (1700, 2200),
 }
 
+DEFAULT_COLUMNS = 3
+MIN_FONT_SIZE = 16
+
 MONO_FONT_CANDIDATES = [
     "C:/Windows/Fonts/consola.ttf",
     "C:/Windows/Fonts/consolab.ttf",
@@ -306,8 +309,8 @@ class TranscriptionViewer(tk.Tk):
         self.page_size_var = tk.StringVar(value="Window")
         self.section_var = tk.StringVar(value="empty")
         self.page_var = tk.StringVar(value="1")
-        self.columns_var = tk.IntVar(value=2)
-        self.font_size_var = tk.IntVar(value=30)
+        self.columns_var = tk.IntVar(value=DEFAULT_COLUMNS)
+        self.font_size_var = tk.IntVar(value=MIN_FONT_SIZE)
         self.spacing_var = tk.IntVar(value=6)
         self.margin_var = tk.IntVar(value=64)
         self.line_numbers_var = tk.BooleanVar(value=True)
@@ -355,7 +358,7 @@ class TranscriptionViewer(tk.Tk):
         size_combo.bind("<<ComboboxSelected>>", lambda _event: self.rebuild(reset_page=False))
 
         self._spin(toolbar, "Cols", self.columns_var, 1, 3)
-        self._spin(toolbar, "Font", self.font_size_var, 16, 60)
+        self._spin(toolbar, "Font", self.font_size_var, MIN_FONT_SIZE, 60)
         self._spin(toolbar, "Gap", self.spacing_var, 0, 20)
         self._spin(toolbar, "Margin", self.margin_var, 20, 180)
         ttk.Checkbutton(toolbar, text="#", variable=self.line_numbers_var, command=self.rebuild).pack(side=tk.LEFT)
@@ -395,7 +398,7 @@ class TranscriptionViewer(tk.Tk):
             width=width,
             height=height,
             columns=max(1, min(3, self.columns_var.get())),
-            font_size=max(8, self.font_size_var.get()),
+            font_size=max(MIN_FONT_SIZE, self.font_size_var.get()),
             line_spacing=max(0, self.spacing_var.get()),
             margin=max(8, self.margin_var.get()),
             line_numbers=self.line_numbers_var.get(),
