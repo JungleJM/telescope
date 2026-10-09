@@ -81,6 +81,37 @@ With it:
 
 Open: whether packaging by chunk replaces D177's by group; a table another in its group reads is emptied only once every table of that chunk has landed; the run scan must expect emptied tables.
 
+### Splitting Set To Auto (Future)
+
+The user, 9 October 2026: a setting, `auto`, that every pull could use. It finds any table that won't fit the project database's free room and splits that table alone into a few pieces. Each piece is written to parquet, and the parquets are merged at the end. A split the user writes stays theirs; auto handles everything else. Open questions are in the task list (Splitting set to auto).
+
+**Feasible, and simpler than an estimate: measure, don't guess.** Every table is built whole in a Cosmos temp before anything lands in Projects. Its rows are counted there already (the telemetry `COUNT_BIG`), and its bytes can be summed there too (`SUM(DATALENGTH(...))` over the temp, one pass in Cosmos, no Projects room used). So the size isn't estimated: it's known the moment the table is built, before it lands. That is the point to decide, against the room the session measures at its start (`databases.room_and_log`) and again before each landing.
+
+**What auto does with an oversized table: land it in slices, not run it in chunks.**
+
+- **Slices** take one Cosmos build and land it in n pieces, by key (`key % n`, or `OFFSET/FETCH` in key order). Each piece is staged and inserted in its own transaction, written to parquet, checked against its rows, and emptied. Projects then needs room for one piece, in the data file, the log and tempdb's staging copy. Cosmos is read once, so the extra passes chunks cost (D191) don't apply.
+- **Chunks** (today's `chunk:`) rebuild the table in Cosmos per piece, so they cost a full pass each. Auto would use them only when the Cosmos build itself is too large, if Cosmos has such a limit (a question).
+- **n** is the fewest pieces that fit, with a margin: `ceil(bytes / (room × 0.6))`, say. It isn't fixed at 3 to 5, so a table that fits stays whole, which is most of them.
+- **Merging is exact,** because each piece holds other keys. Pieces sliced by patient keep each patient whole, so a patient's first event, or anything else deduplicated per patient, is unchanged. The parts can be one folder that arrow and R read as one table, or one file streamed together (pyarrow writes it a piece at a time, without memory for the whole).
+
+**The PK is the hard case.** Runs pick their patients from the PK's Projects copy (batches, D53, and the resume rule), so today the whole PK must sit in Projects. GERD shows the problem (**A PK landed in slices**, above): one 19 GB `INSERT`. The fix is a **narrow PK copy**: Projects keeps only the PK's key and the columns batching and joins read. For GERD that is about 8 bytes a patient, under a hundred MB, instead of 19 GB. The wide PK lands in slices and is packaged like any table. The Cosmos temp keeps the wide rows for the session's own joins.
+
+**What it needs, in order:**
+
+1.  **Landing in slices** for one table, with n given: the session runner, its manifest record (each slice's rows and status, so a retry redoes one slice), the per-slice parquet, the check of each against its rows, and the merge. This is **A PK landed in slices** generalised, and it works for runs as it does for the PK.
+2.  **Measuring the Cosmos temp** (rows and bytes) before landing, and comparing it with the room at that moment: data file, log, and the Projects server's tempdb for the staging copy.
+3.  **`auto`**: choose n from the measurement; log the choice ("GERDPtsWithDx: 19.4 GB, 9.6 GB free: 3 slices"); record it in the manifest and show it in Status.
+4.  **The narrow PK copy**, so the PK need not fit whole.
+5.  **The size estimate** (stages 1 and 2 above), only to warn before a pull starts and to say how long it will take. Auto doesn't need it to decide.
+
+**Risks and limits:**
+
+- **The log only frees if it can be reused.** In the SIMPLE recovery model a committed slice's log is reused after a checkpoint (Pullmanager can run `CHECKPOINT` between slices). In FULL it waits for a log backup, which Pullmanager cannot take, so slicing would not help the log. Which model the project databases use is a question.
+- **A slice by `OFFSET/FETCH`** sorts the whole temp each time. `key % n` scans it once per slice but never sorts. Either way the temp is read n times, inside Cosmos, which is cheap next to a rebuild.
+- **Room changes while a pull runs** if another pull shares the database (D164 gives each pull its own where it can). Measured before each landing, the choice is current.
+- **A pull's step count becomes known only at run time.** The manifest must allow slices added during Execute, and Status, the run scan and Retry failed must read them.
+- **A single key with huge rows**, one patient's millions of vitals, can't be split by patient. That piece is as large as the patient, which is not a real limit at these sizes.
+
 ### Choosing A Study's Columns (Future)
 
 Every table takes every column of its source today, and columns are removed one at a time in the table builder. Since Cosmos reads by column (design.md, Batching), columns cost time as well as room; the HaT control pull was trimmed by hand for this (12 of 45 encounter columns, 7 of 30 diagnosis columns). The user wants the choice study-specific (5 October 2026), so not a "core" set marked in the dictionary, which would have left out the department and site columns that study needed. How is not decided; the user will come back to it. The candidates: **Keep only these columns** on a table, a list pasted or loaded from the analysis's own code (as `build_group_parquet.py`'s `ENCOUNTER_COLS`), every other column removed but its keys, Validate warning of a listed column not in the table and of a dedup key removed; and later, if studies repeat, **saved column sets** reused by name, as recipes are. The size estimate (above) would show what trimming saves.
