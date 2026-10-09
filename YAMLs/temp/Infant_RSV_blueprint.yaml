@@ -1,13 +1,10 @@
 blueprint:
   from_template: Infant_RSV_intake.yaml
-  recipes_sha256: 6b6704e72e87
-  recipes_used:
-  - IndexDiagnosis
 cosmos_vars:
   project_db: PROJECTD427046
   cosmos_db: Dual
 run_vars:
-  min_date_key: "20190101"
+  min_date_key: '20190101'
   max_date_key: 20260601
 test_options:
   smallset: false
@@ -21,7 +18,7 @@ multipliers: []
 batching:
 - name: chunk
   kind: row_chunk
-  rows_per_batch: 50000
+  rows_per_batch: 200000
   applies_to: PKTable
 cohorts:
 - name: EDVisits
@@ -399,20 +396,20 @@ cohorts:
     from:
     - EdVisitFact as evf
     join:
-    - "INNER JOIN DurationDim AS age ON age.DurationKey = evf.AgeKey"
-    - "INNER JOIN DiagnosisEventFact AS d ON d.EncounterKey = evf.EncounterKey AND\
-      \ d.PatientDurableKey = evf.PatientDurableKey"
-    - "INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = d.DiagnosisKey"
+    - INNER JOIN DurationDim AS age ON age.DurationKey = evf.AgeKey
+    - INNER JOIN DiagnosisEventFact AS d ON d.EncounterKey = evf.EncounterKey AND
+      d.PatientDurableKey = evf.PatientDurableKey
+    - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = d.DiagnosisKey
     where:
-    - "age.Years < 2"
-    - "d._IsDeleted = 0"
-    - "dt._IsDeleted = 0"
-    - "evf.ArrivalDateKey >= 0"
-    - "evf.ArrivalDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "d.EmergencyDepartmentDiagnosis = 1"
-    - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
-    - "{{sql_condition('dt.Value', ICD_Value)}}"
-    - "evf._IsDeleted = 0"
+    - age.Years < 2
+    - d._IsDeleted = 0
+    - dt._IsDeleted = 0
+    - evf.ArrivalDateKey >= 0
+    - evf.ArrivalDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - d.EmergencyDepartmentDiagnosis = 1
+    - dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')
+    - '{{sql_condition(''dt.Value'', ICD_Value)}}'
+    - evf._IsDeleted = 0
   dedup_keys:
   - - EdVisitKey
   dedup_order_by:
@@ -423,6 +420,358 @@ cohorts:
     - B97.4
     - J21.0
     - J20.5
+- name: Patients
+  dest_table: Patients
+  type: fact
+  pull_this_cycle: true
+  description: 'Each visit''s patient: birth date, sex, race, ethnicity, SVI'
+  granularity: One row per patient
+  columns:
+  - source: pd.DurableKey
+    name: DurableKey
+    type: BIGINT
+  - source: pd.BirthDate
+    name: BirthDate
+    type: DATE
+  - source: pd.DeathDate
+    name: DeathDate
+    type: DATE
+  - source: pd.Sex
+    name: Sex
+    type: NVARCHAR(300)
+  - source: pd.SexAssignedAtBirth
+    name: SexAssignedAtBirth
+    type: NVARCHAR(300)
+  - source: pd.FirstRace
+    name: FirstRace
+    type: NVARCHAR(300)
+  - source: pd.SecondRace
+    name: SecondRace
+    type: NVARCHAR(300)
+  - source: pd.MultiRacial
+    name: MultiRacial
+    type: TINYINT
+  - source: pd.Ethnicity
+    name: Ethnicity
+    type: NVARCHAR(300)
+  - source: pd.PreferredLanguage
+    name: PreferredLanguage
+    type: NVARCHAR(300)
+  - source: pd.StateOrProvinceAbbreviation
+    name: StateOrProvinceAbbreviation
+    type: NVARCHAR(300)
+  - source: pd.PrimaryRUCA_X
+    name: PrimaryRUCA_X
+    type: NVARCHAR(50)
+  - source: pd.SviOverallPctlRankByZip2020_X
+    name: SviOverallPctlRankByZip2020_X
+    type: NUMERIC(6,4)
+  - source: pd.SviSocioeconomicPctlRankByZip2020_X
+    name: SviSocioeconomicPctlRankByZip2020_X
+    type: NUMERIC(6,4)
+  - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
+    name: SviHouseholdCharacteristicsPctlRankByZip2020_X
+    type: NUMERIC(6,4)
+  - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
+    type: NUMERIC(6,4)
+  - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
+    name: SviHousingTypeTransportationPctlRankByZip2020_X
+    type: NUMERIC(6,4)
+  filter:
+    from:
+    - PatientDim AS pd
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.PatientDurableKey = pd.DurableKey
+    where:
+    - pd.IsValid = 1
+    - pd.IsCurrent = 1
+    - pd.UseInCosmosAnalytics_X = 1
+    - pd._IsDeleted = 0
+  dedup_keys:
+  - - DurableKey
+- name: EDVitals
+  dest_table: EDVitals
+  type: fact
+  pull_this_cycle: true
+  description: Vitals on the visit's encounter, a day either side of the ED stay
+  granularity: One row per vitals reading
+  columns:
+  - source: vf.VitalsKey
+    name: VitalsKey
+    type: BIGINT
+  - source: vf.EncounterKey
+    name: EncounterKey
+    type: BIGINT
+  - source: vf.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+  - source: vf.TakenInstant
+    name: TakenInstant
+    type: DATETIME2(7)
+  - source: vf.RespirationRate
+    name: RespirationRate
+    type: INT
+  - source: vf.SpO2
+    name: SpO2
+    type: INT
+  - source: vf.Temperature
+    name: Temperature
+    type: NUMERIC(18,2)
+  - source: vf.PulseRate
+    name: PulseRate
+    type: INT
+  - source: vf.Weight
+    name: Weight
+    type: NUMERIC(18,2)
+  filter:
+    from:
+    - VitalsFact AS vf
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.EncounterKey = vf.EncounterKey AND
+      pk.PatientDurableKey = vf.PatientDurableKey
+    where:
+    - vf._IsDeleted = 0
+    - vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - vf.TakenInstant BETWEEN DATEADD(DAY, -1, pk.ArrivalInstant) AND DATEADD(DAY,
+      1, pk.DepartureInstant)
+- name: EDLabs
+  dest_table: EDLabs
+  type: fact
+  pull_this_cycle: true
+  description: Lab components on the visit's encounter, a day either side of the ED
+    stay, with the component's names
+  granularity: One row per lab component result
+  columns:
+  - source: lcrf.LabComponentResultKey
+    name: LabComponentResultKey
+    type: BIGINT
+  - source: lcrf.EncounterKey
+    name: EncounterKey
+    type: BIGINT
+  - source: lcrf.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+  - source: lcrf.LabComponentKey
+    name: LabComponentKey
+    type: BIGINT
+  - source: lcrf.CollectionInstant
+    name: CollectionInstant
+    type: DATETIME2(7)
+  - source: lcrf.NumericValue
+    name: NumericValue
+    type: FLOAT
+  - source: lcrf.Value
+    name: Value
+    type: NVARCHAR(300)
+  - source: lcrf.Unit
+    name: Unit
+    type: NVARCHAR(100)
+  - source: lcrf.Abnormal
+    name: Abnormal
+    type: TINYINT
+  - source: lcrf.Flag
+    name: Flag
+    type: NVARCHAR(300)
+  - source: lcd.LoincCode
+    name: ComponentLoincCode
+    type: NVARCHAR(300)
+  - source: lcd.LoincName
+    name: ComponentLoincName
+    type: NVARCHAR(550)
+  - source: lcd.Name
+    name: ComponentName
+    type: NVARCHAR(300)
+  - source: lcd.CommonName
+    name: ComponentCommonName
+    type: NVARCHAR(300)
+  - source: lcd.BaseName
+    name: ComponentBaseName
+    type: NVARCHAR(100)
+  filter:
+    from:
+    - LabComponentResultFact AS lcrf
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.EncounterKey = lcrf.EncounterKey
+      AND pk.PatientDurableKey = lcrf.PatientDurableKey
+    - INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey
+    where:
+    - lcrf._IsDeleted = 0
+    - lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, pk.ArrivalInstant) AND DATEADD(DAY,
+      1, pk.DepartureInstant)
+- name: EDDiagnoses
+  dest_table: EDDiagnoses
+  type: fact
+  pull_this_cycle: true
+  description: Every ICD-10 diagnosis on the visit's encounter (the RSV codes, and
+    anything beside them)
+  granularity: One row per diagnosis event and code
+  columns:
+  - source: def.DiagnosisEventKey
+    name: DiagnosisEventKey
+    type: BIGINT
+  - source: def.EncounterKey
+    name: EncounterKey
+    type: BIGINT
+  - source: def.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+  - source: def.DiagnosisKey
+    name: DiagnosisKey
+    type: BIGINT
+  - source: def.EmergencyDepartmentDiagnosis
+    name: EmergencyDepartmentDiagnosis
+    type: TINYINT
+  - source: def.IsPrimary
+    name: IsPrimary
+    type: TINYINT
+  - source: def.Type
+    name: Type
+    type: NVARCHAR(350)
+  - source: dt.Value
+    name: BillingCodeValue
+    type: NVARCHAR(300)
+  - source: dt.Type
+    name: CodeType
+    type: NVARCHAR(300)
+  filter:
+    from:
+    - DiagnosisEventFact AS def
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.EncounterKey = def.EncounterKey AND
+      pk.PatientDurableKey = def.PatientDurableKey
+    - INNER JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey
+    where:
+    - def._IsDeleted = 0
+    - dt._IsDeleted = 0
+    - def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')
+  dedup_keys:
+  - - DiagnosisEventKey
+    - BillingCodeValue
+- name: EDMeds
+  dest_table: EDMeds
+  type: fact
+  pull_this_cycle: true
+  description: Medication administrations on the visit's encounter, a day either side
+    of the ED stay, with the medication's names (IV fluids)
+  granularity: One row per administration
+  columns:
+  - source: maf.MedicationAdministrationKey
+    name: MedicationAdministrationKey
+    type: BIGINT
+  - source: maf.EncounterKey
+    name: EncounterKey
+    type: BIGINT
+  - source: maf.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+  - source: maf.AdministrationInstant
+    name: AdministrationInstant
+    type: DATETIME2(7)
+  - source: maf.AdministrationRoute
+    name: AdministrationRoute
+    type: NVARCHAR(300)
+  - source: maf.AdministrationAction
+    name: AdministrationAction
+    type: NVARCHAR(300)
+  - source: maf.ActionIsMedAdministration
+    name: ActionIsMedAdministration
+    type: TINYINT
+  - source: maf.MedicationKey
+    name: MedicationKey
+    type: BIGINT
+  - source: maf.MedicationOrderKey
+    name: MedicationOrderKey
+    type: BIGINT
+  - source: maf.Dose
+    name: Dose
+    type: NVARCHAR(200)
+  - source: maf.DoseUnit
+    name: DoseUnit
+    type: NVARCHAR(300)
+  - source: maf.Rate
+    name: Rate
+    type: NVARCHAR(50)
+  - source: maf.AdministrationDepartmentKey
+    name: AdministrationDepartmentKey
+    type: BIGINT
+  - source: md.Name
+    name: MedicationName
+    type: NVARCHAR(300)
+  - source: md.GenericName
+    name: MedicationGenericName
+    type: NVARCHAR(200)
+  - source: md.SimpleGenericName
+    name: MedicationSimpleGenericName
+    type: NVARCHAR(300)
+  - source: md.PharmaceuticalClass
+    name: MedicationPharmaceuticalClass
+    type: NVARCHAR(300)
+  - source: md.PharmaceuticalSubclass
+    name: MedicationPharmaceuticalSubclass
+    type: NVARCHAR(300)
+  - source: md.TherapeuticClass
+    name: MedicationTherapeuticClass
+    type: NVARCHAR(300)
+  - source: md.Form
+    name: MedicationForm
+    type: NVARCHAR(300)
+  - source: md.Route
+    name: MedicationRoute
+    type: NVARCHAR(300)
+  filter:
+    from:
+    - MedicationAdministrationFact AS maf
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.EncounterKey = maf.EncounterKey AND
+      pk.PatientDurableKey = maf.PatientDurableKey
+    - LEFT JOIN MedicationDim AS md ON md.MedicationKey = maf.MedicationKey
+    where:
+    - maf._IsDeleted = 0
+    - maf.AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - maf.AdministrationInstant BETWEEN DATEADD(DAY, -1, pk.ArrivalInstant) AND DATEADD(DAY,
+      1, pk.DepartureInstant)
+- name: StayDepartments
+  dest_table: StayDepartments
+  type: fact
+  pull_this_cycle: true
+  description: Each department a medication was given in during the admission, with
+    its specialty and the first time (ICU transfers mid-stay)
+  granularity: One row per admission and department
+  columns:
+  - source: haf.HospitalAdmissionKey
+    name: HospitalAdmissionKey
+    type: BIGINT
+  - source: maf.AdministrationDepartmentKey
+    name: AdministrationDepartmentKey
+    type: BIGINT
+  - source: dept.DepartmentSpecialty
+    name: DepartmentSpecialty
+    type: NVARCHAR(300)
+  - source: maf.AdministrationInstant
+    name: AdministrationInstant
+    type: DATETIME2(7)
+  filter:
+    from:
+    - MedicationAdministrationFact AS maf
+    join:
+    - INNER JOIN HospitalAdmissionFact AS haf ON haf.EncounterKey = maf.EncounterKey
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.HospitalAdmissionKey = haf.HospitalAdmissionKey
+    - INNER JOIN DepartmentDim AS dept ON dept.DepartmentKey = maf.AdministrationDepartmentKey
+    where:
+    - maf._IsDeleted = 0
+    - haf._IsDeleted = 0
+    - pk.HospitalAdmissionKey > 0
+    - maf.AdministrationDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - maf.AdministrationInstant BETWEEN haf.InpatientAdmissionInstant AND haf.DischargeInstant
+  dedup_keys:
+  - - HospitalAdmissionKey
+    - AdministrationDepartmentKey
+  dedup_order_by:
+  - AdministrationInstant
 - name: HospitalAdmissionFact
   dest_table: HospitalAdmissionFact
   type: fact
@@ -572,212 +921,29 @@ cohorts:
     name: ReadmissionCausedByKey_X
     nullable: true
     type: BIGINT
+  - source: ad.DepartmentSpecialty
+    name: AdmitSpecialty
+    type: NVARCHAR(300)
+  - source: dd.DepartmentSpecialty
+    name: DischargeSpecialty
+    type: NVARCHAR(300)
   filter:
     from:
     - HospitalAdmissionFact as haf
     join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON haf.HospitalAdmissionKey = ev.HospitalAdmissionKey"
+    - INNER JOIN {{prefix}}_EDVisits AS ev ON haf.HospitalAdmissionKey = ev.HospitalAdmissionKey
+    - LEFT JOIN DepartmentDim AS ad ON ad.DepartmentKey = haf.DepartmentKey
+    - LEFT JOIN DepartmentDim AS dd ON dd.DepartmentKey = haf.DischargeDepartmentKey_X
     where:
-    - "haf._IsDeleted = 0"
+    - haf._IsDeleted = 0
     - haf.AdmissionDateKey IS NOT NULL
-    - "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-- name: RSVPatients
-  dest_table: RSVPatients
-  type: fact
-  pull_this_cycle: true
-  columns:
-  - source: pd.AgeInYears
-    name: AgeInYears
-    nullable: true
-    type: TINYINT
-  - source: pd.BirthDate
-    name: BirthDate
-    nullable: true
-    type: DATE
-  - source: pd.BirthDateAccuracy_X
-    name: BirthDateAccuracy_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: pd.EarliestPossibleBirthDate_X
-    name: EarliestPossibleBirthDate_X
-    nullable: true
-    type: DATE
-  - source: pd.BloodType_X
-    name: BloodType_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: pd.BloodTypeAndRhesusFactor_X
-    name: BloodTypeAndRhesusFactor_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: pd.Country
-    name: Country
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.DeathDate
-    name: DeathDate
-    nullable: true
-    type: DATE
-  - source: pd.DurableKey
-    name: DurableKey
-    nullable: false
-    type: BIGINT
-  - source: pd.Ethnicity
-    name: Ethnicity
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.FifthRace
-    name: FifthRace
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.FirstRace
-    name: FirstRace
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.FourthRace
-    name: FourthRace
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.GenderIdentity
-    name: GenderIdentity
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.HasPcp_X
-    name: HasPcp_X
-    nullable: true
-    type: TINYINT
-  - source: pd.IsCurrent
-    name: IsCurrent
-    nullable: false
-    type: BIT
-  - source: pd.IsValid
-    name: IsValid
-    nullable: false
-    type: TINYINT
-  - source: pd.LastImmunizationQueryInstantUtc
-    name: LastImmunizationQueryInstantUtc
-    nullable: true
-    type: DATETIME2(7)
-  - source: pd.MaritalStatus
-    name: MaritalStatus
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.MultiRacial
-    name: MultiRacial
-    nullable: true
-    type: TINYINT
-  - source: pd.PreferredLanguage
-    name: PreferredLanguage
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.PreliminaryCauseOfDeathDiagnosisKey
-    name: PreliminaryCauseOfDeathDiagnosisKey
-    nullable: true
-    type: BIGINT
-  - source: pd.PrimaryRUCA_X
-    name: PrimaryRUCA_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: pd.ReliableSex
-    name: ReliableSex
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.RhesusFactor_X
-    name: RhesusFactor_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: pd.SecondRace
-    name: SecondRace
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.Sex
-    name: Sex
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.SexAssignedAtBirth
-    name: SexAssignedAtBirth
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.SourceComboKey_X
-    name: SourceComboKey_X
-    nullable: true
-    type: BIGINT
-  - source: pd.SourceCountry_X
-    name: SourceCountry_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.StateOrProvince
-    name: StateOrProvince
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.StateOrProvinceAbbreviation
-    name: StateOrProvinceAbbreviation
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.Status
-    name: Status
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.SviHouseholdCharacteristicsPctlRankByZip2020_X
-    name: SviHouseholdCharacteristicsPctlRankByZip2020_X
-    nullable: true
-    type: NUMERIC(6,4)
-  - source: pd.SviHouseholdCompositionPctlRankingByZip2018_X
-    name: SviHouseholdCompositionPctlRankingByZip2018_X
-    nullable: true
-    type: NUMERIC(10,4)
-  - source: pd.SviHousingTypeTransportationPctlRankByZip2020_X
-    name: SviHousingTypeTransportationPctlRankByZip2020_X
-    nullable: true
-    type: NUMERIC(6,4)
-  - source: pd.SviHousingTypeTransportationPctlRankingByZip2018_X
-    name: SviHousingTypeTransportationPctlRankingByZip2018_X
-    nullable: true
-    type: NUMERIC(10,4)
-  - source: pd.SviMinorityStatusLanguagePctlRankingByZip2018_X
-    name: SviMinorityStatusLanguagePctlRankingByZip2018_X
-    nullable: true
-    type: NUMERIC(10,4)
-  - source: pd.SviOverallPctlRankByZip2020_X
-    name: SviOverallPctlRankByZip2020_X
-    nullable: true
-    type: NUMERIC(6,4)
-  - source: pd.SviOverallPctlRankingByZip2018_X
-    name: SviOverallPctlRankingByZip2018_X
-    nullable: true
-    type: NUMERIC(10,4)
-  - source: pd.SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-    name: SviRacialEthnicMinorityStatusPctlRankByZip2020_X
-    nullable: true
-    type: NUMERIC(6,4)
-  - source: pd.SviSocioeconomicPctlRankByZip2020_X
-    name: SviSocioeconomicPctlRankByZip2020_X
-    nullable: true
-    type: NUMERIC(6,4)
-  - source: pd.SviSocioeconomicPctlRankingByZip2018_X
-    name: SviSocioeconomicPctlRankingByZip2018_X
-    nullable: true
-    type: NUMERIC(10,4)
-  - source: pd.ThirdRace
-    name: ThirdRace
-    nullable: true
-    type: NVARCHAR(300)
-  - source: pd.UseInCosmosAnalytics_X
-    name: UseInCosmosAnalytics_X
-    nullable: false
-    type: TINYINT
-  filter:
-    from:
-    - PatientDim as pd
-    join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON pd.DurableKey = ev.PatientDurableKey"
-    where:
-    - "pd.IsValid = 1"
-    - "pd.IsCurrent = 1"
-    - "pd.UseInCosmosAnalytics_X = 1"
-    - "pd._IsDeleted = 0"
-- name: EDVitals
-  dest_table: EDVitals
+    - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+  description: Each admitted visit's admission, with the specialty of the department
+    it was admitted to and discharged from (ICU)
+  dedup_keys:
+  - - HospitalAdmissionKey
+- name: InpatientVitals
+  dest_table: InpatientVitals
   type: fact
   pull_this_cycle: true
   columns:
@@ -810,7 +976,7 @@ cohorts:
     nullable: true
     type: INT
   - source: vf.EncounterKey
-    name: EncounterKey
+    name: InpatientEncounterKey
     nullable: true
     type: BIGINT
   - source: vf.HeadCircumference
@@ -868,379 +1034,140 @@ cohorts:
   filter:
     from:
     - VitalsFact as vf
-    join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON ev.EncounterKey = vf.EncounterKey AND\
-      \ ev.PatientDurableKey = vf.PatientDurableKey"
     where:
-    - "vf._IsDeleted = 0"
-    - "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "vf.TakenInstant BETWEEN DATEADD(DAY, -1, ev.ArrivalInstant) AND DATEADD(DAY,\
-      \ 1, ev.DepartureInstant)"
-- name: PatientBirthEvent
-  dest_table: PatientBirthEvent
+    - vf._IsDeleted = 0
+    - vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - vf.TakenInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND
+      DATEADD(DAY, 1, haf.DischargeInstant)
+    join:
+    - INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = vf.EncounterKey
+- name: InpatientLabs
+  dest_table: InpatientLabs
   type: fact
   pull_this_cycle: true
+  description: Lab components on the admission's encounter, a day either side of the
+    stay, with the component's names
+  granularity: One row per lab component result
   columns:
-  - source: bf._IsDeleted
-    name: _IsDeleted
-    nullable: false
-    type: TINYINT
-  - source: bf._IsInferred
-    name: _IsInferred
-    nullable: false
-    type: TINYINT
-  - source: bf.AntenatalSteroids
-    name: AntenatalSteroids
-    nullable: true
+  - source: lcrf.LabComponentResultKey
+    name: LabComponentResultKey
+    type: BIGINT
+  - source: lcrf.EncounterKey
+    name: EncounterKey
+    type: BIGINT
+  - source: lcrf.PatientDurableKey
+    name: PatientDurableKey
+    type: BIGINT
+  - source: lcrf.LabComponentKey
+    name: LabComponentKey
+    type: BIGINT
+  - source: lcrf.CollectionInstant
+    name: CollectionInstant
+    type: DATETIME2(7)
+  - source: lcrf.NumericValue
+    name: NumericValue
+    type: FLOAT
+  - source: lcrf.Value
+    name: Value
     type: NVARCHAR(300)
-  - source: bf.AugmentationUsed
-    name: AugmentationUsed
-    nullable: true
+  - source: lcrf.Unit
+    name: Unit
+    type: NVARCHAR(100)
+  - source: lcrf.Abnormal
+    name: Abnormal
     type: TINYINT
-  - source: bf.BabyDischargeWeight
-    name: BabyDischargeWeight
-    nullable: true
-    type: NUMERIC(10,3)
-  - source: bf.BabyInpatientLengthOfStayInDays
-    name: BabyInpatientLengthOfStayInDays
-    nullable: true
-    type: SMALLINT
+  - source: lcrf.Flag
+    name: Flag
+    type: NVARCHAR(300)
+  - source: lcd.LoincCode
+    name: ComponentLoincCode
+    type: NVARCHAR(300)
+  - source: lcd.LoincName
+    name: ComponentLoincName
+    type: NVARCHAR(550)
+  - source: lcd.Name
+    name: ComponentName
+    type: NVARCHAR(300)
+  - source: lcd.CommonName
+    name: ComponentCommonName
+    type: NVARCHAR(300)
+  - source: lcd.BaseName
+    name: ComponentBaseName
+    type: NVARCHAR(100)
+  filter:
+    from:
+    - LabComponentResultFact AS lcrf
+    join:
+    - INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = lcrf.EncounterKey
+    - INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey
+    where:
+    - lcrf._IsDeleted = 0
+    - lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant)
+      AND DATEADD(DAY, 1, haf.DischargeInstant)
+- name: Births
+  dest_table: Births
+  type: fact
+  pull_this_cycle: true
+  description: 'Each child''s birth, whenever it was: gestational age, birth weight'
+  granularity: One row per baby
+  columns:
   - source: bf.BabyPatientDurableKey
     name: BabyPatientDurableKey
-    nullable: true
     type: BIGINT
-  - source: bf.BirthAnesthesiaComboKey
-    name: BirthAnesthesiaComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthAugmentationComboKey
-    name: BirthAugmentationComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthAugmentationIndicationComboKey
-    name: BirthAugmentationIndicationComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthCervicalRipeningComboKey
-    name: BirthCervicalRipeningComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthCesareanIndicationComboKey
-    name: BirthCesareanIndicationComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthDateKey
-    name: BirthDateKey
-    nullable: false
-    type: BIGINT
-  - source: bf.BirthEpisiotomyComboKey
-    name: BirthEpisiotomyComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthInductionComboKey
-    name: BirthInductionComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthInductionIndicationComboKey
-    name: BirthInductionIndicationComboKey
-    nullable: true
+  - source: bf.BirthKey
+    name: BirthKey
     type: BIGINT
   - source: bf.BirthInstant
     name: BirthInstant
-    nullable: true
     type: DATETIME2(7)
-  - source: bf.BirthKey
-    name: BirthKey
-    nullable: false
+  - source: bf.BirthDateKey
+    name: BirthDateKey
     type: BIGINT
-  - source: bf.BirthLength
-    name: BirthLength
-    nullable: true
-    type: NUMERIC(8,3)
-  - source: bf.BirthRuptureTypeComboKey
-    name: BirthRuptureTypeComboKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthTimeOfDayKey
-    name: BirthTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.BirthWeight
-    name: BirthWeight
-    nullable: true
-    type: NUMERIC(10,3)
-  - source: bf.BirthWeightGrams
-    name: BirthWeightGrams
-    nullable: true
-    type: NUMERIC(10,3)
-  - source: bf.BreastMilkGiven
-    name: BreastMilkGiven
-    nullable: true
-    type: TINYINT
-  - source: bf.CervicalRipeningDateKey
-    name: CervicalRipeningDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.CervicalRipeningInstant
-    name: CervicalRipeningInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.CervicalRipeningTimeOfDayKey
-    name: CervicalRipeningTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.CesareanDelivery
-    name: CesareanDelivery
-    nullable: true
-    type: TINYINT
-  - source: bf.CesareanExpected
-    name: CesareanExpected
-    nullable: true
-    type: TINYINT
-  - source: bf.CordClampDateKey
-    name: CordClampDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.CordClampInstant
-    name: CordClampInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.CordClampTimeOfDayKey
-    name: CordClampTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.Count
-    name: Count
-    nullable: false
-    type: TINYINT
-  - source: bf.DeliveryMethod
-    name: DeliveryMethod
-    nullable: true
-    type: NVARCHAR(300)
-  - source: bf.DilationCompleteInstant
-    name: DilationCompleteInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.DilationCompleteDateKey
-    name: DilationCompleteDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.DilationCompleteTimeOfDayKey
-    name: DilationCompleteTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.EpiduralOrSpinalGiven
-    name: EpiduralOrSpinalGiven
-    nullable: true
-    type: TINYINT
-  - source: bf.FirstStageLengthMinutes
-    name: FirstStageLengthMinutes
-    nullable: true
-    type: INT
-  - source: bf.ForcepsAttempted
-    name: ForcepsAttempted
-    nullable: true
-    type: TINYINT
-  - source: bf.ForcepsDelivery
-    name: ForcepsDelivery
-    nullable: true
-    type: TINYINT
   - source: bf.GestationalAgeDays
     name: GestationalAgeDays
-    nullable: true
     type: INT
-  - source: bf.GestationalAgeZeroDateKey
-    name: GestationalAgeZeroDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.HeadCircumference
-    name: HeadCircumference
-    nullable: true
+  - source: bf.BirthWeightGrams
+    name: BirthWeightGrams
+    type: NUMERIC(10,3)
+  - source: bf.BirthLength
+    name: BirthLength
     type: NUMERIC(8,3)
-  - source: bf.InductionUsed
-    name: InductionUsed
-    nullable: true
-    type: TINYINT
-  - source: bf.LaborAttempted
-    name: LaborAttempted
-    nullable: true
-    type: TINYINT
-  - source: bf.LaborStartDateKey
-    name: LaborStartDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.LaborStartInstant
-    name: LaborStartInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.LaborStartTimeOfDayKey
-    name: LaborStartTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.LaborType
-    name: LaborType
-    nullable: true
-    type: NVARCHAR(300)
-  - source: bf.LivingStatus
-    name: LivingStatus
-    nullable: true
-    type: NVARCHAR(300)
-  - source: bf.MotherAgeKey
-    name: MotherAgeKey
-    nullable: true
-    type: BIGINT
-  - source: bf.MotherArrivalDateKey
-    name: MotherArrivalDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.MotherArrivalInstant
-    name: MotherArrivalInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.MotherArrivalTimeOfDayKey
-    name: MotherArrivalTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.MotherEncounterKey
-    name: MotherEncounterKey
-    nullable: true
-    type: BIGINT
-  - source: bf.MotherPatientDurableKey
-    name: MotherPatientDurableKey
-    nullable: true
-    type: BIGINT
   - source: bf.MultipleDeliveryCount
     name: MultipleDeliveryCount
-    nullable: true
     type: TINYINT
   - source: bf.MultipleDeliveryOrder
     name: MultipleDeliveryOrder
-    nullable: true
     type: TINYINT
-  - source: bf.NeonatalDemise
-    name: NeonatalDemise
-    nullable: true
-    type: TINYINT
-  - source: bf.NonBreastMilkGiven
-    name: NonBreastMilkGiven
-    nullable: true
-    type: TINYINT
-  - source: bf.PlacentaDeliveryDateKey
-    name: PlacentaDeliveryDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.PlacentaDeliveryInstant
-    name: PlacentaDeliveryInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.PlacentaDeliveryTimeOfDayKey
-    name: PlacentaDeliveryTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.PlacentaMethod
-    name: PlacentaMethod
-    nullable: true
+  - source: bf.DeliveryMethod
+    name: DeliveryMethod
     type: NVARCHAR(300)
-  - source: bf.PregnancyKey
-    name: PregnancyKey
-    nullable: true
-    type: BIGINT
-  - source: bf.PresentationType
-    name: PresentationType
-    nullable: true
-    type: NVARCHAR(300)
-  - source: bf.PresentationVertex
-    name: PresentationVertex
-    nullable: true
-    type: TINYINT
-  - source: bf.PushingStartDateKey
-    name: PushingStartDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.PushingStartInstant
-    name: PushingStartInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.PushingStartTimeOfDayKey
-    name: PushingStartTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.RuptureDateKey
-    name: RuptureDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.RuptureInstant
-    name: RuptureInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.RuptureOfMembranesToDeliverySeconds
-    name: RuptureOfMembranesToDeliverySeconds
-    nullable: true
-    type: BIGINT
-  - source: bf.RuptureTimeOfDayKey
-    name: RuptureTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.SecondStageLengthMinutes
-    name: SecondStageLengthMinutes
-    nullable: true
-    type: INT
-  - source: bf.SeverePerinealLacerationOccurred
-    name: SeverePerinealLacerationOccurred
-    nullable: true
-    type: TINYINT
-  - source: bf.SkinToSkinDateKey
-    name: SkinToSkinDateKey
-    nullable: true
-    type: BIGINT
-  - source: bf.SkinToSkinInstant
-    name: SkinToSkinInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: bf.SkinToSkinTimeOfDayKey
-    name: SkinToSkinTimeOfDayKey
-    nullable: true
-    type: BIGINT
-  - source: bf.SourceComboKey_X
-    name: SourceComboKey_X
-    nullable: true
-    type: BIGINT
-  - source: bf.SpontaneousVaginalDelivery
-    name: SpontaneousVaginalDelivery
-    nullable: true
-    type: TINYINT
-  - source: bf.ThirdStageLengthMinutes
-    name: ThirdStageLengthMinutes
-    nullable: true
-    type: INT
   - source: bf.TotalApgarFiveMinute
     name: TotalApgarFiveMinute
-    nullable: true
     type: TINYINT
-  - source: bf.TotalApgarOneMinute
-    name: TotalApgarOneMinute
-    nullable: true
+  - source: bf.BabyInpatientLengthOfStayInDays
+    name: BabyInpatientLengthOfStayInDays
+    type: SMALLINT
+  - source: bf.NeonatalDemise
+    name: NeonatalDemise
     type: TINYINT
-  - source: bf.TotalApgarTenMinute
-    name: TotalApgarTenMinute
-    nullable: true
-    type: TINYINT
-  - source: bf.VacuumAttempted
-    name: VacuumAttempted
-    nullable: true
-    type: TINYINT
-  - source: bf.VacuumDelivery
-    name: VacuumDelivery
-    nullable: true
-    type: TINYINT
+  - source: bf.MotherPatientDurableKey
+    name: MotherPatientDurableKey
+    type: BIGINT
+  - source: bf.PregnancyKey
+    name: PregnancyKey
+    type: BIGINT
   filter:
     from:
-    - BirthFact as bf
+    - BirthFact AS bf
     join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON bf.BabyPatientDurableKey = ev.PatientDurableKey"
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.PatientDurableKey = bf.BabyPatientDurableKey
     where:
-    - "bf._IsDeleted = 0"
-    - "bf.BirthDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
+    - bf._IsDeleted = 0
+  dedup_keys:
+  - - BabyPatientDurableKey
+  dedup_order_by:
+  - BirthKey
 - name: MotherPatientInfo
   dest_table: MotherPatientInfo
   type: fact
@@ -1430,12 +1357,14 @@ cohorts:
     from:
     - PatientDim as pd
     join:
-    - "INNER JOIN {{prefix}}_PatientBirthEvent AS pbe ON pd.DurableKey = pbe.MotherPatientDurableKey"
+    - INNER JOIN {{prefix}}_Births AS b ON pd.DurableKey = b.MotherPatientDurableKey
     where:
-    - "pd.IsValid = 1"
-    - "pd.IsCurrent = 1"
-    - "pd.UseInCosmosAnalytics_X = 1"
-    - "pd._IsDeleted = 0"
+    - pd.IsValid = 1
+    - pd.IsCurrent = 1
+    - pd.UseInCosmosAnalytics_X = 1
+    - pd._IsDeleted = 0
+  dedup_keys:
+  - - DurableKey
 - name: PregnancyFact
   dest_table: PregnancyFact
   type: fact
@@ -1597,481 +1526,19 @@ cohorts:
     from:
     - PregnancyFact as pf
     join:
-    - "INNER JOIN {{prefix}}_PatientBirthEvent AS pbe ON pf.PregnancyKey = pbe.PregnancyKey"
+    - INNER JOIN {{prefix}}_Births AS b ON pf.PregnancyKey = b.PregnancyKey
     where:
-    - "pf._IsDeleted = 0"
-- name: InpatientVitals
-  dest_table: InpatientVItals
-  type: fact
-  pull_this_cycle: true
-  columns:
-  - source: vf._IsDeleted
-    name: _IsDeleted
-    nullable: false
-    type: TINYINT
-  - source: vf._IsInferred
-    name: _IsInferred
-    nullable: false
-    type: TINYINT
-  - source: vf.BodyMassIndex
-    name: BodyMassIndex
-    nullable: true
-    type: NUMERIC(18,4)
-  - source: vf.CalculatedBodyMassIndex_X
-    name: CalculatedBodyMassIndex_X
-    nullable: true
-    type: NUMERIC(18,4)
-  - source: vf.Count
-    name: Count
-    nullable: false
-    type: TINYINT
-  - source: vf.DateKey
-    name: DateKey
-    nullable: false
-    type: BIGINT
-  - source: vf.DiastolicBloodPressure
-    name: DiastolicBloodPressure
-    nullable: true
-    type: INT
-  - source: vf.EncounterKey
-    name: InpatientEncounterKey
-    nullable: true
-    type: BIGINT
-  - source: vf.HeadCircumference
-    name: HeadCircumference
-    nullable: true
-    type: NUMERIC(18,2)
-  - source: vf.Height
-    name: Height
-    nullable: true
-    type: NUMERIC(18,2)
-  - source: vf.LastKnownHeight_X
-    name: LastKnownHeight_X
-    nullable: true
-    type: NUMERIC(18,2)
-  - source: vf.PatientDurableKey
-    name: PatientDurableKey
-    nullable: false
-    type: BIGINT
-  - source: vf.PulseRate
-    name: PulseRate
-    nullable: true
-    type: INT
-  - source: vf.RespirationRate
-    name: RespirationRate
-    nullable: true
-    type: INT
-  - source: vf.SourceComboKey
-    name: SourceComboKey
-    nullable: true
-    type: BIGINT
-  - source: vf.SpO2
-    name: SpO2
-    nullable: true
-    type: INT
-  - source: vf.SystolicBloodPressure
-    name: SystolicBloodPressure
-    nullable: true
-    type: INT
-  - source: vf.TakenInstant
-    name: TakenInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: vf.Temperature
-    name: Temperature
-    nullable: true
-    type: NUMERIC(18,2)
-  - source: vf.VitalsKey
-    name: VitalsKey
-    nullable: false
-    type: BIGINT
-  - source: vf.Weight
-    name: Weight
-    nullable: true
-    type: NUMERIC(18,2)
-  filter:
-    from:
-    - VitalsFact as vf
-    where:
-    - "vf._IsDeleted = 0"
-    - "vf.DateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "vf.TakenInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND\
-      \ DATEADD(DAY, 1, haf.DischargeInstant)"
-    join:
-    - "INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = vf.EncounterKey"
-- name: EDLabTestComponents
-  dest_table: EDLabTestComponents
-  type: fact
-  pull_this_cycle: true
-  columns:
-  - source: lcd.LoincCode
-    name: ComponentLoincCode
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf._IsDeleted
-    name: _IsDeleted
-    nullable: false
-    type: TINYINT
-  - source: lcrf._IsInferred
-    name: _IsInferred
-    nullable: false
-    type: TINYINT
-  - source: lcrf.Abnormal
-    name: Abnormal
-    nullable: true
-    type: TINYINT
-  - source: lcrf.CollectionInstant
-    name: CollectionInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.Count
-    name: Count
-    nullable: false
-    type: TINYINT
-  - source: lcrf.EncounterKey
-    name: EncounterKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.Flag
-    name: Flag
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.IsBlankOrUnsuccessfulAttempt
-    name: IsBlankOrUnsuccessfulAttempt
-    nullable: true
-    type: TINYINT
-  - source: lcrf.LabComponentKey
-    name: LabComponentKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.LabComponentResultKey
-    name: LabComponentResultKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.LabTestKey_X
-    name: LabTestKey_X
-    nullable: true
-    type: BIGINT
-  - source: lcrf.NumericValue
-    name: NumericValue
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericBoundaryValue_X
-    name: NumericBoundaryValue_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericValueMaximum_X
-    name: NumericValueMaximum_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericValueMinimum_X
-    name: NumericValueMinimum_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.PatientDurableKey
-    name: PatientDurableKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.PrioritizedDateKey
-    name: PrioritizedDateKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.PrioritizedInstant_X
-    name: PrioritizedInstant_X
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.ProcedureDurableKey
-    name: ProcedureDurableKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.ReferenceValueHigh_X
-    name: ReferenceValueHigh_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ReferenceValueLow_X
-    name: ReferenceValueLow_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ReferenceValueNormal_X
-    name: ReferenceValueNormal_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ResultingLabDurableKey
-    name: ResultingLabDurableKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.ResultInstant
-    name: ResultInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.SourceComboKey
-    name: SourceComboKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.StructuredBoundaryOperator_X
-    name: StructuredBoundaryOperator_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: lcrf.Unit
-    name: Unit
-    nullable: true
-    type: NVARCHAR(100)
-  - source: lcrf.Value
-    name: Value
-    nullable: false
-    type: NVARCHAR(300)
-  filter:
-    from:
-    - LabComponentResultFact as lcrf
-    join:
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON ev.EncounterKey = lcrf.EncounterKey\
-      \ AND ev.PatientDurableKey = lcrf.PatientDurableKey"
-    - "INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
-    where:
-    - "lcrf._IsDeleted = 0"
-    - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, ev.ArrivalInstant) AND DATEADD(DAY,\
-      \ 1, ev.DepartureInstant)"
-- name: InpatientLabTestComponents
-  dest_table: InpatientLabTestComponents
-  type: fact
-  pull_this_cycle: true
-  columns:
-  - source: lcd.LoincCode
-    name: ComponentLoincCode
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf._IsDeleted
-    name: _IsDeleted
-    nullable: false
-    type: TINYINT
-  - source: lcrf._IsInferred
-    name: _IsInferred
-    nullable: false
-    type: TINYINT
-  - source: lcrf.Abnormal
-    name: Abnormal
-    nullable: true
-    type: TINYINT
-  - source: lcrf.CollectionInstant
-    name: CollectionInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.Count
-    name: Count
-    nullable: false
-    type: TINYINT
-  - source: lcrf.EncounterKey
-    name: EncounterKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.Flag
-    name: Flag
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.IsBlankOrUnsuccessfulAttempt
-    name: IsBlankOrUnsuccessfulAttempt
-    nullable: true
-    type: TINYINT
-  - source: lcrf.LabComponentKey
-    name: LabComponentKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.LabComponentResultKey
-    name: LabComponentResultKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.LabTestKey_X
-    name: LabTestKey_X
-    nullable: true
-    type: BIGINT
-  - source: lcrf.NumericValue
-    name: NumericValue
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericBoundaryValue_X
-    name: NumericBoundaryValue_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericValueMaximum_X
-    name: NumericValueMaximum_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.NumericValueMinimum_X
-    name: NumericValueMinimum_X
-    nullable: true
-    type: FLOAT
-  - source: lcrf.PatientDurableKey
-    name: PatientDurableKey
-    nullable: false
-    type: BIGINT
-  - source: lcrf.PrioritizedDateKey
-    name: PrioritizedDateKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.PrioritizedInstant_X
-    name: PrioritizedInstant_X
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.ProcedureDurableKey
-    name: ProcedureDurableKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.ReferenceValueHigh_X
-    name: ReferenceValueHigh_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ReferenceValueLow_X
-    name: ReferenceValueLow_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ReferenceValueNormal_X
-    name: ReferenceValueNormal_X
-    nullable: true
-    type: NVARCHAR(300)
-  - source: lcrf.ResultingLabDurableKey
-    name: ResultingLabDurableKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.ResultInstant
-    name: ResultInstant
-    nullable: true
-    type: DATETIME2(7)
-  - source: lcrf.SourceComboKey
-    name: SourceComboKey
-    nullable: true
-    type: BIGINT
-  - source: lcrf.StructuredBoundaryOperator_X
-    name: StructuredBoundaryOperator_X
-    nullable: true
-    type: NVARCHAR(50)
-  - source: lcrf.Unit
-    name: Unit
-    nullable: true
-    type: NVARCHAR(100)
-  - source: lcrf.Value
-    name: Value
-    nullable: false
-    type: NVARCHAR(300)
-  filter:
-    from:
-    - LabComponentResultFact as lcrf
-    where:
-    - "lcrf._IsDeleted = 0"
-    - "lcrf.PrioritizedDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "lcrf.CollectionInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant)\
-      \ AND DATEADD(DAY, 1, haf.DischargeInstant)"
-    join:
-    - "INNER JOIN {{prefix}}_HospitalAdmissionFact AS haf ON haf.EncounterKey = lcrf.EncounterKey"
-    - "INNER JOIN LabComponentDim AS lcd ON lcd.LabComponentKey = lcrf.LabComponentKey"
-- name: IndexDiagnosis
-  description: Diagnosis event fact table. Rows represent diagnoses associated with
-    encounters, problem lists, or other contexts. Use DISTINCT EncounterKey or PatientDurableKey
-    for prevalence; rows are at the billing/event grain. Each patient's first diagnosis
-    of each of the disease's codes (ICD_Value), with date, age at diagnosis, event
-    data
-  granularity: One diagnoses of a disease by ICD code, for each PatientDurableKey.
+    - pf._IsDeleted = 0
   dedup_keys:
-  - - PatientDurableKey
-    - BillingCodeValue
-  dedup_order_by:
-  - StartDateKey
-  pull_this_cycle: true
-  type: fact
-  dest_table: IndexDiagnosis
-  columns:
-  - source: def.DiagnosisEventKey
-    name: DiagnosisEventKey
-    nullable: false
-    type: BIGINT
-  - source: tc.StandardName
-    name: BillingCodeType
-    nullable: true
-    description: Standardized or normalized name for the concept, used to harmonize
-      naming across contributors and terminologies. ICD code type
-    type: NVARCHAR(50)
-  - source: dt.Value
-    name: BillingCodeValue
-    nullable: true
-    type: NVARCHAR(300)
-  - source: dt.NameAndCode
-    name: NameAndCode
-    nullable: true
-    type: NVARCHAR(850)
-  - source: dur.Years
-    name: AgeAtDiagnosis
-    nullable: true
-    type: INT
-  - source: def.IsPrimary
-    name: IsPrimary
-    nullable: true
-    type: TINYINT
-  - source: dt.ReferenceBillingCode
-    name: IsReferenceBillingCode
-    nullable: true
-    description: "1/0 flag (tinyint) on its dictionary page: whether this row's code\
-      \ is the reference billing code. Not the code itself; that is in Value. 0/1\
-      \ of if this was used as the code for Billing submission"
-    type: TINYINT
-  - source: def.Type
-    name: TypeOfDx
-    nullable: true
-    type: NVARCHAR(350)
-  - source: tc.Concept
-    name: TerminologyConcept
-    nullable: true
-    type: NVARCHAR(300)
-  - source: tc.Name
-    name: TerminologyName
-    nullable: true
-    type: NVARCHAR(550)
-  - source: def.Status
-    name: Status
-    nullable: true
-    type: NVARCHAR(300)
-  - source: def.StartDateKey
-    name: StartDateKey
-    nullable: true
-    type: BIGINT
-  - source: def.EndDateKey
-    name: EndDateKey
-    nullable: true
-    type: BIGINT
-  - source: def.PatientDurableKey
-    name: PatientDurableKey
-    nullable: false
-    type: BIGINT
-  - source: def.DiagnosisKey
-    name: DiagnosisKey
-    nullable: false
-    type: BIGINT
-  - source: def.EncounterKey
-    name: EncounterKey
-    nullable: false
-    type: BIGINT
-  filter:
-    from:
-    - DiagnosisEventFact AS def
-    join:
-    - "INNER JOIN {{prefix}}_{{PKTable}} AS pk ON pk.PatientDurableKey = def.PatientDurableKey"
-    - "LEFT JOIN DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = def.DiagnosisKey"
-    - "LEFT JOIN TerminologyConceptDim AS tc ON tc.TerminologyConceptKey = dt.TerminologyConceptKey"
-    - "INNER JOIN DurationDim AS dur ON dur.DurationKey = def.AgeKey"
-    - "INNER JOIN {{prefix}}_EDVisits AS ev ON def.EncounterKey = ev.EncounterKey"
-    where:
-    - "def._IsDeleted = 0"
-    - "dt._IsDeleted = 0"
-    - "def.StartDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"
-    - "dt.Type IN ('ICD-10-AM', 'ICD-10-CA', 'ICD-10-CM')"
-    - "{{sql_condition('dt.Value', ICD_Value)}}"
+  - - PregnancyKey
 table_groups:
 - name: Hospitalizations
   tables:
   - HospitalAdmissionFact
   - InpatientVitals
-  - InpatientLabTestComponents
+  - InpatientLabs
 - name: Birth
   tables:
-  - PatientBirthEvent
+  - Births
   - MotherPatientInfo
   - PregnancyFact
