@@ -1,0 +1,113 @@
+# Infant RSV analysis settings.
+#
+# Every definition the analysis uses is here. Change a value, then run
+# `python rsv build` again: the parquets and every page follow it.
+# Paths are relative to the folder that holds `rsv`.
+
+# Where the pulls are.
+pull_folder: runs/Infant_RSV                # the first pull
+followup_folder: runs/Infant_RSV_Followup   # the follow-up pull, once it is packaged
+analysis_folder: runs/Infant_RSV/analysis   # what `build` writes, and the pages
+keys_file: rsv_visit_keys.parquet           # what `keys` writes: the follow-up pull's PK
+
+# Each table, read from the first of its files that exists and has rows.
+# `followup:` reads the follow-up pull, `pull:` the first one.
+sources:
+  visits: [pull:EDVisits]
+  patients: [followup:Patients, pull:RSVPatients]
+  births: [followup:Births, pull:PatientBirthEvent]
+  admissions: [followup:AdmissionDepartments, pull:HospitalAdmissionFact]
+  stay_departments: [followup:StayDepartments]
+  ed_vitals: [followup:EDVitals, pull:EDVitals]
+  stay_vitals: [pull:InpatientVItals]
+  ed_labs: [followup:EDLabs, pull:EDLabTestComponents]
+  stay_labs: [pull:InpatientLabTestComponents]
+  ed_meds: [followup:EDMeds]
+  diagnoses: [followup:EDDiagnoses, pull:IndexDiagnosis]
+
+# Pages.
+page_width: 48        # characters a line may take
+min_cell: 11          # counts from 1 to min_cell - 1 print as <11; 0 prints every count
+
+# A visit with no departure time: its ED stay ends this many hours after arrival.
+no_departure_hours: 6
+
+# Vitals. A reading outside its range is dropped and counted.
+temperature_fahrenheit_above: 45   # a temperature above this is read as °F and converted
+plausible:
+  rr: [5, 150]
+  spo2: [40, 100]
+  temp_c: [30, 43]
+
+# Age at arrival, in days: each band runs from its number up to the next.
+age_bands:
+  0-28d: 0
+  1-2m: 29
+  3-5m: 91
+  6-11m: 183
+  12-23m: 365
+age_max_days: 731
+
+# Gestational age, in completed weeks.
+ga_bands:
+  <28w: 0
+  28-31w: 28
+  32-36w: 32
+  ">=37w": 37
+
+# RSV seasons run from this month to the month before it, a year later.
+season_start_month: 7
+eras:
+  - {name: pre-COVID, from: 2018-19, to: 2019-20}
+  - {name: COVID, from: 2020-21, to: 2020-21}
+  - {name: post-COVID, from: 2021-22, to: 2022-23}
+  - {name: nirsevimab, from: 2023-24, to: 2099-00}
+
+# Diagnoses: a visit's group is the first here whose code it has.
+dx_groups:
+  - {name: bronchiolitis, codes: [J21.0]}
+  - {name: pneumonia, codes: [J12.1]}
+  - {name: bronchitis, codes: [J20.5]}
+  - {name: RSV other, codes: [B97.4]}
+
+# Groupings. A value not mapped keeps its own name; one in `unknown` is Unknown.
+unknown: ["", "unknown", "*unknown", "*unspecified", "patient declined", "patient refused", "declined", "not reported"]
+race_map: {}
+ethnicity_map: {}
+financial_class_map: {}
+svi_column: SviOverallPctlRankByZip2020_X
+
+# VBG: a lab in the ED stay whose LOINC code is listed, or whose name matches a pattern.
+# Check the codes against the build page's list before relying on them.
+vbg_loinc: [2746-4, 2021-4]
+vbg_name_patterns: ["\\bvbg\\b", "venous.*\\b(ph|pco2)\\b", "\\b(ph|pco2)\\b.*venous"]
+
+# IV fluids: an ED administration by one of these routes, of a medication whose
+# name matches. Without medication names, IV fluids stay empty.
+iv_routes: ["^iv\\b", "intravenous"]
+iv_fluid_patterns: ["sodium chloride 0\\.9", "normal saline", "lactated ringer", "plasma-?lyte", "dextrose.*sodium chloride"]
+iv_given_actions: []   # e.g. [Given, New Bag]; empty takes every administration
+
+# ICU: an admission with any of these department specialties (case ignored).
+# The build page lists the specialties seen. Neonatology is left out until decided.
+icu_specialties: [Critical Care Medicine, Pediatric Critical Care Medicine]
+
+# Named sections: a filter on visits.parquet, written as pandas' DataFrame.query.
+sections:
+  first_visits: first_visit
+  under_3_months: age_days < 91
+  preterm: ga_weeks < 37
+  admitted: admitted
+  nirsevimab_era: era == 'nirsevimab'
+  pre_nirsevimab: era != 'nirsevimab'
+
+# `python rsv compare <grouping>` takes any of these.
+groupings: [age_band, ga_band, season, era, sex, race, ethnicity, svi_quartile, financial_class, admitted, icu, dx_group, first_visit]
+
+# `python rsv admission`: the factors, the outcomes, and what the models adjust for.
+admission_factors: [race, ethnicity, svi_quartile, financial_class]
+adjust_for: [age_band, season]
+model_min_level: 50    # levels with fewer visits are pooled as Other in the models
+
+# `python rsv all`: the pages of a first run.
+first_run_compare: [age_band, ga_band, era, admitted]

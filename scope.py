@@ -30,6 +30,8 @@ SUITES = (
     "scripts/yamlmanager_tk.py",
     "scripts/tidy_images.py",
     "scripts/dictionary_fix.py",
+    "studies/infant_rsv/rsv",
+    "studies/infant_rsv/make_rsv_bundle.py",
 )
 
 
