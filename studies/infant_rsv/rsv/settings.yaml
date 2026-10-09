@@ -11,7 +11,6 @@
 # Where the pulls are.
 pull_folder: runs/Infant_RSV                # the first pull
 followup_folder: runs/Infant_RSV_Followup   # the follow-up pull, once it is packaged
-icu_folder: runs/Infant_RSV_ICU             # the ICU Stay Registry pull, once it is packaged
 analysis_folder: runs/Infant_RSV/analysis   # what `build` writes, and the pages
 keys_file: rsv_visit_keys.parquet           # what `keys` writes: the follow-up pull's PK
 
@@ -30,7 +29,7 @@ sources:
   stay_labs: [pull:InpatientLabs, pull:InpatientLabTestComponents]
   ed_meds: [followup:EDMeds, pull:EDMeds]
   diagnoses: [followup:EDDiagnoses, pull:EDDiagnoses, pull:IndexDiagnosis]
-  icu_stays: [icu:IcuStays]
+  icu_stays: [followup:IcuStays, pull:IcuStays]
 
 # Pages.
 page_width: 48        # characters a line may take

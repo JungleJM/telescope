@@ -58,7 +58,7 @@ FIRST_DAY, LAST_DAY = date(2019, 1, 1), date(2026, 5, 31)
 # Each kind of key has its own two digits after the prefix: 7007 TT NNNNNNN.
 KEY_KINDS = {"patient": 1, "visit": 2, "encounter": 3, "admission": 4, "vitals": 5, "lab": 6, "labcomponent": 7,
              "diagnosisevent": 8, "diagnosis": 9, "birth": 10, "pregnancy": 11, "medadmin": 12, "medication": 13,
-             "medorder": 14, "department": 15, "provider": 16, "other": 99}
+             "medorder": 14, "department": 15, "provider": 16, "icustay": 17, "other": 99}
 
 
 def key(kind: str, n: int | np.ndarray) -> int | np.ndarray:
@@ -437,11 +437,22 @@ class World:
             "AdmitSpecialty": admit, "DischargeSpecialty": discharge, "FinancialClass": v["financial"],
             "EncounterType": "Hospital Encounter", "DischargeDisposition": "Home or Self Care", "StartedInED_X": 1, "Count": 1,
         })
-        rows = []
+        rows, stays = [], []
         for (_, row), specialty in zip(v.iterrows(), admit):
             rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": department[specialty],
                          "DepartmentSpecialty": specialty,
                          "AdministrationInstant": row["InpatientAdmissionInstant"].round("min")})
+            if row["icu"]:                        # the ICU Stay Registry's stay, begun soon after admission
+                start = (row["InpatientAdmissionInstant"] + pd.Timedelta(hours=int(rng.integers(0, 12)))).round("min")
+                end = min(row["DischargeInstant"], start + pd.Timedelta(hours=int(rng.integers(18, 120)))).round("min")
+                stays.append({"IcuStayRegistryKey": key("icustay", len(stays) + 1),
+                              "HospitalAdmissionKey": row["HospitalAdmissionKey"], "EdVisitKey": row["EdVisitKey"],
+                              "IcuEncounterKey": row["AdmissionEncounterKey"], "AdmissionEncounterKey": row["AdmissionEncounterKey"],
+                              "PatientDurableKey": row["PatientDurableKey"], "DepartmentKey": department[specialty],
+                              "IcuSpecialty": specialty, "IcuStayStartInstant": start, "IcuStayEndInstant": end,
+                              "IcuLengthOfStay": round((end - start).total_seconds() / 86400, 2),
+                              "AgeAtIcuStayStart": round(row["age_days"] / 365.25, 2)})
+        self.icu_stays = pd.DataFrame(stays)
         return haf, pd.DataFrame(rows)
 
     def births(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -478,7 +489,8 @@ class World:
         return {"EDVisits": self.ed_visits(), "Patients": self.patients_table(), "EDVitals": ed_vitals,
                 "EDLabs": ed_labs, "EDDiagnoses": self.diagnoses(), "EDMeds": self.ed_meds(),
                 "StayDepartments": stay_departments, "HospitalAdmissionFact": haf, "InpatientVitals": stay_vitals,
-                "InpatientLabs": stay_labs, "Births": births, "MotherPatientInfo": mother, "PregnancyFact": pregnancy}
+                "InpatientLabs": stay_labs, "Births": births, "MotherPatientInfo": mother, "PregnancyFact": pregnancy,
+                "IcuStays": self.icu_stays}
 
 
 ED_LAB_INDEX = {lab[1]: i + 1 for i, lab in enumerate(ED_LABS + [v + (1.0,) for v in VBG_LABS])}

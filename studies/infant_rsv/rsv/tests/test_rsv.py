@@ -343,7 +343,7 @@ class IcuRegistry(Fixture):
     def test_icu_comes_from_the_registry_when_it_is_pulled(self):
         make_pull(self.root)
         make_followup(self.root)
-        icu = self.root / "runs" / "Infant_RSV_ICU" / "cosmos_parquets"
+        icu = self.root / "runs" / "Infant_RSV" / "cosmos_parquets"
         write(icu, "IcuStays", [{"IcuStayRegistryKey": 1, "HospitalAdmissionKey": 900, "EdVisitKey": 1,
                                  "IcuSpecialty": "Pediatric Critical Care Medicine",
                                  "IcuStayStartInstant": T("2023-11-02 01:00"), "IcuStayEndInstant": T("2023-11-03 13:00"),
@@ -370,7 +370,7 @@ class IcuRegistry(Fixture):
 
     def test_a_registry_stay_the_rule_misses_is_still_icu(self):
         make_pull(self.root)
-        icu = self.root / "runs" / "Infant_RSV_ICU" / "cosmos_parquets"
+        icu = self.root / "runs" / "Infant_RSV" / "cosmos_parquets"
         write(icu, "IcuStays", [{"IcuStayRegistryKey": 1, "HospitalAdmissionKey": 900, "IcuSpecialty": "Pediatric Medical Critical Care",
                                  "IcuStayStartInstant": T("2023-11-02 01:00"), "IcuLengthOfStay": 2.0}])
         v = build(self.settings()).visits.set_index("EdVisitKey")

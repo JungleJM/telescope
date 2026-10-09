@@ -680,6 +680,54 @@ cohorts:
     - AdministrationDepartmentKey
   dedup_order_by:
   - AdministrationInstant
+- name: IcuStays
+  dest_table: IcuStays
+  type: fact
+  pull_this_cycle: true
+  description: Each admission's ICU stays, from Cosmos's ICU Stay Registry, with the specialty of the department each began in
+  granularity: One row per ICU stay and admission
+  columns:
+  - source: r.IcuStayRegistryKey
+    name: IcuStayRegistryKey
+  - source: haf.HospitalAdmissionKey
+    name: HospitalAdmissionKey
+  - source: pk.EdVisitKey
+    name: EdVisitKey
+    type: BIGINT
+  - source: r.EncounterKey
+    name: IcuEncounterKey
+  - source: haf.EncounterKey
+    name: AdmissionEncounterKey
+  - source: r.PatientDurableKey
+    name: PatientDurableKey
+  - source: r.DepartmentKey
+    name: DepartmentKey
+  - source: d.DepartmentSpecialty
+    name: IcuSpecialty
+  - source: r.IcuStayStartInstant
+    name: IcuStayStartInstant
+  - source: r.IcuStayEndInstant
+    name: IcuStayEndInstant
+  - source: r.IcuLengthOfStay
+    name: IcuLengthOfStay
+  - source: r.AgeAtIcuStayStart
+    name: AgeAtIcuStayStart
+  filter:
+    from:
+    - IcuStayRegistryDataMart AS r
+    join:
+    - INNER JOIN {{prefix}}_EDVisits AS pk ON pk.PatientDurableKey = r.PatientDurableKey
+    - INNER JOIN HospitalAdmissionFact AS haf ON haf.HospitalAdmissionKey = pk.HospitalAdmissionKey
+    - LEFT JOIN DepartmentDim AS d ON d.DepartmentKey = r.DepartmentKey
+    where:
+    - r._IsDeleted = 0
+    - haf._IsDeleted = 0
+    - pk.HospitalAdmissionKey > 0
+    - haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}
+    - r.IcuStayStartInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND haf.DischargeInstant
+  dedup_keys:
+  - - IcuStayRegistryKey
+    - HospitalAdmissionKey
 - name: HospitalAdmissionFact
   dest_table: HospitalAdmissionFact
   type: fact

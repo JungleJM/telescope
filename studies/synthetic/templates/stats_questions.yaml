@@ -230,6 +230,14 @@
   r: |
     answer <- mean(haf$AdmitSpecialty %in% "Pediatric Intensive Care")
 
+- id: icu_registry_pct_of_admissions
+  question: What share of admissions have an ICU stay in Cosmos's ICU Stay Registry (`IcuStays`)?
+  kind: pct
+  python: |
+    answer = haf["HospitalAdmissionKey"].isin(tables["IcuStays"]["HospitalAdmissionKey"]).mean()
+  r: |
+    answer <- mean(haf$HospitalAdmissionKey %in% tables$IcuStays$HospitalAdmissionKey)
+
 - id: median_los
   question: What is the median length of stay, in days?
   kind: num

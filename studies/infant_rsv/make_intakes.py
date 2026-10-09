@@ -5,8 +5,6 @@
 
 - YAMLs/temp/Infant_RSV_Followup_intake.yaml: what the first pull lacks, with
   the first pull's visits uploaded as its PK (`python rsv keys` on the VM).
-- YAMLs/temp/Infant_RSV_ICU_intake.yaml: the ICU Stay Registry's stays within
-  each admission, on the same uploaded visits.
 - YAMLs/temp/Infant_RSV_intake.yaml: everything again, fresh, in place of the
   first pull ("redo everything"): the same EDVisits PK, every table built as the
   follow-up builds it, and the admissions, inpatient vitals and labs, mother and
@@ -30,7 +28,6 @@ TEMP = REPO / "YAMLs" / "temp"
 # becomes the redo's once exported). EDVisits and the grouped tables come from it.
 FIRST_BLUEPRINT = Path(__file__).resolve().parent / "first_pull_blueprint.yaml"
 FOLLOWUP = TEMP / "Infant_RSV_Followup_intake.yaml"
-ICU = TEMP / "Infant_RSV_ICU_intake.yaml"
 REDO = TEMP / "Infant_RSV_intake.yaml"
 
 ED_WINDOW = "BETWEEN DATEADD(DAY, -1, pk.ArrivalInstant) AND DATEADD(DAY, 1, pk.DepartureInstant)"
@@ -133,6 +130,31 @@ def visit_tables(pk: str) -> list[dict]:
               "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}",
               "maf.AdministrationInstant BETWEEN haf.InpatientAdmissionInstant AND haf.DischargeInstant"],
              dedup=["HospitalAdmissionKey", "AdministrationDepartmentKey"], order=["AdministrationInstant"]),
+        # Cosmos's ICU Stay Registry (D217): its stays for the same patient that began within the
+        # admission (a day's leeway before it). Matched by patient and time, not by the registry's
+        # EncounterKey, whose link is not yet verified; the registry has no date column to window on.
+        fact("IcuStays", "Each admission's ICU stays, from Cosmos's ICU Stay Registry, with the specialty of the department each began in",
+             "One row per ICU stay and admission",
+             [{"source": "r.IcuStayRegistryKey", "name": "IcuStayRegistryKey"},
+              {"source": "haf.HospitalAdmissionKey", "name": "HospitalAdmissionKey"},
+              {"source": "pk.EdVisitKey", "name": "EdVisitKey", "type": "BIGINT"},
+              {"source": "r.EncounterKey", "name": "IcuEncounterKey"},
+              {"source": "haf.EncounterKey", "name": "AdmissionEncounterKey"},
+              {"source": "r.PatientDurableKey", "name": "PatientDurableKey"},
+              {"source": "r.DepartmentKey", "name": "DepartmentKey"},
+              {"source": "d.DepartmentSpecialty", "name": "IcuSpecialty"},
+              {"source": "r.IcuStayStartInstant", "name": "IcuStayStartInstant"},
+              {"source": "r.IcuStayEndInstant", "name": "IcuStayEndInstant"},
+              {"source": "r.IcuLengthOfStay", "name": "IcuLengthOfStay"},
+              {"source": "r.AgeAtIcuStayStart", "name": "AgeAtIcuStayStart"}],
+             "IcuStayRegistryDataMart AS r",
+             [f"{on_pk} ON pk.PatientDurableKey = r.PatientDurableKey",
+              "INNER JOIN HospitalAdmissionFact AS haf ON haf.HospitalAdmissionKey = pk.HospitalAdmissionKey",
+              "LEFT JOIN DepartmentDim AS d ON d.DepartmentKey = r.DepartmentKey"],
+             ["r._IsDeleted = 0", "haf._IsDeleted = 0", "pk.HospitalAdmissionKey > 0",
+              "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}",
+              "r.IcuStayStartInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND haf.DischargeInstant"],
+             dedup=["IcuStayRegistryKey", "HospitalAdmissionKey"]),
     ]
 
 
@@ -169,41 +191,6 @@ def followup(first: dict) -> dict:
         ["haf._IsDeleted = 0", "pk.HospitalAdmissionKey > 0", "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}"],
         dedup=["HospitalAdmissionKey"])
     doc["cohorts"] = visit_tables("RSVVisitKeys") + [admissions]
-    return doc
-
-
-def icu(first: dict) -> dict:
-    """The ICU Stay Registry's stays within each RSV admission, on the first pull's visits (D217).
-
-    Stays are matched by patient and by starting within the admission (a day's leeway
-    before it), not by the registry's EncounterKey, whose link is not yet verified.
-    The registry has no date column to window on (its page shows no partition key)."""
-    doc = followup(first)
-    doc["project_vars"] = {"project_folder": "Infant_RSV_ICU"}
-    doc["batching"] = [{"chunk": 200000}]
-    doc["cohorts"] = [fact(
-        "IcuStays", "Each RSV admission's ICU stays, from Cosmos's ICU Stay Registry, with the specialty of the department each began in",
-        "One row per ICU stay and admission",
-        [{"source": "r.IcuStayRegistryKey", "name": "IcuStayRegistryKey"},
-         {"source": "haf.HospitalAdmissionKey", "name": "HospitalAdmissionKey"},
-         {"source": "pk.EdVisitKey", "name": "EdVisitKey", "type": "BIGINT"},
-         {"source": "r.EncounterKey", "name": "IcuEncounterKey"},
-         {"source": "haf.EncounterKey", "name": "AdmissionEncounterKey"},
-         {"source": "r.PatientDurableKey", "name": "PatientDurableKey"},
-         {"source": "r.DepartmentKey", "name": "DepartmentKey"},
-         {"source": "d.DepartmentSpecialty", "name": "IcuSpecialty"},
-         {"source": "r.IcuStayStartInstant", "name": "IcuStayStartInstant"},
-         {"source": "r.IcuStayEndInstant", "name": "IcuStayEndInstant"},
-         {"source": "r.IcuLengthOfStay", "name": "IcuLengthOfStay"},
-         {"source": "r.AgeAtIcuStayStart", "name": "AgeAtIcuStayStart"}],
-        "IcuStayRegistryDataMart AS r",
-        ["INNER JOIN {{prefix}}_RSVVisitKeys AS pk ON pk.PatientDurableKey = r.PatientDurableKey",
-         "INNER JOIN HospitalAdmissionFact AS haf ON haf.HospitalAdmissionKey = pk.HospitalAdmissionKey",
-         "LEFT JOIN DepartmentDim AS d ON d.DepartmentKey = r.DepartmentKey"],
-        ["r._IsDeleted = 0", "haf._IsDeleted = 0", "pk.HospitalAdmissionKey > 0",
-         "haf.AdmissionDateKey BETWEEN {{min_date_key}} AND {{max_date_key}}",
-         "r.IcuStayStartInstant BETWEEN DATEADD(DAY, -1, haf.InpatientAdmissionInstant) AND haf.DischargeInstant"],
-        dedup=["IcuStayRegistryKey", "HospitalAdmissionKey"])]
     return doc
 
 
@@ -265,7 +252,6 @@ def main() -> int:
     first.setdefault("run_vars", {})
     dump(followup(first), FOLLOWUP)
     dump(redo(first), REDO)
-    dump(icu(first), ICU)
     return 0
 
 

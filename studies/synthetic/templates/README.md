@@ -52,7 +52,7 @@ source("R/examples.R")
 - **A visit and its encounter.** `EDVisits` holds one row per ED visit. Its `EncounterKey` is the visit's encounter, which `EDVitals`, `EDLabs`, `EDMeds` and `EDDiagnoses` share.
 - **The patient.** `PatientDurableKey` is the patient. In `Patients` it is called `DurableKey`.
 - **The admission.** An admitted visit has a `HospitalAdmissionKey` above 0; one not admitted has -1. `HospitalAdmissionFact` holds the admission. Its `EncounterKey` is the admission's encounter: `InpatientVitals` calls it `InpatientEncounterKey`, and `InpatientLabs` calls it `EncounterKey`.
-- **Where an admission went, and the ICU.** `HospitalAdmissionFact` has `AdmitSpecialty` and `DischargeSpecialty`: the specialty of the department an admission was admitted to and left from. `StayDepartments` has the departments medications were given in. The specialty names are Cosmos's own, including Pediatric Intensive Care, Critical Care Medicine and Neonatology. Hospitals name their units differently, so which specialties count as an ICU is a choice. In Cosmos, an admission's admitted-to and discharged-from departments were nearly always the same, so a move into the ICU mid-stay may not show in either. How to see such moves is still being worked out.
+- **Where an admission went, and the ICU.** `HospitalAdmissionFact` has `AdmitSpecialty` and `DischargeSpecialty`: the specialty of the department an admission was admitted to and left from. `StayDepartments` has the departments medications were given in, and `IcuStays` has each admission's stays from Cosmos's own ICU Stay Registry, with the unit each began in. The specialty names are Cosmos's own, including Pediatric Intensive Care, Critical Care Medicine and Neonatology. Hospitals name their units differently, so which specialties count as an ICU is a choice. In Cosmos, an admission's admitted-to and discharged-from departments were nearly always the same, so a move into the ICU mid-stay may not show in either. How to see such moves is still being worked out.
 - **The birth.** `Births.BabyPatientDurableKey` is the patient, and `MotherPatientDurableKey` and `PregnancyKey` lead to `MotherPatientInfo` and `PregnancyFact`.
 - **Temperatures** are mostly in °F, as in Cosmos. Some readings are implausible, also as in Cosmos.
 
@@ -101,7 +101,8 @@ This synthetic copy has every table filled. The real pull is not there yet:
 - ED lab results, with each component's name as well as its LOINC code (how a venous blood gas is found);
 - every diagnosis on the visit;
 - ED medications, with names (how IV fluids are found);
-- the department specialties of each admission and of each medication during the stay (how the ICU is found);
+- the department specialties of each admission and of each medication during the stay;
+- each admission's stays from Cosmos's ICU Stay Registry (how the ICU is found);
 - births before 2019, so every child's gestational age is there, not only the younger ones';
 - inpatient lab names.
 
