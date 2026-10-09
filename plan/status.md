@@ -29,6 +29,15 @@ What is built, and what is still to be seen working on the VM. Only the user can
 
 ## To Check On The VM
 
+### Infant RSV: Bundle `ae095e1f…` And The RSV Bundle `8bef2f7c` (9 October 2026)
+
+Built 8 and 9 October (D209 to D214).
+
+1.  **One of the two Infant_RSV pulls** (D213, D214): Redo everything (`Infant_RSV_blueprint.yaml`) or the follow-up (`Infant_RSV_Followup_blueprint.yaml`, after `python rsv keys`). No table lands empty; ED labs come with names, ED medications with theirs, and admissions with their departments' specialties.
+2.  **The RSV bundle** (D209): `rsv_bundle.py` checks every file and installs `rsv`, keeping an edited `settings.yaml`.
+3.  **`rsv build`, `report`, `compare` and `admission`** (D209 to D212) on the new pull's parquets: the build page lists the venous pH's real lab code once lab names arrive, and VBG is filled in once ED labs exist.
+4.  **The transcription viewer**, copied into `utils/` by hand, opens at three columns and 16 point, and goes no smaller (D211).
+
 ### The Software Of 7 October 2026
 
 Built from the fixes agreed 7 October (D198, D204 to D208, D177), for GI_Conditions' restart.

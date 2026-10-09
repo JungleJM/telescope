@@ -6,7 +6,7 @@ File for discussing ideas/improvements. Your notes, then Claude's reply in a box
 
 # Tasks
 
-Nothing open here. What is left to see on the VM (the show-stopper tests' step 4 and clean-up, HaT PheWAS's checks, the Infant_RSV and UC re-pulls, the columns check) is in the roadmap's **Next: On The VM** sections.
+Nothing open here. What is left to see on the VM (the show-stopper tests' step 4 and clean-up, HaT PheWAS's checks, the Infant_RSV and UC re-pulls, the columns check) is in `status.md`, **To Check On The VM**.
 
 # Explorations
 

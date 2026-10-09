@@ -16,16 +16,7 @@ When an item is agreed, put it under Next, in order. When it is built, delete it
 
 ## Next
 
-**Infant RSV analysis (D209–D213), in order:**
-
-1.  **The transcription viewer** opens at three columns and 16 point (D211).
-2.  **`rsv build`**, its settings and the build page (D209, D210), with `keys` and `sections`; tested on made-up parquets shaped like the pull's.
-3.  **`rsv report` and `rsv compare`** (D210, D211).
-4.  **`rsv admission`** (D212).
-5.  **The RSV bundle** (D209).
-6.  **The follow-up pull's intake** (D213), less medication names until `MedicationDim` is in the dictionary.
-
-Waiting to be ordered:
+Nothing agreed and unbuilt (9 October 2026). Waiting to be ordered:
 
 - **Make deliverables** (D189); **Specify Project DB** (D179); **Counts from `profile:`** (D181), on D186's picker: Count for the PK, then the after-PK profile and the report, then fact tables in Count.
 - **A single table can outgrow the database on its own** (UC's unfiltered MedAdminHistory, about 150 GB), which packaging by group does not bound; packaging by chunk would (Open Problems, Estimate Size And Packaging By Chunk).
