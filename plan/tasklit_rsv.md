@@ -1,0 +1,3 @@
+## Specialty admission is good!
+
+It looks like there's a Pediatric Intensive Care, which I suspect is what we are looking for. Let's definitely add this addmitted to specialty thing as part of the set of info we are pulling with the RSV pull. I want to be able to see what the admitteds are admitted TO - maybe some hospitals have a specific pediatric intensive care, maybe some just have a critical care medicine or neonatology or something else. It'll be informative to be able to see, for the data we pull, how things are categorized and then later do a search based on specific admission locations.

@@ -12,17 +12,16 @@ project_vars:
   project_folder: GERD
 vars: {}
 upload_cohorts: []
-# GI_Conditions' GERD, whose PK (over 19 GB) filled the log in one insert.
-# Part splits the PK by patient into five sessions, each landing about a fifth.
-# PatientDurableKey % 5 keeps every patient whole, so each patient's first
-# GERD diagnosis is the same as in one PK. The five parquets read as one table.
 multipliers:
   - name: Disease
     stage: during_build
     levels:
       - strat: GERD
         vars:
-          ICD_Value: ["530.81", "530.11", "K21%"]
+          ICD_Value:
+            - "530.81"
+            - "530.11"
+            - "K21%"
   - name: Part
     stage: split_after_build
     applies_to: PKTable
@@ -42,3 +41,4 @@ cohorts:
   - recipe: PatientWithDx
     name: PtsWithDx
     dest_table: PtsWithDx
+    filter: {}
