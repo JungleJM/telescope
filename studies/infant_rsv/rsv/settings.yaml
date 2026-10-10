@@ -105,6 +105,9 @@ iv_given_actions: []   # empty takes every administration; which actions mean gi
 # Critical Care, Neonatology (which also holds newborn nurseries).
 icu_specialties: [Pediatric Intensive Care, Critical Care Medicine]
 
+# The registry's stays are on their admission's EncounterKey 97.8% of the time
+# (`rsv icu` result 11, 9 October 2026), and it counts the NICU (Neonatology) as
+# ICU; `icu_unit` says where each stay began.
 # Where `icu` comes from (a choice): `registry`, Cosmos's ICU Stay Registry, when
 # its pull is there, else the specialties above; or `specialty`, always them.
 # Either way the build keeps both: icu_registry and icu_by_specialty.
@@ -121,7 +124,7 @@ sections:
   pre_nirsevimab: era != 'nirsevimab'
 
 # `python rsv compare <grouping>` takes any of these.
-groupings: [age_band, ga_band, season, era, sex, race, ethnicity, svi_quartile, financial_class, admitted, icu, admit_specialty, dx_group, first_visit]
+groupings: [age_band, ga_band, season, era, sex, race, ethnicity, svi_quartile, financial_class, admitted, icu, icu_unit, admit_specialty, dx_group, first_visit]
 
 # `python rsv admission`: the factors, the outcomes, and what the models adjust for.
 admission_factors: [race, ethnicity, svi_quartile, financial_class]

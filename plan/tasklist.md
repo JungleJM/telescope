@@ -621,6 +621,27 @@ The made-up children behave plausibly: younger, more premature and (slightly) hi
 
 :::
 
+::: {style="border:2px solid #4a90e2; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟦 Claude: the ICU Stay Registry against Cosmos (results 11–13, 9 Oct)**
+
+Over 175,340 infant admissions in December 2024 (births included):
+
+- **The link holds.** 32,279 of the 33,022 registry stays (97.8%) are on the admission's own `EncounterKey`. `IcuStays` matches by patient and time anyway, so the other 2.2% are kept too.
+- **The registry finds far more ICU than the specialty rule.** 27,038 admissions (15.4%) have a registry stay. Both find 2,902; the registry alone 24,136; the rule alone 570.
+- **Most of the registry's extra is Neonatology:** 17,576 admissions, the NICU. The registry counts the NICU as ICU, while our rule did not list Neonatology. Next come Pediatric Intensive Care 3,325, Critical Care Medicine 1,818, Pediatrics 1,552, *Unspecified 1,056 and Pediatric Critical Care Medicine 434. A registry stay that began in "Pediatrics" or "Hospital Medicine" is probably an ICU bed in a department whose specialty says otherwise.
+- **This month's sample includes births,** so it is NICU-heavy. RSV admissions come from the ED, mostly after the newborn period, so the share will differ there.
+
+**For you to decide:**
+
+- **Should a NICU stay count as ICU for this study?** With the registry, `icu` includes them, and `icu_unit` says which unit each stay began in, so the analysis can split or exclude them, e.g. a section `icu_unit != 'Neonatology'`, or `icu_unit` as a grouping.
+- **The 570 the rule calls ICU and the registry doesn't.** Worth a look once the RSV data is in: step-down beds under a critical care specialty, perhaps.
+:::
+
+::: {style="border:2px solid #e2904a; border-radius:6px; padding:8px 12px; margin:8px 0;"}
+**🟧 Your response:**
+
+:::
+
 ## Settled
 
 Nothing waiting.
