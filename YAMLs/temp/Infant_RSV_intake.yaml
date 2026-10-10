@@ -425,6 +425,10 @@ cohorts:
     name: DurableKey
   - source: pd.BirthDate
     name: BirthDate
+  - source: pd.BirthDateAccuracy_X
+    name: BirthDateAccuracy_X
+  - source: pd.EarliestPossibleBirthDate_X
+    name: EarliestPossibleBirthDate_X
   - source: pd.DeathDate
     name: DeathDate
   - source: pd.Sex

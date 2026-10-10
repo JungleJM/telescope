@@ -37,7 +37,7 @@ v = v.merge(lowest, on="EdVisitKey", how="left")
 print("Lowest ED SpO2, admitted against not")
 print(v.groupby("admitted")["spo2_min_ed"].describe()[["count", "25%", "50%", "75%"]].round(1).to_string(), "\n")
 
-# 4. Temperatures: Cosmos mixes °F and °C. Above 45 is °F.
+# 4. Temperatures: Cosmos records them in °F; above 45 is °F.
 t = pd.to_numeric(tables["EDVitals"]["Temperature"].astype(float))
 celsius = t.where(t <= 45, (t - 32) * 5 / 9)
 print(f"Temperatures read as °F: {(t > 45).mean():.0%}; median in °C {celsius.median():.1f}\n")
@@ -46,12 +46,15 @@ print(f"Temperatures read as °F: {(t > 45).mean():.0%}; median in °C {celsius.
 haf = tables["HospitalAdmissionFact"]
 print("Admitted to")
 print(haf["AdmitSpecialty"].value_counts().to_string(), "\n")
-icu = set(haf.loc[haf["AdmitSpecialty"].isin(["Pediatric Intensive Care", "Critical Care Medicine"]), "HospitalAdmissionKey"])
+icu_names = ["Pediatric Intensive Care", "Critical Care Medicine", "Pediatric Critical Care Medicine"]
+icu = set(haf.loc[haf["AdmitSpecialty"].isin(icu_names), "HospitalAdmissionKey"])
 v["icu"] = v["HospitalAdmissionKey"].isin(icu)
 print(f"ICU: {v['icu'].sum():,} visits, {v['icu'].sum() / max(v['admitted'].sum(), 1):.1%} of admissions\n")
 
-# 6. IV fluids in the ED, by medication name and route.
+# 6. IV fluids in the ED: an intravenous route, and a hydrating fluid by name.
 meds = tables["EDMeds"]
-fluids = meds[meds["AdministrationRoute"].eq("Intravenous") &
-              meds["MedicationName"].str.contains("SODIUM CHLORIDE 0.9|DEXTROSE", regex=True, na=False)]
+iv = meds["AdministrationRoute"].str.lower().isin(["intravenous", "intravenous drip", "intravenous bolus"])
+hydrating = meds["MedicationName"].str.startswith(("DEXTROSE 5 % AND", "SODIUM CHLORIDE 0.9 % INTRAVENOUS",
+                                                   "POTASSIUM CHLORIDE 20 MEQ/L IN", "LACTATED RINGERS"), na=False)
+fluids = meds[iv & hydrating]
 print(f"Visits with IV fluids: {fluids['EncounterKey'].nunique():,}")

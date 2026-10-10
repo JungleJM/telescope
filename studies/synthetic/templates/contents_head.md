@@ -16,4 +16,4 @@ Each table below is one parquet in `data/cosmos_parquets/`, with the columns and
 | DATETIME2 | timestamp[us] |
 | NVARCHAR | string |
 
-Columns that the analysis doesn't use are filled with plausible but meaningless values, often `*Unspecified` or blank.
+A column whose values Cosmos has not yet been checked for is left empty; the README says which come from Cosmos and which are made up.

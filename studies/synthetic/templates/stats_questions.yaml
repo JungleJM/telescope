@@ -137,7 +137,7 @@
 
 - section: Vitals and labs
   id: fahrenheit_pct
-  question: What share of ED temperature readings are in °F? (Cosmos mixes units; above 45 is °F.)
+  question: What share of ED temperature readings are in °F? (Every one, as in Cosmos; above 45 is °F.)
   kind: pct
   python: |
     temperature = tables["EDVitals"]["Temperature"].astype(float).dropna()
@@ -186,41 +186,59 @@
     answer <- median(lowest$SpO2[!lowest$admitted], na.rm = TRUE)
 
 - id: vbg_pct
-  question: What share of visits had a venous blood gas in the ED (LOINC 2746-4 or 2021-4)?
+  question: What share of visits had a venous blood gas in the ED (venous pH 2746-6 or venous pCO2 2021-4)?
   kind: pct
   python: |
     labs = tables["EDLabs"]
-    vbg = labs.loc[labs["ComponentLoincCode"].isin(["2746-4", "2021-4"]), "EncounterKey"]
+    vbg = labs.loc[labs["ComponentLoincCode"].isin(["2746-6", "2021-4"]), "EncounterKey"]
     answer = visits["EncounterKey"].isin(vbg).mean()
   r: |
     labs <- tables$EDLabs
-    vbg <- labs$EncounterKey[labs$ComponentLoincCode %in% c("2746-4", "2021-4")]
+    vbg <- labs$EncounterKey[labs$ComponentLoincCode %in% c("2746-6", "2021-4")]
     answer <- mean(visits$EncounterKey %in% vbg)
 
 - id: iv_fluids_pct
-  question: What share of visits had IV fluids in the ED (route Intravenous; normal saline or dextrose)?
+  question: What share of visits had IV fluids in the ED (an intravenous route, and a hydrating fluid by name)?
   kind: pct
   python: |
     meds = tables["EDMeds"]
-    fluid = meds["AdministrationRoute"].eq("Intravenous") & \
-        meds["MedicationName"].str.contains("SODIUM CHLORIDE 0.9|DEXTROSE", na=False)
+    fluids = [
+        "DEXTROSE 5 % AND 0.9 % SODIUM CHLORIDE INTRAVENOUS SOLUTION",
+        "SODIUM CHLORIDE 0.9 % INTRAVENOUS SOLUTION",
+        "POTASSIUM CHLORIDE 20 MEQ/L IN D5-0.9 % SODIUM CHLORIDE INTRAVENOUS",
+        "DEXTROSE 5 % AND 0.45 % SODIUM CHLORIDE INTRAVENOUS SOLUTION",
+        "POTASSIUM CHLORIDE 20 MEQ/L IN DEXTROSE 5 %-0.45 % SODIUM CHLORIDE IV",
+        "DEXTROSE 5 % AND LACTATED RINGERS INTRAVENOUS SOLUTION",
+        "LACTATED RINGERS INTRAVENOUS SOLUTION"]
+    iv = meds["AdministrationRoute"].str.lower().isin(["intravenous", "intravenous drip", "intravenous bolus"])
+    fluid = iv & meds["MedicationName"].isin(fluids)
     answer = visits["EncounterKey"].isin(meds.loc[fluid, "EncounterKey"]).mean()
   r: |
     meds <- tables$EDMeds
-    fluid <- meds$AdministrationRoute %in% "Intravenous" &
-      grepl("SODIUM CHLORIDE 0.9|DEXTROSE", meds$MedicationName)
+    fluids <- c(
+      "DEXTROSE 5 % AND 0.9 % SODIUM CHLORIDE INTRAVENOUS SOLUTION",
+      "SODIUM CHLORIDE 0.9 % INTRAVENOUS SOLUTION",
+      "POTASSIUM CHLORIDE 20 MEQ/L IN D5-0.9 % SODIUM CHLORIDE INTRAVENOUS",
+      "DEXTROSE 5 % AND 0.45 % SODIUM CHLORIDE INTRAVENOUS SOLUTION",
+      "POTASSIUM CHLORIDE 20 MEQ/L IN DEXTROSE 5 %-0.45 % SODIUM CHLORIDE IV",
+      "DEXTROSE 5 % AND LACTATED RINGERS INTRAVENOUS SOLUTION",
+      "LACTATED RINGERS INTRAVENOUS SOLUTION")
+    iv <- tolower(meds$AdministrationRoute) %in% c("intravenous", "intravenous drip", "intravenous bolus")
+    fluid <- iv & meds$MedicationName %in% fluids
     answer <- mean(visits$EncounterKey %in% meds$EncounterKey[fluid])
 
 - section: Admissions and the ICU
   id: icu_pct_of_admissions
-  question: What share of admissions were to an ICU (`AdmitSpecialty` Pediatric Intensive Care or Critical Care Medicine)?
+  question: What share of admissions were to an ICU (`AdmitSpecialty` Pediatric Intensive Care, Critical Care Medicine or Pediatric Critical Care Medicine)?
   kind: pct
   python: |
     haf = tables["HospitalAdmissionFact"]
-    answer = haf["AdmitSpecialty"].isin(["Pediatric Intensive Care", "Critical Care Medicine"]).mean()
+    icu_names = ["Pediatric Intensive Care", "Critical Care Medicine", "Pediatric Critical Care Medicine"]
+    answer = haf["AdmitSpecialty"].isin(icu_names).mean()
   r: |
     haf <- tables$HospitalAdmissionFact
-    answer <- mean(haf$AdmitSpecialty %in% c("Pediatric Intensive Care", "Critical Care Medicine"))
+    icu_names <- c("Pediatric Intensive Care", "Critical Care Medicine", "Pediatric Critical Care Medicine")
+    answer <- mean(haf$AdmitSpecialty %in% icu_names)
 
 - id: picu_pct_of_admissions
   question: And to Pediatric Intensive Care alone?

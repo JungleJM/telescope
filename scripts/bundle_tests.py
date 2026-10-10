@@ -153,13 +153,14 @@ class BuildTests(BundleTestCase):
         self.assertIn("scripts/makeYaml.py", published)
         self.assertIn(makeYaml.CORE_DEFAULTS["datadictionary"], published)
 
-    def test_the_transcription_viewer_is_held_back(self):
-        # D200: it stays on the Mac, and nothing shipped names it.
+    def test_the_transcription_viewer_ships_and_nothing_else_names_it(self):
+        # D219 (for now): the viewer ships; D200 still holds for every other file.
         sections, _ = read_bundle(self.bundle)
         published = {section["path"] for section in sections}
-        self.assertTrue((SOURCE_ROOT / "utils" / "client" / "transcription_viewer.py").is_file())
-        self.assertNotIn("utils/client/transcription_viewer.py", published)
+        self.assertIn("utils/client/transcription_viewer.py", published)
         for section in sections:
+            if section["path"] == "utils/client/transcription_viewer.py":
+                continue
             with self.subTest(path=section["path"]):
                 self.assertIsNone(re.search(r"transcri|screenshot", section["content"], re.IGNORECASE))
 
@@ -195,8 +196,12 @@ class BuildTests(BundleTestCase):
         # the Mac's alone; what a VM user sees is reworded.
         import bundle_scrub
 
+        from bundle_pullmanager import SHIPS_AS_IS
+
         sections, _ = read_bundle(self.bundle)
         for section in sections:
+            if section["path"] in SHIPS_AS_IS:     # D219: the viewer, for now
+                continue
             with self.subTest(path=section["path"]):
                 self.assertEqual(bundle_scrub.mentions(section["path"], section["content"]), [])
         gui = next(s["content"] for s in sections if s["path"] == "pullmanager/gui.py")
@@ -770,8 +775,8 @@ class LauncherTests(BundleTestCase):
         listed = self.run_python("utils.py", "--list")
         self.assertEqual(listed.returncode, 0, listed.stderr)
         self.assertIn("viewparquets.py", listed.stdout.split())
-        # Held back for now (D200).
-        self.assertNotIn("transcription_viewer.py", listed.stdout.split())
+        # Shipped for now (D219).
+        self.assertIn("transcription_viewer.py", listed.stdout.split())
 
     def test_a_missing_folder_says_to_extract_again(self):
         self.run_python("bundle.py", "--extract")

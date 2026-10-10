@@ -68,7 +68,7 @@ def make_pull(root: Path, suffix: str = "", folder: str = "cosmos_parquets") -> 
         vital(10, 5001, "2023-11-02 03:00", rr=90, spo2=85, column="InpatientEncounterKey")])
     write(pull, "EDLabTestComponents" + suffix, [
         {"LabComponentResultKey": 1, "EncounterKey": 1001, "PatientDurableKey": 100, "LabComponentKey": 7,
-         "ComponentLoincCode": "2746-4", "CollectionInstant": T("2023-11-01 10:20"), "NumericValue": 7.31,
+         "ComponentLoincCode": "2746-6", "CollectionInstant": T("2023-11-01 10:20"), "NumericValue": 7.31,
          "Value": "7.31", "Unit": ""},
         {"LabComponentResultKey": 2, "EncounterKey": 2001, "PatientDurableKey": 200, "LabComponentKey": 8,
          "ComponentLoincCode": "6690-2", "CollectionInstant": T("2020-12-10 12:20"), "NumericValue": 9.0,
@@ -85,10 +85,10 @@ def make_pull(root: Path, suffix: str = "", folder: str = "cosmos_parquets") -> 
 def make_followup(root: Path) -> None:
     follow = root / "runs" / "Infant_RSV_Followup" / "cosmos_parquets"
     write(follow, "Patients", [
-        {"DurableKey": 100, "BirthDate": T("2023-08-01"), "Sex": "Female", "FirstRace": "White", "SecondRace": None,
+        {"DurableKey": 100, "BirthDate": T("2023-08-01"), "BirthDateAccuracy_X": "Month", "Sex": "Female", "FirstRace": "White", "SecondRace": None,
          "MultiRacial": 0, "Ethnicity": "Not Hispanic or Latino", "SviOverallPctlRankByZip2020_X": 0.8},
         {"DurableKey": 200, "BirthDate": None, "Sex": "Male", "FirstRace": "Black or African American",
-         "SecondRace": "White", "MultiRacial": 0, "Ethnicity": "Patient Declined",
+         "SecondRace": "White", "MultiRacial": 0, "Ethnicity": "*Unspecified",
          "SviOverallPctlRankByZip2020_X": 0.1}])
     write(follow, "AdmissionDepartments", [
         {"HospitalAdmissionKey": 900, "EncounterKey": 5001, "DischargeInstant": T("2023-11-04 10:00"),
@@ -153,6 +153,12 @@ class BuildOutcomes(Fixture):
         self.assertEqual(self.v.loc[3, "ga_weeks"], 35)
         self.assertEqual(self.v.loc[3, "ga_band"], "32-36w")
         self.assertEqual(self.v.loc[3, "age_days"], 70)
+
+    def test_age_is_exact_only_where_the_birth_date_is(self):
+        self.assertEqual(self.v.loc[1, "birth_date_accuracy"], "Month")
+        self.assertFalse(self.v.loc[1, "age_exact"])                 # a Month-accurate birth date
+        self.assertEqual(self.v.loc[3, "birth_date_accuracy"], "birth row")
+        self.assertTrue(self.v.loc[3, "age_exact"])
 
     def test_vbg_by_loinc_in_the_ed(self):
         self.assertTrue(self.v.loc[1, "vbg_ed"])
@@ -287,7 +293,7 @@ class LaterFixes(Fixture):
         write(pull, "EDLabTestComponents", [], LAB_COLUMNS)
         write(pull, "InpatientLabTestComponents", [
             {"LabComponentResultKey": 9, "EncounterKey": 5001, "PatientDurableKey": 100, "LabComponentKey": 7,
-             "ComponentLoincCode": "2746-4", "CollectionInstant": T("2023-11-01 10:20"), "NumericValue": 7.3,
+             "ComponentLoincCode": "2746-6", "CollectionInstant": T("2023-11-01 10:20"), "NumericValue": 7.3,
              "Value": "7.3", "Unit": ""}], LAB_COLUMNS)
         built = build(self.settings())
         self.assertTrue(built.visits["vbg_ed"].isna().all())
@@ -320,13 +326,13 @@ class LaterFixes(Fixture):
                 "MedicationKey": 1, "Dose": 20, "DoseUnit": "mL/kg", "Rate": None}
         write(follow, "EDMeds", [
             dict(base, MedicationAdministrationKey=1, EncounterKey=1001, AdministrationInstant=T("2023-11-01 11:00"),
-                 AdministrationRoute="Intravenous", MedicationName="SODIUM CHLORIDE 0.9 % IV BOLUS",
+                 AdministrationRoute="intravenous", MedicationName="SODIUM CHLORIDE 0.9 % INTRAVENOUS SOLUTION",
                  MedicationGenericName="sodium chloride 0.9 %", MedicationSimpleGenericName="Sodium Chloride"),
             dict(base, MedicationAdministrationKey=2, EncounterKey=2001, AdministrationInstant=T("2020-12-10 12:30"),
-                 AdministrationRoute="Oral", MedicationName="ACETAMINOPHEN 160 MG/5 ML",
+                 AdministrationRoute="oral", MedicationName="*Unspecified",
                  MedicationGenericName="acetaminophen", MedicationSimpleGenericName="Acetaminophen"),
             dict(base, MedicationAdministrationKey=3, EncounterKey=2001, AdministrationInstant=T("2020-12-10 12:40"),
-                 AdministrationRoute="Intravenous", MedicationName="AMPICILLIN IV",
+                 AdministrationRoute="intravenous", MedicationName="AMPICILLIN 500 MG SOLUTION FOR INJECTION",
                  MedicationGenericName="ampicillin", MedicationSimpleGenericName="Ampicillin")])
         settings = self.settings(min_cell=0)
         built = build(settings)
@@ -336,7 +342,7 @@ class LaterFixes(Fixture):
         self.assertEqual(built.notes["iv_by"], "route and name")
         text = build_page(settings, built, "test").render()
         self.assertIn("IV medications in the ED:", text)
-        self.assertIn("AMPICILLIN IV", text)
+        self.assertIn("AMPICILLIN 500 MG SOLUTION", text)
 
 
 class IcuRegistry(Fixture):

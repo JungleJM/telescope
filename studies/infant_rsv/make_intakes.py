@@ -66,7 +66,9 @@ def visit_tables(pk: str) -> list[dict]:
     on_pk = f"INNER JOIN {{{{prefix}}}}_{pk} AS pk"
     return [
         fact("Patients", "Each visit's patient: birth date, sex, race, ethnicity, SVI", "One row per patient",
-             cols("pd", ["DurableKey", "BirthDate", "DeathDate", "Sex", "SexAssignedAtBirth", "FirstRace", "SecondRace",
+             # BirthDateAccuracy_X: 10% of infants' birth dates are to the Month or Week only
+             # (`rsv verify` check 12, 9 October 2026), so each visit says how exact its age is.
+             cols("pd", ["DurableKey", "BirthDate", "BirthDateAccuracy_X", "EarliestPossibleBirthDate_X", "DeathDate", "Sex", "SexAssignedAtBirth", "FirstRace", "SecondRace",
                          "MultiRacial", "Ethnicity", "PreferredLanguage", "StateOrProvinceAbbreviation", "PrimaryRUCA_X",
                          "SviOverallPctlRankByZip2020_X", "SviSocioeconomicPctlRankByZip2020_X",
                          "SviHouseholdCharacteristicsPctlRankByZip2020_X",

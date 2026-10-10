@@ -19,7 +19,7 @@ WANT: dict[str, list[str]] = {
     "visits": ["EdVisitKey", "EncounterKey", "PatientDurableKey", "ArrivalInstant", "DepartureInstant",
                "HospitalAdmissionKey", "FinancialClass", "DischargeDisposition", "EdGenericDispo",
                "AcuityLevel", "ArrivalMethod"],
-    "patients": ["DurableKey", "BirthDate", "Sex", "FirstRace", "SecondRace", "MultiRacial", "Ethnicity",
+    "patients": ["DurableKey", "BirthDate", "BirthDateAccuracy_X", "Sex", "FirstRace", "SecondRace", "MultiRacial", "Ethnicity",
                  "PreferredLanguage", "StateOrProvinceAbbreviation", "PrimaryRUCA_X"],
     "births": ["BabyPatientDurableKey", "BirthKey", "BirthInstant", "GestationalAgeDays", "BirthWeightGrams"],
     "admissions": ["HospitalAdmissionKey", "EncounterKey", "InpatientAdmissionInstant", "DischargeInstant",
@@ -304,6 +304,9 @@ def build(settings: Settings, write: bool = True) -> Built:
         visits["birth_date"] = pd.NaT
     visits["birth_date_source"] = pd.Series(np.where(visits["birth_date"].notna(), "patient", None),
                                             index=visits.index, dtype="string")
+    # How exact the birth date is (verified: Instant, Day, Month, Week; check 12).
+    accuracy = visits.get("BirthDateAccuracy_X", pd.Series(pd.NA, index=visits.index))
+    visits["birth_date_accuracy"] = text(accuracy).where(visits["birth_date"].notna())
 
     # Births: gestational age and birth weight; a birth date where the patient has none.
     births = read("births")
@@ -326,12 +329,15 @@ def build(settings: Settings, write: bool = True) -> Built:
         use = visits["birth_date"].isna() & fallback.notna()
         visits.loc[use, "birth_date"] = fallback[use]
         visits.loc[use, "birth_date_source"] = "birth"
+        visits.loc[use, "birth_date_accuracy"] = "birth row"
     visits["ga_band"] = banded(visits["ga_weeks"], settings["ga_bands"], 60).fillna("Unknown") \
         if visits["ga_weeks"].notna().any() else pd.Series(pd.NA, index=visits.index, dtype="string")
 
     age = (visits["ArrivalInstant"].dt.normalize() - visits["birth_date"]).dt.days
     notes["age_outside"] = int((age.notna() & ~age.between(0, int(settings["age_max_days"]) - 1)).sum())
     visits["age_days"] = age.where(age.between(0, int(settings["age_max_days"]) - 1))
+    exact = {str(a).lower() for a in settings["exact_birth_accuracies"]}
+    visits["age_exact"] = visits["birth_date_accuracy"].str.lower().isin(exact).fillna(False) & visits["age_days"].notna()
     visits["age_months"] = visits["age_days"] / 30.4375
     visits["age_band"] = banded(visits["age_days"], settings["age_bands"], settings["age_max_days"])
 
@@ -482,7 +488,7 @@ def build(settings: Settings, write: bool = True) -> Built:
 
     keep = ["EdVisitKey", "EncounterKey", "PatientDurableKey", "HospitalAdmissionKey", "ArrivalInstant",
             "DepartureInstant", "stay_end", "year", "season", "era", "first_visit", "age_days", "age_months",
-            "age_band", "birth_date_source", "ga_weeks", "ga_band", "birth_weight_g", "sex", "race", "ethnicity",
+            "age_band", "birth_date_source", "birth_date_accuracy", "age_exact", "ga_weeks", "ga_band", "birth_weight_g", "sex", "race", "ethnicity",
             "svi", "svi_quartile", "financial_class", "dx_group", "admitted", "admission_found", "los_days", "icu",
             "admit_specialty", "discharge_specialty", "icu_registry", "icu_by_specialty", "icu_days", "icu_unit",
             "rr_initial", "rr_max_ed", "rr_max_stay", "spo2_min_ed", "spo2_min_stay", "temp_initial",
@@ -557,6 +563,7 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
     row("birth date from birth row", int((v["birth_date_source"] == "birth").sum()))
     row("age known", int(v["age_days"].notna().sum()))
     row("age outside 0-730 days", notes["age_outside"])
+    row("age exact to the day", int(v["age_exact"].sum()))
     row("gestational age known", int(v["ga_weeks"].notna().sum()))
     row("GA outside 22-44 weeks", notes.get("ga_implausible", 0))
     row("admitted", int(v["admitted"].sum()))
@@ -600,6 +607,8 @@ def build_page(settings: Settings, built: Built, version: str) -> Page:
                           ("sex", "sex"), ("svi quartile", "svi_quartile"), ("dx group", "dx_group")):
         page.line(f"{title}:")
         top_values(page, v[column] if v[column].notna().any() else None, 10)
+    page.line("birth date accuracy:")
+    top_values(page, v["birth_date_accuracy"] if v["birth_date_accuracy"].notna().any() else None, None)
     page.line("admitted to (specialty), every one:")
     top_values(page, v["admit_specialty"] if v["admit_specialty"].notna().any() else None, None)
     page.line("discharged from (specialty), every one:")

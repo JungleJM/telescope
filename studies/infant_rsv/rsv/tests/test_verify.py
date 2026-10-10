@@ -53,8 +53,8 @@ ANSWERS = {
     "multiracial": [("0", 17000), ("1", 600), ("(null)", 200)],
     "svi_scale": [(15000, 0.0, 1.0)],
     "vbg_codes": [("2021-4", "PCO2, VENOUS", "Carbon dioxide [Partial pressure] in Venous blood", 900),
-                  ("2747-2", "PH, VENOUS", "pH of Venous blood", 880)],
-    "routes": [("Oral", 5000), ("Intravenous", 3000), ("IV Push", 400), ("Intraveneous", 4)],
+                  ("2746-4", "PH, VENOUS", "pH of Venous blood", 880)],
+    "routes": [("oral", 5000), ("intravenous", 3000), ("IV Push", 400), ("intraventricular", 4)],
     "iv_fluid_names": [("SODIUM CHLORIDE 0.9 % IV BOLUS", 800), ("CEFTRIAXONE IV", 300), ("(null)", 50)],
     "icu_specialties": [("Pediatric Intensive Care", 300), ("Neonatology", 500)],
     "stay_times": [(0, None, None)],
@@ -83,11 +83,12 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(self.by_id["patient_filters"].verdict, "NO")          # UseInCosmosAnalytics_X drops most
         self.assertIn("UseInCosmosAnalytics_X 6.7%", self.by_id["patient_filters"].evidence)
         self.assertEqual(self.by_id["vbg_codes"].verdict, "NO")
-        self.assertIn("not seen: 2746-4", self.by_id["vbg_codes"].evidence)
+        self.assertIn("not seen: 2746-6", self.by_id["vbg_codes"].evidence)
         self.assertEqual(self.by_id["routes"].verdict, "NO")                   # "Intraveneous" missed
-        self.assertIn("missed: Intraveneous", self.by_id["routes"].evidence)
+        self.assertIn("missed: IV Push", self.by_id["routes"].evidence)
+        self.assertNotIn("intraventricular", self.by_id["routes"].evidence.split("missed:")[1])
         listed = v.detail_page(self.settings, self.results).render()
-        self.assertIn("Intraveneous | <11", listed)                         # a small count is hidden
+        self.assertIn("intraventricular | <11", listed)                         # a small count is hidden
         self.assertEqual(self.by_id["icu_specialties"].verdict, "NO")
         self.assertIn("not seen: Critical Care Medicine", self.by_id["icu_specialties"].evidence)
         self.assertEqual(self.by_id["svi_scale"].verdict, "OK")
@@ -110,7 +111,7 @@ class VerifyTests(unittest.TestCase):
         detail = v.detail_page(self.settings, self.results).render()
         for line in detail.splitlines():
             self.assertLessEqual(len(line), self.settings["page_width"], line)
-        self.assertIn("2747-2", detail)
+        self.assertIn("2746-4", detail)
 
     def test_verify_writes_both_pages(self):
         summary, detail = v.verify(self.settings, FakeConnection(self.cursor))

@@ -80,62 +80,75 @@ def time_key(when) -> int | None:
 
 # ---------------------------------------------------------------- vocabularies
 
-RACES = [("White", .52), ("Black or African American", .18), ("Asian", .05), ("Other Race", .09),
-         ("American Indian or Alaska Native", .01), ("Native Hawaiian or Other Pacific Islander", .005),
-         ("*Unspecified", .1), ("Patient Declined", .045)]
-ETHNICITIES = [("Not Hispanic or Latino", .68), ("Hispanic or Latino", .22), ("*Unspecified", .07),
-               ("Patient Declined", .03)]
-FINANCIAL = [("Miscellaneous/Other", .58), ("Medicaid", .37), ("Self-Pay", .025), ("Unknown", .01),
-             ("*Not Applicable", .01), ("Medicare", .005)]
-LANGUAGES = [("English", .82), ("Spanish", .13), ("Arabic", .01), ("Vietnamese", .01), ("*Unspecified", .03)]
-STATES = ["WI", "MN", "IL", "TX", "CA", "NY", "OH", "PA", "FL", "GA", "NC", "WA", "CO", "AZ", "MI"]
-RSV_CODES = [("J21.0", .6), ("B97.4", .3), ("J12.1", .07), ("J20.5", .03)]
-OTHER_CODES = ["R06.03", "J96.01", "E86.0", "H66.90", "R50.9", "R09.02", "J06.9", "U07.1"]
-ED_LABS = [  # LOINC, name, common name, base name, low, high, unit, share of lab draws that include it
-    ("6690-2", "WBC", "White Blood Cell Count", "WBC", 5, 20, "10*3/uL", .9),
-    ("718-7", "HEMOGLOBIN", "Hemoglobin", "HGB", 9, 15, "g/dL", .9),
-    ("777-3", "PLATELET COUNT", "Platelets", "PLT", 150, 500, "10*3/uL", .9),
-    ("2951-2", "SODIUM", "Sodium", "NA", 132, 145, "mmol/L", .8),
-    ("2823-3", "POTASSIUM", "Potassium", "K", 3.5, 5.8, "mmol/L", .8),
-    ("2075-0", "CHLORIDE", "Chloride", "CL", 98, 110, "mmol/L", .8),
-    ("2028-9", "CO2", "Carbon Dioxide", "CO2", 15, 28, "mmol/L", .8),
-    ("3094-0", "BUN", "Blood Urea Nitrogen", "BUN", 3, 20, "mg/dL", .8),
-    ("2160-0", "CREATININE", "Creatinine", "CREAT", .15, .5, "mg/dL", .8),
-    ("2345-7", "GLUCOSE", "Glucose", "GLU", 60, 160, "mg/dL", .8),
-    ("*Unspecified", "RSV PCR", "RSV by PCR", "RSVPCR", None, None, "", .6),
-]
-VBG_LABS = [("2746-4", "PH, VENOUS", "pH Venous", "PHVEN", 7.2, 7.42, ""),
-            ("2021-4", "PCO2, VENOUS", "pCO2 Venous", "PCO2VEN", 35, 70, "mm[Hg]")]
-MEDS = [  # name, generic, simple generic, pharm class, route, dose unit, share of visits (scaled by severity for IV)
-    ("ACETAMINOPHEN 160 MG/5 ML ORAL SUSP", "acetaminophen", "Acetaminophen", "ANALGESICS", "Oral", "mg", .45, False),
-    ("IBUPROFEN 100 MG/5 ML ORAL SUSP", "ibuprofen", "Ibuprofen", "NSAIDS", "Oral", "mg", .2, False),
-    ("ALBUTEROL 2.5 MG/3 ML NEB SOLN", "albuterol sulfate", "Albuterol", "BETA-ADRENERGIC AGENTS", "Inhalation", "mg", .2, False),
-    ("SODIUM CHLORIDE 0.9 % IV BOLUS", "sodium chloride 0.9 %", "Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/kg", .045, True),
-    ("DEXTROSE 5 %-SODIUM CHLORIDE 0.45 % IV SOLP", "dextrose 5 %-sodium chloride 0.45 %", "Dextrose-Sodium Chloride", "IV SOLUTIONS", "Intravenous", "mL/hr", .03, True),
-    ("CEFTRIAXONE 50 MG/KG IV", "ceftriaxone", "Ceftriaxone", "CEPHALOSPORINS", "Intravenous", "mg/kg", .04, False),
-    ("SODIUM CHLORIDE 3 % INHALATION", "sodium chloride 3 %", "Sodium Chloride", "RESPIRATORY THERAPY", "Inhalation", "mL", .05, False),
-]
+# What Cosmos holds, as `rsv verify` showed it (V: its check number) on 20,000
+# infant ED visits from December 2024, 9 October 2026. Each list is a value and
+# the count seen, used as weights; values seen fewer than 11 times are left out.
+# A column with no verified values here is left empty in the parquets.
+RACES = [("White", 8127), ("Black or African American", 4417), ("", 3449), ("Other Race", 1708),      # V14
+         ("Asian", 580), ("American Indian or Alaska Native", 308), ("Native Hawaiian or Other Pacific Islander", 125)]
+MULTIRACIAL_SHARE = 3269 / 18714                                                                       # V15
+ETHNICITIES = [("Not Hispanic or Latino", 10407), ("Hispanic or Latino", 4316), ("*Unspecified", 3991)]  # V16
+SEXES = [("Male", 10414), ("Female", 8299)]                                                            # V17
+BIRTH_ACCURACY = [("Instant", 13980), ("Day", 2710), ("Month", 1177), ("Week", 847)]                   # V12
+BIRTH_ROW_SHARE = 16067 / 18714                                                                        # V24
+FINANCIAL = [("Miscellaneous/Other", 12206), ("Medicaid", 6773), ("Self-Pay", 443), ("*Not Applicable", 292),
+             ("*Unspecified", 285)]                                                                     # V19
+ACUITY = [("Level 4 - Less Urgent", 7632), ("Level 3 - Urgent", 6972), ("Level 2 - Emergent", 4164),
+          ("Level 5 - Non-Urgent", 626), ("*Unspecified", 377), ("Level 1 - Immediate", 229)]          # V20
+ARRIVAL = [("Private Transport", 12115), ("Pedestrian Transport", 5356), ("Ambulance Transport", 1552),
+           ("*Unspecified", 351), ("Unknown", 269), ("Ground Ambulance Transport", 197), ("Public Transport", 81),
+           ("Helicopter Ambulance Transport", 73)]                                                     # V20
+DISPOSITION = [("Discharged to Home or Self Care (Routine Discharge)", 19483),
+               ("Left Against Medical Advice or Discontinued Care", 101),
+               ("Discharged/transferred to a Short-Term General Hospital for Inpatient Care", 92),
+               ("Discharged/transferred to Home Under Care of Organized Home Health Service Org", 62),
+               ("Assisted Living", 52), ("*Unspecified", 48),
+               ("Disch/trans to Another Type of Health Care Inst not Defined Elsewhere in this List", 38),
+               ("Discharged/transferred to a Designated Cancer Center or Children's Hospital", 38),
+               ("*Not Applicable", 21), ("Expired", 20)]                                                # V20
+GENERIC_NOT_ADMITTED = [("Discharge", 13884), ("Observation", 227), ("*Unspecified", 206), ("Transfer", 119),
+                        ("Left Without Being Seen", 84), ("Against Medical Advice", 36)]                # V20
+DEPARTURE_MISSING = 381 / 20000                                                                        # V3
+VISITS_WITH_VITALS = 19900 / 20000                                                                     # V5
+RSV_CODES = [("J21.0", 3152), ("B97.4", 1215), ("J12.1", 147), ("J20.5", 27)]                         # V25, V27
+# ED lab codes seen (the first build page, 9 October 2026, and V28); names only where V28 showed them.
+LAB_CODES = [("2345-7", 44018), ("2951-2", 43866), ("2075-0", 43710), ("2160-0", 43096), ("3094-0", 42991),
+             ("17861-6", 42506), ("2823-3", 41202), ("2028-9", 40271), ("718-7", 40079), ("786-4", 37419),
+             ("777-3", 35696), ("788-0", 34990), ("787-2", 34899), ("789-8", 34077)]
+UNSPECIFIED_LOINC_SHARE = 87884 / 619689                                                               # V29
+VBG_LABS = [  # LOINC, Name, LoincName, results seen (V28)
+    ("2746-6", "pH BldV", "pH of Venous blood", 1611),
+    ("2021-4", "pCO2 BldV", "Carbon dioxide [Partial pressure] in Venous blood", 1418),
+    ("2705-2", "pO2 BldV", "Oxygen [Partial pressure] in Venous blood", 1338),
+    ("14627-4", "HCO3 BldV-sCnc", "Bicarbonate [Moles/volume] in Venous blood", 1165),
+    ("1927-3", "Base excess BldV Calc-sCnc", "Base excess in Venous blood by calculation", 1141),
+    ("2711-0", "SaO2 % BldV", "Oxygen saturation in Venous blood", 778)]
+IV_ROUTES = [("intravenous", 213125), ("Intravenous Drip", 1147), ("Intravenous bolus", 93)]           # V30
+OTHER_ROUTES = [("oral", 57403), ("Respiratory (Inhalation)", 37823), ("", 21834), ("Enteral", 8289),
+                ("Nasogastric", 5251), ("Topical", 5234)]                                               # V30
+IV_NAMES = [  # MedicationDim names of IV doses (V32); the hydrating fluids are marked
+    ("*Unspecified", 86215, False),
+    ("DEXTROSE 5 % AND 0.9 % SODIUM CHLORIDE INTRAVENOUS SOLUTION", 19842, True),
+    ("SODIUM CHLORIDE 0.9 % INTRAVENOUS SOLUTION", 12223, True),
+    ("POTASSIUM CHLORIDE 20 MEQ/L IN D5-0.9 % SODIUM CHLORIDE INTRAVENOUS", 11132, True),
+    ("DEXTROSE 5 % AND 0.45 % SODIUM CHLORIDE INTRAVENOUS SOLUTION", 8024, True),
+    ("POTASSIUM CHLORIDE 20 MEQ/L IN DEXTROSE 5 %-0.45 % SODIUM CHLORIDE IV", 5653, True),
+    ("DEXTROSE 5 % AND LACTATED RINGERS INTRAVENOUS SOLUTION", 4170, True),
+    ("SODIUM CHLORIDE 0.9 % (FLUSH) INJECTION SYRINGE", 2342, False),
+    ("ACETAMINOPHEN 500 MG/50 ML (10 MG/ML) INTRAVENOUS SOLUTION", 2174, False),
+    ("LACTATED RINGERS INTRAVENOUS SOLUTION", 1251, True),
+    ("SODIUM CHLORIDE 0.9 % INJECTION SOLUTION", 1111, False),
+    ("DEXAMETHASONE SODIUM PHOSPHATE 4 MG/ML INJECTION SOLUTION", 789, False),
+    ("AMPICILLIN 500 MG SOLUTION FOR INJECTION", 677, False),
+    ("ONDANSETRON HCL (PF) 4 MG/2 ML INJECTION SOLUTION", 600, False),
+    ("CEFTRIAXONE 2 GRAM SOLUTION FOR INJECTION", 555, False)]
+ACTIONS_GIVEN = [(("Given", 1), 145118), (("New Bag", 1), 39070), (("Given", None), 23848)]           # V31
+STAY_DOSES_WITH_DEPARTMENT = 1 - 386867 / 439946                                                      # V33
 # Department specialties, as Cosmos names them (`rsv icu`, 9 October 2026).
 WARD_SPECIALTIES = ["Pediatrics", "Hospital Medicine", "Neonatology", "Pediatric Medical Ward"]
-WARD_SHARES = [.7, .12, .12, .06]
-ICU_SPECIALTIES = ["Pediatric Intensive Care", "Critical Care Medicine"]
-ICU_SHARES = [.75, .25]
-TEXT_DEFAULTS = {
-    "AcuityLevel": ["1 - Immediate", "2 - Emergent", "3 - Urgent", "4 - Less Urgent", "5 - Non-Urgent"],
-    "ArrivalMethod": ["Car", "Ambulance", "Walk-in", "*Unspecified"],
-    "DerivedEncounterStatus_X": ["Complete"],
-    "EncounterType": ["Hospital Encounter"],
-    "Country": ["United States of America"],
-    "Status": ["Alive"],
-    "MaritalStatus": ["Single", "Married", "*Unspecified"],
-    "GenderIdentity": ["*Unspecified"],
-    "LaborType": ["Spontaneous", "Induced", "*Unspecified"],
-    "DeliveryMethod": ["Vaginal, Spontaneous", "C-Section, Low Transverse", "*Unspecified"],
-    "LivingStatus": ["Living"],
-    "PresentationType": ["Vertex", "Breech", "*Unspecified"],
-    "PlacentaMethod": ["Spontaneous", "Manual", "*Unspecified"],
-    "Flag": ["", "High", "Low"],
-}
+WARD_SHARES = [38115, 2663, 61676, 1583]
+ICU_SPECIALTIES = ["Pediatric Intensive Care", "Critical Care Medicine", "Pediatric Critical Care Medicine"]
+ICU_SHARES = [1797, 1675, 244]
 
 
 def pick(rng: np.random.Generator, pairs: list[tuple[str, float]], size: int) -> np.ndarray:
@@ -164,7 +177,14 @@ def table_specs(blueprint: Path = BLUEPRINT) -> dict[str, dict]:
 # ---------------------------------------------------------------- the world
 
 class World:
-    """Patients, their visits, and everything that happens on them."""
+    """Patients, their visits, and everything that happens on them.
+
+    Every text value comes from what Cosmos showed (the lists above). Every
+    number, date and relationship between columns is the generator's own: in
+    particular, sicker children are the younger and more premature ones, and
+    race, ethnicity, SVI and financial class have no built-in relation to
+    anything.
+    """
 
     def __init__(self, patients: int, seed: int = 7) -> None:
         self.rng = np.random.default_rng(seed)
@@ -179,21 +199,17 @@ class World:
         n = self.n_patients
         span = (LAST_DAY - date(2017, 1, 1)).days
         births = pd.to_datetime(date(2017, 1, 1)) + pd.to_timedelta(rng.integers(0, span, n), unit="D")
-        preterm = rng.random(n) < 0.11
+        preterm = rng.random(n) < 0.11                    # the generator's share, not Cosmos's
         ga = np.where(preterm, rng.normal(33, 2.5, n), rng.normal(39, 1.1, n)).clip(23, 42)
-        ga_days = (ga * 7 + rng.integers(0, 7, n)).astype(int)
-        race = pick(rng, RACES, n)
-        second = np.where(rng.random(n) < 0.04, pick(rng, RACES[:5], n), None)
+        accuracy = pick(rng, BIRTH_ACCURACY, n)
         self.patients = pd.DataFrame({
             "n": np.arange(1, n + 1), "DurableKey": key("patient", np.arange(1, n + 1)), "BirthDate": births.normalize(),
-            "Sex": rng.choice(["Female", "Male"], n, p=[.45, .55]), "FirstRace": race, "SecondRace": second,
-            "MultiRacial": (second != None).astype(int), "Ethnicity": pick(rng, ETHNICITIES, n),  # noqa: E711
-            "PreferredLanguage": pick(rng, LANGUAGES, n), "StateOrProvinceAbbreviation": rng.choice(STATES, n),
-            "PrimaryRUCA_X": rng.choice(["1", "1", "1", "2", "4", "7", "10"], n),
-            "svi": rng.beta(1.3, 1.3, n), "ga_days": ga_days, "born_here": rng.random(n) < 0.73,
-            "birth_weight": (ga * 85 - 230 + rng.normal(0, 350, n)).clip(500, 5200).round(),
+            "BirthDateAccuracy_X": accuracy,
+            "Sex": pick(rng, SEXES, n), "FirstRace": pick(rng, RACES, n),
+            "MultiRacial": (rng.random(n) < MULTIRACIAL_SHARE).astype(int), "Ethnicity": pick(rng, ETHNICITIES, n),
+            "svi": rng.uniform(0.0001, 1.0, n), "ga_days": (ga * 7 + rng.integers(0, 7, n)).astype(int),
+            "born_here": rng.random(n) < BIRTH_ROW_SHARE,
         })
-        self.patients["SexAssignedAtBirth"] = self.patients["Sex"]
 
     # Visits: an age at arrival, skewed young, in RSV season, and a severity that drives the rest.
     def make_visits(self) -> None:
@@ -211,13 +227,13 @@ class World:
                 month = arrival.month
                 weight = 1.0 if month in (11, 12, 1, 2) else .55 if month in (10, 3) else .12
                 if arrival.year == 2020 and month >= 4 or arrival.year == 2021 and month <= 3:
-                    weight *= .15            # the COVID off-season
+                    weight *= .15
                 if arrival.year == 2021 and month in (6, 7, 8):
-                    weight = .8              # its summer surge
+                    weight = .8
                 if pd.Timestamp(FIRST_DAY) <= arrival <= pd.Timestamp(LAST_DAY) and rng.random() < weight:
                     break
-            else:
-                arrival = pd.Timestamp(FIRST_DAY) + pd.Timedelta(days=int(rng.integers(0, 2000)))
+            else:                        # no in-season day found: a day in the first two months of life
+                arrival = birth + pd.Timedelta(days=int(rng.integers(0, 60)))
             rows.append((index, arrival + pd.Timedelta(minutes=int(rng.integers(0, 1440)))))
         v = pd.DataFrame(rows, columns=["patient_index", "ArrivalInstant"]).sort_values("ArrivalInstant").reset_index(drop=True)
         v["n"] = np.arange(1, n + 1)
@@ -227,22 +243,20 @@ class World:
         age_days = (v["ArrivalInstant"].dt.normalize() - p["BirthDate"].to_numpy()[v["patient_index"]]).dt.days
         v["age_days"] = age_days
         ga = p["ga_days"].to_numpy()[v["patient_index"]] / 7
-        svi = p["svi"].to_numpy()[v["patient_index"]]
-        # Severity: younger, more premature and (a little) higher-SVI children are sicker. Invented, for practice.
-        v["severity"] = (1.6 * np.exp(-age_days / 90) + 0.12 * np.clip(37 - ga, 0, None) + 0.4 * svi
-                         + rng.normal(0, .7, n))
-        v["financial"] = np.where(rng.random(n) < 0.15 + 0.4 * svi, "Medicaid", pick(rng, FINANCIAL, n))
+        # Severity: younger and more premature children are sicker. Made up, for practice.
+        v["severity"] = 1.6 * np.exp(-age_days.clip(lower=0) / 90) + 0.12 * np.clip(37 - ga, 0, None) + rng.normal(0, .7, n)
+        v["financial"] = pick(rng, FINANCIAL, n)
         admit_p = 1 / (1 + np.exp(-(v["severity"] - 1.9) * 1.8))
         v["admitted"] = rng.random(n) < admit_p
         v["icu"] = v["admitted"] & (rng.random(n) < 1 / (1 + np.exp(-(v["severity"] - 2.6) * 2)))
-        v["ed_hours"] = rng.uniform(1.5, 7, n)
+        v["ed_hours"] = rng.uniform(1, 6, n)
         v["DepartureInstant"] = v["ArrivalInstant"] + pd.to_timedelta(v["ed_hours"] * 60, unit="m").dt.round("min")
-        no_departure = rng.random(n) < .025
-        v.loc[no_departure, "DepartureInstant"] = pd.NaT
+        v.loc[rng.random(n) < DEPARTURE_MISSING, "DepartureInstant"] = pd.NaT
         v["los_days"] = np.where(v["admitted"], np.clip(rng.gamma(2, 1.3 + v["severity"].clip(0) * .4), 1, 21).round(), 0)
         admitted_n = np.cumsum(v["admitted"])
         v["HospitalAdmissionKey"] = np.where(v["admitted"], key("admission", admitted_n), -1)
-        v["AdmissionEncounterKey"] = np.where(v["admitted"], key("encounter", 5_000_000 + admitted_n), -1)
+        # An admission is on its ED visit's own encounter (V9: 100%).
+        v["AdmissionEncounterKey"] = np.where(v["admitted"], v["EncounterKey"], -1)
         departure = v["DepartureInstant"].fillna(v["ArrivalInstant"] + pd.Timedelta(hours=4))
         v["InpatientAdmissionInstant"] = departure.where(v["admitted"])
         v["DischargeInstant"] = (departure + pd.to_timedelta(v["los_days"], unit="D")
@@ -262,28 +276,24 @@ class World:
     def ed_visits(self) -> pd.DataFrame:
         v, rng = self.visits, self.rng
         n = len(v)
-        dispo = np.where(v["admitted"], "Admitted as an Inpatient", "Home or Self Care")
-        acuity = np.where(v["severity"] > 2.5, "2 - Emergent", np.where(v["severity"] > 1.2, "3 - Urgent", "4 - Less Urgent"))
+        generic = np.where(v["admitted"], "Admit", pick(rng, GENERIC_NOT_ADMITTED, n))
         return pd.DataFrame({
             "EdVisitKey": v["EdVisitKey"], "EncounterKey": v["EncounterKey"], "PatientDurableKey": v["PatientDurableKey"],
             "ArrivalInstant": v["ArrivalInstant"], "DepartureInstant": v["DepartureInstant"],
             "HospitalAdmissionKey": v["HospitalAdmissionKey"], "FinancialClass": v["financial"],
-            "DischargeDisposition": dispo, "EdGenericDispo": np.where(v["admitted"], "Admit", "Discharge"),
-            "AcuityLevel": acuity, "Count": 1, "LeftWithoutBeingSeen": 0, "LeftAgainstMedicalAdvice": 0,
-            "UnderObservation": (rng.random(n) < .05).astype(int),
+            "DischargeDisposition": pick(rng, DISPOSITION, n), "EdGenericDispo": generic,
+            "AcuityLevel": pick(rng, ACUITY, n), "ArrivalMethod": pick(rng, ARRIVAL, n),
         })
 
     def patients_table(self) -> pd.DataFrame:
         p = self.patients
-        out = p[["DurableKey", "BirthDate", "Sex", "SexAssignedAtBirth", "FirstRace", "SecondRace", "MultiRacial",
-                 "Ethnicity", "PreferredLanguage", "StateOrProvinceAbbreviation", "PrimaryRUCA_X"]].copy()
+        out = p[["DurableKey", "BirthDate", "BirthDateAccuracy_X", "Sex", "FirstRace", "MultiRacial", "Ethnicity"]].copy()
         out["BirthDate"] = out["BirthDate"].dt.date
-        out["DeathDate"] = None
-        rng = self.rng
+        # Instant and Day birth dates equal the earliest possible one (V12); Month and Week's never
+        # do, by how much is not known, so theirs is left empty.
+        exact = out["BirthDateAccuracy_X"].isin(["Instant", "Day"])
+        out["EarliestPossibleBirthDate_X"] = out["BirthDate"].where(exact, None)
         out["SviOverallPctlRankByZip2020_X"] = p["svi"].round(4)
-        for name in ("SviSocioeconomicPctlRankByZip2020_X", "SviHouseholdCharacteristicsPctlRankByZip2020_X",
-                     "SviRacialEthnicMinorityStatusPctlRankByZip2020_X", "SviHousingTypeTransportationPctlRankByZip2020_X"):
-            out[name] = (p["svi"] + rng.normal(0, .12, len(p))).clip(0, 1).round(4)
         return out
 
     def vitals(self) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -291,26 +301,26 @@ class World:
         ed, stay = [], []
         counter = 0
         for i in range(len(v)):
-            if rng.random() < .06:
-                continue                             # a visit with no vitals charted
+            if rng.random() > VISITS_WITH_VITALS:
+                continue
             start, end = self.ed_window(i)
             sev, age = v.at[i, "severity"], v.at[i, "age_days"]
             base_rr = 45 - age / 40 + sev * 6
             readings = int(rng.integers(2, 7))
             times = sorted(start + (end - start) * rng.random(readings))
             if rng.random() < .1:
-                times = [start - pd.Timedelta(minutes=int(rng.integers(5, 120)))] + times   # before arrival
-            for t in times:
+                times = [start - pd.Timedelta(minutes=int(rng.integers(5, 120)))] + times
+            for t_ in times:
                 counter += 1
-                ed.append(self.vital_row(counter, v.at[i, "EncounterKey"], v.at[i, "PatientDurableKey"], t,
+                ed.append(self.vital_row(counter, v.at[i, "EncounterKey"], v.at[i, "PatientDurableKey"], t_,
                                          base_rr, sev, "EncounterKey"))
             if v.at[i, "admitted"]:
-                t = v.at[i, "InpatientAdmissionInstant"]
-                while t < v.at[i, "DischargeInstant"]:
+                t_ = v.at[i, "InpatientAdmissionInstant"]
+                while t_ < v.at[i, "DischargeInstant"]:
                     counter += 1
                     stay.append(self.vital_row(counter, v.at[i, "AdmissionEncounterKey"], v.at[i, "PatientDurableKey"],
-                                               t, base_rr * .9, sev * .8, "InpatientEncounterKey"))
-                    t += pd.Timedelta(hours=4)
+                                               t_, base_rr * .9, sev * .8, "InpatientEncounterKey"))
+                    t_ += pd.Timedelta(hours=4)
         return pd.DataFrame(ed), pd.DataFrame(stay)
 
     def vital_row(self, counter, encounter, patient, when, base_rr, sev, encounter_column):
@@ -319,84 +329,83 @@ class World:
         rr = int(np.clip(rng.normal(base_rr, 6), 15, 95))
         spo2 = int(np.clip(rng.normal(97.5 - sev * 2.2, 2), 70, 100))
         temp_c = float(np.clip(rng.normal(37.6 + sev * .25, .6), 35.5, 41))
-        fahrenheit = rng.random() < .85
-        if rng.random() < .003:
-            rr = 0                                   # a charting slip the analysis drops
+        if rng.random() < .001:
+            rr = 0                       # Cosmos has a few out of range (V8: 0.1% outside 5-150)
         return {"VitalsKey": key("vitals", counter), encounter_column: encounter, "PatientDurableKey": patient,
                 "TakenInstant": when.round("min"), "DateKey": date_key(when),
                 "RespirationRate": rr if rng.random() > .05 else None,
                 "SpO2": spo2 if rng.random() > .05 else None,
-                "Temperature": round(temp_c * 9 / 5 + 32, 1) if fahrenheit else round(temp_c, 1),
-                "PulseRate": int(np.clip(rng.normal(150 + sev * 8, 15), 80, 220)),
-                "Weight": round(float(np.clip(rng.normal(6.5, 2.2), 2, 16)), 2), "Count": 1,
-                "_IsDeleted": 0, "_IsInferred": 0}
+                "Temperature": round(temp_c * 9 / 5 + 32, 1)}    # every one in °F (V6)
 
     def labs(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         v, rng = self.visits, self.rng
         ed, stay = [], []
         counter = 0
+        top = max(n for _, n in LAB_CODES)
+        component = {code: i + 1 for i, code in enumerate([c for c, _ in LAB_CODES] + [c[0] for c in VBG_LABS])}
 
-        def draw(rows, encounter, patient, when, sev, vbg_p):
+        def row(rows, encounter, patient, when, loinc, name=None, loinc_name=None):
             nonlocal counter
-            when = pd.Timestamp(when)
-            panel = [lab for lab in ED_LABS if rng.random() < lab[7]]
+            counter += 1
+            rows.append({"LabComponentResultKey": key("lab", counter), "EncounterKey": encounter, "PatientDurableKey": patient,
+                         "LabComponentKey": key("labcomponent", component.get(loinc, 999)),
+                         "CollectionInstant": pd.Timestamp(when).round("min"),
+                         "ComponentLoincCode": loinc, "ComponentName": name, "ComponentLoincName": loinc_name})
+
+        def draw(rows, encounter, patient, when, vbg_p):
+            for loinc, n in LAB_CODES:
+                if rng.random() < .9 * n / top:
+                    row(rows, encounter, patient, when, loinc)
+            for _ in range(rng.poisson(2.3)):         # components with no LOINC code (V29: 14%)
+                row(rows, encounter, patient, when, "*Unspecified")
             if rng.random() < vbg_p:
-                panel += [lab + (1.0,) for lab in VBG_LABS]
-            for component, lab in enumerate(panel):
-                loinc, name, common, base, low, high, unit = lab[:7]
-                counter += 1
-                if low is None:
-                    value, number = ("Detected" if rng.random() < .9 else "Not Detected"), None
-                else:
-                    number = float(rng.uniform(low, high))
-                    if loinc == "2746-4":
-                        number = 7.38 - sev * .03 + rng.normal(0, .03)
-                    if loinc == "2021-4":
-                        number = 40 + sev * 6 + rng.normal(0, 5)
-                    number = round(number, 2)
-                    value = str(number)
-                rows.append({"LabComponentResultKey": key("lab", counter), "EncounterKey": encounter,
-                             "PatientDurableKey": patient, "LabComponentKey": key("labcomponent", ED_LAB_INDEX[name]),
-                             "CollectionInstant": when.round("min"), "NumericValue": number, "Value": value,
-                             "Unit": unit, "Abnormal": int(rng.random() < .15), "Flag": "",
-                             "ComponentLoincCode": loinc, "ComponentLoincName": common, "ComponentName": name,
-                             "ComponentCommonName": common, "ComponentBaseName": base})
+                first = VBG_LABS[0][3]
+                for loinc, name, loinc_name, n in VBG_LABS:
+                    if rng.random() < n / first:
+                        row(rows, encounter, patient, when, loinc, name, loinc_name)
 
         for i in range(len(v)):
             sev = v.at[i, "severity"]
             start, end = self.ed_window(i)
             if rng.random() < .25 + .15 * min(sev, 3):
                 draw(ed, v.at[i, "EncounterKey"], v.at[i, "PatientDurableKey"], start + (end - start) * rng.random(),
-                     sev, .05 + .08 * max(sev, 0))
+                     .05 + .08 * max(sev, 0))
             if v.at[i, "admitted"]:
-                t = v.at[i, "InpatientAdmissionInstant"] + pd.Timedelta(hours=6)
-                while t < v.at[i, "DischargeInstant"]:
-                    draw(stay, v.at[i, "AdmissionEncounterKey"], v.at[i, "PatientDurableKey"], t, sev, .2 if v.at[i, "icu"] else .03)
-                    t += pd.Timedelta(hours=24)
+                t_ = v.at[i, "InpatientAdmissionInstant"] + pd.Timedelta(hours=6)
+                while t_ < v.at[i, "DischargeInstant"]:
+                    draw(stay, v.at[i, "AdmissionEncounterKey"], v.at[i, "PatientDurableKey"], t_, .2 if v.at[i, "icu"] else .03)
+                    t_ += pd.Timedelta(hours=24)
         return pd.DataFrame(ed), pd.DataFrame(stay)
 
     def ed_meds(self) -> pd.DataFrame:
         v, rng = self.visits, self.rng
         rows, counter = [], 0
+        names = [n for n, _, _ in IV_NAMES]
+        weights = np.array([w for _, w, _ in IV_NAMES], dtype=float)
+        fluid_weights = np.array([w * (6 if fluid else 1) for _, w, fluid in IV_NAMES], dtype=float)
+        actions = [a for a, _ in ACTIONS_GIVEN]
+        action_weights = np.array([w for _, w in ACTIONS_GIVEN], dtype=float)
         for i in range(len(v)):
             sev = max(v.at[i, "severity"], 0)
             start, end = self.ed_window(i)
-            for m, med in enumerate(MEDS):
-                name, generic, simple, pclass, route, unit, share, fluid = med
-                if rng.random() < (share * (1 + 1.5 * sev) if fluid else share):
-                    counter += 1
-                    rows.append({"MedicationAdministrationKey": key("medadmin", counter), "EncounterKey": v.at[i, "EncounterKey"],
-                                 "PatientDurableKey": v.at[i, "PatientDurableKey"],
-                                 "AdministrationInstant": pd.Timestamp(start + (end - start) * rng.random()).round("min"),
-                                 "AdministrationRoute": route, "AdministrationAction": "Given", "ActionIsMedAdministration": 1,
-                                 "MedicationKey": key("medication", m + 1), "MedicationOrderKey": key("medorder", counter),
-                                 "Dose": round(float(rng.uniform(5, 20)), 2), "DoseUnit": unit,
-                                 "Rate": round(float(rng.uniform(10, 40)), 2) if unit == "mL/hr" else None,
-                                 "AdministrationDepartmentKey": key("department", 1),
-                                 "MedicationName": name, "MedicationGenericName": generic,
-                                 "MedicationSimpleGenericName": simple, "MedicationPharmaceuticalClass": pclass,
-                                 "MedicationPharmaceuticalSubclass": pclass, "MedicationTherapeuticClass": pclass,
-                                 "MedicationForm": "Solution", "MedicationRoute": route})
+            iv_doses = rng.poisson(.4 + .5 * sev)
+            other_doses = rng.poisson(.8)
+            for d in range(iv_doses + other_doses):
+                counter += 1
+                iv = d < iv_doses
+                if iv:
+                    w = fluid_weights if sev > 1.5 else weights
+                    name = names[rng.choice(len(names), p=w / w.sum())]
+                    route = pick(rng, IV_ROUTES, 1)[0]
+                else:
+                    name, route = None, pick(rng, OTHER_ROUTES, 1)[0]   # names on these routes not yet verified
+                action, is_given = actions[rng.choice(len(actions), p=action_weights / action_weights.sum())]
+                rows.append({"MedicationAdministrationKey": key("medadmin", counter), "EncounterKey": v.at[i, "EncounterKey"],
+                             "PatientDurableKey": v.at[i, "PatientDurableKey"],
+                             "AdministrationInstant": pd.Timestamp(start + (end - start) * rng.random()).round("min"),
+                             "AdministrationRoute": route, "AdministrationAction": action,
+                             "ActionIsMedAdministration": is_given, "MedicationKey": key("medication", names.index(name) + 1 if name in names else 999),
+                             "MedicationName": name})
         return pd.DataFrame(rows)
 
     def diagnoses(self) -> pd.DataFrame:
@@ -406,25 +415,24 @@ class World:
             codes = [pick(rng, RSV_CODES, 1)[0]]
             if rng.random() < .25:
                 codes.append("B97.4" if codes[0] != "B97.4" else "J21.0")
-            codes += list(rng.choice(OTHER_CODES, int(rng.integers(0, 3)), replace=False))
             for position, code in enumerate(dict.fromkeys(codes)):
                 counter += 1
                 rows.append({"DiagnosisEventKey": key("diagnosisevent", counter), "EncounterKey": v.at[i, "EncounterKey"],
                              "PatientDurableKey": v.at[i, "PatientDurableKey"],
                              "DiagnosisKey": key("diagnosis", 1 + sum(map(ord, code)) % 9000),
                              "EmergencyDepartmentDiagnosis": 1, "IsPrimary": int(position == 0),
-                             "Type": "Encounter Diagnosis", "BillingCodeValue": code, "CodeType": "ICD-10-CM"})
+                             "BillingCodeValue": code, "CodeType": "ICD-10-CM"})
         return pd.DataFrame(rows)
 
     def admissions(self) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Admitted-to specialties are names Cosmos has (`rsv icu`, 9 October 2026). There, an admission's
-        admitted-to and discharged-from departments were nearly always the same, so they are here too."""
+        """Specialties as Cosmos names them (`rsv icu`, 9 October 2026), weighted by its infant
+        admissions in December 2024 (births among them). There, an admission's admitted-to and
+        discharged-from departments were nearly always the same, so they are here too."""
         v, rng = self.visits[self.visits["admitted"]], self.rng
         n = len(v)
-        ward = rng.choice(WARD_SPECIALTIES, n, p=WARD_SHARES)
-        unit = rng.choice(ICU_SPECIALTIES, n, p=ICU_SHARES)
+        ward = rng.choice(WARD_SPECIALTIES, n, p=np.array(WARD_SHARES) / sum(WARD_SHARES))
+        unit = rng.choice(ICU_SPECIALTIES, n, p=np.array(ICU_SHARES) / sum(ICU_SHARES))
         admit = np.where(v["icu"], unit, ward)
-        discharge = admit.copy()
         department = {name: key("department", i + 1) for i, name in enumerate(WARD_SPECIALTIES + ICU_SPECIALTIES)}
         haf = pd.DataFrame({
             "HospitalAdmissionKey": v["HospitalAdmissionKey"], "EncounterKey": v["AdmissionEncounterKey"],
@@ -433,15 +441,15 @@ class World:
             "InpatientAdmissionDateKey": v["InpatientAdmissionInstant"].map(date_key),
             "DischargeInstant": v["DischargeInstant"].dt.round("min"), "DischargeDateKey": v["DischargeInstant"].map(date_key),
             "LengthOfStayInDays": v["los_days"].astype(int), "InpatientLengthOfStayInDays": v["los_days"].astype(int),
-            "DepartmentKey": [department[s] for s in admit], "DischargeDepartmentKey_X": [department[s] for s in discharge],
-            "AdmitSpecialty": admit, "DischargeSpecialty": discharge, "FinancialClass": v["financial"],
-            "EncounterType": "Hospital Encounter", "DischargeDisposition": "Home or Self Care", "StartedInED_X": 1, "Count": 1,
+            "DepartmentKey": [department[s] for s in admit], "DischargeDepartmentKey_X": [department[s] for s in admit],
+            "AdmitSpecialty": admit, "DischargeSpecialty": admit, "FinancialClass": v["financial"],
         })
         rows, stays = [], []
         for (_, row), specialty in zip(v.iterrows(), admit):
-            rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": department[specialty],
-                         "DepartmentSpecialty": specialty,
-                         "AdministrationInstant": row["InpatientAdmissionInstant"].round("min")})
+            if rng.random() < STAY_DOSES_WITH_DEPARTMENT * 3:    # most doses name no department (V33)
+                rows.append({"HospitalAdmissionKey": row["HospitalAdmissionKey"], "AdministrationDepartmentKey": department[specialty],
+                             "DepartmentSpecialty": specialty,
+                             "AdministrationInstant": row["InpatientAdmissionInstant"].round("min")})
             if row["icu"]:                        # the ICU Stay Registry's stay, begun soon after admission
                 start = (row["InpatientAdmissionInstant"] + pd.Timedelta(hours=int(rng.integers(0, 12)))).round("min")
                 end = min(row["DischargeInstant"], start + pd.Timedelta(hours=int(rng.integers(18, 120)))).round("min")
@@ -456,6 +464,7 @@ class World:
         return haf, pd.DataFrame(rows)
 
     def births(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Keys, the birth instant and gestational age (days, V23); the rest is not yet verified."""
         p, rng = self.patients[self.patients["born_here"]].reset_index(drop=True), self.rng
         n = len(p)
         mothers = key("patient", 5_000_000 + np.arange(1, n + 1))
@@ -463,22 +472,11 @@ class World:
         instant = p["BirthDate"] + pd.to_timedelta(rng.integers(0, 1440, n), unit="m")
         births = pd.DataFrame({
             "BabyPatientDurableKey": p["DurableKey"], "BirthKey": key("birth", np.arange(1, n + 1)), "BirthInstant": instant,
-            "BirthDateKey": instant.map(date_key), "GestationalAgeDays": p["ga_days"], "BirthWeightGrams": p["birth_weight"],
-            "BirthLength": (p["ga_days"] / 7 * 1.1 + 7).round(1), "MultipleDeliveryCount": 1, "MultipleDeliveryOrder": 1,
-            "DeliveryMethod": rng.choice(["Vaginal, Spontaneous", "C-Section, Low Transverse"], n, p=[.68, .32]),
-            "TotalApgarFiveMinute": rng.integers(6, 10, n), "BabyInpatientLengthOfStayInDays": np.where(p["ga_days"] < 245, rng.integers(5, 60, n), rng.integers(1, 4, n)),
-            "NeonatalDemise": 0, "MotherPatientDurableKey": mothers, "PregnancyKey": pregnancies,
+            "BirthDateKey": instant.map(date_key), "GestationalAgeDays": p["ga_days"],
+            "MotherPatientDurableKey": mothers, "PregnancyKey": pregnancies,
         })
-        mother = pd.DataFrame({"DurableKey": mothers,
-                               "BirthDate": (p["BirthDate"] - pd.to_timedelta(rng.normal(29, 5, n).clip(16, 45) * 365.25, unit="D")).dt.date,
-                               "Sex": "Female", "SexAssignedAtBirth": "Female", "FirstRace": p["FirstRace"],
-                               "Ethnicity": p["Ethnicity"], "PreferredLanguage": p["PreferredLanguage"],
-                               "StateOrProvinceAbbreviation": p["StateOrProvinceAbbreviation"], "IsCurrent": 1, "IsValid": 1,
-                               "UseInCosmosAnalytics_X": 1, "SviOverallPctlRankByZip2020_X": p["svi"].round(4)})
-        pregnancy = pd.DataFrame({"PregnancyKey": pregnancies, "PatientDurableKey": mothers, "NumberOfFetuses": 1,
-                                  "HasDelivery": 1, "LastDeliveryGestationalAge": (p["ga_days"] // 7).astype(str) + "w",
-                                  "LastDeliveryDateKey": instant.map(date_key), "PregnancyGravidaCount": rng.integers(1, 5, n),
-                                  "PregnancyParaCount": rng.integers(0, 4, n), "Count": 1})
+        mother = pd.DataFrame({"DurableKey": mothers})
+        pregnancy = pd.DataFrame({"PregnancyKey": pregnancies, "PatientDurableKey": mothers})
         return births, mother, pregnancy
 
     def tables(self) -> dict[str, pd.DataFrame]:
@@ -493,54 +491,23 @@ class World:
                 "IcuStays": self.icu_stays}
 
 
-ED_LAB_INDEX = {lab[1]: i + 1 for i, lab in enumerate(ED_LABS + [v + (1.0,) for v in VBG_LABS])}
-
-
 # ---------------------------------------------------------------- every column of the real table
 
-ANCHORS = ["ArrivalInstant", "TakenInstant", "CollectionInstant", "AdministrationInstant", "InpatientAdmissionInstant",
-           "BirthInstant"]
-
-
 def complete(frame: pd.DataFrame, columns: list[tuple[str, str]], rng: np.random.Generator) -> pd.DataFrame:
-    """Every column the real table has, in its order: the generated ones as made, the rest filled by name and type."""
-    n = len(frame)
-    anchor = next((frame[a] for a in ANCHORS if a in frame), None)
+    """Every column the real table has, in its order: the generated ones as made; a DateKey or
+    TimeOfDayKey from its own Instant when that was made; every other column empty, since what
+    Cosmos holds in it has not been verified."""
     out = {}
-    for name, sql in columns:
+    for name, _sql in columns:
         if name in frame:
             out[name] = frame[name]
-            continue
-        base = sql.split("(")[0].upper()
-        if name in ("_IsDeleted", "_IsInferred"):
-            out[name] = 0
-        elif name == "Count":
-            out[name] = 1
-        elif base.startswith("DATETIME") or base == "SMALLDATETIME":
-            out[name] = ((anchor + pd.to_timedelta(rng.integers(5, 240, n), unit="m")).where(rng.random(n) < .8)
-                         if anchor is not None else pd.Series(pd.NaT, index=frame.index))
-        elif name.endswith("TimeOfDayKey"):
-            partner = frame.get(name.replace("TimeOfDayKey", "Instant"), anchor)
-            out[name] = partner.map(time_key) if partner is not None else None
-        elif name.endswith("DateKey"):
-            partner = out.get(name.replace("DateKey", "Instant"), frame.get(name.replace("DateKey", "Instant"), anchor))
-            out[name] = partner.map(date_key) if partner is not None else None
-        elif base == "BIGINT" and name.endswith("Key"):
-            out[name] = key("other", rng.integers(1, 9_000_000, n))
-        elif base in ("BIT", "TINYINT") or name.startswith(("Is", "Has")):
-            out[name] = (rng.random(n) < .1).astype(int)
-        elif base in ("INT", "SMALLINT", "BIGINT"):
-            out[name] = rng.integers(0, 5, n)
-        elif base in ("FLOAT", "REAL", "NUMERIC", "DECIMAL"):
-            out[name] = np.where(rng.random(n) < .7, rng.uniform(0, 10, n).round(2), np.nan)
-        elif base == "DATE":
-            out[name] = None
-        elif name in TEXT_DEFAULTS:
-            out[name] = rng.choice(TEXT_DEFAULTS[name], n)
+        elif name.endswith("DateKey") and name.replace("DateKey", "Instant") in frame:
+            out[name] = frame[name.replace("DateKey", "Instant")].map(date_key)
+        elif name.endswith("TimeOfDayKey") and name.replace("TimeOfDayKey", "Instant") in frame:
+            out[name] = frame[name.replace("TimeOfDayKey", "Instant")].map(time_key)
         else:
-            out[name] = np.where(rng.random(n) < .5, "*Unspecified", None)
-    result = pd.DataFrame(out, index=frame.index)
-    return result.reset_index(drop=True)
+            out[name] = pd.Series([None] * len(frame), index=frame.index, dtype="object")
+    return pd.DataFrame(out, index=frame.index).reset_index(drop=True)
 
 
 def arrow_table(frame: pd.DataFrame, columns: list[tuple[str, str]]):
@@ -801,6 +768,35 @@ class SyntheticTests(unittest.TestCase):
                     values = frame[column].dropna()
                     values = values[values > 0]
                     self.assertTrue(values.astype(str).str.startswith(str(KEY_PREFIX)).all(), f"{name}.{column}")
+
+    def test_no_visit_comes_before_the_childs_birth(self):
+        visits = self.read("EDVisits").merge(self.read("Patients"), left_on="PatientDurableKey", right_on="DurableKey")
+        self.assertTrue((visits["ArrivalInstant"].dt.normalize() >= pd.to_datetime(visits["BirthDate"])).all())
+
+    def test_text_values_are_only_those_cosmos_showed(self):
+        # D220: a value not seen in Cosmos is never written; a column not checked is empty.
+        allowed = {
+            ("Patients", "FirstRace"): {v for v, _ in RACES}, ("Patients", "Ethnicity"): {v for v, _ in ETHNICITIES},
+            ("Patients", "Sex"): {v for v, _ in SEXES}, ("Patients", "BirthDateAccuracy_X"): {v for v, _ in BIRTH_ACCURACY},
+            ("EDVisits", "FinancialClass"): {v for v, _ in FINANCIAL}, ("EDVisits", "AcuityLevel"): {v for v, _ in ACUITY},
+            ("EDVisits", "ArrivalMethod"): {v for v, _ in ARRIVAL}, ("EDVisits", "DischargeDisposition"): {v for v, _ in DISPOSITION},
+            ("EDVisits", "EdGenericDispo"): {v for v, _ in GENERIC_NOT_ADMITTED} | {"Admit"},
+            ("EDDiagnoses", "BillingCodeValue"): {v for v, _ in RSV_CODES},
+            ("EDLabs", "ComponentLoincCode"): {c for c, _ in LAB_CODES} | {c[0] for c in VBG_LABS} | {"*Unspecified"},
+            ("EDMeds", "AdministrationRoute"): {v for v, _ in IV_ROUTES + OTHER_ROUTES},
+            ("EDMeds", "MedicationName"): {n for n, _, _ in IV_NAMES},
+            ("HospitalAdmissionFact", "AdmitSpecialty"): set(WARD_SPECIALTIES + ICU_SPECIALTIES),
+        }
+        for (table, column), values in allowed.items():
+            with self.subTest(table=table, column=column):
+                seen = set(self.read(table)[column].dropna())
+                self.assertTrue(seen <= values, seen - values)
+        specs = table_specs()
+        for table, column in (("Patients", "PreferredLanguage"), ("Patients", "SecondRace"), ("Births", "DeliveryMethod"),
+                              ("EDVitals", "PulseRate"), ("EDLabs", "NumericValue"), ("EDDiagnoses", "Type")):
+            with self.subTest(table=table, column=column):
+                self.assertIn(column, [c for c, _ in specs[table]["columns"]])
+                self.assertTrue(self.read(table)[column].isna().all())
 
     def test_tables_link_to_the_visits(self):
         visits = self.read("EDVisits")

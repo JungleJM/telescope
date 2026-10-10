@@ -57,6 +57,12 @@ cohorts:
   - source: pd.BirthDate
     name: BirthDate
     type: DATE
+  - source: pd.BirthDateAccuracy_X
+    name: BirthDateAccuracy_X
+    type: NVARCHAR(50)
+  - source: pd.EarliestPossibleBirthDate_X
+    name: EarliestPossibleBirthDate_X
+    type: DATE
   - source: pd.DeathDate
     name: DeathDate
     type: DATE

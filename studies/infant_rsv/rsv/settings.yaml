@@ -3,9 +3,11 @@
 # Every definition the analysis uses is here. Change a value, then run
 # `python rsv build` again: the parquets and every page follow it.
 #
-# `# unverified (check)`: a value assumed of Cosmos and not yet seen there;
-# `python rsv verify` runs the named check. Once it passes, the comment says so.
-# `# a choice`: a definition picked for the study, not a fact about the data.
+# `# verified (check N)`: seen in Cosmos by `python rsv verify` (its check N,
+# 9 October 2026, 20,000 infant ED visits from December 2024).
+# `# unverified`: not yet seen; the named check would show it.
+# `# a choice`: a definition picked for the study, from verified values where it
+# names any, not a fact about the data.
 # Paths are relative to the folder that holds `rsv`.
 
 # Where the pulls are.
@@ -39,8 +41,8 @@ min_cell: 11          # counts from 1 to min_cell - 1 print as <11; 0 prints eve
 no_departure_hours: 6   # a choice
 
 # Vitals. A reading outside its range is dropped and counted.
-temperature_fahrenheit_above: 45   # a temperature above this is read as °F; unverified (temperature_units)
-plausible:              # a choice; the units are unverified (spo2_scale, rr_range)
+temperature_fahrenheit_above: 45   # verified (6): every ED temperature was °F, 32-120; none at or under 45
+plausible:              # a choice; units verified (7, 8): SpO2 a percent (0-216 seen), RR per minute (0-182 seen)
   rr: [5, 150]
   spo2: [40, 100]
   temp_c: [30, 43]
@@ -54,8 +56,14 @@ age_bands:              # a choice
   12-23m: 365
 age_max_days: 731
 
+# Birth dates exact to the day, by PatientDim.BirthDateAccuracy_X. Verified (12):
+# Instant 13,980 and Day 2,710 have BirthDate = EarliestPossibleBirthDate_X;
+# Month 1,177 and Week 847 never do, so their ages are not exact. A birth row's
+# BirthInstant is taken as exact. `age_exact` says which; section `exact_age`.
+exact_birth_accuracies: [Instant, Day, birth row]
+
 # Gestational age, in completed weeks.
-ga_bands:               # a choice; GA in days is unverified (gestational_age)
+ga_bands:               # a choice; GA in days verified (23): 22-304 days seen, 98.4% within 22-44 weeks
   <28w: 0
   28-31w: 28
   32-36w: 32
@@ -70,31 +78,49 @@ eras:                   # a choice
   - {name: nirsevimab, from: 2023-24, to: 2099-00}
 
 # Diagnoses: a visit's group is the first here whose code it has.
-dx_groups:              # unverified (dx_code_format, rsv_codes)
+dx_groups:              # verified (25, 27): written with the dot under ICD-10-CM; J21.0 3,152, B97.4 1,215, J12.1 147, J20.5 27 encounters
   - {name: bronchiolitis, codes: [J21.0]}
   - {name: pneumonia, codes: [J12.1]}
   - {name: bronchitis, codes: [J20.5]}
   - {name: RSV other, codes: [B97.4]}
 
 # Groupings. A value not mapped keeps its own name; one in `unknown`, or one
-# beginning with `*` (Cosmos's *Unspecified, *Not Applicable), is Unknown.
-unknown: ["", "unknown", "patient declined", "patient refused", "declined", "not reported"]   # unverified (unknown_list, star_values)
+# beginning with `*`, is Unknown. Verified (14, 17, 19, 21, 22): race has a blank
+# value (3,449); sex has "Unknown"; ethnicity and financial class have
+# *Unspecified and *Not Applicable. None of the other words once listed
+# (Patient Declined, Not Reported...) occurred, so they are not listed.
+unknown: ["", "unknown"]
 race_map: {}
 ethnicity_map: {}
 financial_class_map: {}
-svi_column: SviOverallPctlRankByZip2020_X   # its scale is unverified (svi_scale)
+svi_column: SviOverallPctlRankByZip2020_X   # verified (18): a 0-1 rank, 0.0001-1.0000
 
-# VBG: a lab in the ED stay whose LOINC code is listed, or whose name matches a pattern.
-# Check the codes against the build page's list before relying on them.
-vbg_loinc: [2746-4, 2021-4]   # unverified (vbg_codes); 2746-4 never seen on the first build
-vbg_name_patterns: ["\\bvbg\\b", "venous.*\\b(ph|pco2)\\b", "\\b(ph|pco2)\\b.*venous"]   # unverified (vbg_codes)
+# VBG: a lab in the ED stay whose LOINC code is listed. Verified (28): venous pH is
+# 2746-6 (1,611 results; 2746-4, once listed here, never occurred) and venous pCO2
+# 2021-4 (1,418). Also seen: 2705-2 pO2, 14627-4 HCO3, 1927-3 base excess, 2711-0
+# O2 saturation, all venous. Which of them make "a VBG" is a choice.
+vbg_loinc: [2746-6, 2021-4]
+vbg_name_patterns: []   # none: what the component Name holds for each code is listed (28) but not relied on
 
 # IV fluids: an ED administration by one of these routes, of a medication whose
-# name, generic name or simple generic name matches. Without medication names,
-# IV fluids stay empty. The build page lists the ED's IV medications.
-iv_routes: ["^iv\\b", "intravenous"]   # unverified (routes)
-iv_fluid_patterns: ["sodium chloride 0\\.9", "normal saline", "lactated ringer", "plasma-?lyte", "dextrose.*sodium chloride"]   # unverified (iv_fluid_names)
-iv_given_actions: []   # empty takes every administration; which actions mean given is unverified (actions)
+# name begins with one of these. Verified (30, 32): the IV routes are
+# "intravenous", "Intravenous Drip" and "Intravenous bolus"; the names are
+# MedicationDim's, as seen. Which names count as IV fluids is a choice: here the
+# crystalloids given to hydrate, not flushes, nor drugs carried in saline, nor
+# dextrose in water. 86,215 IV doses (of the sample's) have the name *Unspecified,
+# so IV fluids are undercounted; the build page says how many in the ED.
+iv_routes: ["^intravenous$", "^intravenous drip$", "^intravenous bolus$"]
+iv_fluid_patterns:
+  - '^DEXTROSE\ 5\ %\ AND\ 0\.9\ %\ SODIUM\ CHLORIDE\ INTRAVENOUS\ SOLUTION'
+  - '^SODIUM\ CHLORIDE\ 0\.9\ %\ INTRAVENOUS\ SOLUTION'
+  - '^POTASSIUM\ CHLORIDE\ 20\ MEQ/L\ IN\ D5\-0\.9\ %\ SODIUM\ CHLORIDE\ INTRAVENOUS'
+  - '^DEXTROSE\ 5\ %\ AND\ 0\.45\ %\ SODIUM\ CHLORIDE\ INTRAVENOUS\ SOLUTION'
+  - '^POTASSIUM\ CHLORIDE\ 20\ MEQ/L\ IN\ DEXTROSE\ 5\ %\-0\.45\ %\ SODIUM\ CHLORIDE\ IV'
+  - '^DEXTROSE\ 5\ %\ AND\ LACTATED\ RINGERS\ INTRAVENOUS\ SOLUTION'
+  - '^LACTATED\ RINGERS\ INTRAVENOUS\ SOLUTION'
+  - '^DEXTROSE\ 5\ %\ AND\ 0\.2\ %\ SODIUM\ CHLORIDE\ INTRAVENOUS\ SOLUTION'
+  - '^SODIUM\ CHLORIDE\ 0\.45\ %\ INTRAVENOUS\ SOLUTION'
+iv_given_actions: []   # empty: ActionIsMedAdministration decides. Verified (31): 1 for Given and New Bag, 0 for Rate Verify, Stopped and the rest; Given also has it empty (23,848), and empty counts as given
 
 # ICU: an admission with any of these department specialties (case ignored).
 # The build page lists the specialties seen, and where admissions were admitted to.
@@ -116,6 +142,7 @@ icu_source: registry
 # Named sections: a filter on visits.parquet, written as pandas' DataFrame.query.
 sections:
   first_visits: first_visit
+  exact_age: age_exact
   under_3_months: age_days < 91
   preterm: ga_weeks < 37
   admitted: admitted

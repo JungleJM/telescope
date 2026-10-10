@@ -144,7 +144,10 @@ STOCK_DIR = "stock"
 # utils/ when needed), the dictionary's copy drops its comments and rewords
 # what its descriptions say about screenshots, and a build that would still
 # carry either word stops, naming each line.
-HELD_BACK = ("utils/client/transcription_viewer.py",)
+HELD_BACK: tuple[str, ...] = ()
+# For now (D219) the user wants the viewer on the VM: it ships, and is the one
+# file the word checks pass over; every other file is still held to them.
+SHIPS_AS_IS = ("utils/client/transcription_viewer.py",)
 NO_SCREENSHOT_MENTIONS = True
 # D201: the bundle's prose says nothing of bundling, extraction or the Mac;
 # bundle_scrub rewords what a VM user sees and drops the rest. False ships the
@@ -390,7 +393,9 @@ def build_sections(
     for path, published, policy in bundled_files(root, transfers, yamls_only):
         rel = safe_relpath(published)
         text = shipped_text(path, policy, rel)
-        if VM_ONLY_PROSE and policy != ROOT_POLICY:
+        if rel in SHIPS_AS_IS:
+            pass
+        elif VM_ONLY_PROSE and policy != ROOT_POLICY:
             mentions += bundle_scrub.mentions(rel, text)
         elif NO_SCREENSHOT_MENTIONS:
             mentions += screenshot_mentions(rel, text)

@@ -62,7 +62,7 @@ WHERE evf._IsDeleted = 0 AND evf.ArrivalDateKey BETWEEN {from} AND {to} AND age.
     ("#a their admissions", """
 DROP TABLE IF EXISTS #a;
 SELECT haf.HospitalAdmissionKey, haf.EncounterKey, haf.DepartmentKey, haf.DischargeDepartmentKey_X,
-       haf.InpatientAdmissionInstant, haf.DischargeInstant
+       haf.InpatientAdmissionInstant, haf.DischargeInstant, haf.DischargeDisposition, haf.EncounterType
 INTO #a
 FROM dbo.HospitalAdmissionFact AS haf
 WHERE haf._IsDeleted = 0 AND haf.AdmissionDateKey BETWEEN {from_minus} AND {to_stay}
@@ -76,7 +76,8 @@ WHERE vf._IsDeleted = 0 AND vf.DateKey BETWEEN {from_minus} AND {to_plus}
   AND vf.EncounterKey IN (SELECT EncounterKey FROM #v);"""),
     ("#lab labs on the visits", """
 DROP TABLE IF EXISTS #lab;
-SELECT l.EncounterKey, l.LabComponentKey, lcd.LoincCode, lcd.Name, lcd.CommonName, lcd.LoincName
+SELECT l.EncounterKey, l.LabComponentKey, lcd.LoincCode, lcd.Name, lcd.CommonName, lcd.LoincName,
+       lcd.BaseName, l.Unit
 INTO #lab
 FROM dbo.LabComponentResultFact AS l
 INNER JOIN dbo.LabComponentDim AS lcd ON lcd.LabComponentKey = l.LabComponentKey
@@ -103,19 +104,20 @@ WHERE m._IsDeleted = 0 AND m.AdministrationDateKey BETWEEN {from_minus} AND {to_
 DROP TABLE IF EXISTS #pat;
 SELECT pd.DurableKey, pd.IsCurrent, pd.IsValid, pd.UseInCosmosAnalytics_X, pd._IsDeleted, pd.BirthDate,
        pd.BirthDateAccuracy_X, pd.EarliestPossibleBirthDate_X, pd.Sex, pd.FirstRace, pd.SecondRace,
-       pd.MultiRacial, pd.Ethnicity, pd.SviOverallPctlRankByZip2020_X
+       pd.MultiRacial, pd.Ethnicity, pd.SviOverallPctlRankByZip2020_X, pd.PreferredLanguage,
+       pd.StateOrProvinceAbbreviation, pd.PrimaryRUCA_X
 INTO #pat
 FROM dbo.PatientDim AS pd
 WHERE pd.DurableKey IN (SELECT PatientDurableKey FROM #v);"""),
     ("#birth their births", """
 DROP TABLE IF EXISTS #birth;
-SELECT bf.BabyPatientDurableKey, bf.GestationalAgeDays, bf.BirthInstant
+SELECT bf.BabyPatientDurableKey, bf.GestationalAgeDays, bf.BirthInstant, bf.DeliveryMethod, bf.BirthWeightGrams
 INTO #birth
 FROM dbo.BirthFact AS bf
 WHERE bf._IsDeleted = 0 AND bf.BabyPatientDurableKey IN (SELECT PatientDurableKey FROM #v);"""),
     ("#dx diagnoses on the visits", """
 DROP TABLE IF EXISTS #dx;
-SELECT d.EncounterKey, d.EmergencyDepartmentDiagnosis, d.IsPrimary, dt.Value, dt.Type
+SELECT d.EncounterKey, d.EmergencyDepartmentDiagnosis, d.IsPrimary, dt.Value, dt.Type, d.Type AS DxType
 INTO #dx
 FROM dbo.DiagnosisEventFact AS d
 INNER JOIN dbo.DiagnosisTerminologyDim AS dt ON dt.DiagnosisKey = d.DiagnosisKey
@@ -295,7 +297,7 @@ def j_lab_codes(rows, s):
 def j_routes(rows, s):
     patterns = re.compile("|".join(f"(?:{p})" for p in s["iv_routes"]), re.IGNORECASE)
     hit = [str(r[0]) for r in rows if patterns.search(str(r[0]))]
-    near = [str(r[0]) for r in rows if re.search(r"intraven|\biv\b", str(r[0]), re.I) and str(r[0]) not in hit]
+    near = [str(r[0]) for r in rows if re.search(r"intravenous|\biv\b", str(r[0]), re.I) and str(r[0]) not in hit]
     verdict = "OK" if hit and not near else "NO"
     return verdict, f"matched: {', '.join(hit) or 'none'}; missed: {', '.join(near) or 'none'}"
 
@@ -318,6 +320,11 @@ def j_icu(rows, s):
     wanted = [str(x) for x in s["icu_specialties"]]
     missing = [w for w in wanted if w not in seen]
     return ("OK" if not missing else "NO"), ("all listed seen" if not missing else "not seen: " + ", ".join(missing))
+
+
+def j_lab_names(rows, s):
+    named = sum(1 for r in rows if str(r[1]).strip())
+    return "LOOK", f"{len(rows)} code-name-unit rows with 100+ results; {named} with a Name; every one in detail"
 
 
 def j_star(rows, s):
@@ -520,6 +527,44 @@ GROUP BY COALESCE(Name, '(null)') ORDER BY COUNT(*) DESC;""", j_fluids),
           "pulls: StayDepartments; build: icu", """
 SELECT COUNT(*), SUM(CASE WHEN AdministrationDepartmentKey IS NULL OR AdministrationDepartmentKey < 0 THEN 1 ELSE 0 END)
 FROM #smed;""", j_stay_dept),
+    Check("patient_other_values", "patients' other text values",
+          "SecondRace, PreferredLanguage, StateOrProvinceAbbreviation and PrimaryRUCA_X's values, every one (the synthetic copy leaves them empty until they are known).",
+          "synthetic data", """
+SELECT col, val, n FROM (
+    SELECT 'second race' AS col, COALESCE(SecondRace, '(null)') AS val, COUNT(*) AS n FROM #pat WHERE IsCurrent = 1 GROUP BY SecondRace
+    UNION ALL SELECT 'language', COALESCE(PreferredLanguage, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1 GROUP BY PreferredLanguage
+    UNION ALL SELECT 'state', COALESCE(StateOrProvinceAbbreviation, '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1 GROUP BY StateOrProvinceAbbreviation
+    UNION ALL SELECT 'ruca', COALESCE(CAST(PrimaryRUCA_X AS NVARCHAR(50)), '(null)'), COUNT(*) FROM #pat WHERE IsCurrent = 1 GROUP BY PrimaryRUCA_X
+) AS s ORDER BY col, n DESC;""", j_star),
+    Check("lab_names_by_code", "each lab code's names and unit",
+          "For each LOINC code with 100 or more results on the visits: the component's Name, CommonName, BaseName and LoincName, and the result's Unit (the synthetic copy names labs only where these are known).",
+          "synthetic data", """
+SELECT COALESCE(LoincCode, '(null)'), COALESCE(Name, ''), COALESCE(CommonName, ''), COALESCE(BaseName, ''),
+       COALESCE(LoincName, ''), COALESCE(Unit, ''), COUNT(*)
+FROM #lab
+GROUP BY COALESCE(LoincCode, '(null)'), COALESCE(Name, ''), COALESCE(CommonName, ''), COALESCE(BaseName, ''),
+         COALESCE(LoincName, ''), COALESCE(Unit, '')
+HAVING COUNT(*) >= 100 ORDER BY COUNT(*) DESC;""", j_lab_names),
+    Check("dx_types", "diagnosis types",
+          "DiagnosisEventFact.Type's values on the visits' diagnoses, every one.", "synthetic data", """
+SELECT COALESCE(DxType, '(null)'), COUNT(*) FROM #dx GROUP BY COALESCE(DxType, '(null)') ORDER BY COUNT(*) DESC;""", j_listing),
+    Check("med_names_other_routes", "medication names, other routes",
+          "Each route other than IV, with each medication name given 100 or more times by it on the visits.", "synthetic data", """
+SELECT COALESCE(AdministrationRoute, '(null)') + ' | ' + COALESCE(Name, '(null)'), COUNT(*) FROM #med
+WHERE NOT (AdministrationRoute LIKE 'intravenous%')
+GROUP BY COALESCE(AdministrationRoute, '(null)') + ' | ' + COALESCE(Name, '(null)')
+HAVING COUNT(*) >= 100 ORDER BY COUNT(*) DESC;""", j_listing),
+    Check("birth_values", "delivery method and birth weight",
+          "BirthFact.DeliveryMethod's values, every one, and BirthWeightGrams' range.", "synthetic data", """
+SELECT 'delivery' AS col, COALESCE(DeliveryMethod, '(null)') AS val, COUNT(*) AS n FROM #birth GROUP BY DeliveryMethod
+UNION ALL SELECT 'weight min', CAST(MIN(BirthWeightGrams) AS NVARCHAR(50)), COUNT(BirthWeightGrams) FROM #birth
+UNION ALL SELECT 'weight max', CAST(MAX(BirthWeightGrams) AS NVARCHAR(50)), COUNT(BirthWeightGrams) FROM #birth
+ORDER BY col, n DESC;""", j_star),
+    Check("admission_text_values", "admissions' disposition and type",
+          "HospitalAdmissionFact.DischargeDisposition and EncounterType's values, every one.", "synthetic data", """
+SELECT 'dispo' AS col, COALESCE(DischargeDisposition, '(null)') AS val, COUNT(*) AS n FROM #a GROUP BY DischargeDisposition
+UNION ALL SELECT 'type', COALESCE(EncounterType, '(null)'), COUNT(*) FROM #a GROUP BY EncounterType
+ORDER BY col, n DESC;""", j_star),
     Check("icu_specialties", "ICU specialty names exist",
           "The icu_specialties strings are DepartmentSpecialty values as written; the detail lists every critical-care-like one.",
           "build: icu", """

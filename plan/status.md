@@ -29,13 +29,15 @@ What is built, and what is still to be seen working on the VM. Only the user can
 
 ## To Check On The VM
 
-### Project DB: Auto, Or Chosen With Its Free Space (D218), In The Next Bundle
+### Bundle `2e5968dd…` (9 October 2026): Project DB Auto (D218), The Viewer (D219), The RSV Redo
 
 Built 9 October.
 
 1.  **Author's Project DB** opens ticked **Auto** for a new draft. Unticked, its dropdown lists each Projects database with its free space within a few seconds. Choosing one marks the draft unsaved, and the exported blueprint carries it.
 2.  **A pull with `project_db: auto`**: its first Execute says "Choosing a Projects database" and takes the roomiest no other unfinished pull uses, as before.
 3.  **A pull naming a database**: its first Execute says "The blueprint names …", measures only that one, and uses it even where another unfinished pull is. Named and too full (6 GB or less), it stops with nothing built, naming it.
+4.  **The transcription viewer** is in `utils\client\`, and `python utils.py --list` names it (D219).
+5.  **The Infant_RSV redo** lands every table, `IcuStays` and the patients' `BirthDateAccuracy_X` among them (D217, D220).
 
 ### Infant RSV: Bundle `ae095e1f…` And The RSV Bundle `8bef2f7c` (9 October 2026)
 

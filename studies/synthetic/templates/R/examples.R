@@ -39,7 +39,7 @@ visits %>%
 # 4. Where admissions were admitted to, and ICU stays among them.
 print(count(tables$HospitalAdmissionFact, AdmitSpecialty, sort = TRUE))
 icu <- tables$HospitalAdmissionFact %>%
-  filter(AdmitSpecialty %in% c("Pediatric Intensive Care", "Critical Care Medicine")) %>%
+  filter(AdmitSpecialty %in% c("Pediatric Intensive Care", "Critical Care Medicine", "Pediatric Critical Care Medicine")) %>%
   distinct(HospitalAdmissionKey)
 cat("ICU visits:", sum(visits$HospitalAdmissionKey %in% icu$HospitalAdmissionKey), "\n")
 
