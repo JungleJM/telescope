@@ -112,8 +112,16 @@ class AuthorView:
 
     def __init__(self, parent: Any, root: Any, workspace: model.Workspace,
                  on_open_in_run: Callable[[Path], None] | None = None,
-                 on_title: Callable[[str], None] | None = None):
+                 on_title: Callable[[str], None] | None = None,
+                 project_databases: list[str] | None = None,
+                 measure_databases: Callable[[list[str]], list[tuple[str, str]]] | None = None):
         self.parent = parent
+        # The Projects databases a pull may land in, and how to measure their room (D218):
+        # the app gives both from Pullmanager; opened without them, there is no list.
+        self.project_databases = list(project_databases or [])
+        self.measure_databases = measure_databases
+        self.db_rooms: dict[str, str] = {}       # each database's room, as last measured
+        self.db_measuring = False
         self.root = root
         self.ws = workspace
         self.on_open_in_run = on_open_in_run
@@ -913,9 +921,9 @@ def build_project(view: AuthorView, parent: Any) -> None:
     check_field(view, pull, "Cosmos", cosmos, lambda on: toggle("cosmos", on)).pack(side="left")
     check_field(view, pull, "Cosmos_SneakPeek", sneakpeek, lambda on: toggle("sneakpeek", on)).pack(side="left", padx=10)
     grid_row(form, 0, "Pull from", pull, "Both: every SneakPeek table first, then Cosmos (Dual).")
-    grid_row(form, 1, "Project DB", text_field(view, form, draft.project_db,
-                                                 lambda v: setattr(draft, "project_db", v)),
-             "Must start with PROJECTD.")
+    grid_row(form, 1, "Project DB", project_db_field(view, form),
+             "Auto: Execute takes the roomiest database no other pull is using."
+             if draft.project_db_auto else "This database, whatever else is in it.")
     start, end = draft.dates()
     grid_row(form, 2, "Min start date", text_field(view, form, start, lambda v: draft.set_dates(min_date=v), 12),
              "YYYYMMDD")
@@ -935,6 +943,70 @@ def build_project(view: AuthorView, parent: Any) -> None:
     if draft.collect_all:
         size.state(["disabled"])
         random_box.state(["disabled"])
+
+
+def database_label(view: AuthorView, name: str) -> str:
+    if name not in view.project_databases:
+        return f"{name} \u00b7 not in the list"
+    if view.db_measuring and name not in view.db_rooms:
+        return f"{name} \u00b7 measuring ..."
+    return f"{name} \u00b7 {view.db_rooms.get(name, 'not measured')}"
+
+
+def measure_databases_soon(view: AuthorView) -> None:
+    """Measure every listed database in the background, then show their room (D218)."""
+    if view.db_measuring or not view.measure_databases or not view.project_databases:
+        return
+    import queue
+    import threading
+
+    view.db_measuring = True
+    done: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        try:
+            done.put(view.measure_databases(list(view.project_databases)))
+        except Exception as exc:  # noqa: BLE001 - shown, not raised
+            done.put([(name, f"not measured ({exc})") for name in view.project_databases])
+
+    def check() -> None:
+        try:
+            rooms = done.get_nowait()
+        except queue.Empty:
+            view.root.after(200, check)
+            return
+        view.db_rooms = dict(rooms)
+        view.db_measuring = False
+        view.render_soon()
+
+    threading.Thread(target=work, daemon=True).start()
+    view.root.after(200, check)
+
+
+def project_db_field(view: AuthorView, parent: Any) -> ttk.Frame:
+    """Auto, or a database chosen from the list with its free space (D218)."""
+    draft = view.draft
+    frame = ttk.Frame(parent)
+    check_field(view, frame, "Auto", draft.project_db_auto,
+                lambda on: setattr(draft, "project_db_auto", on), rerender=True).pack(side="left")
+    if draft.project_db_auto:
+        return frame
+    names = list(view.project_databases)
+    if draft.project_db and draft.project_db not in names:
+        names.insert(0, draft.project_db)
+    labels = [database_label(view, name) for name in names]
+    current = database_label(view, draft.project_db) if draft.project_db else ""
+    box = choice_field(view, frame, labels, current,
+                       lambda label: setattr(draft, "project_db", label.split(" \u00b7 ")[0]), width=40)
+    box.pack(side="left", padx=8)
+    if view.project_databases and view.measure_databases:
+        ttk.Button(frame, text="Measure", command=lambda: (view.db_rooms.clear(), measure_databases_soon(view),
+                                                            view.render_soon())).pack(side="left")
+        if not view.db_rooms:
+            measure_databases_soon(view)
+    elif not view.project_databases:
+        ttk.Label(frame, text="Open Author from the app to list the databases.").pack(side="left")
+    return frame
 
 
 # =============================================================================
@@ -2120,17 +2192,16 @@ class SectionViewTests(ViewTest):
         self.view.check()
         self.root.update()
         self.assertEqual(self.shown_issues(), [])
-        entry = next(e for e in self.entries() if e.get() == self.view.draft.project_db)
-        entry.delete(0, "end")
-        entry.insert(0, "NOTAPROJECT")
+        box = next(w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
+                   and str(w.get()).startswith("PROJECTD33A929"))
+        self.view.edit(lambda: setattr(self.view.draft, "project_db", "NOTAPROJECT"))
         self.root.update()
         self.view.check()
         self.root.update()
         issues = self.shown_issues()
         self.assertTrue(issues and "PROJECTD" in issues[0], issues)
-        self.assertTrue(entry.winfo_exists())  # the same field: typing goes on
-        entry.delete(0, "end")
-        entry.insert(0, "PROJECTD93A5E7")
+        self.assertTrue(box.winfo_exists())  # the same field: the page was not redrawn
+        self.view.edit(lambda: setattr(self.view.draft, "project_db", "PROJECTD93A5E7"))
         self.root.update()
         self.view.check()
         self.root.update()
@@ -2160,12 +2231,59 @@ class SectionViewTests(ViewTest):
         self.root.tk.eval(self.view.name_box.cget("postcommand"))
         self.assertTrue(any(str(v).startswith("ShowTest") for v in self.view.name_box.cget("values")))
 
-    def test_typing_a_project_setting_edits_the_draft_and_marks_it_unsaved(self):
-        self.open("Celiac_intake.yaml")
+    def project_db_widgets(self):
         self.view.show_section("project")
-        self.type_into(self.view.draft.project_db, "PROJECTD123")
-        self.assertEqual(self.view.draft.project_db, "PROJECTD123")
+        self.root.update()
+        auto = next(w for w in widgets(self.view.body.inner)
+                    if isinstance(w, ttk.Checkbutton) and str(w.cget("text")) == "Auto")
+        boxes = [w for w in widgets(self.view.body.inner) if isinstance(w, ttk.Combobox)
+                 and " \u00b7 " in " ".join(str(v) for v in w.cget("values"))]
+        return auto, boxes
+
+    def test_auto_is_ticked_for_a_new_draft_and_writes_auto(self):
+        # D218: Execute chooses unless a database is chosen here.
+        self.view.edit(lambda: setattr(self.view.draft, "project_db", "auto"), rerender=True)
+        auto, boxes = self.project_db_widgets()
+        self.assertIn("selected", auto.state())
+        self.assertEqual(boxes, [])
+
+    def test_unticking_auto_lists_the_databases_with_their_free_space(self):
+        asked = []
+
+        def measure(names):
+            asked.append(list(names))
+            return [(name, f"{i + 1}.0 GB free") for i, name in enumerate(names)]
+
+        self.view.project_databases = ["PROJECTD93A5E7", "PROJECTD125423"]
+        self.view.measure_databases = measure
+        self.view.edit(lambda: setattr(self.view.draft, "project_db", "auto"), rerender=True)
+        auto, _ = self.project_db_widgets()
+        auto.invoke()                       # untick
+        for _ in range(100):                # the measuring runs in the background
+            self.root.update()
+            if self.view.db_rooms and not self.view.db_measuring:
+                break
+            self.root.after(20)
+        self.root.update()
+        auto, boxes = self.project_db_widgets()
+        self.assertNotIn("selected", auto.state())
+        self.assertEqual(asked, [["PROJECTD93A5E7", "PROJECTD125423"]])
+        values = [str(v) for v in boxes[0].cget("values")]
+        self.assertEqual(values, ["PROJECTD93A5E7 \u00b7 1.0 GB free", "PROJECTD125423 \u00b7 2.0 GB free"])
+        self.view.draft.dirty = False
+        boxes[0].set(values[1])
+        boxes[0].event_generate("<<ComboboxSelected>>")
+        self.root.update()
+        self.assertEqual(self.view.draft.project_db, "PROJECTD125423")
         self.assertTrue(self.view.draft.dirty)
+
+    def test_a_named_database_not_in_the_list_is_kept_and_said(self):
+        self.view.project_databases = ["PROJECTD93A5E7"]
+        self.open("Celiac_intake.yaml")            # names PROJECTD33A929
+        self.view.project_databases = ["PROJECTD93A5E7"]
+        _, boxes = self.project_db_widgets()
+        self.assertEqual(boxes[0].get(), "PROJECTD33A929 \u00b7 not in the list")
+        self.assertEqual(self.view.draft.project_db, "PROJECTD33A929")
 
     def test_a_column_renamed_in_the_view_is_renamed_in_the_template(self):
         self.open("Celiac_intake.yaml")

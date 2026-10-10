@@ -1,5 +1,5 @@
 cosmos_vars:
-  project_db: PROJECTD427046
+  project_db: auto
   cosmos_db: Dual
 run_vars:
   min_date_key: '20181201'

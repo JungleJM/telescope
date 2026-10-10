@@ -1,4 +1,4 @@
-"""Choosing a pull's Projects database before it first runs (D164).
+"""Choosing a pull's Projects database before it first runs (D164, D218).
 
 Two of three pulls stopped when PROJECTD93A5E7 filled while the user's other
 project databases stood empty. So a pull executing for the first time is
@@ -8,6 +8,10 @@ else (stacking) the emptiest. Only a database with more than 6 GB free is
 chosen; with none, nothing is built. The choice goes into the manifest and
 every phase document and never changes (D52): a resume stays where its
 finished batches are.
+
+A blueprint whose `project_db` is `auto` (or empty) leaves the choice to this.
+One that names a database has chosen it (D218): it is used even where another
+unfinished pull is, and with 6 GB or less free, or no way in, nothing is built.
 """
 
 from __future__ import annotations
@@ -24,6 +28,11 @@ from .models import PENDING
 from .yaml_io import dump_yaml, load_yaml
 
 MIN_FREE_MB = 6 * 1024
+AUTO = "auto"   # project_db that leaves the choice to the first Execute (D218)
+
+
+def is_auto(project_db: Any) -> bool:
+    return str(project_db or "").strip().lower() in ("", AUTO)
 # Each data file's room to its cap, as clear_projects_db reports it (MB).
 FILES_SQL = """
 SELECT type_desc, FILEPROPERTY(name, 'SpaceUsed') / 128,
@@ -197,17 +206,38 @@ def choose_database(manifest: Manifest, settings: Any, connect_fn: Callable[...,
     having said why, when none can take it."""
     if not needs_choice(manifest):
         return True
-    names = list(names or config.DEFAULT_PROJECTS_DATABASES)
     own = str(manifest.project.get("project_db") or "").strip()
+    if not is_auto(own):
+        return use_named(manifest, own, settings, connect_fn, say)
+    names = list(names or config.DEFAULT_PROJECTS_DATABASES)
     say(f"Choosing a Projects database: measuring {len(names)} ...")
     rooms = measure(names, settings, connect_fn)
     for room in rooms:
         say(f"  {room.database}: {room.text()}")
     try:
-        room, why = choose(rooms, own, unfinished_pulls(manifest))
+        room, why = choose(rooms, "", unfinished_pulls(manifest))
     except DatabaseChoiceError as exc:
         say(f"ERROR {exc}")
         return False
     record(manifest, room, why, rooms)
+    say(f"This pull's Projects database is {room.database} ({why}), for good.")
+    return True
+
+
+def use_named(manifest: Manifest, name: str, settings: Any, connect_fn: Callable[..., Any],
+              say: Callable[[str], None]) -> bool:
+    """The blueprint's own database, chosen in Author (D218): used if it can take the pull."""
+    say(f"The blueprint names {name}: measuring it ...")
+    room = measure([name], settings, connect_fn)[0]
+    say(f"  {room.database}: {room.text()}")
+    if not room.usable:
+        say(f"ERROR {name}, the database the blueprint names, cannot take the pull: {room.text()}; "
+            f"it needs more than {MIN_FREE_MB // 1024} GB free. Nothing was built. Free space in it "
+            "(clear_projects_db), or choose another, or Auto, in Author's Project DB, export the "
+            "blueprint and split again.")
+        return False
+    sharing = unfinished_pulls(manifest).get(name.lower(), [])
+    why = "named in the blueprint" + (f"; shared with {', '.join(sharing)}" if sharing else "")
+    record(manifest, room, why, [room])
     say(f"This pull's Projects database is {room.database} ({why}), for good.")
     return True

@@ -47,7 +47,7 @@ BLUEPRINT_SUFFIX = "_blueprint.yaml"
 REPLACED_DIR = "replaced"
 # What a new template starts with, when YAMLs/template.yaml does not say (D86).
 BUILT_IN_DEFAULTS: dict[str, dict[str, Any]] = {
-    "cosmos_vars": {"project_db": "PROJECTD93A5E7", "cosmos_db": "Dual"},
+    "cosmos_vars": {"project_db": "auto", "cosmos_db": "Dual"},
     "run_vars": {"min_date_key": "19900101", "max_date_key": "20260601"},
     "test_options": {"smallset": False, "stop_at_for_pk_table": 10, "random_pk_sample": False},
 }
@@ -673,6 +673,20 @@ class Draft:
     def project_db(self, value: str) -> None:
         self._put("project_db", str(value).strip())
         self._changed()
+
+    @property
+    def project_db_auto(self) -> bool:
+        """Whether Execute chooses the database (`project_db: auto`, D218). Empty is not
+        Auto here: it is a choice not yet made, which validation says is missing."""
+        return self.project_db.lower() == "auto"
+
+    @project_db_auto.setter
+    def project_db_auto(self, on: bool) -> None:
+        """On writes `auto`; off leaves a named database as it is, else none until one is chosen."""
+        if on:
+            self.project_db = "auto"
+        elif self.project_db_auto:
+            self.project_db = ""
 
     def dates(self) -> tuple[str, str]:
         return str(self._get("min_date_key") or ""), str(self._get("max_date_key") or "")
@@ -2598,9 +2612,24 @@ class ModelTest(unittest.TestCase):
 
 
 class ProjectTests(ModelTest):
+    def test_auto_on_and_off(self):
+        draft = Draft.new(self.ws)
+        draft.project_db_auto = False
+        self.assertEqual(draft.project_db, "")
+        self.assertFalse(draft.project_db_auto)
+        draft.project_db = "PROJECTD33A929"
+        draft.project_db_auto = False            # a chosen database is kept
+        self.assertEqual(draft.project_db, "PROJECTD33A929")
+        draft.project_db_auto = True
+        self.assertEqual(draft.project_db, "auto")
+        draft.dirty = False
+        draft.project_db = "PROJECTD52219B"         # choosing one is an unsaved change
+        self.assertTrue(draft.dirty)
+
     def test_a_new_draft_takes_the_defaults(self):
         draft = Draft.new(self.ws)
-        self.assertEqual(draft.project_db, "PROJECTD93A5E7")
+        self.assertEqual(draft.project_db, "auto")
+        self.assertTrue(draft.project_db_auto)
         self.assertEqual(draft.pull_from(), (True, True))
         self.assertEqual(draft.dates(), ("19900101", "20260601"))
         self.assertTrue(draft.collect_all)

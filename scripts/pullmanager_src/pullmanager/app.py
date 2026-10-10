@@ -36,6 +36,18 @@ def load_utilities() -> Any:
     return module
 
 
+def measure_projects(names: list[str]) -> list[tuple[str, str]]:
+    """Each Projects database's room, measured as Execute measures it (D164, D218)."""
+    from .databases import measure
+    from .db import DatabaseError, Settings, connect, load_env_file
+
+    try:
+        load_env_file(None)
+    except DatabaseError:
+        pass
+    return [(room.database, room.text()) for room in measure(names, Settings.from_env(), connect)]
+
+
 def load_author(tools: launcher.Tools) -> Any:
     """yamlmanager_tk, beside makeYaml; an ImportError says what is missing."""
     folder = str(Path(tools.make_yaml).parent)
@@ -78,9 +90,11 @@ class App:
         try:
             author_module = load_author(tools)
             workspace = author_module.model.Workspace.default()
+            from . import config
             self.author = author_module.AuthorView(
                 self.author_frame, root, workspace,
                 on_open_in_run=self.take_blueprint, on_title=self.set_title,
+                project_databases=list(config.DEFAULT_PROJECTS_DATABASES), measure_databases=measure_projects,
             )
         except Exception as exc:  # noqa: BLE001 - Run still works without Author
             ttk.Label(

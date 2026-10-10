@@ -166,7 +166,9 @@ SPECIALTY_JOINS = ["LEFT JOIN DepartmentDim AS ad ON ad.DepartmentKey = haf.Depa
 
 
 def header(first: dict, project: str, min_key: str, max_key: int) -> dict:
-    return {"cosmos_vars": copy.deepcopy(first["cosmos_vars"]),
+    cosmos = copy.deepcopy(first["cosmos_vars"])
+    cosmos["project_db"] = "auto"          # Execute chooses (D218); a name would be binding
+    return {"cosmos_vars": cosmos,
             "run_vars": {"min_date_key": min_key, "max_date_key": max_key},
             "test_options": {"smallset": False, "stop_at_for_pk_table": 10, "random_pk_sample": False},
             "project_vars": {"project_folder": project}, "vars": {}}

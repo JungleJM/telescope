@@ -3027,8 +3027,9 @@ def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
     """The Projects database every table lands in.
 
     Missing is a warning here, where a template is being written, and an error
-    at the split, which cannot go on without it. A name not shaped like one is
-    a warning: nothing here can check it is a database you can open.
+    at the split, which cannot go on without it. `auto` leaves the choice to the
+    first Execute (D218). A name not shaped like one is a warning: nothing here
+    can check it is a database you can open.
     """
     project_db = str(template.get("project_db") or "").strip()
     if not project_db:
@@ -3036,17 +3037,17 @@ def check_project_db(template: dict[str, Any], result: CompileResult) -> None:
             "project_db_missing",
             "No `project_db`: nothing says which Projects database the tables land in.",
             "cosmos_vars.project_db",
-            fix="Set `project_db:` under `cosmos_vars` to your project's Projects "
-            "database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
+            fix="Set `project_db:` under `cosmos_vars` to `auto`, for Execute to choose, or to "
+            "a Projects database, exactly as it is named there, e.g. `PROJECTD93A5E7`. It is not "
             "derived from the project folder's number.",
         )
-    elif not PROJECT_DB_RE.match(project_db):
+    elif project_db.lower() != "auto" and not PROJECT_DB_RE.match(project_db):
         result.warn(
             "project_db_unexpected",
             f"`project_db: {project_db}` does not look like a Projects database name.",
             "cosmos_vars.project_db",
-            fix="Projects databases are named PROJECTD followed by a code, e.g. "
-            "`PROJECTD93A5E7`; copy the name exactly as the database shows it.",
+            fix="Write `auto` for Execute to choose, or a Projects database: PROJECTD followed "
+            "by a code, e.g. `PROJECTD93A5E7`, exactly as the database shows it.",
         )
 
 
@@ -6489,6 +6490,16 @@ class ProjectDbTests(MakeYamlTest):
     def test_a_name_not_shaped_like_one_warns(self):
         res = self.compile_template(tiny_template().replace("PROJECTD1", "Projects"))
         self.assertHasWarning(res, "project_db_unexpected")
+
+    def test_auto_is_accepted_and_reaches_the_split(self):
+        # D218: Execute chooses the database on the pull's first run.
+        text = tiny_template().replace("project_db: PROJECTD1", "project_db: auto")
+        res = self.compile_template(text)
+        self.assertFalse([w for w in res.warnings if w.code.startswith("project_db")], res.warnings)
+        split = write_split_artifacts(*self.write_pair(text), output_dir=self.tmp / "split")
+        self.assertFalse(split.errors, split.errors)
+        manifest = load_yaml(self.tmp / "split" / "pullmanifest.yaml")
+        self.assertEqual(manifest["project"]["project_db"], "auto")
 
 
 class FixTests(unittest.TestCase):
