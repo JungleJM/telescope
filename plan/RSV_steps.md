@@ -4,7 +4,7 @@ Run every command in the VM folder that holds `scope.py`. The pages it writes ar
 
 ## 1. The analysis, and two checks (any time)
 
-**Copy over:** `dist/rsv_bundle.py` (version `2cb79f31`), to beside `scope.py`.
+**Copy over:** `dist/rsv_bundle.py` (version `13d091be`), to beside `scope.py`.
 
 ```
 python rsv_bundle.py        (answer y)
@@ -36,12 +36,17 @@ python rsv all              -> every page, and pages\first_run.txt holding them 
 
 **Send back:** `build.txt`, then `first_run.txt`.
 
+## 4. Then, for the next pulls (GERD)
+
+**Copy over:** `dist/bundle.py` (content id `ba65b4ef`), once nothing is executing. Author's Project DB is then **Auto**, or a database chosen from a list showing each one's free space; a chosen one is used as chosen.
+
 ## Where things are on the Mac
 
 | File | What it is |
 |---|---|
 | `dist/rsv_bundle.py` | the analysis (`rsv`) |
 | `dist/rsv_redo/bundle.py` | Scope, with the dictionary and the redo blueprint |
+| `dist/bundle.py` | Scope with Project DB Auto (D218), for after the redo |
 | `YAMLs/temp/Infant_RSV_intake.yaml` | the redo's intake, written by `studies/infant_rsv/make_intakes.py` |
 | `plan/tasklist.md` | open questions, under *Infant RSV* and *ICU* |
 
